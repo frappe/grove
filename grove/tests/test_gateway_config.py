@@ -59,6 +59,7 @@ KNOWN_TUNABLES = {
 	"lame_duck",
 	"upgrade_timeout",
 	"maintenance",
+	"usage_retention",
 }
 
 PLAYS = ("gateway_server/gateway.yml", "gateway_server/deploy_agent.yml",

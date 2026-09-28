@@ -48,6 +48,7 @@ class GroveSettings(Document):
 		scrape_password_hash: DF.Data | None
 		sd_token: DF.Password | None
 		synthetic_session_ttl: DF.Data | None
+		usage_retention: DF.Data | None
 		weights_bucket: DF.Data | None
 		weights_s3_access_key_id: DF.Data | None
 		weights_s3_region: DF.Data | None
@@ -134,8 +135,8 @@ class GroveSettings(Document):
 		Tuning only. Identity and secrets go to agent.env instead, and nothing appears in both: a
 		value that lives in one is not overridable from the other, so there is never a question of
 		which won. `synthetic_session_ttl` is stored as a bare "0" here, which Go reads as a zero
-		duration."""
-		return {"synthetic_session_ttl": self.synthetic_session_ttl or "0"}
+		duration. `usage_retention` blank keeps the gateway's own default."""
+		return {"synthetic_session_ttl": self.synthetic_session_ttl or "0", "usage_retention": self.usage_retention or ""}
 
 	@property
 	def weights_s3_engine_environment(self):

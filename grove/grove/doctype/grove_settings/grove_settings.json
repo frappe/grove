@@ -10,6 +10,7 @@
   "pathway_repo",
   "synthetic_session_ttl",
   "pricing_lead_minutes",
+  "usage_retention",
   "column_break_tls",
   "dns_provider",
   "acme_email",
@@ -193,6 +194,13 @@
    "fieldtype": "Int",
    "label": "Pricing Lead (minutes)",
    "non_negative": 1
+  },
+  {
+   "default": "168h",
+   "description": "How long a gateway keeps usage after Grove acknowledged it, as a Go duration (168h = 7 days). Rendered into each gateway's config.json, which it re-reads on a signal; blank keeps the gateway's default.",
+   "fieldname": "usage_retention",
+   "fieldtype": "Data",
+   "label": "Usage Retention"
   }
  ],
  "issingle": 1,

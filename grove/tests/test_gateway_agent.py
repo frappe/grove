@@ -32,7 +32,7 @@ TTL = "2m"
 PINNED = "v9.9.9"
 
 SETTINGS = SimpleNamespace(
-	gateway_variables={"synthetic_session_ttl": TTL},
+	gateway_variables={"synthetic_session_ttl": TTL, "usage_retention": "168h"},
 	scrape_auth_variables={"scrape_password_hash": "$2b$12$hash"},
 )
 # The Gateway Store a fake gateway runs on.
