@@ -41,9 +41,9 @@ topology stays inside its VPC and several deployments behind one ingress fold in
 |---|---|
 | `pathway/run.py` | What every run shares: `Target` (one box's admin API), `SyncRun` (lock, parallel dial, rows in the order asked). Every path that reaches a box goes through it. |
 | `pathway/projection.py` | `Projection`: every push to every box. A push that left no Pathway Sync row did not happen. |
-| `pathway/usage.py` | `Usage`: draining `usage:<prefix>` into UTC-day Usage Records, then `reconcile.py` — each touched user priced, `spent` moved, the box's money figures audited, the verdict settled. |
-| `pricing.py` | Prices per counter (`PriceBook`: the model's sell rate, else 0), the prepaid balance, `settle` (the one writer of `rate_limited`), the nightly rebuild. |
-| `grove/report/revenue/` | Revenue report: the day rows priced at today's tables, cut by model, API key, user or day. |
+| `pathway/usage.py` | `Usage`: each store's drain (or one user's keys) into one Usage Record per key, then the ack of what landed. `reconcile.py` lands each touched user: records, `spent` moved by Grove's price, the gateway's charge audited, the verdict settled. |
+| `pricing.py` | Prices per counter (`PriceBook`: by the pricing id the gateway charged, or by day for older records), the prepaid balance, `settle` (the one writer of `balance` and `credit_exhausted`). |
+| `grove/report/revenue/` | Revenue report: what each drain was billed, cut by model, API key, user or day. |
 | `pathway/snapshot.py` | The desired state a box is pushed, and the hash gate that decides which sections travel. |
 | `pathway/routes.py` | `deploy:<model>` tables — a gateway's for its Geography, an ingress's for the boxes it owns. |
 | `access.py` | Which models a user may call, as the CSV each grant record carries. |
@@ -103,11 +103,12 @@ fleet gets re-pushed over row order. Order means nothing on the wire; it exists 
 | Redis key | Written by | Holds |
 |---|---|---|
 | `key:<sha256(secret)>` | state push (keys) | whose the key is |
-| `user:<name>` | state push (users) | groups (comma list), own allow/deny, over-budget flag |
+| `user:<name>` | state push (users) + the agent | groups (comma list), own allow/deny, `limited`, `budget` (the amount loaded); the agent's own lifetime `spent` |
 | `model_group:<name>` | state push (groups) | the model grant for everyone in it |
 | `deploy:<model>` | state push (routes) | every placement of one model |
 | `grove:state_hash` | state push | per-section/bucket hashes of what the box holds |
-| `usage:<prefix>` | the agent | token counters, incl. `m:<metric>:<model>` fields |
+| `usage:<prefix>` | the agent | live counters: `m:<metric>:<model>` for reports, `p:<pricing>:<counter>` and `p:<pricing>:cost` for billing |
+| `drained:<drain>:<prefix>`, `drain:unacked` | the agent's drain | a key's counters set aside under a drain id, re-sent until Grove acks that pair; kept for `usage_retention` after |
 | `sticky:<session>` | the agent | session → engine, for prefix-cache reuse |
 | `inflight:<engine>` | the agent | what is running right now |
 | `health:<target>` | the agent | consecutive failures behind passive ejection (60s TTL) |
@@ -138,16 +139,20 @@ desyncs a grant from a route, and usage lands against the Grove model whatever t
 
 ## Prices and credits (`pricing.py`)
 
-Money is decided in the control plane; the gateway carries a resolved copy — rates per model on
-its routes, a spend ceiling per user on its record — for fast refusal, and every pull audits that
-copy. One rate table, joined at evaluation and never snapshotted onto usage:
+Money is decided in the control plane. The gateway holds its own copy — rates per pricing on its
+routes, the amount each user loaded on their record, its own spend counter — and gates on it. Grove
+keeps its own balance, and every pull compares the two charges. One rate table, joined at
+evaluation and never snapshotted onto usage:
 
-- **SELL** — `Model Pricing`, one **Enabled** doc per Model with one rate per counter. Enabling
-  stamps `enabled_on` (UTC) and disables the predecessor in the same save; history prices each day
-  by whichever was enabled then. Never disabled by hand, never re-enabled, never edited once
-  enabled: a wrong price is a new pricing plus a credit row for the days before. A **Scheduled**
-  doc carries a typed future `enabled_on` (one per model, editable until then, Disabled cancels
-  it); `enable_due` fires it in the first minute of that UTC day and retires the predecessor.
+- **SELL** — `Model Pricing`, one **Enabled** doc per Model with one rate per counter. A pricing is
+  never enabled directly: it is **Scheduled** with an `Activates At` at least **Pricing Lead**
+  (Grove Settings, minutes) ahead, so the push carries it to every gateway as `next_pricing` before
+  it fires. Each gateway switches to it on its own clock at `Activates At` and tags every request's
+  counters with the pricing id it charged; `enable_due` then marks it Enabled and retires the
+  predecessor. Editable until the lead before it fires; Disabled cancels it. Never disabled by
+  hand, never re-enabled, never edited once enabled: a wrong price is a new pricing plus a credit
+  row. `enabled_on` is stamped on enable and prices only records from before gateways tagged
+  requests.
 - **COST** — `Model Provider.rate_card` (`Model Price Row`): dated rows per vendor model id.
   Reference data only; nothing bills from it.
 
@@ -169,69 +174,98 @@ model has no Enabled pricing. Every counter a model emits needs a row (vLLM emit
 The divisors live in `pricing.COUNTERS` and pathway's `internal/domain/price.go`; the two tables
 must agree. Adding a quantity is one parser on the gateway plus one line in each.
 
-**Revenue.** The `Revenue` report (Desk) prices the day rows at today's tables — so a reprice
-changes history there exactly as it does in `spent` — grouped by model, API key, user or day over
-a date range, with a total row; export from the report toolbar. Revenue only: margin against the
-cost card is not built.
+**Revenue and usage reads.** The `Revenue` report (Desk) sums what each billed drain was charged —
+Grove's cost in each record's per-model detail, records of Free users left out — grouped by model, API key, user or day over a date range,
+with a total row; export from the report toolbar. Revenue only: margin against the cost card is not
+built. `api.usage(users, from_date, to_date | period | month)` gives a control client tokens and cost (what was charged: usage while Free adds tokens, no cost)
+per user and model (periods: Today, Yesterday, Last 7 Days, Last 30 Days, This Month, Last Month),
+with `as_of` = when the newest usage in the range was pulled. Both are one grouped SQL statement
+over `JSON_TABLE` of the records (`usage_record.usage_table`, built from `pricing.COUNTERS`), on
+the (user, day) and (api_key, day) indexes: nothing is summed in Python.
 
 **Nothing here is deleted.** No role holds `delete` on Grove User, Grove API Key, Grove Credit,
-Usage Record, Lost Usage, Gateway Spend, Credit Discrepancy, Model Pricing, Model or Model Provider
+Usage Record, Stuck Usage, Credit Discrepancy, Model Pricing, Model or Model Provider
 (`tests/test_delete_permissions.py` pins the list). A key is revoked, a pricing is superseded, a
 credit is corrected by another entry. DocPerm does not bind Administrator or `ignore_permissions`;
-Grove Credit's `on_trash` refuses those too. Lost Usage is the one exception: a replayed row is
+Grove Credit's `on_trash` refuses those too. Stuck Usage is the one exception: a resolved row is
 history, and Log Settings clears it after 90 days.
 
 **The balance.** Every `Grove User` is prepaid unless marked **Free**. Top-ups are `Grove Credit`
 entries — an append-only ledger, one doc per top-up or negative correction (with a note), never
 edited or deleted; a control client calls `api.add_credit(email, amount, note)` or posts one
 through `/api/resource/Grove Credit`, and reads `api.balance(email)` — balance, allocated, spent,
-free, rate_limited — to show the person what they have left. On the user,
-`spent` is the USD of usage priced so far and `balance` = Σ ledger − `spent`; both are read-only
-and both are written by `pricing.settle`, the one writer, which also decides
-`rate_limited = not free and balance <= 0` in both directions. It runs after every pull, every
-ledger entry and every save of the form, so a top-up unblocks the moment it is posted. A free user
-is priced into `spent` all the same, just never gated. A
-negative balance is an **Overspend** row, cleared by the top-up that covers it. Nightly
-`verify_balances` rebuilds every prepaid `spent` from the day rows (`Usage Record` per key per UTC
-day, `Usage Counter Row` per model and counter — the rows are the record, there are no totals
-beside them) and the join wins.
+free, credit_exhausted — to show the person what they have left (`api.pull_usage(email)` first
+pulls just that user's keys from every store, for a figure less than an hour old). On the user, `spent` is the USD Grove has billed and `balance` =
+Σ ledger − `spent`; both are read-only and both are written by `pricing.settle`, the one writer,
+which also decides `credit_exhausted = not free and balance <= 0` in both directions. It runs after
+every pull, every ledger entry, every save of the form and every correction, so a top-up unblocks
+the moment it is posted. A **Free** user is never charged and never gated: their usage lands as Usage Records with what it
+would have cost, marked not `billed`, and `spent` and `balance` do not move on Grove or on the
+gateway. Turning Free off later starts them at what they load. A
+negative balance stays on the user until a top-up covers it.
 
-**The gateway's copy.** The push stamps `rates` (nano-USD per unit) on every route row of a priced
-model, and on each user `prepaid` (= not free; absent on an old push reads as no gate) and
-`budget = allocated − spent + spent_known(S)`, where
-`spent_known(S)` is the highest lifetime counter that Redis S has reported (`Gateway Spend`, one
-row per user and Redis). The gateway keeps its own never-reset `spent` per user and refuses at
-`spent >= budget`, so the gate is exact within one Redis and eventual (pull + push, ~2 min) across
-stores; the overspend window on a multi-store user is carried as a negative balance. For an
-instant per-geography gate: one Gateway Store per geography, no loopback gateways in it.
-`budget` is floored to a whole µUSD so sub-µUSD truncation does not re-push the bucket.
+**Two balances, one input.** The push carries each user `prepaid` (= not free; absent on an old
+push reads as no gate), `limited` (= `credit_exhausted`) and `budget` = Σ Grove Credit in nano-USD
+— the amount loaded, the same on every store. The gateway keeps its own never-reset `spent` per
+user and store and refuses at `spent >= budget` (402, like `limited`). So:
 
-**What a pull audits** (`Credit Discrepancy`, one open row per kind and key, updated not piled):
+- gateway balance = budget − its `spent`, priced by the gateway;
+- Grove balance = Σ credits − Grove's `spent`, priced by Grove at the same pricing id.
 
-| kind | means | do |
-|---|---|---|
-| Price Drift | the box's `m:cost:<model>` ≠ what Grove priced, beyond 1 µUSD a request | expected for one pull after a price change; otherwise the two rate tables disagree |
-| Counter Reset | a user's lifetime counter fell below what this Redis last reported | the Redis was flushed; the fast gate is loose until the next drain |
-| Balance Mismatch | the box believed it had more than Grove says | a push that never landed — check the Pathway Sync rows; not raised for users on several stores |
-| Overspend | balance below zero | top up, or leave blocked |
-| Ledger Drift | the nightly rebuild disagreed with the running total | look for a pull that failed mid-way; the rebuilt figure is now in force |
+Neither side writes the other's spend. Every user is pinned to exactly one geography (the default
+one when none is picked), so all their spend lands on one store and its gateway gates them exactly
+at zero; every other geography answers 403. A user on a flushed Redis is gated by Grove's `limited`
+after the next pull and push. Spending one balance across geographies needs per-store slices of it
+— the research and options are in the "Multi-region prepaid balance: research" doc. Nothing detects a flushed Redis or a drain lost inside the gateway: the per-drain
+compare below cannot see either.
 
-Grove never bills from a gateway figure. An old gateway's drain (no `user_spent`) prices and
-settles and audits nothing. Translations and realtime sessions carry no usage: `request_count`
-only.
+**The drain.** A pull GETs `/usage`: the gateway sets every live `usage:<prefix>` aside under a new
+drain id and returns it with every earlier pair Grove has not acknowledged, grouped by drain id
+(`?keys=` narrows both to one user's keys, with no scan). Grove inserts one Usage Record per key
+(unique on drain id + key), bills it, commits, then POSTs `/usage/ack` with the (drain id, key)
+pairs of every user that landed. Every other pair comes back next pull; a re-sent pair records
+nothing twice. The acked keys are kept for Grove Settings' **Usage Retention** (rendered into each
+gateway's `config.json`, default `168h`). A record is one row: the key, the store (a Link — a key
+used in several geographies gets a record per store per drain), the drain id, and the totals
+`cost` (what Grove billed) and `gateway_cost`; the per-model detail — pricing, requests, the
+counters, Grove's cost — is one hidden JSON field the form renders as a table. The gateway's own view
+of the user (its lifetime `spent` counter and the balance it gated on) goes to **Gateway Spend**,
+one row per user and store, overwritten each drain.
+
+**When the store goes down.** New requests fail closed (503). A request already running when it
+went down still finishes, and its usage goes to a local spool file on the gateway (`usage_spool`)
+instead of being lost; the gateway replays it into the store once the store answers, each line
+once (a request-id marker). A line that still fails with the store healthy becomes a **dead line**
+and rides the next pull (`dead` in the `/usage` answer): Grove lands it like any usage under the
+drain id `dead:<request id>`, or keeps it as a Stuck Usage row when it cannot be read or names a key
+Grove does not hold, and either way acks it so the gateway drops it. The pull's Pathway Sync row
+shows `spool:N dead:N` while a gateway still holds any.
+
+**What a pull audits** (`Credit Discrepancy`, one row per Usage Record and pricing): the gateway's
+`p:<pricing>:cost` against Grove's price of the same counters at that pricing, beyond one nano-USD
+per counter per request (the gateway truncates per counter). A price change never raises one: both
+sides price each request at the pricing the gateway tagged it with. Nothing is corrected on its own.
+A System Manager decides which side is wrong:
+
+| button | does |
+|---|---|
+| Grove is wrong | Grove's `spent` moves by the delta and the user settles; Grove's balance now matches the gateway's |
+| Gateway is wrong | `POST /spend-adjust` through the store's writers in turn moves the gateway's `spent` for that user on that store by minus the delta, applied once under the row's name; a failure leaves the row open and pressing again is safe |
+
+A refund or a charge the customer is owed is a plain Grove Credit entry, separate from both. A drain
+from a gateway that predates tagging has no drain id: it is priced by the day and audited for
+nothing. Translations and realtime sessions carry no usage: `request_count` only.
 
 ## Scheduled jobs (`hooks.py`)
 
 | When | Job | Note |
 |---|---|---|
-| `*/1` | `model_pricing.enable_due` | a Scheduled pricing whose UTC day has come goes Enabled and retires its predecessor; runs ahead of the push so the same minute's routes carry it |
+| `*/1` | `model_pricing.enable_due` | a Scheduled pricing whose `Activates At` has passed goes Enabled and retires its predecessor; the gateways already switched on their own clocks |
 | `*/1` | `pathway.projection.sync_projection` | hash-gated: pushes each box only what it does not already hold; a fleet in sync logs nothing |
-| `*/1` | `pathway.usage.pull_all` | drain is delete-on-read, so it is **1-shot, never retried**; a store is drained once, through its first writer that answers ("drained via"); each touched user is then priced and settled |
 | `*/2` | `cloud_provider.reconcile.sync_all` | the provider owns whether a pod is up; this closes the drift |
 | `*/5` | `gateway_store.backup_all` | one `redis-cli --rdb` snapshot per Active store, over SSH, into the weights bucket under `gateway-store/<store>/<utc stamp>.rdb`, the doc's Last Backup Key pointing at it; usage leaves a store only on the hourly pull, so this is what a lost disk costs: 5 minutes. Off until the bucket and Mirror keys are set; prune with a bucket lifecycle rule |
+| hourly | `pathway.usage.pull_all` | a store is drained once, through its first writer that answers; recorded, billed, then what landed is acked. A failed pull loses nothing: the box re-sends every unacked pair. Also Gateway Server → **Pull Usage**, Stuck Usage → **Pull Now**, and `api.pull_usage(email)` for one user |
 | hourly | `tls.renew_fleet_certificate`, `cloud_provider.schedule.run_due_pods` | |
-| hourly | `lost_usage.replay_pending` | every pending Lost Usage row landed through the normal pull path on the day it was drained; one that fails again stays pending with its error |
-| daily | `pricing.verify_balances` | every prepaid `spent` rebuilt from the day rows; drift beyond 1 µUSD a request is a Ledger Drift row, the join wins either way |
 
 Nothing else pushes. A doctype hook, a provision and a pod lifecycle all just write state; the
 tick carries it within a minute. The only manual paths are Gateway Server → **Full Sync**, Ingress
@@ -246,8 +280,8 @@ costs a run one timeout, not one per box. Rows land in the order asked, whicheve
 first. The rule for anyone adding a run (`SyncRun`): resolve on the main thread (`units()`,
 `Target.resolve`), HTTP only on the pool (`work()`: `Target.dial`, `in_turn`), record on the main
 thread (`settle()`) — a pool thread has no `frappe.local`, so no db, no docs, no `frappe.throw`. A usage drain is recorded the
-moment it arrives; one that cannot be recorded fails its own row and keeps its payload as a Lost
-Usage row for the hourly replay.
+moment it arrives; one that cannot be recorded fails its own row and acks nothing, so the box sends
+it again.
 
 A quiet tick still leaves a trace on an Ingress Server: every in-sync check and successful push
 stamps its `last_synced_at`, and a stale stamp means the box is unreachable or rejecting pushes.
@@ -262,13 +296,13 @@ automatically. The first gateway set up on or moved onto a store is marked for y
 
 ## Gotchas worth knowing before you touch something
 
-- **A lost drain replays itself.** The box deletes its counters as it answers a pull, so a
-  Grove-side failure keeps the payload as a **Lost Usage** row (one key, or a whole box) with the
-  traceback. The hourly `lost_usage.replay_pending` lands every pending row on the day it was
-  drained and marks it Replayed; a row that fails again keeps its attempt count and last error,
-  and the form has a Replay Now button. A pending row is never deleted; Log Settings clears
-  replayed ones after 90 days (`LostUsage.clear_old_logs`). The one unrecoverable case is a
-  response lost in flight after the box's delete.
+- **One bad user holds only themselves back.** Each touched user lands in its own savepoint. A user
+  whose share cannot be recorded (an unknown pricing id, a bug) is rolled back alone and left
+  unacknowledged, so the gateway keeps it and re-sends it every pull; everyone else is acked. Grove
+  logs it as one open **Stuck Usage** row per user and store — keys, first and last failure,
+  attempts, last error and payload — updated each failing pull and resolved by the pull that lands
+  it. **Pull Now** on the row pulls just that user. The usage itself lives only on the gateway
+  until then, so a Redis flush loses it; Log Settings clears resolved rows after 90 days.
 - **A Single doctype never applies its JSON default** if it predates the field. Blank is a state a
   real site lands in, so a new setting either has a safe blank meaning or throws (see
   `fleet.gateway_agent_version`).
