@@ -19,10 +19,10 @@ TOKEN_COUNTERS = (*PROMPT_COUNTERS, "completion_tokens")
 
 
 @frappe.whitelist()
-def provision_key(name: str, email: str, geography: str, allowed_models: list[str]=None, pin: bool=False, free: bool=False):
-	"""Register the user and mint a key for `geography`'s endpoint. `pin` also refuses the user
-	everywhere else; `free` ignores pricing for them — otherwise they are prepaid and blocked until
-	credited."""
+def provision_key(name: str, email: str, geography: str, allowed_models: list[str]=None, free: bool=False):
+	"""Register the user, pin them to `geography` — every other geography refuses them — and mint a
+	key for its endpoint. `free` ignores pricing for them — otherwise they are prepaid and blocked
+	until credited."""
 	frappe.only_for(ALLOWED_ROLES)
 	# Blank would read as no filter and hand out whichever endpoint comes first.
 	host = frappe.db.get_value("Geography", geography, "endpoint") if geography else None
@@ -31,7 +31,7 @@ def provision_key(name: str, email: str, geography: str, allowed_models: list[st
 
 	# Access is per-user, so it lands on the Grove User rather than the key. Written
 	# unconditionally: a blank one is the correct fail-closed default.
-	grove_user = _set_policy(email, name, allowed_models, geography if pin else None, free)
+	grove_user = _set_policy(email, name, allowed_models, geography, free)
 
 	# The controller generates the secret and hash, and pushes to the gateways.
 	key = frappe.new_doc("Grove API Key")
@@ -234,7 +234,8 @@ def _create_control_user(email):
 def _set_policy(email, full_name, models, geography=None, free=False):
 	"""Write the user's Grove User policy and return its name — the id every key, usage
 	record and access lookup carries. `models` is exactly what they may call; `geography`, when
-	given, pins them; `free`, when given, waives pricing. `full_name` names the login when this is
+	given, pins them there (else they keep theirs, or get the default); `free`, when given, waives
+	pricing. `full_name` names the login when this is
 	the insert that creates it."""
 	name = for_email(email)
 	doc = frappe.get_doc("Grove User", name) if name else frappe.new_doc("Grove User")

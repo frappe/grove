@@ -26,6 +26,9 @@ def make_test_geography():
 			"fleet_zone": "test.grove.localhost", "endpoint": "api.test.grove.localhost",
 		}
 		frappe.get_doc(geography).insert(ignore_permissions=True)
+	# A Grove User needs a geography; on a site with no default, the test one is it.
+	if not frappe.db.exists("Geography", {"is_default": 1}):
+		frappe.db.set_value("Geography", "test", "is_default", 1)
 	return "test"
 
 

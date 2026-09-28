@@ -83,11 +83,12 @@
    "label": "Log Prompts & Outputs"
   },
   {
-   "description": "Pin this user's keys to one geography: every gateway elsewhere answers 403. Blank = any geography's endpoint. Needs a pathway release that enforces it on every gateway before it is set.",
+   "description": "The one geography this user's keys work in; every gateway elsewhere answers 403. Left blank, it is the default Geography. One geography per user keeps all their spend on one store, whose gateway gates it exactly.",
    "fieldname": "geography",
    "fieldtype": "Link",
    "label": "Geography",
-   "options": "Geography"
+   "options": "Geography",
+   "reqd": 1
   },
   {
    "description": "Models for this user alone, on top of whatever their group grants. A user with no grants anywhere reaches no models.",

@@ -24,6 +24,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		"""One probe user for the class: IntegrationTestCase rolls back once at the end, not
 		per test, so a per-test insert would collide with itself."""
 		super().setUpClass()
+		make_test_geography()
 		frappe.get_doc(
 			{
 				"doctype": "User",
@@ -53,7 +54,10 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 
 		self.assertTrue(result["api_key"].startswith(KEY_PREFIX))
 		self.assertEqual(frappe.db.get_value("User", "probe-person@example.com", "first_name"), "Probe Person")
-		self.assertTrue(frappe.db.exists("Grove User", {"user": "probe-person@example.com"}))
+		self.assertEqual(
+			frappe.db.get_value("Grove User", {"user": "probe-person@example.com"}, "geography"), make_test_geography(),
+			"provisioning pins the user to the geography whose endpoint it hands out",
+		)
 
 	def test_the_control_role_can_pull_usage_on_demand(self):
 		with unittest.mock.patch("grove.pathway.usage.pull_all", return_value="PS-1") as pull_all:

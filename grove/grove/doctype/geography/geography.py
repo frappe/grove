@@ -28,12 +28,18 @@ class Geography(Document):
 		fleet_tls_last_output: DF.Code | None
 		fleet_tls_last_run: DF.Datetime | None
 		fleet_zone: DF.Data
+		is_default: DF.Check
 		label: DF.Data | None
 	# end: auto-generated types
 
 	def validate(self):
 		self.validate_names()
 		self.validate_fixed_names()
+
+	def on_update(self):
+		"""One default: this one ticked unticks every other."""
+		if self.is_default:
+			frappe.db.set_value("Geography", {"is_default": 1, "name": ("!=", self.name)}, "is_default", 0)
 
 	def validate_names(self):
 		for field in ("fleet_zone", "endpoint"):

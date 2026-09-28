@@ -57,7 +57,7 @@ def effective_users():
 			"limited": bool(u.credit_exhausted),
 			# Opt-in to prompt/output logging. Customer content: absent or falsy stays off.
 			"log_payloads": bool(u.get("log_payloads")),
-			# Every gateway gets every user; one outside this pin answers 403. Blank = unpinned.
+			# Every gateway gets every user; one outside their geography answers 403.
 			"geography": u.get("geography") or "",
 			"prepaid": not u.get("free"),
 			"budget": 0 if u.get("free") else nano(loaded.get(u.name, 0)),

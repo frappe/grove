@@ -36,6 +36,13 @@ class GroveUser(Document):
 		user: DF.Link
 	# end: auto-generated types
 
+	def before_validate(self):
+		"""One geography per user: blank is the default one."""
+		if not self.geography:
+			self.geography = frappe.db.get_value("Geography", {"is_default": 1})
+		if not self.geography:
+			frappe.throw("Mark one Geography as default, or pick a geography for this user.")
+
 	def validate(self):
 		# Deny wins anyway, so a model on both lists is a mistake worth surfacing.
 		both = {row.model for row in self.allow} & {row.model for row in self.deny}
