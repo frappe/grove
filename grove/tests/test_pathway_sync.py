@@ -13,6 +13,7 @@ contract is plan_agent_state_sync.md at the repo root.
 import threading
 import unittest
 import unittest.mock
+from decimal import Decimal
 from pathlib import Path
 
 import frappe
@@ -238,7 +239,7 @@ class TestEffectiveUsers(unittest.TestCase):
 	"""user:<name> — the record that holds everything belonging to the person rather than to a
 	credential, so a budget flip or an access edit is one push however many keys they hold."""
 
-	def users(self, users=(), rows=(), groups=()):
+	def users(self, users=(), rows=(), groups=(), loaded=None):
 		self.calls = {}
 
 		def get_all(doctype, **kwargs):
@@ -251,12 +252,15 @@ class TestEffectiveUsers(unittest.TestCase):
 				return list(groups)
 			raise AssertionError(f"unexpected get_all({doctype})")
 
-		with unittest.mock.patch.object(frappe, "get_all", side_effect=get_all):
+		with (
+			unittest.mock.patch.object(frappe, "get_all", side_effect=get_all),
+			unittest.mock.patch.object(snapshot, "allocations", return_value=loaded or {}),
+		):
 			return snapshot.effective_users()
 
 	def test_a_user_carries_their_groups_their_deltas_and_their_budget_flag(self):
 		[user] = self.users(
-			[frappe._dict(name="GU-1", user="a@x.com", rate_limited=1)],
+			[frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=1)],
 			[
 				frappe._dict(parent="GU-1", model="qwen3-4b", parentfield="allow"),
 				frappe._dict(parent="GU-1", model="qwen3-35b", parentfield="deny"),
@@ -274,7 +278,7 @@ class TestEffectiveUsers(unittest.TestCase):
 		# The agent splits on commas (pathway, internal/domain/access.go `ModelSet`), so the
 		# join is the wire format, not a display choice.
 		[user] = self.users(
-			[frappe._dict(name="GU-1", user="a@x.com", rate_limited=0)],
+			[frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0)],
 			[
 				frappe._dict(parent="GU-1", model="b", parentfield="allow"),
 				frappe._dict(parent="GU-1", model="a", parentfield="allow"),
@@ -290,7 +294,7 @@ class TestEffectiveUsers(unittest.TestCase):
 	def test_the_same_group_twice_is_one_membership(self):
 		# Two rows naming one group are one grant, so the hash cannot move on a duplicate.
 		[user] = self.users(
-			[frappe._dict(name="GU-1", user="a@x.com", rate_limited=0)],
+			[frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0)],
 			[],
 			[
 				frappe._dict(parent="GU-1", model_group="acme"),
@@ -301,18 +305,18 @@ class TestEffectiveUsers(unittest.TestCase):
 
 	def test_a_user_who_grants_nothing_is_still_pushed_as_blank(self):
 		# Blank overwrites Redis; omitting the fields would leave a removed allow in force.
-		[user] = self.users([frappe._dict(name="GU-1", user="a@x.com", rate_limited=0)])
+		[user] = self.users([frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0)])
 		self.assertEqual((user["group"], user["allow"], user["deny"]), ("", "", ""))
 		self.assertIs(user["limited"], False)
 
 	def test_payload_logging_is_off_unless_the_doc_opts_in(self):
 		# Customer content: a doc from before the field existed (no attribute at all) stays off.
-		[user] = self.users([frappe._dict(name="GU-1", user="a@x.com", rate_limited=0)])
+		[user] = self.users([frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0)])
 		self.assertIs(user["log_payloads"], False)
 
 	def test_payload_logging_opt_in_reaches_the_record(self):
 		[user] = self.users(
-			[frappe._dict(name="GU-1", user="a@x.com", rate_limited=0, log_payloads=1)]
+			[frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0, log_payloads=1)]
 		)
 		self.assertIs(user["log_payloads"], True)
 
@@ -320,8 +324,8 @@ class TestEffectiveUsers(unittest.TestCase):
 		# The N+1 this projection removes: one query for the users, one for their rows.
 		users = self.users(
 			[
-				frappe._dict(name="GU-1", user="a@x.com", rate_limited=0),
-				frappe._dict(name="GU-2", user="b@x.com", rate_limited=0),
+				frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0),
+				frappe._dict(name="GU-2", user="b@x.com", credit_exhausted=0),
 			],
 			[
 				frappe._dict(parent="GU-1", model="m1", parentfield="allow"),
@@ -337,14 +341,18 @@ class TestEffectiveUsers(unittest.TestCase):
 		# Three tables, still three queries: membership must not become the N+1 again.
 		self.assertEqual(self.calls, {"Grove User": 1, "Grove Model Row": 1, "Model Group Row": 1})
 
-	def test_a_user_carries_their_balance_in_nano_usd(self):
-		# settle keeps `balance`; a store adds what it already counted, not here.
-		[user] = self.users([frappe._dict(name="GU-1", user="a@x.com", rate_limited=0, free=0, balance=7.5)])
+	def test_a_user_carries_the_amount_they_loaded_in_nano_usd(self):
+		# Σ credits, the same on every store; each box subtracts its own spend.
+		[user] = self.users([frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0, free=0)], loaded={"GU-1": Decimal("7.5")})
 		self.assertEqual((user["prepaid"], user["budget"]), (True, 7_500_000_000))
+
+	def test_a_prepaid_user_with_no_credit_carries_a_zero_budget(self):
+		[user] = self.users([frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=1, free=0)])
+		self.assertEqual((user["prepaid"], user["budget"], user["limited"]), (True, 0, True))
 
 	def test_a_free_user_carries_no_ceiling(self):
 		# The wire still says `prepaid`: absent on an old push has to read as no gate.
-		[user] = self.users([frappe._dict(name="GU-1", user="a@x.com", rate_limited=0, free=1, balance=2.5)])
+		[user] = self.users([frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0, free=1)], loaded={"GU-1": Decimal("2.5")})
 		self.assertEqual((user["prepaid"], user["budget"]), (False, 0))
 
 
@@ -589,7 +597,6 @@ class TestCheckState(unittest.TestCase):
 		with (
 			unittest.mock.patch.object(snapshot, "gateway_snapshot", return_value=self.SNAPSHOT),
 			unittest.mock.patch.object(snapshot, "gateway_geography", return_value="in"),
-			unittest.mock.patch.object(snapshot, "gateway_redis", return_value="gw1"),
 			unittest.mock.patch.object(frappe, "get_doc", return_value=None),
 			unittest.mock.patch.object(Target, "of", return_value=Target("Gateway Server", "gw1", "http://x", "t")),
 			unittest.mock.patch.object(Target, "remote_hashes", return_value=remote),
@@ -663,7 +670,6 @@ class TestSyncProjection(unittest.TestCase):
 			unittest.mock.patch.object(projection, "active_ingresses", return_value=[]),
 			unittest.mock.patch.object(snapshot, "gateway_snapshot", return_value={"s": 1}),
 			unittest.mock.patch.object(snapshot, "gateway_geography", return_value="in"),
-			unittest.mock.patch.object(snapshot, "gateway_redis", side_effect=lambda gateway: gateway),
 			unittest.mock.patch.object(Target, "resolve", side_effect=resolved),
 			unittest.mock.patch.object(projection, "push_target", side_effect=push_target),
 			unittest.mock.patch.object(

@@ -68,16 +68,16 @@ def full_sync(proxies=None, trigger="Manual", ingresses=None, wait=60):
 
 def snapshots_for(targets):
 	"""{target: what it is pushed}, read on the main thread — a gateway snapshot once per
-	(geography, Redis) with the user records built once, an ingress its own replica table."""
-	per_pair, snapshots, shared = {}, {}, {}
+	geography with the user records built once, an ingress its own replica table."""
+	per_geography, snapshots, shared = {}, {}, {}
 	for target in targets:
 		if target.server_type == "Ingress Server":
 			snapshots[target] = snapshot.ingress_snapshot(target.name)
 			continue
-		pair = (snapshot.gateway_geography(target.name), snapshot.gateway_redis(target.name))
-		if pair not in per_pair:
-			per_pair[pair] = snapshot.gateway_snapshot(*pair, shared=shared)
-		snapshots[target] = per_pair[pair]
+		geography = snapshot.gateway_geography(target.name)
+		if geography not in per_geography:
+			per_geography[geography] = snapshot.gateway_snapshot(geography, shared=shared)
+		snapshots[target] = per_geography[geography]
 	return snapshots
 
 

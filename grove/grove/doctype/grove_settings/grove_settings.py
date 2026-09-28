@@ -43,6 +43,7 @@ class GroveSettings(Document):
 		pathway_release: DF.Data | None
 		pathway_repo: DF.Data | None
 		pod_geography: DF.Link | None
+		pricing_lead_minutes: DF.Int
 		scrape_password: DF.Password | None
 		scrape_password_hash: DF.Data | None
 		sd_token: DF.Password | None

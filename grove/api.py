@@ -66,14 +66,14 @@ def balance(email: str):
 	grove_user = for_email(email)
 	if not grove_user:
 		frappe.throw(f"No Grove User for {email!r}.")
-	flags = frappe.db.get_value("Grove User", grove_user, ["free", "rate_limited"], as_dict=True)
+	flags = frappe.db.get_value("Grove User", grove_user, ["free", "credit_exhausted"], as_dict=True)
 	summary = credit_summary(grove_user)
 	return {
 		"balance": float(summary["remaining"]),
 		"allocated": float(summary["allocated"]),
 		"spent": float(summary["spent"]),
 		"free": bool(flags.free),
-		"rate_limited": bool(flags.rate_limited),
+		"credit_exhausted": bool(flags.credit_exhausted),
 	}
 
 

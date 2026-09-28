@@ -9,6 +9,7 @@
   "pathway_release",
   "pathway_repo",
   "synthetic_session_ttl",
+  "pricing_lead_minutes",
   "column_break_tls",
   "dns_provider",
   "acme_email",
@@ -184,11 +185,19 @@
    "fieldname": "pod_tab",
    "fieldtype": "Tab Break",
    "label": "Pod"
+  },
+  {
+   "default": "10",
+   "description": "How far ahead a Model Pricing must be scheduled. Covers several pushes, so every gateway holds the new rates before it switches to them on its own clock.",
+   "fieldname": "pricing_lead_minutes",
+   "fieldtype": "Int",
+   "label": "Pricing Lead (minutes)",
+   "non_negative": 1
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-09-17 10:52:41.546936",
+ "modified": "2026-09-26 05:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove Settings",

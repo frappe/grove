@@ -13,9 +13,8 @@ import json
 import frappe
 
 from grove.access import group_rows, model_rows
-from grove.grove.doctype.gateway_spend.gateway_spend import spent_known
 from grove.pathway import routes
-from grove.pricing import micro_floor, nano
+from grove.pricing import allocations, nano
 
 
 def effective_groups():
@@ -35,15 +34,16 @@ def effective_users():
 	"""Every Grove User projected for the gateway. One record per person however many keys they
 	hold — the reason none of this is flattened onto the keys.
 
-	`limited` is the control plane's verdict, honoured as a 429. Holding it on the PERSON stops a
-	blocked user minting a fresh key. Every user is prepaid unless marked Free, and carries `budget`,
-	the ceiling the gateway refuses at on its own: what is left, before each Redis adds what it has
-	already counted. The wire says `prepaid`, not `free`: a field absent on an old push must read
-	as no gate."""
+	`limited` is Grove's own verdict (`credit_exhausted`). Holding it on the PERSON stops a
+	blocked user minting a fresh key. Every user is prepaid unless marked Free, and carries `budget`:
+	the amount they loaded (Σ Grove Credit), the same on every store. The box subtracts its own
+	spend from it and refuses at zero. The wire says `prepaid`, not `free`: a field absent on an
+	old push must read as no gate."""
 	deltas = model_rows("Grove User")
 	memberships = group_rows()
+	loaded = allocations()
 	users = frappe.get_all(
-		"Grove User", fields=["name", "user", "rate_limited", "log_payloads", "geography", "free", "balance"]
+		"Grove User", fields=["name", "user", "credit_exhausted", "log_payloads", "geography", "free"]
 	)
 	return [
 		{
@@ -54,31 +54,15 @@ def effective_users():
 			"group": ",".join(memberships.get(u.name, [])),
 			"allow": ",".join(deltas.get(u.name, {}).get("allow", [])),
 			"deny": ",".join(deltas.get(u.name, {}).get("deny", [])),
-			"limited": bool(u.rate_limited),
+			"limited": bool(u.credit_exhausted),
 			# Opt-in to prompt/output logging. Customer content: absent or falsy stays off.
 			"log_payloads": bool(u.get("log_payloads")),
 			# Every gateway gets every user; one outside this pin answers 403. Blank = unpinned.
 			"geography": u.get("geography") or "",
 			"prepaid": not u.get("free"),
-			"budget": 0 if u.get("free") else remaining_budget(u.get("balance")),
+			"budget": 0 if u.get("free") else nano(loaded.get(u.name, 0)),
 		}
 		for u in sorted(users, key=lambda u: u.name)
-	]
-
-
-def remaining_budget(balance):
-	"""The user's `balance` in nano-USD, floored to a whole µUSD so sub-µUSD truncation drift does
-	not re-hash the user's bucket every pull."""
-	return micro_floor(nano(balance or 0))
-
-
-def users_for_redis(users, redis):
-	"""Each prepaid user's ceiling on this Redis: what is left plus what the Redis has already
-	counted, so `spent >= budget` there means its undrained spend exceeds the real balance."""
-	known = spent_known(redis) if redis else {}
-	return [
-		{**user, "budget": user["budget"] + known.get(user["name"], 0)} if user["prepaid"] else user
-		for user in users
 	]
 
 
@@ -131,16 +115,16 @@ def bucketed_section(records, id_field):
 	}}
 
 
-def gateway_snapshot(geography, redis=None, shared=None):
-	"""The same for every gateway in `geography` on `redis`, so a run builds it once per pair:
-	only the routes differ between geographies, only the prepaid ceilings between Redises. A run
-	hands every call the same `shared` dict, so the user records are built once."""
+def gateway_snapshot(geography, shared=None):
+	"""The same for every gateway in `geography`, so a run builds it once per geography: only the
+	routes differ between them. A run hands every call the same `shared` dict, so the user records
+	are built once."""
 	shared = {} if shared is None else shared
 	if "users" not in shared:
 		shared["users"] = effective_users()
 	return {
 		"groups": flat_section({"records": effective_groups()}),
-		"users": bucketed_section(users_for_redis(shared["users"], redis), "name"),
+		"users": bucketed_section(shared["users"], "name"),
 		"keys": bucketed_section(effective_keys(), "key_hash"),
 		"routes": flat_section({"table": routes.gateway_routes(geography)}),
 	}
@@ -151,9 +135,9 @@ def gateway_geography(gateway):
 	return frappe.db.get_value("Gateway Server", gateway, "geography") or ""
 
 
-def gateway_redis(gateway):
-	"""The Redis a gateway counts on: its Gateway Store, or itself for a box on its own."""
-	return frappe.db.get_value("Gateway Server", gateway, "gateway_store") or gateway
+def gateway_store(gateway):
+	"""The Gateway Store a gateway counts on; blank before its first Setup."""
+	return frappe.db.get_value("Gateway Server", gateway, "gateway_store")
 
 
 def ingress_snapshot(ingress):

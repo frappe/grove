@@ -7,6 +7,8 @@
  "field_order": [
   "model",
   "status",
+  "column_break_vnjs",
+  "activates_at",
   "enabled_on",
   "section_rates",
   "rates"
@@ -23,7 +25,7 @@
   },
   {
    "default": "Disabled",
-   "description": "Enable to price from 00:00 UTC today; Scheduled to take over on a later day. Never disabled by hand and never re-enabled: a wrong price is a new pricing plus a credit row for the days before.",
+   "description": "Schedule to take over at Activates At; the gateway switches on its own clock and the pull prices each request at the pricing it was charged. Never enabled directly, never disabled by hand and never re-enabled: a wrong price is a new pricing plus a credit row.",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -31,13 +33,21 @@
    "options": "Disabled\nScheduled\nEnabled"
   },
   {
-   "description": "Scheduled: the UTC day it takes over, ahead of today. Otherwise stamped on enable; history prices by it and the predecessor prices the days before.",
+   "description": "When the gateways switch to this pricing, in the site's time zone. At least the Pricing Lead in Grove Settings ahead, so it reaches every gateway first.",
+   "fieldname": "activates_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Activates At",
+   "mandatory_depends_on": "eval:doc.status==\"Scheduled\"",
+   "read_only_depends_on": "eval:doc.status==\"Enabled\""
+  },
+  {
+   "description": "The day it took over, stamped when it activates. Prices usage recorded before gateways tagged each request.",
    "fieldname": "enabled_on",
    "fieldtype": "Date",
    "in_list_view": 1,
    "label": "Enabled On",
-   "mandatory_depends_on": "eval:doc.status==\"Scheduled\"",
-   "read_only_depends_on": "eval:doc.status!=\"Scheduled\""
+   "read_only": 1
   },
   {
    "fieldname": "section_rates",
@@ -51,6 +61,10 @@
    "label": "Rates",
    "options": "Model Pricing Rate",
    "reqd": 1
+  },
+  {
+   "fieldname": "column_break_vnjs",
+   "fieldtype": "Column Break"
   }
  ],
  "links": [
@@ -60,7 +74,7 @@
    "link_fieldname": "model"
   }
  ],
- "modified": "2026-09-23 17:00:00.000000",
+ "modified": "2026-09-28 20:04:36.446651",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model Pricing",

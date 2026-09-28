@@ -105,13 +105,14 @@ class TestEveryUserCarriesTheirPin(unittest.TestCase):
 			patch.object(snapshot, "model_rows", return_value={}),
 			patch.object(snapshot, "group_rows", return_value={}),
 			patch.object(frappe, "get_all", side_effect=get_all),
+			patch.object(snapshot, "allocations", return_value={}),
 		):
 			return {user["name"]: user for user in snapshot.effective_users()}
 
 	def test_pinned_and_unpinned_users_both_reach_every_gateway(self):
 		users = self.users([
-			{"name": "u1", "user": "a@x.test", "rate_limited": 0, "log_payloads": 0, "geography": "eu"},
-			{"name": "u2", "user": "b@x.test", "rate_limited": 0, "log_payloads": 0, "geography": None},
+			{"name": "u1", "user": "a@x.test", "credit_exhausted": 0, "log_payloads": 0, "geography": "eu"},
+			{"name": "u2", "user": "b@x.test", "credit_exhausted": 0, "log_payloads": 0, "geography": None},
 		])
 		self.assertEqual(users["u1"]["geography"], "eu")
 		# Blank, never null: the gateway reads absent and "" as unpinned.
@@ -119,20 +120,19 @@ class TestEveryUserCarriesTheirPin(unittest.TestCase):
 
 
 class TestOneSnapshotPerGeography(unittest.TestCase):
-	"""One snapshot per (geography, Redis): two gateways on one store share it, a box on its own
-	Redis in the same geography gets its own — the prepaid ceilings differ per Redis."""
+	"""One snapshot per geography: only the routes differ between them, and every store is pushed
+	the same budget, so gateways on different Redises in one geography share it."""
 
-	def test_each_gateway_gets_its_pairs_snapshot_built_once(self):
+	def test_each_geography_is_built_once_and_shared_by_its_gateways(self):
 		built, pushed = [], []
 		geographies = {"gw-in-1": "in", "gw-in-2": "in", "gw-in-3": "in", "gw-eu-1": "eu"}
-		stores = {"gw-in-1": "store-in", "gw-in-2": "store-in"}
 
-		def build(geography, redis=None, shared=None):
-			built.append((geography, redis))
-			return {"geography": geography, "redis": redis}
+		def build(geography, shared=None):
+			built.append(geography)
+			return {"geography": geography}
 
 		def push_target(target, desired, force):
-			pushed.append((target.name, desired["geography"], desired["redis"]))
+			pushed.append((target.name, desired["geography"]))
 			return None
 
 		doc = unittest.mock.Mock(results=[])
@@ -142,17 +142,14 @@ class TestOneSnapshotPerGeography(unittest.TestCase):
 			patch.object(run, "sync_targets", return_value=[(None, [name]) for name in geographies]),
 			patch.object(projection, "active_ingresses", return_value=[]),
 			patch.object(snapshot, "gateway_geography", side_effect=geographies.get),
-			patch.object(snapshot, "gateway_redis", side_effect=lambda gateway: stores.get(gateway, gateway)),
 			patch.object(snapshot, "gateway_snapshot", side_effect=build),
 			patch.object(Target, "resolve", side_effect=lambda kind, name: Target(kind, name, "u", "t")),
 			patch.object(projection, "push_target", side_effect=push_target),
 			patch.object(frappe, "db", frappe._dict(commit=lambda: None)),
 		):
 			projection.sync_projection()
-		self.assertEqual(sorted(built), [("eu", "gw-eu-1"), ("in", "gw-in-3"), ("in", "store-in")])
-		self.assertEqual(sorted(pushed), [
-			("gw-eu-1", "eu", "gw-eu-1"), ("gw-in-1", "in", "store-in"), ("gw-in-2", "in", "store-in"), ("gw-in-3", "in", "gw-in-3"),
-		])
+		self.assertEqual(sorted(built), ["eu", "in"])
+		self.assertEqual(sorted(pushed), [("gw-eu-1", "eu"), ("gw-in-1", "in"), ("gw-in-2", "in"), ("gw-in-3", "in")])
 
 
 if __name__ == "__main__":

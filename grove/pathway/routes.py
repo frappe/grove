@@ -4,13 +4,16 @@
 behind it. Capacity IS the gateway's admission cap, so it resolves through the deployment in one
 place — `active_replicas` — for both planes."""
 
+from datetime import timezone
+from zoneinfo import ZoneInfo
+
 import frappe
+from frappe.utils import get_system_timezone
 
 from grove.naming import short_name
 from grove.net import private_url
 from grove.pricing import PriceBook
 from grove.serving.base import engine_class
-from grove.utils import utc_today
 
 REPLICA_FIELDS = ["name", "model", "engine_url", "inference_server", "max_num_seqs", "model_deployment"]
 
@@ -205,23 +208,43 @@ def gateway_routes(geography):
 			"upstream_model": upstream.get(p.model, ""),
 		})
 	add_vendor_routes(routes, models, vendors, modality, upstream)
-	add_rates(routes)
+	add_pricing(routes)
 	for rows in routes.values():
 		rows.sort(key=lambda r: r["deployment"])  # stable hash whatever the query order
 	return routes
 
 
-def add_rates(routes):
-	"""Today's rates on every row of a priced model: sell, else the provider's cost, per counter,
-	in nano-USD per unit. The gateway prices each request with these; the pull audits the sum. An
-	unpriced model carries no `rates` at all, so its rows hash as before."""
-	book = PriceBook.load()
-	today = utc_today()
+def add_pricing(routes):
+	"""Every row of a priced model carries the pricing the gateway charges at now and, while one
+	is Scheduled, the one it switches to at `activates_at` on its own clock, so a price change
+	needs no push to land on time. The gateway tags each request's counters with the pricing id it
+	charged, which is what the pull prices. Rates are nano-USD per unit. An unpriced model's rows
+	carry neither, so they hash as before."""
+	windows = pricing_windows()
 	for model, rows in routes.items():
-		rates = book.rates_for(model, today)
-		if rates:
-			for row in rows:
-				row["rates"] = rates
+		for row in rows:
+			row.update(windows.get(model, {}))
+
+
+def pricing_windows():
+	"""{model: {"pricing": the Enabled one, "next_pricing": the Scheduled one}}, each present only
+	when it exists, as the gateway reads them."""
+	book = PriceBook.load()
+	windows = {}
+	for p in frappe.get_all(
+		"Model Pricing", filters={"status": ("in", ["Enabled", "Scheduled"])}, fields=["name", "model", "status", "activates_at"]
+	):
+		entry = {"id": p.name, "rates": book.nano_rates(p.name)}
+		if p.status == "Scheduled":
+			entry["activates_at"] = utc_timestamp(p.activates_at)
+		windows.setdefault(p.model, {})["pricing" if p.status == "Enabled" else "next_pricing"] = entry
+	return windows
+
+
+def utc_timestamp(value):
+	"""A site-time-zone Datetime as the RFC 3339 UTC string the gateway compares its clock with."""
+	local = frappe.utils.get_datetime(value).replace(tzinfo=ZoneInfo(get_system_timezone()))
+	return local.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def upstream_model(model, is_vendor):

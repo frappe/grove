@@ -26,12 +26,12 @@ class GroveUser(Document):
 
 		allow: DF.Table[GroveModelRow]
 		balance: DF.Currency
+		credit_exhausted: DF.Check
 		deny: DF.Table[GroveModelRow]
 		free: DF.Check
 		geography: DF.Link | None
 		log_payloads: DF.Check
 		model_groups: DF.TableMultiSelect[ModelGroupRow]
-		rate_limited: DF.Check
 		spent: DF.Currency
 		user: DF.Link
 	# end: auto-generated types
@@ -47,7 +47,7 @@ class GroveUser(Document):
 			live = frappe.db.get_value("Grove User", self.name, ["spent", "balance"], as_dict=True, for_update=True)
 			self.spent, self.balance = live.spent, live.balance
 		# Mirrors pricing.settle, which on_update then runs for real: free is never gated.
-		self.rate_limited = int(not self.free and (self.balance or 0) <= 0)
+		self.credit_exhausted = int(not self.free and (self.balance or 0) <= 0)
 
 	def on_update(self):
 		"""The verdict is re-decided from what was just saved — the same writer the pull uses."""
@@ -85,14 +85,14 @@ def for_email(email):
 	return frappe.db.get_value("Grove User", {"user": email}) if email else None
 
 
-def set_rate_limited(grove_user, limited):
-	"""Flip the 429 gate for `grove_user`. Held here, not on the keys, because the balance is
+def set_credit_exhausted(grove_user, exhausted):
+	"""Flip the credit gate for `grove_user`. Held here, not on the keys, because the balance is
 	the person's — storing it per key let a blocked user mint a fresh one and walk past their
 	own cap. The next sync pushes one record, not one per key they hold.
 	Returns True when something actually changed."""
-	current = frappe.db.get_value("Grove User", grove_user, "rate_limited")
-	if current is None or current == int(limited):
+	current = frappe.db.get_value("Grove User", grove_user, "credit_exhausted")
+	if current is None or current == int(exhausted):
 		return False
 	# update_modified=False: a system flag flip is not a user edit and must not read as one.
-	frappe.db.set_value("Grove User", grove_user, "rate_limited", int(limited), update_modified=False)
+	frappe.db.set_value("Grove User", grove_user, "credit_exhausted", int(exhausted), update_modified=False)
 	return True
