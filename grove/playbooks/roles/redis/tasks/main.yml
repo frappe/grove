@@ -12,7 +12,8 @@
 #
 # save: Redis 7's own default, pinned so a package upgrade cannot move it. One pair per line —
 # 6.x ignores the one-line form. dump.rdb is a courtesy copy: with AOF on, a restart loads the
-# AOF, and the hourly backup (gateway_store/backup.yml) takes its own fresh sync.
+# AOF, and the 5-minute backup (GatewayStore.backup, redis-cli --rdb over SSH) takes its own sync.
+# auto-aof-rewrite-*: Redis compacts the AOF itself once it has doubled past 64 MB — no cron.
 - name: redis zero-loss persistence
   ansible.builtin.blockinfile:
     path: /etc/redis/redis.conf
@@ -24,6 +25,8 @@
       save 3600 1
       save 300 100
       save 60 10000
+      auto-aof-rewrite-percentage 100
+      auto-aof-rewrite-min-size 64mb
 
 # A shared store only. bind and requirepass are read at start, so a change restarts: AOF is
 # already on by then, so the restart keeps the data.
@@ -63,7 +66,8 @@
     set -eu
     changed=0
     for setting in "appendonly yes" "appendfsync everysec" "maxmemory-policy noeviction" \
-                   "save 3600 1 300 100 60 10000"; do
+                   "save 3600 1 300 100 60 10000" \
+                   "auto-aof-rewrite-percentage 100" "auto-aof-rewrite-min-size 67108864"; do
       key=${setting%% *}
       want=${setting#* }
       have=$(redis-cli config get "$key" | tail -1)
