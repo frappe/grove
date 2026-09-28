@@ -5,77 +5,82 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "kind",
+  "usage_record",
   "grove_user",
   "api_key",
+  "pricing",
   "model",
-  "counter",
   "column_break_where",
-  "gateway",
-  "redis",
+  "gateway_store",
   "resolved",
+  "resolution",
   "section_values",
   "gateway_value",
-  "expected_value",
+  "grove_value",
   "delta",
+  "column_break_fix",
+  "correction",
+  "gateway_spent",
   "note"
  ],
  "fields": [
   {
-   "fieldname": "kind",
-   "fieldtype": "Select",
+   "description": "The drain record the two figures came from.",
+   "fieldname": "usage_record",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Kind",
-   "options": "Price Drift\nBalance Mismatch\nCounter Reset\nOverspend\nLedger Drift",
-   "reqd": 1
+   "label": "Usage Record",
+   "options": "Usage Record",
+   "read_only": 1
   },
   {
    "fieldname": "grove_user",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Grove User",
-   "options": "Grove User"
+   "options": "Grove User",
+   "read_only": 1
   },
   {
    "fieldname": "api_key",
    "fieldtype": "Link",
    "label": "API Key",
-   "options": "Grove API Key"
+   "options": "Grove API Key",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pricing",
+   "fieldtype": "Link",
+   "label": "Pricing",
+   "options": "Model Pricing",
+   "read_only": 1
   },
   {
    "fieldname": "model",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Model",
-   "options": "Model"
-  },
-  {
-   "fieldname": "counter",
-   "fieldtype": "Select",
-   "label": "Counter",
-   "options": "\ninput_tokens\ncached_tokens\ncache_write_tokens\ncache_write_1h_tokens\ncompletion_tokens\naudio_seconds\nrequest_count"
+   "options": "Model",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_where",
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "gateway",
-   "fieldtype": "Link",
-   "label": "Gateway",
-   "options": "Gateway Server"
-  },
-  {
-   "fieldname": "redis",
-   "fieldtype": "Data",
-   "label": "Redis"
-  },
-  {
    "default": "0",
    "fieldname": "resolved",
    "fieldtype": "Check",
    "in_list_view": 1,
-   "label": "Resolved"
+   "label": "Resolved",
+   "read_only": 1
+  },
+  {
+   "fieldname": "resolution",
+   "fieldtype": "Select",
+   "label": "Resolution",
+   "options": "\nGrove corrected\nGateway corrected",
+   "read_only": 1
   },
   {
    "fieldname": "section_values",
@@ -83,32 +88,67 @@
    "label": "Values"
   },
   {
+   "description": "What the gateway charged at this pricing.",
    "fieldname": "gateway_value",
    "fieldtype": "Currency",
-   "label": "Gateway Value (USD)",
-   "precision": "9"
+   "label": "Gateway Cost",
+   "precision": "9",
+   "read_only": 1
   },
   {
-   "fieldname": "expected_value",
+   "description": "Grove's price of the same counters at the same pricing.",
+   "fieldname": "grove_value",
    "fieldtype": "Currency",
-   "label": "Expected Value (USD)",
-   "precision": "9"
+   "label": "Grove Cost",
+   "precision": "9",
+   "read_only": 1
   },
   {
+   "description": "Gateway minus Grove.",
    "fieldname": "delta",
    "fieldtype": "Currency",
    "in_list_view": 1,
-   "label": "Delta (USD)",
-   "precision": "6"
+   "label": "Delta",
+   "precision": "9",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_fix",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "What the resolving side's spend moved by.",
+   "fieldname": "correction",
+   "fieldtype": "Currency",
+   "label": "Correction",
+   "precision": "9",
+   "read_only": 1
+  },
+  {
+   "description": "The gateway's spend counter for the user after a gateway correction.",
+   "fieldname": "gateway_spent",
+   "fieldtype": "Currency",
+   "label": "Gateway Spent After",
+   "precision": "9",
+   "read_only": 1
   },
   {
    "fieldname": "note",
    "fieldtype": "Small Text",
    "label": "Note"
+  },
+  {
+   "description": "The store drained; a gateway correction goes to its writers.",
+   "fieldname": "gateway_store",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Gateway Store",
+   "options": "Gateway Store",
+   "read_only": 1
   }
  ],
  "links": [],
- "modified": "2026-09-23 17:00:00.000000",
+ "modified": "2026-09-28 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Credit Discrepancy",
