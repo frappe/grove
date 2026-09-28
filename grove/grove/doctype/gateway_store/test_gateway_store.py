@@ -3,6 +3,9 @@
 """One store per Network, and what a gateway is told about it. Pure: frappe's data calls are
 stubbed, so no site."""
 
+import base64
+import os
+import tempfile
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -10,8 +13,11 @@ from unittest.mock import patch
 
 import frappe
 
+from grove import failure
+from grove.grove.doctype.compile_cache import compile_cache
 from grove.grove.doctype.gateway_server.gateway_server import GatewayServer
-from grove.grove.doctype.gateway_store.gateway_store import GatewayStore, backup_all, backup_uri
+from grove.grove.doctype.gateway_store import gateway_store
+from grove.grove.doctype.gateway_store.gateway_store import GatewayStore, backup_all, backup_key, landed_since
 
 
 class Refused(Exception):
@@ -107,57 +113,128 @@ class TestWhatAGatewayIsGiven(unittest.TestCase):
 			self.network_store({"Mumbai": [("store1", "Active")]}, network=None)
 
 
+RDB = b"REDIS0010\xfa\tredis-ver\x067.0.15\xff"
+
+
+class FakeS3:
+	"""Records puts; a download writes the bytes it was given."""
+
+	def __init__(self, body=RDB):
+		self.puts, self.body = [], body
+
+	def put_object(self, Bucket, Key, Body):
+		self.puts.append((Bucket, Key, Body))
+
+	def download_file(self, bucket, key, path):
+		with open(path, "wb") as f:
+			f.write(self.body)
+
+
 class TestBackup(unittest.TestCase):
-	"""One RDB per store per hour into the weights bucket, and nothing until the bucket exists."""
+	"""One RDB per store every 5 minutes into the weights bucket, the doc pointing at the newest."""
 
-	def test_a_backup_lands_per_store_stamped_in_utc(self):
-		at = datetime(2026, 9, 25, 3, 0, tzinfo=timezone.utc)
-		self.assertEqual(
-			backup_uri("s3://b", "store1", at), "s3://b/gateway-store/store1/20260925T030000Z.rdb"
-		)
+	def test_a_backup_key_is_per_store_and_stamped_like_a_drain_id(self):
+		at = datetime(2026, 9, 28, 3, 0, tzinfo=timezone.utc)
+		self.assertEqual(backup_key("store1", at), "gateway-store/store1/20260928T030000Z.rdb")
 
-	def backup_all(self, env, stores):
-		enqueued = []
+	def backup(self, answer):
+		s3, written, argv = FakeS3(), {}, []
+		machine = SimpleNamespace(run_command=lambda command, timeout: argv.append(command) or answer)
+		store = SimpleNamespace(name="store1", doctype="Gateway Store", machine="m1")
+		with (
+			patch.object(frappe, "get_doc", return_value=machine),
+			patch.object(frappe, "db", SimpleNamespace(set_value=lambda dt, dn, values: written.update(values))),
+			patch.object(frappe, "throw", side_effect=Refused),
+			patch.object(frappe.utils, "now_datetime", lambda: datetime(2026, 9, 28, 3, 0)),
+			patch.object(compile_cache, "bucket_and_client", return_value=("b", s3)),
+		):
+			key = GatewayStore.backup(store)
+		return key, s3, written, argv
+
+	def test_a_backup_uploads_what_the_box_returned_and_points_the_doc_at_it(self):
+		# The doc carries no get_password: the box reads its own conf, grove never puts it in argv.
+		key, s3, written, argv = self.backup("Warning: Permanently added 'x' to known hosts.\n" + base64.b64encode(RDB).decode())
+		self.assertEqual(s3.puts, [("b", key, RDB)])
+		self.assertTrue(key.startswith("gateway-store/store1/"))
+		self.assertEqual(written["last_backup_key"], key)
+		self.assertIn("last_backup_at", written)
+		self.assertEqual(argv[0][:2], ["sh", "-c"])
+
+	def test_a_backup_refuses_bytes_without_the_rdb_magic(self):
+		# NOAUTH, a dead box or an empty answer: nothing is uploaded and nothing is recorded.
+		for answer in ("NOAUTH Authentication required.", "", "not base64!"):
+			with self.assertRaises(Refused):
+				self.backup(answer)
+
+	def backup_all(self, env, stores, failing=()):
+		backed, reported = [], []
+		docs = {name: SimpleNamespace(backup=(lambda n=name: (_ for _ in ()).throw(RuntimeError(n))) if name in failing else (lambda n=name: backed.append(n))) for name in stores}
 		with (
 			patch.object(frappe, "get_single", return_value=SimpleNamespace(weights_s3_write_environment=env)),
 			patch.object(frappe, "get_all", return_value=stores),
-			patch.object(frappe, "enqueue_doc", side_effect=lambda *a, **k: enqueued.append(a)),
+			patch.object(frappe, "get_doc", side_effect=lambda dt, name: docs[name]),
+			patch.object(frappe, "db", SimpleNamespace(commit=lambda: None, rollback=lambda: None)),
+			patch.object(frappe, "log_error", lambda *a, **k: None),
+			patch.object(failure, "report", lambda *a, **k: reported.append(a[1])),
 		):
 			backup_all()
-		return enqueued
+		return backed, reported
 
 	def test_backup_all_is_off_until_the_bucket_is_configured(self):
-		self.assertEqual(self.backup_all({}, ["store1"]), [])
+		self.assertEqual(self.backup_all({}, ["store1"]), ([], []))
 
-	def test_backup_all_enqueues_one_job_per_active_store(self):
-		self.assertEqual(
-			self.backup_all({"AWS_ACCESS_KEY_ID": "k"}, ["store1", "store2"]),
-			[("Gateway Store", "store1", "backup"), ("Gateway Store", "store2", "backup")],
-		)
+	def test_backup_all_survives_one_failing_store(self):
+		backed, reported = self.backup_all({"AWS_ACCESS_KEY_ID": "k"}, ["store1", "store2"], failing={"store1"})
+		self.assertEqual((backed, reported), (["store2"], ["store1"]))
 
-	def test_a_failed_play_fails_the_job(self):
-		# The Play doc already reported; the job must still fail, or an hour's miss is only a row.
-		plays = []
-		store = SimpleNamespace(
-			name="store1",
-			doctype="Gateway Store",
-			get_password=lambda field: "pw",
-			run_playbook=lambda playbook, **kwargs: plays.append((playbook, kwargs)) or ("play-1", 2),
-		)
-		settings = SimpleNamespace(weights_bucket="s3://b", weights_s3_write_environment={"AWS_ACCESS_KEY_ID": "k"})
+
+class TestRestore(unittest.TestCase):
+	"""A store's latest backup loaded onto a box; counters a later drain billed are dropped."""
+
+	def test_landed_since_names_the_prefixes_a_later_drain_billed(self):
+		calls = []
+		with patch.object(frappe, "get_all", side_effect=lambda *a, **k: calls.append((a, k)) or ["k1"]):
+			self.assertEqual(landed_since("store1", "gateway-store/store1/20260928T100000Z.rdb"), ["k1"])
+		self.assertEqual(calls[0][1]["filters"], {"redis": "store1", "drain_id": (">", "20260928T100000Z")})
+
+	def test_a_drain_id_orders_against_the_stamp_as_a_string(self):
+		# Same format on both sides, so the SQL comparison is plain; a blank id never matches.
+		stamp = "20260928T100000Z"
+		self.assertGreater("20260928T100001Z-1a2b3c4d", stamp)
+		self.assertLess("20260928T095959Z-1a2b3c4d", stamp)
+		self.assertLess("", stamp)
+
+	def test_restore_refuses_a_source_with_no_backup(self):
+		store = SimpleNamespace(name="store2", doctype="Gateway Store")
 		with (
-			patch.object(frappe, "get_single", return_value=settings),
+			patch.object(frappe, "db", SimpleNamespace(get_value=lambda *a: None)),
+			patch.object(frappe, "throw", side_effect=Refused),
+			self.assertRaises(Refused),
+		):
+			GatewayStore.restore(store, source="store1")
+
+	def test_restore_from_ships_the_landed_prefixes_and_fails_on_a_bad_play(self):
+		plays, site = [], tempfile.mkdtemp()
+		self.addCleanup(lambda: __import__("shutil").rmtree(site, True))
+		store = SimpleNamespace(
+			name="store2", doctype="Gateway Store", get_password=lambda field: "pw", backup=lambda: "insurance",
+			run_playbook=lambda playbook, **kwargs: plays.append((playbook, kwargs, os.path.exists(kwargs["extravars"]["restore_file"]))) or ("play-1", 2),
+		)
+		with (
+			patch.object(compile_cache, "bucket_and_client", return_value=("b", FakeS3())),
+			patch.object(frappe, "get_site_path", lambda *parts: os.path.join(site, *parts)),
+			patch.object(gateway_store, "landed_since", lambda store, key: ["k1"]),
 			patch.object(frappe, "local", SimpleNamespace(grove_failure_reported=True)),
 			patch.object(frappe, "throw", side_effect=Refused),
 			self.assertRaises(Refused),
 		):
-			GatewayStore.backup(store)
-		playbook, kwargs = plays[0]
-		self.assertEqual(playbook, "backup.yml")
-		extravars = kwargs["extravars"]
-		self.assertEqual(extravars["redis_password"], "pw")
-		self.assertTrue(extravars["backup_uri"].startswith("s3://b/gateway-store/store1/"))
-		self.assertEqual(extravars["backup_env"], {"AWS_ACCESS_KEY_ID": "k"})
+			GatewayStore.restore_from(store, "store1", "gateway-store/store1/20260928T100000Z.rdb")
+		playbook, kwargs, file_was_there = plays[0]
+		self.assertEqual(playbook, "restore.yml")
+		self.assertEqual(kwargs["extravars"]["drop_prefixes"], ["k1"])
+		self.assertEqual(kwargs["extravars"]["redis_password"], "pw")
+		self.assertTrue(file_was_there)
+		self.assertFalse(os.path.exists(kwargs["extravars"]["restore_file"]))
 
 
 if __name__ == "__main__":

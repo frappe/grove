@@ -14,7 +14,10 @@
   "geography",
   "column_break_redis",
   "redis_password",
-  "frappe_public_key"
+  "frappe_public_key",
+  "section_backup",
+  "last_backup_at",
+  "last_backup_key"
  ],
  "fields": [
   {
@@ -42,7 +45,7 @@
    "read_only": 1
   },
   {
-   "description": "From the Machine, as of this doc's last save. Where the gateways dial and Redis binds \u2014 both read the Machine live.",
+   "description": "From the Machine, as of this doc's last save. Where the gateways dial and Redis binds — both read the Machine live.",
    "fetch_from": "machine.private_ip",
    "fieldname": "private_ip",
    "fieldtype": "Data",
@@ -97,10 +100,28 @@
    "fieldtype": "Password",
    "label": "Redis Password",
    "read_only": 1
+  },
+  {
+   "fieldname": "section_backup",
+   "fieldtype": "Section Break",
+   "label": "Backup"
+  },
+  {
+   "fieldname": "last_backup_at",
+   "fieldtype": "Datetime",
+   "label": "Last Backup At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_backup_key",
+   "fieldtype": "Data",
+   "label": "Last Backup Key",
+   "read_only": 1,
+   "description": "Object in the weights bucket. Restore uses a store's latest — this one's, or the Terminated store this box replaces."
   }
  ],
  "links": [],
- "modified": "2026-09-22 15:11:46.597319",
+ "modified": "2026-09-28 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Gateway Store",

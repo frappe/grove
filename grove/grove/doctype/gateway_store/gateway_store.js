@@ -13,5 +13,21 @@ frappe.ui.form.on('Gateway Store', {
 				);
 			}, __('Danger'));
 		}
+		if (frm.doc.status === 'Active') {
+			frm.add_custom_button(__('Restore'), () => {
+				frappe.prompt(
+					{
+						fieldname: 'source', fieldtype: 'Link', options: 'Gateway Store', label: __('Backup of'),
+						default: frm.doc.name, reqd: 1,
+						description: __('Itself, or the Terminated store this box replaces. Only for a store whose disk is gone — a surviving AOF already holds everything.'),
+					},
+					({ source }) => frappe.confirm(
+						__('Replace everything in {0}\'s Redis with {1}\'s latest backup? Writes fail for a few seconds while it loads. The current state is uploaded first.', [frm.doc.name, source]),
+						() => frm.call('restore', { source }).then(() => frm.reload_doc()),
+					),
+					__('Restore'),
+				);
+			}, __('Danger'));
+		}
 	},
 });

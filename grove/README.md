@@ -228,9 +228,9 @@ only.
 | `*/1` | `pathway.projection.sync_projection` | hash-gated: pushes each box only what it does not already hold; a fleet in sync logs nothing |
 | `*/1` | `pathway.usage.pull_all` | drain is delete-on-read, so it is **1-shot, never retried**; a store is drained once, through its first writer that answers ("drained via"); each touched user is then priced and settled |
 | `*/2` | `cloud_provider.reconcile.sync_all` | the provider owns whether a pod is up; this closes the drift |
+| `*/5` | `gateway_store.backup_all` | one `redis-cli --rdb` snapshot per Active store, over SSH, into the weights bucket under `gateway-store/<store>/<utc stamp>.rdb`, the doc's Last Backup Key pointing at it; usage leaves a store only on the hourly pull, so this is what a lost disk costs: 5 minutes. Off until the bucket and Mirror keys are set; prune with a bucket lifecycle rule |
 | hourly | `tls.renew_fleet_certificate`, `cloud_provider.schedule.run_due_pods` | |
 | hourly | `lost_usage.replay_pending` | every pending Lost Usage row landed through the normal pull path on the day it was drained; one that fails again stays pending with its error |
-| hourly | `gateway_store.backup_all` | one `redis-cli --rdb` snapshot per Active store into the weights bucket under `gateway-store/<store>/<utc stamp>.rdb`; off until the bucket and Mirror keys are set; prune with a bucket lifecycle rule |
 | daily | `pricing.verify_balances` | every prepaid `spent` rebuilt from the day rows; drift beyond 1 µUSD a request is a Ledger Drift row, the join wins either way |
 
 Nothing else pushes. A doctype hook, a provision and a pod lifecycle all just write state; the

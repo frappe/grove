@@ -29,6 +29,10 @@ scheduler_events = {
 		"*/2 * * * *": [
 			"grove.cloud_provider.reconcile.sync_all",
 		],
+		"*/5 * * * *": [
+			# One RDB per Active store into the weights bucket, over SSH; off until the Mirror keys are set.
+			"grove.grove.doctype.gateway_store.gateway_store.backup_all",
+		],
 	},
     "hourly_long": [
 		# Only when certbot says it is due, and pushed only if the certificate changed.
@@ -36,8 +40,6 @@ scheduler_events = {
 		"grove.cloud_provider.schedule.run_due_pods",
 		# Usage a gateway deleted that a pull could not record, landed on the day it was drained.
 		"grove.grove.doctype.lost_usage.lost_usage.replay_pending",
-		# One RDB per Active store into the weights bucket; off until the Mirror keys are set.
-		"grove.grove.doctype.gateway_store.gateway_store.backup_all",
 	],
 	"daily_long": [
 		# Every prepaid balance re-priced from the day rows; drift is logged, the join wins.

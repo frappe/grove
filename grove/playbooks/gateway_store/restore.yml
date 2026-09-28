@@ -1,0 +1,118 @@
+---
+# Load one RDB into the live store without a restart: a side redis-server reads it, the live one
+# REPLICAOFs that for a few seconds and rewrites its own AOF from what it got, then is a master
+# again. Counters a later drain already billed, and everything transient, are dropped afterwards.
+# Only for a store whose disk is gone — an AOF that survived already holds everything.
+#
+# extra-vars: restore_file (a path on the control node; copied here), redis_password,
+# drop_prefixes (API-key prefixes whose usage:<prefix> a later drain landed).
+#
+# The side server has no password, so REDISCLI_AUTH is set per task, on the live store's only:
+# redis-cli sends AUTH whenever the variable exists, and a server without a password refuses it.
+- hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    restore_dir: /var/lib/redis/restore
+    side_port: 6380
+    live_env:
+      REDISCLI_AUTH: "{{ redis_password }}"
+    transient_patterns: ["inflight:*", "health:*", "sticky:*"]
+
+  pre_tasks:
+    - name: refuse to run without a snapshot and a password
+      ansible.builtin.assert:
+        that:
+          - restore_file | default('') | trim | length > 0
+          - redis_password | default('') | trim | length > 0
+        fail_msg: restore_file and redis_password are required — run from the Gateway Store's Restore button.
+
+  tasks:
+    - name: a private dir for the side server
+      ansible.builtin.file:
+        path: "{{ restore_dir }}"
+        state: directory
+        owner: redis
+        group: redis
+        mode: "0700"
+
+    - name: ship the snapshot
+      ansible.builtin.copy:
+        src: "{{ restore_file }}"
+        dest: "{{ restore_dir }}/dump.rdb"
+        owner: redis
+        group: redis
+        mode: "0600"
+
+    - block:
+        - name: start the side server on the snapshot
+          ansible.builtin.command: >-
+            redis-server --port {{ side_port }} --bind 127.0.0.1 --dir {{ restore_dir }}
+            --dbfilename dump.rdb --appendonly no --save "" --daemonize yes
+            --pidfile {{ restore_dir }}/redis.pid --logfile {{ restore_dir }}/redis.log
+          become_user: redis
+
+        - name: the side server has the snapshot loaded, and it is not empty
+          ansible.builtin.shell: |
+            set -eu
+            redis-cli -p {{ side_port }} info persistence | tr -d '\r' | grep -q '^loading:0'
+            test "$(redis-cli -p {{ side_port }} dbsize)" -gt 0
+          register: side_ready
+          until: side_ready.rc == 0
+          retries: 15
+          delay: 2
+
+        - name: the live store takes the snapshot from the side server
+          ansible.builtin.command: redis-cli REPLICAOF 127.0.0.1 {{ side_port }}
+          environment: "{{ live_env }}"
+
+        - name: wait for the full sync
+          ansible.builtin.shell: |
+            set -eu
+            repl=$(redis-cli info replication | tr -d '\r')
+            echo "$repl" | grep -q '^master_link_status:up'
+            echo "$repl" | grep -q '^master_sync_in_progress:0'
+          environment: "{{ live_env }}"
+          register: synced
+          until: synced.rc == 0
+          retries: 30
+          delay: 2
+
+        - name: the live store is a master again
+          ansible.builtin.command: redis-cli REPLICAOF NO ONE
+          environment: "{{ live_env }}"
+
+        - name: drop live counters a later drain already billed
+          ansible.builtin.command: redis-cli DEL usage:{{ item }}
+          loop: "{{ drop_prefixes | default([]) }}"
+          environment: "{{ live_env }}"
+
+        - name: drop transient state — never worth restoring
+          ansible.builtin.shell: redis-cli --scan --pattern '{{ item }}' | xargs -r redis-cli DEL
+          loop: "{{ transient_patterns }}"
+          environment: "{{ live_env }}"
+
+        - name: forget the snapshot's projection hashes so the next tick pushes everything
+          ansible.builtin.command: redis-cli DEL grove:state_hash
+          environment: "{{ live_env }}"
+
+      always:
+        # Whatever failed above, the live store must not stay a replica of a server about to die.
+        - name: the live store is a master, whatever happened
+          ansible.builtin.command: redis-cli REPLICAOF NO ONE
+          environment: "{{ live_env }}"
+
+        - name: stop the side server
+          ansible.builtin.command: redis-cli -p {{ side_port }} SHUTDOWN NOSAVE
+          failed_when: false
+
+        - name: the side server is gone
+          ansible.builtin.wait_for:
+            path: "{{ restore_dir }}/redis.pid"
+            state: absent
+            timeout: 30
+
+        - name: remove the snapshot copy
+          ansible.builtin.file:
+            path: "{{ restore_dir }}"
+            state: absent
