@@ -21,10 +21,9 @@ scheduler_events = {
 	"cron": {
         # every minute
 		"*/1 * * * *": [
-			# Ahead of the push, so the same minute's routes carry a pricing that fired today.
+			# Ahead of the push; the gateways already switched at Activates At on their own.
 			"grove.grove.doctype.model_pricing.model_pricing.enable_due",
             "grove.pathway.projection.sync_projection",
-			"grove.pathway.usage.pull_all",
         ],
 		"*/2 * * * *": [
 			"grove.cloud_provider.reconcile.sync_all",
@@ -35,15 +34,11 @@ scheduler_events = {
 		],
 	},
     "hourly_long": [
+		# Drains every store; a drain is re-sent until acknowledged, so a failed pull loses nothing.
+		"grove.pathway.usage.pull_all",
 		# Only when certbot says it is due, and pushed only if the certificate changed.
 		"grove.tls.renew_fleet_certificate",
 		"grove.cloud_provider.schedule.run_due_pods",
-		# Usage a gateway deleted that a pull could not record, landed on the day it was drained.
-		"grove.grove.doctype.lost_usage.lost_usage.replay_pending",
-	],
-	"daily_long": [
-		# Every prepaid balance re-priced from the day rows; drift is logged, the join wins.
-		"grove.pricing.verify_balances",
 	],
 }
 
@@ -53,5 +48,5 @@ require_type_annotated_api_methods = True
 default_log_clearing_doctypes = {
 	"Pathway Sync": 60,
 	"Pod Activity": 60,
-	"Lost Usage": 90,
+	"Stuck Usage": 90,
 }

@@ -15,6 +15,7 @@ ALLOWED_ROLES = [CONTROL_ROLE]
 USAGE_FIELDS = ("prompt_tokens", "completion_tokens", "cached_tokens")
 # What a caller sees as prompt tokens: every prompt-side counter, cached or written or plain.
 PROMPT_COUNTERS = ("input_tokens", "cached_tokens", "cache_write_tokens", "cache_write_1h_tokens")
+TOKEN_COUNTERS = (*PROMPT_COUNTERS, "completion_tokens")
 
 
 @frappe.whitelist()
@@ -59,7 +60,8 @@ def add_credit(email: str, amount: float, note: str = None):
 @frappe.whitelist()
 def balance(email: str):
 	"""What the user behind `email` has left: Σ ledger − usage priced so far, as of the last pull
-	(at most a minute of undrained usage behind the gateways). A free user is priced, never gated."""
+	(up to an hour behind the gateways; `pull_usage` first for a fresh figure). A free user is
+	never charged and never gated: their `spent` does not move."""
 	frappe.only_for(ALLOWED_ROLES)
 	from grove.pricing import credit_summary
 
@@ -75,6 +77,20 @@ def balance(email: str):
 		"free": bool(flags.free),
 		"credit_exhausted": bool(flags.credit_exhausted),
 	}
+
+
+@frappe.whitelist()
+def pull_usage(email: str | None = None):
+	"""Drain now instead of at the next hourly pull, waiting for one in flight: every gateway, or
+	only the keys of the user behind `email` from every store — for a fresh `balance`. → the
+	Pathway Sync that logged it, or None when there was nothing to drain."""
+	frappe.only_for(ALLOWED_ROLES)
+	from grove.pathway.usage import pull_all
+
+	grove_user = None
+	if email and not (grove_user := for_email(email)):
+		frappe.throw(f"No Grove User for {email!r}.")
+	return {"sync": pull_all(trigger="Manual", wait=60, user=grove_user)}
 
 
 @frappe.whitelist()
@@ -125,35 +141,67 @@ def create_control_client_key():
 	return {"api_key": control_user.api_key, "api_secret": api_secret, "user": control_user.name}
 
 @frappe.whitelist()
-def usage(users: list[str] | str, month: str = None):
-	"""Tokens per user and per model for `month` (YYYY-MM, UTC), summed over its day records."""
+def usage(
+	users: list[str] | str, from_date: str | None = None, to_date: str | None = None,
+	period: str | None = None, month: str | None = None,
+):
+	"""Tokens and cost per user and per model over a UTC date range: `from_date`/`to_date`, a
+	`period` (Today, Yesterday, Last 7 Days, Last 30 Days, This Month, Last Month) or a `month`
+	(YYYY-MM); This Month when none is given. Summed by the database in one grouped query. `cost`
+	is what was charged, so usage while the user was Free adds tokens and no cost. `as_of` is when
+	the newest usage in the range was pulled, in UTC."""
 	frappe.only_for(ALLOWED_ROLES)
-	from frappe.utils import get_first_day, get_last_day
+	from grove.grove.doctype.usage_record.usage_record import usage_table
+	from grove.pathway.routes import utc_timestamp
 
-	month = month or utc_today().strftime("%Y-%m")
-	first = get_first_day(f"{month}-01")
 	if isinstance(users, str):
 		users = [users]
-
+	from_date, to_date = usage_window(from_date, to_date, period, month)
 	# In and out by email; the records themselves are keyed by Grove User.
-	emails = dict(
-		frappe.get_list("Grove User", {"user": ("in", users)}, ["name", "user"], as_list=True)
-	)
-	records = frappe.get_list(
-		"Usage Record",
-		filters={"user": ["in", list(emails)], "day": ["between", [first, get_last_day(first)]]},
-		fields=["name", "user"],
-	)
-	counter_rows = frappe.get_list(
-		"Usage Counter Row",
-		filters={"parenttype": "Usage Record", "parent": ("in", [r.name for r in records])},
-		fields=["parent", "model", "counter", "amount"],
-		parent_doctype="Usage Record",
-	) if records else []
-	email_of = {r.name: emails[r.user] for r in records}
-	usage = _totals_by_user(counter_rows, email_of)
-	model_summary = _totals_by_model(_token_rows(counter_rows), USAGE_FIELDS)
-	return {"users": users, "month": month, "model_summary": model_summary, **usage}
+	emails = dict(frappe.get_list("Grove User", {"user": ("in", users)}, ["name", "user"], as_list=True))
+	rows = frappe.db.sql(
+		f"""select r.user, u.model, {", ".join(f"sum(u.{c}) as {c}" for c in TOKEN_COUNTERS)},
+		sum(if(r.billed, u.grove_cost, 0)) as cost, max(r.creation) as as_of
+		from `tabUsage Record` r, {usage_table()}
+		where r.user in %(users)s and r.day between %(from_date)s and %(to_date)s
+		group by r.user, u.model""",
+		{"users": list(emails) or [""], "from_date": from_date, "to_date": to_date},
+		as_dict=True,
+	) if emails else []
+	per_model = [{**_token_totals(row), "model": row.model, "user": row.user} for row in rows]
+	totals = {email: dict.fromkeys(USAGE_FIELDS, 0) | {"cost": 0.0} for email in emails.values()}
+	for row in per_model:
+		for field in (*USAGE_FIELDS, "cost"):
+			totals[emails[row["user"]]][field] += row[field]
+	return {
+		"users": users, "from_date": str(from_date), "to_date": str(to_date),
+		"as_of": utc_timestamp(max(row.as_of for row in rows)) if rows else None,
+		"model_summary": _totals_by_model(per_model, (*USAGE_FIELDS, "cost")), **totals,
+	}
+
+
+def usage_window(from_date, to_date, period, month):
+	"""(first day, last day) in UTC for whichever way the range was asked."""
+	from frappe.utils import add_days, add_months, get_first_day, get_last_day, getdate
+
+	today = utc_today()
+	if from_date or to_date:
+		return getdate(from_date or to_date), getdate(to_date or from_date)
+	if month:
+		first = get_first_day(f"{month}-01")
+		return first, get_last_day(first)
+	last_month = add_months(get_first_day(today), -1)
+	windows = {
+		"Today": (today, today),
+		"Yesterday": (add_days(today, -1), add_days(today, -1)),
+		"Last 7 Days": (add_days(today, -6), today),
+		"Last 30 Days": (add_days(today, -29), today),
+		"This Month": (get_first_day(today), today),
+		"Last Month": (last_month, get_last_day(last_month)),
+	}
+	if (period or "This Month") not in windows:
+		frappe.throw(f"Unknown period {period!r}: one of {', '.join(windows)}.")
+	return windows[period or "This Month"]
 
 
 @frappe.whitelist()
@@ -203,32 +251,15 @@ def _set_policy(email, full_name, models, geography=None, free=False):
 	return doc.name
 
 
-def _token_rows(counter_rows):
-	"""Counter rows re-shaped as the token columns the report has always returned, one row per
-	model: prompt is every prompt-side counter, cached and completion their own."""
-	rows = {}
-	for row in counter_rows:
-		totals = rows.setdefault(row["model"], {"model": row["model"], **dict.fromkeys(USAGE_FIELDS, 0)})
-		amount = row.get("amount") or 0
-		if row["counter"] in PROMPT_COUNTERS:
-			totals["prompt_tokens"] += amount
-		if row["counter"] in ("cached_tokens", "completion_tokens"):
-			totals[row["counter"]] += amount
-	return list(rows.values())
-
-
-def _totals_by_user(counter_rows, email_of):
-	"""{email: token totals} — every user with a record that month, zeros if their rows are empty.
-	A user holds several keys and a record a day, so rows accumulate rather than overwrite."""
-	by_user = {}
-	for row in counter_rows:
-		by_user.setdefault(email_of[row["parent"]], []).append(row)
-	usage = {email: dict.fromkeys(USAGE_FIELDS, 0) for email in email_of.values()}
-	for email, rows in by_user.items():
-		for model_row in _token_rows(rows):
-			for f in USAGE_FIELDS:
-				usage[email][f] += model_row[f]
-	return usage
+def _token_totals(row):
+	"""One grouped row as the token columns the endpoint has always returned: prompt is every
+	prompt-side counter, cached and completion their own."""
+	return {
+		"prompt_tokens": sum(int(row.get(c) or 0) for c in PROMPT_COUNTERS),
+		"cached_tokens": int(row.get("cached_tokens") or 0),
+		"completion_tokens": int(row.get("completion_tokens") or 0),
+		"cost": float(row.get("cost") or 0),
+	}
 
 
 def _totals_by_model(rows, fields):

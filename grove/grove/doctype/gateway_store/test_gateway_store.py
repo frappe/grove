@@ -195,7 +195,10 @@ class TestRestore(unittest.TestCase):
 		calls = []
 		with patch.object(frappe, "get_all", side_effect=lambda *a, **k: calls.append((a, k)) or ["k1"]):
 			self.assertEqual(landed_since("store1", "gateway-store/store1/20260928T100000Z.rdb"), ["k1"])
-		self.assertEqual(calls[0][1]["filters"], {"redis": "store1", "drain_id": (">", "20260928T100000Z")})
+		self.assertEqual(
+			calls[0][1]["filters"],
+			[["gateway_store", "=", "store1"], ["drain_id", ">", "20260928T100000Z"], ["drain_id", "not like", "dead:%"]],
+		)
 
 	def test_a_drain_id_orders_against_the_stamp_as_a_string(self):
 		# Same format on both sides, so the SQL comparison is plain; a blank id never matches.

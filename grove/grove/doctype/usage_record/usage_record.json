@@ -8,10 +8,18 @@
   "api_key",
   "user",
   "day",
-  "section_counters",
-  "counter_usage",
-  "section_gw",
-  "gateway_usage"
+  "column_break_drain",
+  "gateway_store",
+  "drain_id",
+  "section_totals",
+  "billed",
+  "request_count",
+  "column_break_avch",
+  "gateway_cost",
+  "cost",
+  "section_models",
+  "usage_table",
+  "usage"
  ],
  "fields": [
   {
@@ -20,18 +28,17 @@
    "in_list_view": 1,
    "label": "API Key",
    "options": "Grove API Key",
-   "reqd": 1,
-   "search_index": 1
+   "reqd": 1
   },
   {
    "fieldname": "user",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "User",
-   "options": "Grove User",
-   "search_index": 1
+   "options": "Grove User"
   },
   {
+   "description": "The UTC day it was pulled.",
    "fieldname": "day",
    "fieldtype": "Date",
    "in_list_view": 1,
@@ -40,29 +47,88 @@
    "search_index": 1
   },
   {
-   "fieldname": "section_counters",
+   "fieldname": "column_break_drain",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The store drained. A key used in several geographies gets a record per store per drain.",
+   "fieldname": "gateway_store",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Gateway Store",
+   "options": "Gateway Store"
+  },
+  {
+   "description": "The gateway's id for the drain. One record per key per drain; a re-sent drain lands nothing twice. Blank on records from before drains were acknowledged.",
+   "fieldname": "drain_id",
+   "fieldtype": "Data",
+   "label": "Drain",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_totals",
    "fieldtype": "Section Break"
   },
   {
-   "description": "One row per (model, counter) this day \u2014 the quantities the rate tables price.",
-   "fieldname": "counter_usage",
-   "fieldtype": "Table",
-   "label": "Counter Usage",
-   "options": "Usage Counter Row"
+   "fieldname": "request_count",
+   "fieldtype": "Int",
+   "label": "Requests",
+   "read_only": 1
   },
   {
-   "fieldname": "section_gw",
+   "description": "Grove's price of this key's usage in this drain, at every pricing the gateway charged. Charged to the user only when Billed.",
+   "fieldname": "cost",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Cost (USD)",
+   "precision": "9",
+   "read_only": 1
+  },
+  {
+   "description": "What the gateway charged for the same requests.",
+   "fieldname": "gateway_cost",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Gateway Cost (USD)",
+   "precision": "9",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_models",
    "fieldtype": "Section Break"
   },
   {
-   "fieldname": "gateway_usage",
-   "fieldtype": "Table",
-   "label": "Store Usage",
-   "options": "Usage Gateway Row"
+   "fieldname": "usage_table",
+   "fieldtype": "HTML",
+   "label": "Usage"
+  },
+  {
+   "description": "One entry per model: pricing, requests, counters, gateway and Grove cost. Rendered above.",
+   "fieldname": "usage",
+   "fieldtype": "JSON",
+   "hidden": 1,
+   "label": "Usage JSON",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Whether this usage was charged: the user was not Free when it landed. Only billed records move the user's Spent and count as revenue; an unbilled one still shows what the usage would have cost.",
+   "fieldname": "billed",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Billed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_avch",
+   "fieldtype": "Column Break"
   }
  ],
+ "in_create": 1,
  "links": [],
- "modified": "2026-09-23 17:00:00.000000",
+ "modified": "2026-09-28 20:03:09.749496",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Usage Record",

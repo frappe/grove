@@ -146,6 +146,13 @@ class GatewayServer(PathwayHost, Document):
 		)
 		frappe.msgprint(f"Full sync queued for {self.name}.", alert=True)
 
+	@frappe.whitelist()
+	def pull_usage(self):
+		"""Button: drain this box's store now instead of at the next hourly pull (logged on a
+		Pathway Sync doc)."""
+		frappe.enqueue("grove.pathway.usage.pull_all", queue="short", gateways=[self.name], trigger="Manual", wait=60)
+		frappe.msgprint(f"Usage pull queued for {self.name}.", alert=True)
+
 	@property
 	def caller_reference(self):
 		"""Idempotency token for the health check. The creation stamp is in it so a name reused

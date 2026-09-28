@@ -1,0 +1,138 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-09-26 05:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "grove_user",
+  "gateway_store",
+  "dead_line",
+  "api_keys",
+  "column_break_1",
+  "resolved",
+  "resolved_on",
+  "first_failed",
+  "last_failed",
+  "attempts",
+  "section_error",
+  "last_error",
+  "last_payload"
+ ],
+ "fields": [
+  {
+   "description": "Blank for a dead line whose user cannot be read.",
+   "fieldname": "grove_user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Grove User",
+   "options": "Grove User",
+   "read_only": 1
+  },
+  {
+   "description": "The store holding it: the gateway re-sends these keys every pull until Grove records them.",
+   "fieldname": "gateway_store",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Gateway Store",
+   "options": "Gateway Store",
+   "read_only": 1
+  },
+  {
+   "description": "Set when this is one line the gateway could not replay into its store and Grove could not land either (unreadable, or a key Grove does not hold). The gateway has dropped it; this row holds it.",
+   "fieldname": "dead_line",
+   "fieldtype": "Data",
+   "label": "Dead Line",
+   "read_only": 1
+  },
+  {
+   "description": "The keys still waiting, comma separated.",
+   "fieldname": "api_keys",
+   "fieldtype": "Small Text",
+   "label": "API Keys",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Set by the pull when the user's usage on this store lands.",
+   "fieldname": "resolved",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Resolved",
+   "read_only": 1
+  },
+  {
+   "fieldname": "resolved_on",
+   "fieldtype": "Datetime",
+   "label": "Resolved On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "first_failed",
+   "fieldtype": "Datetime",
+   "label": "First Failed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_failed",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Last Failed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "attempts",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Attempts",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_error",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "last_error",
+   "fieldtype": "Code",
+   "label": "Last Error",
+   "read_only": 1
+  },
+  {
+   "description": "The hashes that last failed, for debugging. The gateway holds the usage itself.",
+   "fieldname": "last_payload",
+   "fieldtype": "JSON",
+   "label": "Last Payload",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-09-28 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Grove",
+ "name": "Stuck Usage",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

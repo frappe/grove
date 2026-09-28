@@ -52,6 +52,10 @@ frappe.ui.form.on('Gateway Server', {
 				__("Push every key, user, group and route to {0}'s store, whether or not it already holds them?", [frm.doc.name]),
 				'full_sync'), __('Gateway'));
 
+			frm.add_custom_button(__('Pull Usage'), () => grove.confirm_call(frm,
+				__("Drain {0}'s store now and bill what it holds?", [frm.doc.name]),
+				'pull_usage'), __('Gateway'));
+
 			const start = !frm.doc.is_in_maintenance;
 			frm.add_custom_button(start ? __('Start Maintenance') : __('End Maintenance'), () => {
 				frappe.confirm(

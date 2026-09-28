@@ -12,7 +12,7 @@ from pathlib import Path
 DOCTYPES = Path(__file__).resolve().parents[1] / "grove" / "doctype"
 PROTECTED = (
 	"Grove User", "Grove API Key", "Grove Credit", "Usage Record", "Gateway Spend", "Credit Discrepancy",
-	"Model Pricing", "Model", "Model Provider", "Lost Usage",
+	"Model Pricing", "Model", "Model Provider", "Stuck Usage",
 )
 
 

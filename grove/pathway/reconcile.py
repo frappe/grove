@@ -1,16 +1,21 @@
-"""What one drained Redis said about the money, checked against what Grove prices — every pull.
+"""One user's share of a drain, landed: the records, the bill, and the audit of the box's charge.
 
-Grove never bills from a gateway figure: the deltas are priced here at today's tables and
-`spent` moves by that. The box's own `cost`, `user_spent` and `user_balance` are audit inputs;
-where they disagree with the control plane a Credit Discrepancy row says so."""
+Grove bills its own price: each pricing the gateway tagged a request with is priced here at that
+pricing's rates, and `spent` moves by the sum. The gateway's own cost sits beside it; where the two
+differ beyond the gateway's truncation, a Credit Discrepancy says so.
+
+A Free user's usage is recorded and priced the same, but not billed: `spent` does not move and
+nothing is audited, since no money changed hands on either side."""
 
 from decimal import Decimal
 
 import frappe
 
 from grove.grove.doctype.credit_discrepancy.credit_discrepancy import record
-from grove.grove.doctype.gateway_spend.gateway_spend import spent_known, upsert
-from grove.pricing import NANO, settle, tolerance
+from grove.grove.doctype.gateway_spend.gateway_spend import record_spend
+from grove.pricing import COUNTERS, NANO, settle, tolerance
+
+NANO_USD = Decimal(1) / NANO
 
 
 def usd(nano_usd):
@@ -18,81 +23,91 @@ def usd(nano_usd):
 
 
 class Reconciler:
-	"""One per drained Redis: the price book, the day, and what that Redis had reported before."""
+	"""One per drain: the price book, the day, which store, under which drain id."""
 
-	def __init__(self, book, day, redis, gateway):
+	def __init__(self, book, day, gateway_store, drain_id):
 		self.book = book
 		self.day = day
-		self.redis = redis
-		self.gateway = gateway
-		self.known = spent_known(redis)
-		self.on_several_stores = set(
-			frappe.get_all("Gateway Spend", filters={"redis": ("!=", redis)}, pluck="grove_user", distinct=True)
-		)
+		self.gateway_store = gateway_store
+		self.drain_id = drain_id
 
 	def user(self, user, drains):
-		"""`drains`: the parsed hash of each of `user`'s keys in this drain. Prices them, moves
-		`spent`, audits the box's figures, then settles the verdict."""
-		priced = self.price(drains)
-		frappe.db.sql("update `tabGrove User` set spent = spent + %s where name = %s", [sum(priced.values(), Decimal(0)), user])
-		requests = sum(drain.requests for drain in drains)
-		reported = [drain.money for drain in drains if "user_spent" in drain.money]
-		if reported:
-			self.audit_prices(priced, drains, requests)
-			spent_new, balance = self.audit_counter(user, reported)
-		actual = settle(user)
-		if reported:
-			self.audit_balance(user, balance, actual, requests)
-			upsert(
-				user, self.redis, spent_known=usd(spent_new), balance_reported=usd(balance),
-				gateway=self.gateway, drained_at=frappe.utils.now_datetime(),
-			)
+		"""`drains`: {API key: parsed hash} for `user`'s keys in this drain. A key this drain already
+		landed is skipped, so a re-sent drain bills nothing twice."""
+		billed = not frappe.db.get_value("Grove User", user, "free")
+		records = [
+			self.insert(user, prefix, drain, billed) for prefix, drain in drains.items() if not self.landed(prefix)
+		]
+		if billed:
+			self.bill(user, records)
+		self.record_gateway_spend(user, drains.values())
+		settle(user)
 
-	def price(self, drains):
-		"""{model: USD} for the deltas at today's rates, over the models Grove knows."""
-		per_model = {}
-		for drain in drains:
-			for model, counts in drain.counters.items():
-				if model in self.book.models:
-					per_model[model] = per_model.get(model, Decimal(0)) + self.book.usage_cost(counts, model, self.day)
-		return per_model
+	def bill(self, user, records):
+		charged = sum((entry["grove_cost"] for doc in records for entry in doc.entries), Decimal(0))
+		frappe.db.sql("update `tabGrove User` set spent = spent + %s where name = %s", [charged, user])
+		for doc in records:
+			self.audit(doc)
 
-	def audit_prices(self, priced, drains, requests):
-		"""The box's `m:cost:<model>` against what Grove priced: beyond one µUSD a request is a
-		rate the two sides disagree on — expected for one pull after a price change."""
-		drained = {}
-		for drain in drains:
-			for model, cost in drain.model_cost.items():
-				if model in self.book.models:
-					drained[model] = drained.get(model, 0) + cost
-		for model in set(priced) | set(drained):
-			expected, got = priced.get(model, Decimal(0)), usd(drained.get(model, 0))
-			if abs(expected - got) > tolerance(requests):
+	def landed(self, prefix):
+		return frappe.db.exists("Usage Record", {"drain_id": self.drain_id, "api_key": prefix})
+
+	def insert(self, user, prefix, drain, billed):
+		entries = self.entries(drain)
+		doc = frappe.get_doc({
+			"doctype": "Usage Record", "api_key": prefix, "user": user, "day": self.day,
+			"gateway_store": self.gateway_store, "drain_id": self.drain_id,
+			"billed": int(billed), "request_count": drain.requests,
+			"cost": sum((e["grove_cost"] for e in entries), Decimal(0)),
+			"gateway_cost": sum((e["gateway_cost"] for e in entries), Decimal(0)),
+			# The gateway's cost is kept as the header total only; per pricing it is compared, not stored.
+			"usage": frappe.as_json([{k: v for k, v in e.items() if k != "gateway_cost"} for e in entries], indent=None),
+		})
+		doc.insert(ignore_permissions=True)
+		doc.entries = entries
+		return doc
+
+	def entries(self, drain):
+		"""The per-model detail: one entry per pricing the gateway charged at, then one per model
+		Grove knows that it served without a pricing. Costs are rounded to the nano, so the header
+		totals are exactly the sum of what is stored."""
+		entries = []
+		for pricing, counts in drain.pricings.items():
+			entries.append(self.entry(
+				self.book.pricing(pricing).model, pricing, counts,
+				usd(counts.get("cost", 0)), self.book.pricing_cost(pricing, counts),
+			))
+		priced = {e["model"] for e in entries}
+		for model, counts in drain.counters.items():
+			if model in self.book.models and model not in priced:
+				entries.append(self.entry(model, None, counts, Decimal(0), Decimal(0)))
+		return entries
+
+	@staticmethod
+	def entry(model, pricing, counts, gateway_cost, grove_cost):
+		return {
+			"model": model, "pricing": pricing, "requests": counts.get("request_count", 0),
+			**{counter: counts.get(counter, 0) for counter in COUNTERS if counter != "request_count"},
+			"gateway_cost": gateway_cost.quantize(NANO_USD), "grove_cost": grove_cost.quantize(NANO_USD),
+		}
+
+	def audit(self, doc):
+		"""The gateway undercharges by at most its truncation; anything else is a discrepancy."""
+		for entry in doc.entries:
+			gateway, grove = entry["gateway_cost"], entry["grove_cost"]
+			if entry["pricing"] and abs(gateway - grove) > tolerance(entry["requests"]):
 				record(
-					"Price Drift", model=model, redis=self.redis, gateway=self.gateway,
-					gateway_value=got, expected_value=expected, delta=got - expected,
+					usage_record=doc.name, grove_user=doc.user, api_key=doc.api_key, pricing=entry["pricing"],
+					model=entry["model"], gateway_store=self.gateway_store,
+					gateway_value=gateway, grove_value=grove, delta=gateway - grove,
 				)
 
-	def audit_counter(self, user, reported):
-		"""→ (the highest lifetime counter reported, the balance that same key reported). The
-		counter never falls; below what this Redis last reported means it was flushed."""
-		best = max(reported, key=lambda money: money["user_spent"])
-		known = self.known.get(user, 0)
-		if best["user_spent"] < known:
-			record(
-				"Counter Reset", grove_user=user, redis=self.redis, gateway=self.gateway,
-				gateway_value=usd(best["user_spent"]), expected_value=usd(known), delta=usd(best["user_spent"] - known),
+	def record_gateway_spend(self, user, drains):
+		"""The box's own view of the user on this store: the key with the highest lifetime counter
+		reported last."""
+		reported = [drain.money for drain in drains if "user_spent" in drain.money]
+		if reported:
+			best = max(reported, key=lambda money: money["user_spent"])
+			record_spend(
+				user, self.gateway_store, usd(best["user_spent"]), usd(best.get("user_balance", 0)), self.drain_id
 			)
-		return best["user_spent"], best.get("user_balance", 0)
-
-	def audit_balance(self, user, balance, actual, requests):
-		"""The box believing it has MORE than Grove: a push that never landed. Under is timing (a
-		key drained before a later one reported), and a user on several stores always reads over
-		by the others' undrained spend, so neither is flagged."""
-		reported = usd(balance)
-		if user in self.on_several_stores or reported - actual <= tolerance(requests):
-			return
-		record(
-			"Balance Mismatch", grove_user=user, redis=self.redis, gateway=self.gateway,
-			gateway_value=reported, expected_value=actual, delta=reported - actual,
-		)

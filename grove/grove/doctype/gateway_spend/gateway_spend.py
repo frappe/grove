@@ -3,12 +3,11 @@ from decimal import Decimal
 import frappe
 from frappe.model.document import Document
 
-from grove.pricing import nano
-
 
 class GatewaySpend(Document):
-	"""What one Redis last told us about one user's spend: the audit input the push folds into that
-	store's ceiling. Never billed from."""
+	"""What one store's gateway last reported about one user's spend: its own lifetime counter and
+	the balance it gated on. Overwritten each drain; never billed from. A counter below the stored
+	one would mean the store was flushed."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -18,30 +17,27 @@ class GatewaySpend(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		balance_reported: DF.Currency
+		balance: DF.Currency
+		drain_id: DF.Data | None
 		drained_at: DF.Datetime | None
-		gateway: DF.Link | None
+		gateway_store: DF.Link
 		grove_user: DF.Link
-		redis: DF.Data
-		spent_known: DF.Currency
+		spent: DF.Currency
 	# end: auto-generated types
 
 	pass
 
 
-def upsert(grove_user, redis, **values):
-	"""One row per (user, Redis), written per pull."""
-	name = frappe.db.exists("Gateway Spend", {"grove_user": grove_user, "redis": redis})
-	values = {k: float(v) if isinstance(v, Decimal) else v for k, v in values.items()}
+def record_spend(grove_user, gateway_store, spent, balance, drain_id):
+	"""One row per (user, store), written by the pull in the user's landing step."""
+	values = {
+		"spent": float(Decimal(spent)), "balance": float(Decimal(balance)), "drain_id": drain_id,
+		"drained_at": frappe.utils.now_datetime(),
+	}
+	name = frappe.db.get_value("Gateway Spend", {"grove_user": grove_user, "gateway_store": gateway_store})
 	if name:
-		frappe.db.set_value("Gateway Spend", name, values)
+		frappe.db.set_value("Gateway Spend", name, values, update_modified=False)
 		return name
-	return frappe.get_doc(
-		{"doctype": "Gateway Spend", "grove_user": grove_user, "redis": redis, **values}
-	).insert(ignore_permissions=True).name
-
-
-def spent_known(redis):
-	"""{user: nano-USD} — the highest lifetime counter each user has reported from `redis`."""
-	rows = frappe.get_all("Gateway Spend", filters={"redis": redis}, fields=["grove_user", "spent_known"])
-	return {row.grove_user: nano(row.spent_known or 0) for row in rows}
+	return frappe.get_doc({
+		"doctype": "Gateway Spend", "grove_user": grove_user, "gateway_store": gateway_store, **values,
+	}).insert(ignore_permissions=True).name

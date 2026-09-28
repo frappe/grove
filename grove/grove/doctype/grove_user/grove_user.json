@@ -42,7 +42,7 @@
   },
   {
    "default": "0",
-   "description": "Pricing is ignored for this user: usage is still recorded and priced into Spent, but never gated. Off means prepaid \u2014 \u03a3 top-ups \u2212 Spent at 0 \u2192 Rate Limited until topped up, shared by every key they hold.",
+   "description": "Never charged and never gated: usage is still recorded, with what it would have cost, but Spent and Balance do not move. Off means prepaid \u2014 \u03a3 top-ups \u2212 Spent at 0 \u2192 Credit Exhausted until topped up, shared by every key they hold. Turning it off later starts the user at what they load.",
    "fieldname": "free",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -58,7 +58,7 @@
    "read_only": 1
   },
   {
-   "description": "USD of usage priced so far, incremented by the pull and rebuilt nightly from the day rows.",
+   "description": "What the user has been charged: priced by the pull from each billed drain, plus any correction from a resolved Credit Discrepancy. Does not move while the user is Free.",
    "fieldname": "spent",
    "fieldtype": "Currency",
    "in_list_view": 1,

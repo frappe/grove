@@ -1,209 +1,212 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Pull usage from each gateway Redis into UTC-day Usage Records, and reconcile the money.
+"""Pull usage from each gateway Redis into one Usage Record per key per drain, and bill it.
 
-The gateway accumulates per-key deltas in `usage:<prefix>`. A pull GETs /usage, which atomically
-reads-and-deletes each live counter (HGETALL + DEL in one Lua call), stamps the day from OUR clock,
-and ADDs the delta into the (key, day) record. Then, once per touched user, the deltas are priced,
-`spent` moves, the box's own money figures are audited and the verdict is settled.
+The gateway accumulates per-key deltas in `usage:<prefix>`. A pull GETs /usage: the box sets each
+live counter aside under a new drain id and returns it together with every key it set aside earlier
+that Grove has not acknowledged, grouped by drain id. Grove records them, commits, then acknowledges
+the (drain id, key) pairs it recorded; the box re-sends every other pair next pull. A pull that
+fails before the commit gets the same pairs again, and a pair landed twice records nothing twice
+(unique drain id + key).
 
-**1-shot, no retry**: the drain deletes the counter as it returns it, so a crash between the
-response and the commit loses that cycle's delta. Never double-count, rare bounded loss on failure.
-Requests metered mid-pull land either fully in the snapshot or on the fresh key, never split.
+Each touched user is landed in one step: their records, the move in `spent` by Grove's price of
+what the gateway charged, a Credit Discrepancy per pricing the gateway charged differently, and
+the verdict. A user whose step fails is rolled back alone, left unacknowledged, and logged as Stuck
+Usage until a later pull lands it. One bad user never holds anyone else's usage back.
+
+A pull for one user sends only their keys: the box sets aside and returns just those.
+
+The box also hands over its dead lines: usage it spooled while its store was down and then could
+not replay. Grove lands each like any other usage, under the drain id `dead:<request id>`; one it
+cannot read, or whose key it does not hold, is kept as a Stuck Usage row. Either way the box is told
+to drop it.
 
 Gateway Redises are drained in parallel and each drain is recorded the moment it arrives, on the
-main thread. A drain may wait behind another store's write, so that window is slightly wider."""
+main thread."""
 
+import hashlib
+import json
 import time
 
 import frappe
 
-from grove.grove.doctype.lost_usage.lost_usage import record_lost
+from grove.grove.doctype.stuck_usage.stuck_usage import record_stuck, resolve_stuck
 from grove.pathway import snapshot
 from grove.pathway.reconcile import Reconciler
-from grove.pathway.run import SyncRun, error_text, gateway_units, in_turn
+from grove.pathway.run import SyncRun, Target, error_text, gateway_units, in_turn
 from grove.pricing import COUNTERS, PriceBook
 from grove.utils import utc_today
 
 MONEY = ("cost", "user_spent", "user_balance")
+DEAD = "dead:"
 
 
 class Usage(SyncRun):
 	"""Every gateway Redis drained once — a store through its first writer that answers — into
-	today's Usage Records."""
+	Usage Records. With `user`, only that user's keys, from every store."""
 
 	sync_type = "Usage"
 
-	def __init__(self, gateways=None, trigger="Scheduled", wait=0):
+	def __init__(self, gateways=None, trigger="Scheduled", wait=0, user=None):
 		super().__init__(trigger, wait)
 		self.gateways = gateways
+		self.user = user
+		self.keys = None
 
 	def units(self):
+		if self.user:
+			# Every key they ever held: a revoked key's last usage may still be on a box.
+			self.keys = frappe.get_all("Grove API Key", filters={"user": self.user}, pluck="name")
+			if not self.keys:
+				return []
 		return gateway_units(self.gateways)
 
 	def work(self, unit):
-		return in_turn(unit, fetch_usage)
+		return in_turn(unit, lambda target: fetch_usage(target, self.keys))
 
 	def settle(self, unit, result):
-		"""Landed the moment it arrives: the gateway has already deleted the counters."""
-		return record_drain(*super().settle(unit, result), redis=unit.store)
+		"""Landed the moment it arrives, then acknowledged so the box stops re-sending it."""
+		return record_drain(*super().settle(unit, result), gateway_store=unit.store)
 
 
-def pull_all(gateways=None, trigger="Scheduled", wait=0):
-	"""Scheduled: pull + drain every gateway Redis. Named `gateways` are pulled themselves. Skips if
-	another pull is in flight, unless told to wait for it."""
-	return Usage(gateways, trigger, wait).run()
+def pull_all(gateways=None, trigger="Scheduled", wait=0, user=None):
+	"""Scheduled: pull + drain every gateway Redis. Named `gateways` are pulled themselves; a `user`
+	is pulled alone. Skips if another pull is in flight, unless told to wait for it."""
+	return Usage(gateways, trigger, wait, user).run()
 
 
-def fetch_usage(target):
-	"""GET /usage off one gateway, which reads-and-deletes each counter as it answers. The drained
-	hashes ride along as `usages`. Pool thread: no frappe."""
+def fetch_usage(target, keys=None):
+	"""GET /usage off one gateway: {drain id: {key: hash}} of everything it holds unacknowledged,
+	`keys` alone when given, and its dead lines. Pool thread: no frappe."""
 
 	def drain(row):
-		# Longer than a push: a timeout here is a deleted counter, not a retry next tick.
-		row["usages"] = target.get("usage", timeout=15).get("usages", {})
+		answer = target.get("usage" + (f"?keys={','.join(keys)}" if keys else ""), timeout=15)
+		row["drains"], row["dead"] = answer.get("drains") or {}, answer.get("dead") or []
+		row["spool"] = answer.get("spool") or {}
 
-	return target.dial(drain, had_data=0, usages={})
+	return target.dial(drain, had_data=0, drains={}, dead=[], spool={})
 
 
-def record_drain(outcome, rows, redis=None):
-	"""Land what a group drained — main thread, as soon as it arrives. The gateway has already
-	deleted the counters, so a failure here keeps the payload as a Lost Usage row for the hourly
-	replay and fails only this group's row. `redis` is the store drained, or None for a box on its own."""
+def record_drain(outcome, rows, gateway_store=None):
+	"""Land what a group drained — main thread, as soon as it arrives — and acknowledge what landed.
+	A drain that cannot be recorded at all is rolled back and acknowledges nothing, so the box sends
+	it again. `gateway_store` is the store drained, or None for a gateway dialled by name."""
 	for row in rows:
-		usages = row.pop("usages", None)
+		drains, dead = row.pop("drains", None) or {}, row.pop("dead", None) or []
+		spool = row.pop("spool", None) or {}
 		if not row.get("success"):
 			continue
 		start = time.monotonic()
 		try:
-			pulled, lost = record_usages(row["server"], usages, redis=redis)
+			pulled, acks, dead_acks, stuck = record_drains(row["server"], drains, dead, gateway_store=gateway_store)
 			row["had_data"] = 1 if pulled else 0
-			row["detail"] = f"pulled:{pulled} lost:{lost}" if lost else f"pulled:{pulled}"
+			row["detail"] = f"pulled:{pulled} stuck:{stuck}" if stuck else f"pulled:{pulled}"
+			if spool.get("depth") or spool.get("dead"):
+				# The box's usage spool: what it could not write to its store and is still holding.
+				row["detail"] += f" spool:{spool.get('depth', 0)} dead:{spool.get('dead', 0)}"
+			if acks or dead_acks:
+				row["detail"] += acknowledge(row["server"], acks, dead_acks)
 		except Exception as e:
 			frappe.db.rollback()
-			record_lost(row["server"], redis, utc_today(), usages)
-			frappe.db.commit()
 			row["success"], row["error"], outcome = 0, error_text(e), False
 		row["duration_ms"] += int((time.monotonic() - start) * 1000)
 	return outcome, rows
 
 
-def record_usages(proxy_name, usages, redis=None, day=None):
-	"""Record one gateway's drained deltas under `day` (today unless a replay says otherwise) and
-	commit, then reconcile each touched user once. Everything lands under the Redis drained — the
-	gateway's store, or the box itself — because the boxes on a store share one set of counters.
-	→ (keys pulled, keys whose delta could not be recorded)."""
-	if not usages:
-		return 0, 0
+def acknowledge(gateway, acks, dead_acks):
+	"""Tell the box which pairs and dead lines are recorded. A failed ack loses nothing: the box
+	re-sends them and every record is already there. → a note for the row."""
+	try:
+		Target.resolve("Gateway Server", gateway).post("usage/ack", {"acks": acks, "dead": dead_acks})
+		return ""
+	except Exception as e:
+		return f" ack failed: {error_text(e)}"
 
+
+def store_of(gateway):
+	"""The store a gateway drains. One with none has not been set up, and has nothing to drain."""
+	store = snapshot.gateway_store(gateway)
+	if not store:
+		frappe.throw(f"{gateway} is on no Gateway Store — set it up before pulling its usage.")
+	return store
+
+
+def record_drains(proxy_name, drains, dead=(), gateway_store=None, day=None):
+	"""Record one gateway's answer under `day` (today unless told otherwise) and commit. Everything
+	lands under the store drained: the boxes on a store share one set of counters. → (keys pulled,
+	{drain id: keys to acknowledge}, dead line ids to acknowledge, users stuck)."""
 	day = day or utc_today()
-	# A named gateway is dialled itself with no store on its unit; its usage is still its store's.
-	redis = redis or snapshot.gateway_redis(proxy_name)
-	drained, lost = {}, 0
-	for prefix, h in usages.items():
-		drain = parse_drain(h)
-		# Unregistered keys are dropped: the gateway already deleted the counter on read.
-		if (not drain.requests and not drain.counters) or not (user := frappe.db.get_value("Grove API Key", prefix, "user")):
-			continue
-		# One key's failure must not take the rest of the response down with it — the gateway has
-		# already deleted every counter in it. Roll back only that key's partial writes, keep going,
-		# and keep the drained payload where the hourly replay finds it.
-		frappe.db.savepoint("usage_key")
-		try:
-			add_delta(redis, prefix, user, day, drain.requests, drain.counters)
-		except Exception:
-			frappe.db.rollback(save_point="usage_key")
-			record_lost(proxy_name, redis, day, {prefix: h}, api_key=prefix, grove_user=user)
-			lost += 1
-			continue
-		drained.setdefault(user, []).append(drain)
+	gateway_store = gateway_store or store_of(proxy_name)
+	acks, dead_acks, by_user, pulled = {}, [], {}, 0
+	for drain_id, usages in drains.items():
+		for prefix, h in usages.items():
+			pulled += 1
+			if user := frappe.db.get_value("Grove API Key", prefix, "user"):
+				by_user.setdefault(user, {}).setdefault(drain_id, {})[prefix] = h
+			else:
+				# Nothing in Grove can be billed for it: acknowledged so the box stops re-sending it.
+				acks.setdefault(drain_id, []).append(prefix)
+	for line in dead:
+		pulled += 1
+		if landing := read_dead_line(line, gateway_store):
+			user, prefix, fields = landing
+			by_user.setdefault(user, {}).setdefault(DEAD + line["id"], {})[prefix] = fields
+		elif line["id"] not in dead_acks:
+			dead_acks.append(line["id"])
 
-	# Once per user, after the loop: the balance is the person's, and a user holding ten keys is
-	# one sum, not ten. One user's failure skips nobody.
-	reconciler = Reconciler(PriceBook.load(), day, redis, proxy_name)
-	for user, drains in drained.items():
-		frappe.db.savepoint("reconcile")
+	book, stuck = PriceBook.load(), 0
+	for user, shares in by_user.items():
+		frappe.db.savepoint("usage_user")
 		try:
-			reconciler.user(user, drains)
+			for drain_id, hashes in shares.items():
+				Reconciler(book, day, gateway_store, drain_id).user(user, {k: parse_drain(h) for k, h in hashes.items()})
+			resolve_stuck(user, gateway_store)
 		except Exception:
-			frappe.db.rollback(save_point="reconcile")
-			frappe.log_error(title=f"Reconcile failed: {user} via {proxy_name}"[:140])
+			frappe.db.rollback(save_point="usage_user")
+			record_stuck(user, gateway_store, shares)
+			stuck += 1
+			continue
+		for drain_id, hashes in shares.items():
+			if drain_id.startswith(DEAD):
+				dead_acks.append(drain_id.removeprefix(DEAD))
+			else:
+				acks.setdefault(drain_id, []).extend(hashes)
 
 	frappe.db.commit()
-	return len(usages), lost
+	return pulled, acks, dead_acks, stuck
+
+
+def read_dead_line(line, gateway_store):
+	"""(user, key, fields) for a dead line Grove can land, else None after keeping it as Stuck
+	Usage: the box drops it once acknowledged, so this row is the only copy left."""
+	try:
+		accrual = json.loads(line["line"])
+		prefix, fields = accrual["prefix"], accrual["fields"]
+		user = frappe.db.get_value("Grove API Key", prefix, "user")
+		if not user:
+			raise ValueError(f"No Grove API Key {prefix!r}")
+		return user, prefix, fields
+	except Exception:
+		# An unreadable line comes with a blank id; its text names it instead.
+		name = line["id"] or "sha1:" + hashlib.sha1(line["line"].encode()).hexdigest()
+		record_stuck(None, gateway_store, line, dead_line=name)
+		return None
 
 
 def parse_drain(h):
-	"""One drained hash split three ways: the key's request count, the per-(model, counter)
-	quantities the rate tables price, and the money the gateway wrote (absent on an old gateway).
-	`m:cost:<model>` is the box's own price per model, an audit input."""
+	"""One drained hash split four ways: the key's request count, the per-(model, counter)
+	quantities the reports read, the counters and cost per pricing the gateway charged at, and the
+	money the gateway wrote about the holder."""
 	requests = int(h.get("request_count", 0) or 0)
-	counters, model_cost = {}, {}
+	counters, pricings = {}, {}
 	for k, v in h.items():
-		if not k.startswith("m:"):
-			continue
-		metric, _, model = k[2:].partition(":")  # model may contain ':' — keep the rest
-		if not model:
-			continue
-		if metric == "cost":
-			model_cost[model] = int(v or 0)
-		elif metric in COUNTERS:
-			counters.setdefault(model, {})[metric] = int(v or 0)
+		if k.startswith("m:"):
+			metric, _, model = k[2:].partition(":")  # model may contain ':' — keep the rest
+			if model and metric in COUNTERS:
+				counters.setdefault(model, {})[metric] = int(v or 0)
+		elif k.startswith("p:"):
+			pricing, _, counter = k[2:].partition(":")
+			if pricing and (counter in COUNTERS or counter == "cost"):
+				pricings.setdefault(pricing, {})[counter] = int(v or 0)
 	money = {f: int(h[f]) for f in MONEY if f in h}
-	return frappe._dict(requests=requests, counters=counters, model_cost=model_cost, money=money)
-
-
-def add_delta(redis, prefix, user, day, requests, counters=None):
-	"""ADD a pulled delta into the (api_key, day) Usage Record: requests onto its per-Redis row,
-	amounts onto its per-(model, counter) rows. Rows that exist are incremented in place — an UPDATE
-	that adds, no doc load, no save, so a pull costs a few statements per key instead of a full save
-	with its child-table diff. Only a row that is not there yet goes through the Document API,
-	which is what knows how to create one."""
-	# Only a name Grove holds as a Model gets rows (published or not): the gateway also keys every
-	# counter by deployment, and a Link row to anything else would fail the whole key's delta.
-	models = list((counters or {}).keys())
-	known = set(frappe.get_all("Model", filters={"name": ("in", models)}, pluck="name")) if models else set()
-	counters = {m: c for m, c in (counters or {}).items() if m in known}
-
-	name = ensure_rows(prefix, user, day, redis, counters)
-	now = frappe.utils.now()
-	frappe.db.sql(
-		"update `tabUsage Gateway Row` set request_count = request_count + %s, last_pulled = %s "
-		"where parent = %s and redis = %s",
-		[requests, now, name, redis],
-	)
-	for model, counts in counters.items():
-		for counter, amount in counts.items():
-			frappe.db.sql(
-				"update `tabUsage Counter Row` set amount = amount + %s "
-				"where parent = %s and model = %s and counter = %s",
-				[amount, name, model, counter],
-			)
-	# The UPDATE stamps modified itself, so the list view shows when usage last landed.
-	frappe.db.sql("update `tabUsage Record` set user = %s, modified = %s where name = %s", [user, now, name])
-
-
-def ensure_rows(prefix, user, day, redis, counters):
-	"""The record and every row this delta lands in, created at zero where missing. The rare
-	path — first sight of a key today, of a Redis or of a (model, counter) — and the only one
-	that saves a document."""
-	name = frappe.db.exists("Usage Record", {"day": day, "api_key": prefix})
-	have_redis = name and frappe.db.exists("Usage Gateway Row", {"parent": name, "redis": redis})
-	have = {
-		(row.model, row.counter)
-		for row in frappe.get_all(
-			"Usage Counter Row", filters={"parent": name}, fields=["model", "counter"], parent_doctype="Usage Record"
-		)
-	} if (name and counters) else set()
-	missing = [(model, counter) for model, counts in counters.items() for counter in counts if (model, counter) not in have]
-	if name and have_redis and not missing:
-		return name
-
-	doc = frappe.get_doc("Usage Record", name) if name else frappe.new_doc("Usage Record")
-	doc.api_key, doc.day, doc.user = prefix, day, user
-	if not have_redis:
-		doc.append("gateway_usage", {"redis": redis})
-	for model, counter in missing:
-		doc.append("counter_usage", {"model": model, "counter": counter})
-	doc.save(ignore_permissions=True)
-	return doc.name
+	return frappe._dict(requests=requests, counters=counters, pricings=pricings, money=money)

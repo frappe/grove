@@ -5,6 +5,8 @@ frappe.get_list and the writes through a plain save, so the Grove Control role h
 exactly what those endpoints touch — and nothing more. Site-backed: DocPerms are the
 behaviour under test."""
 
+import unittest.mock
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -41,16 +43,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertIsInstance(api.available_models(), list)
 		self.assertEqual(api.usage(["nobody@example.com"])["model_summary"], [])
 
-	def test_usage_counter_rows_resolve_permission_through_their_parent(self):
-		# A child doctype holds no permissions of its own, so this is a PermissionError
-		# without parent_doctype however the role is granted.
-		frappe.get_list(
-			"Usage Counter Row",
-			filters={"parenttype": "Usage Record"},
-			fields=["model"],
-			parent_doctype="Usage Record",
-		)
-
 	def test_the_fleet_stays_out_of_reach(self):
 		for doctype in WITHHELD:
 			with self.assertRaises(frappe.PermissionError, msg=doctype):
@@ -62,6 +54,14 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertTrue(result["api_key"].startswith(KEY_PREFIX))
 		self.assertEqual(frappe.db.get_value("User", "probe-person@example.com", "first_name"), "Probe Person")
 		self.assertTrue(frappe.db.exists("Grove User", {"user": "probe-person@example.com"}))
+
+	def test_the_control_role_can_pull_usage_on_demand(self):
+		with unittest.mock.patch("grove.pathway.usage.pull_all", return_value="PS-1") as pull_all:
+			self.assertEqual(api.pull_usage(), {"sync": "PS-1"})
+		pull_all.assert_called_once_with(trigger="Manual", wait=60, user=None)
+		frappe.set_user("Guest")
+		with self.assertRaises(frappe.PermissionError):
+			api.pull_usage()
 
 	def test_the_control_role_can_post_a_credit(self):
 		grove_user = api._set_policy("probe-credit@example.com", "Probe Credit", None)

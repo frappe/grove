@@ -209,8 +209,11 @@ def landed_since(store, key):
 	are billed already, so a restore drops them. Drain ids are minted on the box at the rename in
 	the stamp's format, so strings order them; a blank id (a pre-ack gateway) never matches."""
 	stamp = key.rsplit("/", 1)[-1].removesuffix(".rdb")
+	# A dead line (`dead:<request id>`) was never a live counter, so it names nothing to drop.
 	return frappe.get_all(
-		"Usage Record", filters={"redis": store, "drain_id": (">", stamp)}, pluck="api_key", distinct=True
+		"Usage Record",
+		filters=[["gateway_store", "=", store], ["drain_id", ">", stamp], ["drain_id", "not like", "dead:%"]],
+		pluck="api_key", distinct=True,
 	)
 
 

@@ -1,47 +1,45 @@
-"""Revenue is the day rows priced at today's tables, cut by model, key, user or day."""
+"""Revenue is what each billed drain was charged, summed by the database over the records'
+per-model detail, cut by model, key, user or day."""
 
 from datetime import timedelta
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_user.grove_user import register_user
 from grove.grove.report.revenue.revenue import execute
 from grove.utils import utc_today
 
 
 class TestRevenue(IntegrationTestCase):
-	"""One model at 10 USD/Mtok of completion: 100 000 tokens today, 200 000 forty days ago."""
+	"""1 USD billed today over two requests, 2 USD forty days ago over one."""
 
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
+		make_test_geography()
 		cls.today = utc_today()
 		cls.model = frappe.get_doc(
 			{"doctype": "Model", "model_id": "revenue-7b", "modality": "text", "hf_repo": "org/revenue-7b"}
 		).insert(ignore_permissions=True).name
-		pricing = frappe.get_doc({
-			"doctype": "Model Pricing", "model": cls.model, "status": "Enabled",
-			"rates": [{"counter": "completion_tokens", "rate": 10}],
-		}).insert(ignore_permissions=True)
-		# Enabled today would price nothing before today; the old day needs a window that covers it.
-		frappe.db.set_value("Model Pricing", pricing.name, "enabled_on", cls.today - timedelta(days=60))
 		cls.user = frappe.get_doc(
-			{"doctype": "Grove User", "user": register_user("revenue@grove.test"), "free": 1}
+			{"doctype": "Grove User", "user": register_user("revenue@grove.test")}
 		).insert(ignore_permissions=True).name
 		cls.key = frappe.get_doc({"doctype": "Grove API Key", "user": cls.user}).insert(ignore_permissions=True).name
 		cls.other_key = frappe.get_doc({"doctype": "Grove API Key", "user": cls.user}).insert(ignore_permissions=True).name
-		cls.record(cls.key, cls.today, completion=100_000, requests=2)
-		cls.record(cls.key, cls.today - timedelta(days=40), completion=200_000, requests=1)
+		cls.record(cls.key, cls.today, cost=1, requests=2)
+		cls.record(cls.key, cls.today - timedelta(days=40), cost=2, requests=1)
+		# Usage while the user was Free: recorded with its cost, never charged, so not revenue.
+		cls.record(cls.key, cls.today, cost=5, requests=9, billed=0)
 
 	@classmethod
-	def record(cls, key, day, completion, requests):
+	def record(cls, key, day, cost, requests, billed=1):
+		entry = {"model": cls.model, "pricing": None, "requests": requests, "completion_tokens": 999, "grove_cost": cost}
 		frappe.get_doc({
 			"doctype": "Usage Record", "api_key": key, "user": cls.user, "day": day,
-			"counter_usage": [
-				{"model": cls.model, "counter": "completion_tokens", "amount": completion},
-				{"model": cls.model, "counter": "request_count", "amount": requests},
-			],
+			"drain_id": f"revenue-{day}-{billed}", "billed": billed,
+			"request_count": requests, "cost": cost, "usage": frappe.as_json([entry]),
 		}).insert(ignore_permissions=True)
 
 	def report(self, group_by="Model", days=30, **filters):
