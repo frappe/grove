@@ -51,13 +51,20 @@ frappe.ui.form.on('Machine', {
 			// launch() sets Pending before instance_id lands; Provision then would launch a second
 			// real EC2 instance.
 			if (frm.doc.status !== 'Pending') {
-				frm.add_custom_button(__('Provision'), () => frm.call('provision'), __('AWS'));
+				frm.add_custom_button(__('Provision'), () => grove.confirm_call(frm,
+					__('Launch a new EC2 instance for {0}? It is billed from the moment it starts.', [frm.doc.name]),
+					'provision'), __('AWS'));
 			}
 			return;
 		}
-		for (const action of ['Sync', 'Stop', 'Start']) {
-			frm.add_custom_button(__(action), () => frm.call(action.toLowerCase()), __('AWS'));
-		}
+		// Sync only reads the instance back, so it stays one click.
+		frm.add_custom_button(__('Sync'), () => frm.call('sync'), __('AWS'));
+		frm.add_custom_button(__('Stop'), () => grove.confirm_call(frm,
+			__('Stop instance {0}? Everything it serves goes down until Start, and it may come back on a new address.', [frm.doc.instance_id]),
+			'stop'), __('AWS'));
+		frm.add_custom_button(__('Start'), () => grove.confirm_call(frm,
+			__('Start instance {0}? It is billed from the moment it runs.', [frm.doc.instance_id]),
+			'start'), __('AWS'));
 		// The address changes either way, so both confirm.
 		if (frm.doc.static_ip_allocation_id) {
 			frm.add_custom_button(__('Release Static IP'), () => {

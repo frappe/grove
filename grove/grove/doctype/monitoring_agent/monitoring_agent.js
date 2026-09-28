@@ -15,9 +15,9 @@ frappe.ui.form.on('Monitoring Agent', {
 		if (frm.doc.status === 'Active') {
 			// The binary is already on the box; re-downloading it to change an interval only
 			// makes the change slower to land.
-			frm.add_custom_button(__('Update Config'), () => {
-				frm.call('update_config').then(() => frm.reload_doc());
-			});
+			frm.add_custom_button(__('Update Config'), () => grove.confirm_call(frm,
+				__("Rewrite {0}'s vmagent config and restart it?", [frm.doc.name]),
+				'update_config'));
 			frm.add_custom_button(__('Rotate Token'), () => {
 				frappe.prompt(
 					{
@@ -33,17 +33,17 @@ frappe.ui.form.on('Monitoring Agent', {
 				);
 			});
 		} else {
-			frm.add_custom_button(__('Install'), () => {
-				frm.call('setup').then(() => frm.reload_doc());
-			});
+			frm.add_custom_button(__('Install'), () => grove.confirm_call(frm,
+				__('Install the monitoring agent on {0}?', [frm.doc.name]),
+				'setup'));
 		}
 
 		// developer_mode only: the box cannot reach this Grove, so nothing re-fetches and this is
 		// the only way its target list moves. Off a dev site http_sd does it by itself.
 		if (frappe.boot.developer_mode && frm.doc.status === 'Active') {
-			frm.add_custom_button(__('Push Targets'), () => {
-				frm.call('push_targets').then(() => frm.reload_doc());
-			});
+			frm.add_custom_button(__('Push Targets'), () => grove.confirm_call(frm,
+				__("Replace {0}'s target list with this Grove's?", [frm.doc.name]),
+				'push_targets'));
 		}
 
 		// The fastest way to tell "nothing is assigned to me" from "the agent is broken".

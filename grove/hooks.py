@@ -6,8 +6,8 @@ app_email = "developers@frappe.io"
 app_license = "mit"
 
 # The GPU table, drawn the same way on the Machine that owns the cards and the Inference Server
-# that serves from them.
-app_include_js = "/assets/grove/js/gpu_table.js"
+# that serves from them; and the confirm every state-changing form button goes through.
+app_include_js = ["/assets/grove/js/gpu_table.js", "/assets/grove/js/confirm_call.js"]
 
 # The "open" filter behind every connections badge
 notification_config = "grove.notifications.get_notification_config"

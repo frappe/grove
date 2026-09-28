@@ -111,5 +111,8 @@ Append-only. Never read to decide anything; read to find out why.
   ones, a Pod's Activity link the failed ones — and the total stays in the count.
 - **Long buttons enqueue.** `frappe.enqueue_doc(..., queue="long")`, and the worker method carries
   `@failure.reports_failure` so a crash marks the doc Broken with the reason on it.
+- **A button that changes a box or a record confirms first.** `grove.confirm_call(frm, message,
+  method)` (`public/js/confirm_call.js`); the message says what happens. Reads (Ping, Check State,
+  GPU Memory, AWS Sync) stay one click.
 - **A child table row names the thing it is about.** Frappe silently drops an `append()` key that is
   not a field, which is how a row full of numbers with no server on it got shipped once.
