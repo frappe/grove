@@ -11,6 +11,13 @@ frappe.ui.form.on('Model', {
 
 	refresh(frm) {
 		if (!frm.is_new()) frm.trigger('pricing_headline');
+		if (frm.doc.__onload && frm.doc.__onload.has_catalog_pricing) {
+			frm.add_custom_button(__('Load Pricing'), () => {
+				frm.call('load_pricing').then((r) => {
+					if (r.message) frappe.set_route('Form', 'Model Pricing', r.message);
+				});
+			});
+		}
 		// A vendor serves this one: there is no repo to read and no box holding its weights.
 		if (frm.is_new() || !frm.doc.provider_is_self_hosted) return;
 

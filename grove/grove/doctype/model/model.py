@@ -7,6 +7,7 @@ import frappe
 from frappe.model.document import Document
 
 from grove import failure
+from grove.catalog import seed
 from grove.grove.doctype.model_provider.model_provider import self_hosted_provider
 from grove.utils import slugify
 
@@ -57,6 +58,26 @@ class Model(Document):
 		self.validate_weights_source()
 		if self.published and self.has_value_changed("published"):
 			self.validate_publishable()
+
+	def onload(self):
+		self.set_onload("has_catalog_pricing", self.has_catalog_pricing)
+
+	@property
+	def has_catalog_pricing(self):
+		"""The catalog prices this model and no Model Pricing names it yet."""
+		return bool(seed.get_rates(self.name)) and not frappe.db.exists("Model Pricing", {"model": self.name})
+
+	@frappe.whitelist()
+	def load_pricing(self):
+		"""Button: the catalog's rates as a Disabled draft. Enabling it stays the operator's call."""
+		rates = seed.get_rates(self.name)
+		if not rates:
+			frappe.throw(f"The catalog holds no pricing for {self.name}.")
+		if frappe.db.exists("Model Pricing", {"model": self.name}):
+			frappe.msgprint(f"{self.name} already has a Model Pricing. Nothing was loaded.")
+			return None
+		pricing = {"doctype": "Model Pricing", "model": self.name, "status": "Disabled", "rates": rates}
+		return frappe.get_doc(pricing).insert().name
 
 	def validate_publishable(self):
 		"""Publishing is the operator's call, and only a priced, served model can take it. Not an

@@ -8,6 +8,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from grove.catalog import seed
 from grove.grove.doctype.model import model as model_module
 from grove.grove.doctype.model_pricing.test_model_pricing import enabled_pricing
 
@@ -57,3 +58,32 @@ class TestPublishing(IntegrationTestCase):
 		with self.served(False):
 			model_module.sync_published(doc.name)
 		self.assertEqual(frappe.db.get_value("Model", doc.name, "published"), 0)
+
+
+class TestLoadPricing(IntegrationTestCase):
+	RATES = [{"counter": "input_tokens", "rate": 2.5}, {"counter": "completion_tokens", "rate": 15}]
+
+	def model(self, model_id):
+		return frappe.get_doc(
+			{"doctype": "Model", "model_id": model_id, "modality": "text", "hf_repo": f"org/{model_id}"}
+		).insert(ignore_permissions=True)
+
+	def test_the_catalogs_rates_land_as_one_disabled_draft(self):
+		doc = self.model("catalog-priced-7b")
+		with patch.object(seed, "get_rates", return_value=self.RATES):
+			self.assertTrue(doc.has_catalog_pricing)
+			name = doc.load_pricing()
+			self.assertIsNone(doc.load_pricing())
+			self.assertFalse(doc.has_catalog_pricing)
+		pricing = frappe.get_doc("Model Pricing", name)
+		self.assertEqual(
+			(pricing.status, [(row.counter, row.rate) for row in pricing.rates]),
+			("Disabled", [("input_tokens", 2.5), ("completion_tokens", 15)]),
+		)
+		self.assertEqual(frappe.db.count("Model Pricing", {"model": doc.name}), 1)
+
+	def test_a_model_the_catalog_does_not_price_throws(self):
+		doc = self.model("catalog-unpriced-7b")
+		self.assertFalse(doc.has_catalog_pricing)
+		with self.assertRaisesRegex(frappe.ValidationError, "no pricing"):
+			doc.load_pricing()

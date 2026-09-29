@@ -14,8 +14,11 @@ notification_config = "grove.notifications.get_notification_config"
 
 fixtures = [
 	{"dt": "Role", "filters": [["name", "in", ["Grove Control", "Grove User"]]]},
-	{"dt": "Model Provider", "filters": [["is_self_hosted", "=", 1]]},  # TODO: move to after migrate/after install
 ]
+
+# Providers, models and geographies ship as a catalog: inserted when missing, never overwritten.
+after_install = "grove.catalog.seed.insert_missing"
+after_migrate = ["grove.catalog.seed.insert_missing"]
 
 scheduler_events = {
 	"cron": {

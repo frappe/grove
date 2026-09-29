@@ -1,0 +1,10 @@
+{
+ "geographies": [],
+ "models": [],
+ "providers": [
+  {
+   "is_self_hosted": 1,
+   "provider_name": "frappe"
+  }
+ ]
+}
