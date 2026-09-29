@@ -208,41 +208,29 @@ def gateway_routes(geography):
 			"upstream_model": upstream.get(p.model, ""),
 		})
 	add_vendor_routes(routes, models, vendors, modality, upstream)
-	add_pricing(routes)
+	routes = published_routes(routes, models)
 	for rows in routes.values():
 		rows.sort(key=lambda r: r["deployment"])  # stable hash whatever the query order
 	return routes
 
 
-def add_pricing(routes):
-	"""Every row of a priced model carries the pricing the gateway charges at now and, while one
-	is Scheduled, the one it switches to at `activates_at` on its own clock, so a price change
-	needs no push to land on time. The gateway tags each request's counters with the pricing id it
-	charged, which is what the pull prices. Rates are nano-USD per unit. An unpriced model's rows
-	carry neither, so they hash as before."""
-	windows = pricing_windows()
-	for model, rows in routes.items():
-		for row in rows:
-			row.update(windows.get(model, {}))
-
-
-def pricing_windows():
-	"""{model: {"pricing": the Enabled one, "next_pricing": the Scheduled one}}, each present only
-	when it exists, as the gateway reads them."""
+def published_routes(routes, models):
+	"""The table the gateways get: only a Published model's rows, each carrying its Enabled
+	pricing. Published without one is dropped too — never served unpriced. Rates are nano-USD
+	per unit; the gateway tags each request with the pricing id, which is what the pull prices."""
 	book = PriceBook.load()
-	windows = {}
-	for p in frappe.get_all(
-		"Model Pricing", filters={"status": ("in", ["Enabled", "Scheduled"])}, fields=["name", "model", "status", "activates_at"]
-	):
-		entry = {"id": p.name, "rates": book.nano_rates(p.name)}
-		if p.status == "Scheduled":
-			entry["activates_at"] = utc_timestamp(p.activates_at)
-		windows.setdefault(p.model, {})["pricing" if p.status == "Enabled" else "next_pricing"] = entry
-	return windows
+	enabled = frappe.get_all("Model Pricing", filters={"status": "Enabled"}, fields=["name", "model"])
+	pricing = {p.model: {"id": p.name, "rates": book.nano_rates(p.name)} for p in enabled}
+	published = {model.name for model in models if model.published}
+	return {
+		model: [{**row, "pricing": pricing[model]} for row in rows]
+		for model, rows in routes.items()
+		if model in published and model in pricing
+	}
 
 
 def utc_timestamp(value):
-	"""A site-time-zone Datetime as the RFC 3339 UTC string the gateway compares its clock with."""
+	"""A site-time-zone Datetime as an RFC 3339 UTC string."""
 	local = frappe.utils.get_datetime(value).replace(tzinfo=ZoneInfo(get_system_timezone()))
 	return local.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 

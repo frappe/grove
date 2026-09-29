@@ -24,12 +24,12 @@ frappe.ui.form.on('Model', {
 	},
 
 	pricing_headline(frm) {
-		// Unpriced usage bills 0 and is not logged: this banner is the signal.
+		// An unpriced model cannot be published, so the gateways hold no route for it.
 		frappe.db.get_value('Model Pricing', { model: frm.doc.name, status: 'Enabled' }, 'name').then((r) => {
 			if (r.message && r.message.name) return;
 			const href = `/app/model-pricing/new?model=${encodeURIComponent(frm.doc.name)}`;
 			frm.dashboard.set_headline(
-				__('No Model Pricing enabled — usage of this model bills 0. {0}', [`<a href="${href}">${__('Add one')}</a>`]),
+				__('No Model Pricing enabled — this model cannot be published. Zero rates serve it free. {0}', [`<a href="${href}">${__('Add one')}</a>`]),
 				'orange'
 			);
 		});

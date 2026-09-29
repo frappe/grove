@@ -340,7 +340,7 @@ class ModelReplica(Document):
 		self.engine_url = self.derived_engine_url
 
 	def on_update(self):
-		# A model is "published" only while it has a live deployment.
+		# A model stays published only while something serves it.
 		if self.has_value_changed("status"):
 			from grove.grove.doctype.model.model import sync_published
 

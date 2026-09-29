@@ -67,6 +67,7 @@ def routes(geography):
 	with (
 		patch.object(frappe, "get_all", side_effect=get_all),
 		patch.object(frappe, "get_cached_doc", side_effect=cached_provider),
+		patch("grove.pathway.routes.published_routes", side_effect=lambda table, models: table),
 		patch.object(frappe, "db", frappe._dict(get_value=lambda *args: ZONE, get_single_value=lambda *args: POD_GEOGRAPHY)),
 		patch.object(frappe, "get_doc", side_effect=lambda *a, **k: frappe._dict(get_password=lambda *a, **k: "secret")),
 	):

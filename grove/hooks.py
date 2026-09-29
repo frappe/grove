@@ -21,8 +21,6 @@ scheduler_events = {
 	"cron": {
         # every minute
 		"*/1 * * * *": [
-			# Ahead of the push; the gateways already switched at Activates At on their own.
-			"grove.grove.doctype.model_pricing.model_pricing.enable_due",
             "grove.pathway.projection.sync_projection",
         ],
 		"*/2 * * * *": [

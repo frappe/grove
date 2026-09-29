@@ -1,42 +1,24 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""A pricing is scheduled, fires at its Activates At, and is never edited after: the requests it
-charged are billed. A Scheduled one stays editable until the lead time before it fires."""
-
-import unittest.mock
+"""Enabling a pricing retires its predecessor, and it is never edited after: the requests it
+charged are billed."""
 
 import frappe
 from frappe.tests import IntegrationTestCase
-from frappe.utils import add_to_date, now_datetime
 
-from grove.grove.doctype.model_pricing import model_pricing
-from grove.pricing import PriceBook
+from grove.pricing import COUNTERS, PriceBook
 from grove.utils import utc_today
 
-LEAD = 10
 
-
-def set_lead(minutes=LEAD):
-	frappe.db.set_single_value("Grove Settings", "pricing_lead_minutes", minutes)
-
-
-def scheduled_pricing(model, minutes=LEAD + 1, **rates):
-	set_lead()
+def new_pricing(model, status="Disabled", **rates):
 	return frappe.get_doc({
-		"doctype": "Model Pricing", "model": model, "status": "Scheduled",
-		"activates_at": add_to_date(now_datetime(), minutes=minutes),
+		"doctype": "Model Pricing", "model": model, "status": status,
 		"rates": [{"counter": counter, "rate": rate} for counter, rate in rates.items()],
 	}).insert(ignore_permissions=True)
 
 
 def enabled_pricing(model, **rates):
-	"""A pricing taken through its schedule to Enabled — the only way one gets there."""
-	doc = scheduled_pricing(model, **rates)
-	frappe.db.set_value("Model Pricing", doc.name, "activates_at", add_to_date(now_datetime(), minutes=-1))
-	doc.reload()
-	doc.status = "Enabled"
-	doc.save(ignore_permissions=True)
-	return doc
+	return new_pricing(model, status="Enabled", **rates)
 
 
 class TestModelPricing(IntegrationTestCase):
@@ -47,77 +29,30 @@ class TestModelPricing(IntegrationTestCase):
 			{"doctype": "Model", "model_id": "pricing-7b", "modality": "text", "hf_repo": "org/pricing-7b"}
 		).insert(ignore_permissions=True).name
 
-	def scheduled(self, minutes=LEAD + 1, **rates):
-		"""One Scheduled doc per model, so each test's is cancelled behind it."""
-		doc = scheduled_pricing(self.model, minutes=minutes, **rates)
-		self.addCleanup(frappe.db.set_value, "Model Pricing", doc.name, "status", "Disabled")
-		return doc
-
-	def fire_due(self):
-		with unittest.mock.patch.object(frappe.db, "commit"):
-			model_pricing.enable_due()
-
-	def test_a_pricing_is_never_enabled_directly(self):
-		with self.assertRaises(frappe.ValidationError):
-			frappe.get_doc({
-				"doctype": "Model Pricing", "model": self.model, "status": "Enabled",
-				"rates": [{"counter": "completion_tokens", "rate": 1}],
-			}).insert(ignore_permissions=True)
-
-	def test_scheduling_needs_the_lead_time_and_a_lead_to_be_set(self):
-		with self.assertRaises(frappe.ValidationError):
-			self.scheduled(minutes=LEAD - 1, completion_tokens=1)
-		set_lead(0)
-		self.addCleanup(set_lead)
-		with self.assertRaises(frappe.ValidationError):
-			frappe.get_doc({
-				"doctype": "Model Pricing", "model": self.model, "status": "Scheduled",
-				"activates_at": add_to_date(now_datetime(), days=1), "rates": [{"counter": "completion_tokens", "rate": 1}],
-			}).insert(ignore_permissions=True)
-
-	def test_one_scheduled_per_model(self):
-		self.scheduled(completion_tokens=1)
-		with self.assertRaises(frappe.ValidationError):
-			self.scheduled(minutes=LEAD + 5, completion_tokens=2)
-
-	def test_a_scheduled_pricing_is_editable_until_the_lead_before_it_fires(self):
-		doc = self.scheduled(completion_tokens=1)
+	def test_a_draft_is_editable_until_it_is_enabled(self):
+		doc = new_pricing(self.model, completion_tokens=1)
 		doc.rates[0].rate = 5
 		doc.save()
-		frappe.db.set_value("Model Pricing", doc.name, "activates_at", add_to_date(now_datetime(), minutes=LEAD - 1))
-		doc.reload()
-		doc.rates[0].rate = 6
-		with self.assertRaises(frappe.ValidationError):
-			doc.save()
-
-	def test_a_scheduled_pricing_is_in_the_book_by_id(self):
-		doc = self.scheduled(completion_tokens=2)
-		book = PriceBook.load()
-		self.assertEqual(book.nano_rates(doc.name), {"completion_tokens": 2_000_000_000})
-
-	def test_cancelling_a_schedule_clears_its_window(self):
-		doc = self.scheduled(completion_tokens=1)
-		doc.status = "Disabled"
+		self.assertIsNone(doc.enabled_on)
+		doc.status = "Enabled"
 		doc.save()
-		self.assertIsNone(doc.activates_at)
+		self.assertEqual(doc.enabled_on, utc_today())
 
-	def test_a_due_schedule_fires_and_retires_the_predecessor(self):
+	def test_enabling_retires_the_predecessor(self):
 		first = enabled_pricing(self.model, completion_tokens=1)
-		doc = self.scheduled(completion_tokens=2)
-		frappe.db.set_value("Model Pricing", doc.name, "activates_at", add_to_date(now_datetime(), minutes=-1))
-		self.fire_due()
-		doc.reload()
+		doc = enabled_pricing(self.model, completion_tokens=2)
 		first.reload()
 		self.assertEqual((doc.status, doc.enabled_on, first.status), ("Enabled", utc_today(), "Disabled"))
 
-	def test_a_schedule_not_yet_due_waits_and_cannot_be_enabled_by_hand(self):
-		doc = self.scheduled(completion_tokens=1)
-		self.fire_due()
-		doc.reload()
-		self.assertEqual(doc.status, "Scheduled")
-		doc.status = "Enabled"
-		with self.assertRaises(frappe.ValidationError):
-			doc.save()
+	def test_zero_rates_are_a_pricing_and_never_publish_the_model(self):
+		doc = enabled_pricing(self.model, **dict.fromkeys(COUNTERS, 0))
+		self.assertEqual(PriceBook.load().nano_rates(doc.name), dict.fromkeys(COUNTERS, 0))
+		self.assertEqual(frappe.db.get_value("Model", self.model, "published"), 0)
+
+	def test_a_retired_pricing_stays_in_the_book_by_id(self):
+		first = enabled_pricing(self.model, completion_tokens=2)
+		enabled_pricing(self.model, completion_tokens=3)
+		self.assertEqual(PriceBook.load().nano_rates(first.name), {"completion_tokens": 2_000_000_000})
 
 	def test_an_enabled_pricing_is_frozen(self):
 		doc = enabled_pricing(self.model, completion_tokens=1)
@@ -133,6 +68,16 @@ class TestModelPricing(IntegrationTestCase):
 		doc.rates[0].rate = 9
 		with self.assertRaises(frappe.ValidationError):
 			doc.save()
+
+	def test_a_duplicate_is_a_disabled_draft_with_its_own_window(self):
+		# What the form's Duplicate does: no_copy fields are left behind.
+		first = enabled_pricing(self.model, completion_tokens=1)
+		doc = frappe.copy_doc(first, ignore_no_copy=False).insert(ignore_permissions=True)
+		first.reload()
+		self.assertEqual((doc.status, doc.enabled_on, first.status), ("Disabled", None, "Enabled"))
+		doc.status = "Enabled"
+		doc.save()
+		self.assertEqual(doc.enabled_on, utc_today())
 
 	def test_a_counter_missing_from_the_pricing_is_unpriced_whatever_the_cost_card_says(self):
 		provider = frappe.get_doc("Model", self.model).provider

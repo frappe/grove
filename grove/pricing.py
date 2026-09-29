@@ -46,8 +46,8 @@ def cost(counts, rates):
 
 
 class PriceBook:
-	"""Every sell rate the site holds, by pricing id, read once per run. A Scheduled pricing is in
-	it: a gateway may switch to it before `enable_due` flips its status."""
+	"""Every sell rate the site holds, by pricing id, read once per run. A Disabled pricing is in
+	it: a gateway charges at it until the push carrying its successor lands."""
 
 	def __init__(self):
 		self.models = set()

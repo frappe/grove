@@ -9,7 +9,6 @@
   "pathway_release",
   "pathway_repo",
   "synthetic_session_ttl",
-  "pricing_lead_minutes",
   "usage_retention",
   "column_break_tls",
   "dns_provider",
@@ -188,14 +187,6 @@
    "label": "Pod"
   },
   {
-   "default": "10",
-   "description": "How far ahead a Model Pricing must be scheduled. Covers several pushes, so every gateway holds the new rates before it switches to them on its own clock.",
-   "fieldname": "pricing_lead_minutes",
-   "fieldtype": "Int",
-   "label": "Pricing Lead (minutes)",
-   "non_negative": 1
-  },
-  {
    "default": "168h",
    "description": "How long a gateway keeps usage after Grove acknowledged it, as a Go duration (168h = 7 days). Rendered into each gateway's config.json, which it re-reads on a signal; blank keeps the gateway's default.",
    "fieldname": "usage_retention",
@@ -205,7 +196,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-09-26 05:00:00.000000",
+ "modified": "2026-09-29 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove Settings",

@@ -54,6 +54,20 @@ class Model(Document):
 			)
 
 		self.validate_weights_source()
+		if self.published and self.has_value_changed("published"):
+			self.validate_publishable()
+
+	def validate_publishable(self):
+		"""Publishing is the operator's call, and only a priced, served model can take it. Not an
+		access gate — access is granted per user via Model Group or Grove User."""
+		if not frappe.db.exists("Model Pricing", {"model": self.name, "status": "Enabled"}):
+			frappe.throw(
+				f"{self.name} has no Enabled Model Pricing. Enable one first — zero rates serve it free."
+			)
+		if not is_reachable(self.name, provider=self.provider):
+			frappe.throw(
+				f"{self.name} has nothing serving it: no Active replica, Running pod or vendor endpoint."
+			)
 
 	def validate_weights_source(self):
 		"""The streamer reads safetensors out of a bucket; a GGUF ref names one file it cannot
@@ -87,11 +101,6 @@ class Model(Document):
 				"No Model Provider is marked Self Hosted, so a blank provider has nothing to default to."
 			)
 		self.name = f"{self.provider}/{self.model_id}"
-
-		# `published` means "reachable", never a manual claim, and is not an access gate —
-		# access is granted per user via Model Group or Grove User.
-		if self.published and not is_reachable(self.name, provider=self.provider):
-			self.published = 0
 
 	@property
 	def repo_id(self):
@@ -265,9 +274,8 @@ def is_reachable(model, exclude=None, provider=None):
 		return True
 	if frappe.db.get_all("Pod", filters={"model": model, "status": "Running"}, limit=1):
 		return True
-	# A vendor model is reachable from the moment it exists — nothing else would ever flip it
-	# published. The key is unchecked because validate refuses a provider holding an address
-	# without one.
+	# A vendor model is reachable from the moment it exists. The key is unchecked because
+	# validate refuses a provider holding an address without one.
 	# TODO: clearing a provider's Base URL leaves its models published until something
 	# touches them. They emit no route, so they 404 rather than mis-route.
 	return bool(vendor_base_url(model, provider))
@@ -314,10 +322,7 @@ def launch_config(model):
 
 
 def sync_published(model, exclude=None):
-	"""Recompute Model.published, called after every deployment status change. Written via
-	db.set_value so it skips validate — no recursion."""
-	if not model or not frappe.db.exists("Model", model):
-		return
-
-	want = 1 if is_reachable(model, exclude=exclude) else 0
-	frappe.db.set_value("Model", model, "published", want)
+	"""Unpublish a model nothing serves any more, after every placement status change. Never
+	publishes: that is the operator's tick."""
+	if model and frappe.db.exists("Model", model) and not is_reachable(model, exclude=exclude):
+		frappe.db.set_value("Model", model, "published", 0)

@@ -75,6 +75,7 @@ def routes(zone=ZONE):
 
 	with (
 		patch.object(frappe, "get_all", side_effect=FakeQuery(zone)),
+		patch("grove.pathway.routes.published_routes", side_effect=lambda table, models: table),
 		patch.object(frappe, "db", frappe._dict(get_value=lambda *args: zone, get_single_value=lambda *args: "in")),
 		patch.object(
 			frappe, "get_doc",

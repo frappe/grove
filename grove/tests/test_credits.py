@@ -13,7 +13,7 @@ from frappe.tests import IntegrationTestCase
 from grove import api, pricing
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_user.grove_user import register_user
-from grove.grove.doctype.model_pricing.test_model_pricing import enabled_pricing, scheduled_pricing
+from grove.grove.doctype.model_pricing.test_model_pricing import enabled_pricing, new_pricing
 from grove.pathway import routes, snapshot, usage
 from grove.pathway.run import Target
 from grove.tests.test_usage_pull import a_store
@@ -325,14 +325,16 @@ class TestThePushCarriesTheAmountLoaded(CreditsCase):
 		self.assertIs(users[user]["limited"], True)
 		self.assertEqual((users[free]["prepaid"], users[free]["budget"]), (False, 0))
 
-	def test_routes_carry_the_pricing_and_the_scheduled_one_with_its_utc_activation(self):
-		table = {self.model: [{"deployment": "d1"}], "unpriced/model": [{"deployment": "d3"}]}
-		upcoming = scheduled_pricing(self.model, completion_tokens=12)
-		self.addCleanup(frappe.db.set_value, "Model Pricing", upcoming.name, "status", "Disabled")
-		routes.add_pricing(table)
-		[row] = table[self.model]
-		self.assertEqual(row["pricing"], {"id": self.pricing, "rates": {"completion_tokens": 10 * NANO}})
-		self.assertEqual((row["next_pricing"]["id"], row["next_pricing"]["rates"]), (upcoming.name, {"completion_tokens": 12 * NANO}))
-		self.assertEqual(row["next_pricing"]["activates_at"], routes.utc_timestamp(upcoming.activates_at))
-		self.assertTrue(row["next_pricing"]["activates_at"].endswith("Z"))
-		self.assertEqual(table["unpriced/model"], [{"deployment": "d3"}])
+	def test_only_a_published_priced_model_is_routed_and_never_at_a_draft(self):
+		unpublished, _pricing = self.priced_model("credits-unpublished-7b", 5)
+		new_pricing(self.model, completion_tokens=12)
+		table = {name: [{"deployment": "d1"}] for name in (self.model, unpublished, "unpriced/model")}
+		models = [
+			frappe._dict(name=self.model, published=1),
+			frappe._dict(name=unpublished, published=0),
+			frappe._dict(name="unpriced/model", published=1),
+		]
+		self.assertEqual(
+			routes.published_routes(table, models),
+			{self.model: [{"deployment": "d1", "pricing": {"id": self.pricing, "rates": {"completion_tokens": 10 * NANO}}}]},
+		)

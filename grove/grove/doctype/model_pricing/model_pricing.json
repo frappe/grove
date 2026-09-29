@@ -8,7 +8,6 @@
   "model",
   "status",
   "column_break_vnjs",
-  "activates_at",
   "enabled_on",
   "section_rates",
   "rates"
@@ -25,28 +24,20 @@
   },
   {
    "default": "Disabled",
-   "description": "Schedule to take over at Activates At; the gateway switches on its own clock and the pull prices each request at the pricing it was charged. Never enabled directly, never disabled by hand and never re-enabled: a wrong price is a new pricing plus a credit row.",
+   "description": "Enabling retires the model's previous pricing; the next push carries it to the gateways, and the pull prices each request at the pricing it was charged. Never disabled by hand and never re-enabled: a wrong price is a new pricing plus a credit row.",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "Disabled\nScheduled\nEnabled"
+   "no_copy": 1,
+   "options": "Disabled\nEnabled"
   },
   {
-   "description": "When the gateways switch to this pricing, in the site's time zone. At least the Pricing Lead in Grove Settings ahead, so it reaches every gateway first.",
-   "fieldname": "activates_at",
-   "fieldtype": "Datetime",
-   "in_list_view": 1,
-   "label": "Activates At",
-   "mandatory_depends_on": "eval:doc.status==\"Scheduled\"",
-   "read_only_depends_on": "eval:doc.status==\"Enabled\""
-  },
-  {
-   "description": "The day it took over, stamped when it activates. Prices usage recorded before gateways tagged each request.",
    "fieldname": "enabled_on",
    "fieldtype": "Date",
    "in_list_view": 1,
    "label": "Enabled On",
+   "no_copy": 1,
    "read_only": 1
   },
   {
@@ -67,14 +58,8 @@
    "fieldtype": "Column Break"
   }
  ],
- "links": [
-  {
-   "group": "Pricing",
-   "link_doctype": "Credit Discrepancy",
-   "link_fieldname": "model"
-  }
- ],
- "modified": "2026-09-28 20:04:36.446651",
+ "links": [],
+ "modified": "2026-09-30 11:30:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model Pricing",

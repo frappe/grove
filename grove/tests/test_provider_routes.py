@@ -89,6 +89,7 @@ def routes():
 
 	with (
 		patch.object(frappe, "get_all", side_effect=FakeQuery()),
+		patch("grove.pathway.routes.published_routes", side_effect=lambda table, models: table),
 		patch.object(frappe, "get_cached_doc", side_effect=fake_cached_doc),
 		patch.object(frappe, "db", frappe._dict(get_value=lambda *args: "", get_single_value=lambda *args: "in")),
 		patch.object(

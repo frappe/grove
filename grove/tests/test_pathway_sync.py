@@ -68,14 +68,13 @@ class TestGatewayRoutes(unittest.TestCase):
 			if doctype == "Engine Image":
 				# No rows, so every placement's kind resolves to vllm.
 				return []
-			if doctype in ("Model Pricing", "Model Price Row"):
-				return []  # nothing priced, so no row carries rates
 			raise AssertionError(f"unexpected get_all({doctype})")
 
 		doc = unittest.mock.Mock()
 		doc.get_password.return_value = "internal-key"
 		with (
 			unittest.mock.patch.object(frappe, "get_all", side_effect=get_all),
+			unittest.mock.patch("grove.pathway.routes.published_routes", side_effect=lambda table, models: table),
 			unittest.mock.patch.object(
 				frappe, "db", frappe._dict(get_value=lambda *args: "grove.example.com", get_single_value=lambda *args: "in")
 			),
@@ -156,6 +155,7 @@ class TestRouteModality(unittest.TestCase):
 
 		with (
 			unittest.mock.patch.object(frappe, "get_all", get_all),
+			unittest.mock.patch("grove.pathway.routes.published_routes", side_effect=lambda table, models: table),
 			unittest.mock.patch.object(
 				frappe, "get_doc",
 				lambda *a: frappe._dict(get_password=lambda *_a, **_k: "k"),
