@@ -3,8 +3,7 @@
 """How a server names itself. Pure — the region lookup and the counter are both injected.
 
 The name is not a label, it is infrastructure: a Gateway Server's and an Ingress Server's name IS
-its record under the fleet zone, and every server's name is part of the request ids it stamps. So
-what is pinned here is that it stays one DNS label, that each region counts on its own, and that
+its record under the fleet zone. So what is pinned here is that it stays one DNS label, that each region counts on its own, and that
 the counter is asked for a number rather than derived from what already exists.
 """
 
@@ -16,7 +15,7 @@ import frappe
 
 from grove.grove.doctype.machine.machine import NAME_PREFIX, Machine
 from grove.naming import next_machine_name, next_replica_name, short_name
-from grove.utils import is_id_safe, is_label_under, slugify
+from grove.utils import is_label, is_label_under, slugify
 
 ZONE = "grove.example.com"
 
@@ -87,8 +86,8 @@ class TestServerNaming(unittest.TestCase):
 			with self.subTest(prefix):
 				generated = name(FakeSeries(), prefix=prefix)
 				self.assertTrue(generated.startswith(prefix))
-				# The request-id sanitiser has to round-trip it...
-				self.assertTrue(is_id_safe(generated), generated)
+				# It has to be a DNS label...
+				self.assertTrue(is_label(generated), generated)
 				# ...and the fleet wildcard only covers ONE label below the zone.
 				self.assertTrue(is_label_under(f"{generated}.{ZONE}", ZONE), generated)
 
@@ -104,7 +103,7 @@ class TestServerNaming(unittest.TestCase):
 	def test_the_short_name_is_the_first_label(self):
 		self.assertEqual(short_name(f"gw1-ap-south-1.{ZONE}"), "gw1-ap-south-1")
 		self.assertEqual(short_name("gw1-ap-south-1"), "gw1-ap-south-1")
-		self.assertTrue(is_id_safe(short_name(f"gw1-ap-south-1.{ZONE}")))
+		self.assertTrue(is_label(short_name(f"gw1-ap-south-1.{ZONE}")))
 
 
 class TestAMachineIsNamedByWhatItBacks(unittest.TestCase):

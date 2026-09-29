@@ -48,24 +48,22 @@ def is_env_value(value):
 	return not re.search(r'[\n\r"]', value or "")
 
 
-def is_id_safe(name):
-	"""True when a doc name survives the gateway's request-id sanitiser without losing itself.
+def is_label(name):
+	"""True when a name is one DNS-label-shaped token: letters, digits and '-'.
 
-	`CleanIDPart` rewrites '-' to '_' so the only '-' left in an id is its own separator, and
-	silently DROPS everything else. That is reversible only while the name carries no '_' of its
-	own: `inf-a` and `inf_a` both arrive as `inf_a`, and `inf.a` arrives as `infa`."""
+	A server's short name IS its record under its Geography's zone (fleet.py `hostname`) and
+	lands in a systemd Environment= line as GROVE_GATEWAY_ID, so it must be both."""
 	return bool(re.fullmatch(r"[A-Za-z0-9-]+", name or ""))
 
 
-def validate_id_safe_name(doctype, name):
-	if not name or is_id_safe(name):
+def validate_label_name(doctype, name):
+	if not name or is_label(name):
 		return
 
 	frappe.throw(
-		f"{doctype} name '{name}' can only contain letters, digits and '-'. The gateway "
-		f"rewrites '-' to '_' when it stamps a request id, so a name holding '_' or "
-		f"punctuation cannot be read back out of one.",
-		title="Name is not traceable",
+		f"{doctype} name '{name}' can only contain letters, digits and '-': it is the box's "
+		f"DNS label under its Geography's zone.",
+		title="Name is not a DNS label",
 	)
 
 

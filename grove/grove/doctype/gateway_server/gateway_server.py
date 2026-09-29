@@ -266,7 +266,7 @@ class GatewayServer(PathwayHost, Document):
 			**gateway_agent_release(),
 			"agent_binary": agent_binary,
 			"admin_token": self.get_password("admin_token"),
-			# Stamped into request ids, which keep only letters, digits and '-'.
+			# The box's label: GROVE_GATEWAY_ID, which names the process in its startup line.
 			"gateway_id": self.short_name,
 			# Which routes this gateway prefers: a same-region row wins outright.
 			"gateway_region": self.region or "",

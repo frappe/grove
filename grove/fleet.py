@@ -63,7 +63,7 @@ class FleetHost(Server):
 		zone, and then the box has no name at all — it is reached by IP over plain HTTP, which is how
 		every proxy worked before TLS.
 
-		The short name is a DNS-legal label: validate_id_safe_name allows letters, digits and '-'
+		The short name is a DNS-legal label: validate_label_name allows letters, digits and '-'
 		only, on insert."""
 		zone = self.fleet_zone
 		return f"{self.short_name}.{zone}" if zone else ""

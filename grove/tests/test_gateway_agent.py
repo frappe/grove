@@ -216,7 +216,7 @@ class TestDeployAgentShipsBothHalves(unittest.TestCase):
 		self.assertEqual(("", ""), (unplaced["gateway_geography"], unplaced["gateway_host"]))
 
 	def test_a_box_named_with_its_domain_is_known_to_the_agent_by_its_label(self):
-		# The id is stamped into request ids, which keep only letters, digits and '-'.
+		# The agent gets the label, not the domain: it is the box's name in its startup line.
 		self.assertEqual("gw-2", gateway_extravars(name="gw-2.eu.grove.test")["gateway_id"])
 		self.assertEqual("ing-2", ingress_extravars(name="ing-2.eu.grove.test")["ingress_id"])
 

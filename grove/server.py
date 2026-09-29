@@ -4,7 +4,7 @@ import frappe
 
 from grove.ansible import AnsibleHost
 from grove.naming import GeneratedName, short_name
-from grove.utils import validate_id_safe_name
+from grove.utils import validate_label_name
 
 
 class Server(GeneratedName, AnsibleHost):
@@ -19,9 +19,9 @@ class Server(GeneratedName, AnsibleHost):
 		"""Checked here, once the name exists: frappe runs before_insert with a generated name still
 		blank."""
 		super().autoname()
-		# Generated names are id-safe by construction, but a Region named with a dot would slug
+		# Generated names are label-shaped by construction, but a Region named with a dot would slug
 		# into one that is not.
-		validate_id_safe_name(self.doctype, self.short_name)
+		validate_label_name(self.doctype, self.short_name)
 		if self.short_name != self.name and self.name != f"{self.short_name}.{self.fleet_zone}":
 			frappe.throw(
 				f"{self.doctype} name '{self.name}' must be one label, or one label under its "
@@ -36,9 +36,6 @@ class Server(GeneratedName, AnsibleHost):
 	def fleet_zone(self):
 		"""The zone this box is named under: its Geography's. Blank without one."""
 		return frappe.db.get_value("Geography", self.geography, "fleet_zone") if self.geography else ""
-
-	# def before_rename(self, old_name, new_name, merge=False):
-	# 	validate_id_safe_name(self.doctype, new_name)
 
 	@property
 	def archive_blockers(self):
