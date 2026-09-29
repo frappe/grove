@@ -160,6 +160,16 @@ class TestADrainIsBilledAtGrovesPrice(CreditsCase):
 		self.assertEqual((entry["completion_tokens_above_272k"], entry["grove_cost"]), (50_000, 1.5))
 		self.assertEqual(self.discrepancies(user), [])
 
+	def test_spent_keeps_every_nano(self):
+		"""Spent is compared with the gateway's own counter, so it holds what the records hold."""
+		_model, pricing_id = self.priced_model("credits-nano-7b", 0.001)
+		user, key = self.user(credit=1)
+		for _ in range(2):
+			self.pull({key: self.hash(1500, cost=1500, pricing_id=pricing_id)})
+		self.assertEqual(self.state(user), (D("0.000003"), 0))
+		self.assertEqual(self.balance(user), D("0.999997"))
+		self.assertEqual(self.discrepancies(user), [])
+
 	def test_spending_the_balance_exhausts_credit_and_past_it_goes_negative(self):
 		user, key = self.user(credit=1)
 		self.pull({key: self.hash(100_000)})
