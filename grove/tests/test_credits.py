@@ -130,6 +130,36 @@ class TestADrainIsBilledAtGrovesPrice(CreditsCase):
 		self.assertEqual(self.state(user), (D("1.5"), 0))
 		self.assertEqual(self.discrepancies(user), [])
 
+	def above_272k_hash(self, model, pricing_id, cost):
+		"""Two requests: 100 000 completion tokens on a prompt under 272k, 50 000 on one above."""
+		p = f"p:{pricing_id}:"
+		h = {"request_count": 2, f"{p}request_count": 2, f"{p}cost": cost, "cost": cost}
+		for counter, tokens in {"completion_tokens": 100_000, "completion_tokens_above_272k": 50_000}.items():
+			h |= {counter: tokens, f"m:{counter}:{model}": tokens, f"{p}{counter}": tokens}
+		return {k: str(v) for k, v in h.items()}
+
+	def test_tokens_above_272k_are_billed_at_their_own_rate_in_the_same_entry(self):
+		model, _base = self.priced_model("credits-above-272k-7b", self.RATE)
+		pricing_id = enabled_pricing(model, completion_tokens=10, completion_tokens_above_272k=20).name
+		user, key = self.user(credit=5)
+		self.pull({key: self.above_272k_hash(model, pricing_id, cost=2 * NANO)})
+		self.assertEqual(self.state(user), (D("2"), 0))
+		[entry] = frappe.parse_json(frappe.db.get_value("Usage Record", {"api_key": key}, "usage"))
+		self.assertEqual(
+			(entry["pricing"], entry["completion_tokens"], entry["completion_tokens_above_272k"], entry["grove_cost"]),
+			(pricing_id, 100_000, 50_000, 2),
+		)
+		self.assertEqual(self.discrepancies(user), [])
+
+	def test_tokens_above_272k_are_billed_at_the_base_rate_when_the_pricing_has_no_other(self):
+		model, pricing_id = self.priced_model("credits-base-rate-7b", self.RATE)
+		user, key = self.user(credit=5)
+		self.pull({key: self.above_272k_hash(model, pricing_id, cost=1_500_000_000)})
+		self.assertEqual(self.state(user), (D("1.5"), 0))
+		[entry] = frappe.parse_json(frappe.db.get_value("Usage Record", {"api_key": key}, "usage"))
+		self.assertEqual((entry["completion_tokens_above_272k"], entry["grove_cost"]), (50_000, 1.5))
+		self.assertEqual(self.discrepancies(user), [])
+
 	def test_spending_the_balance_exhausts_credit_and_past_it_goes_negative(self):
 		user, key = self.user(credit=1)
 		self.pull({key: self.hash(100_000)})

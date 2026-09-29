@@ -79,6 +79,13 @@ class TestModelPricing(IntegrationTestCase):
 		doc.save()
 		self.assertEqual(doc.enabled_on, utc_today())
 
+	def test_an_above_272k_rate_needs_its_base(self):
+		with self.assertRaises(frappe.ValidationError):
+			new_pricing(self.model, completion_tokens=1, input_tokens_above_272k=5)
+		with self.assertRaises(frappe.ValidationError):
+			new_pricing(self.model, input_tokens=2.5, cache_write_tokens_above_272k=6.25)
+		new_pricing(self.model, input_tokens=2.5, input_tokens_above_272k=5)
+
 	def test_a_counter_missing_from_the_pricing_is_unpriced_whatever_the_cost_card_says(self):
 		provider = frappe.get_doc("Model", self.model).provider
 		provider_doc = frappe.get_doc("Model Provider", provider)

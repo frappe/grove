@@ -13,7 +13,7 @@ class ModelPriceRow(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		counter: DF.Literal['input_tokens', 'cached_tokens', 'cache_write_tokens', 'cache_write_1h_tokens', 'completion_tokens', 'audio_tokens', 'request_count']
+		counter: DF.Literal['input_tokens', 'cached_tokens', 'cache_write_tokens', 'cache_write_1h_tokens', 'completion_tokens', 'audio_tokens', 'input_tokens_above_272k', 'cached_tokens_above_272k', 'cache_write_tokens_above_272k', 'completion_tokens_above_272k', 'request_count']
 		effective_from: DF.Date
 		parent: DF.Data
 		parentfield: DF.Data

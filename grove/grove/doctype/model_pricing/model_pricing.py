@@ -1,7 +1,7 @@
 import frappe
 from frappe.model.document import Document
 
-from grove.pricing import validate_price_rows
+from grove.pricing import LONG_CONTEXT_COUNTERS, validate_price_rows
 from grove.utils import utc_today
 
 
@@ -27,12 +27,20 @@ class ModelPricing(Document):
 
 	def validate(self):
 		validate_price_rows(self.rates, key=lambda row: row.counter)
+		self.validate_long_context_rates()
 		before = self.get_doc_before_save()
 		if before and before.enabled_on:
 			self.validate_frozen(before)
 		elif self.status == "Enabled":
 			self.enabled_on = utc_today()
 			self.flags.enabling = True
+
+	def validate_long_context_rates(self):
+		"""An above-272k rate needs its base: a prompt under the threshold bills at the base."""
+		counters = {row.counter for row in self.rates}
+		for counter, base in LONG_CONTEXT_COUNTERS.items():
+			if counter in counters and base not in counters:
+				frappe.throw(f"{counter} needs a rate for {base}: a shorter request bills at it.")
 
 	def validate_frozen(self, before):
 		"""Once enabled, a pricing is history: the requests it charged are billed. A wrong price is

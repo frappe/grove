@@ -5,7 +5,9 @@ const USAGE_COLUMNS = [
 	['model', 'Model'], ['pricing', 'Pricing'], ['requests', 'Requests'],
 	['input_tokens', 'Input'], ['cached_tokens', 'Cached'], ['cache_write_tokens', 'Cache write'],
 	['cache_write_1h_tokens', 'Cache write 1h'], ['completion_tokens', 'Completion'],
-	['audio_tokens', 'Audio'],
+	['audio_tokens', 'Audio'], ['input_tokens_above_272k', 'Input >272k'],
+	['cached_tokens_above_272k', 'Cached >272k'], ['cache_write_tokens_above_272k', 'Cache write >272k'],
+	['completion_tokens_above_272k', 'Completion >272k'],
 ];
 // In the detail for the reports to sum, not shown: the record's Cost is the figure to read.
 const HIDDEN = ['grove_cost'];

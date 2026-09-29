@@ -39,6 +39,24 @@ class TestPriceBook(unittest.TestCase):
 		counts = {"audio_tokens": 500_000, "audio_seconds": 90, "request_count": 4}
 		self.assertEqual(self.priced().pricing_cost("p1", counts), D("20"))
 
+	def test_amounts_charged_above_272k_are_priced_at_those_rates(self):
+		rates = {"input_tokens": "2.5", "cached_tokens": "0.25", "completion_tokens": "15",
+		         "input_tokens_above_272k": "5", "cached_tokens_above_272k": "0.5",
+		         "cache_write_tokens_above_272k": "6.25", "completion_tokens_above_272k": "22.5"}
+		counts = {"input_tokens_above_272k": 20_000, "cached_tokens_above_272k": 280_000,
+		          "completion_tokens_above_272k": 1000}
+		priced = book(pricings={"p1": ("openai/gpt", rates)})
+		self.assertEqual(priced.pricing_cost("p1", counts), D("0.2625"))
+		self.assertEqual(priced.pricing_cost("p1", {"cache_write_tokens_above_272k": 80_000}), D("0.5"))
+
+	def test_an_above_272k_counter_with_no_rate_bills_at_its_base_rate(self):
+		rates = {"input_tokens": "2.5", "completion_tokens": "15", "completion_tokens_above_272k": "0"}
+		priced = book(pricings={"p1": ("openai/gpt", rates)})
+		self.assertEqual(priced.pricing_cost("p1", {"input_tokens_above_272k": 1_000_000}), D("2.5"))
+		self.assertEqual(priced.pricing_cost("p1", {"cached_tokens_above_272k": 1_000_000}), D("0"))
+		# A rate of 0 is a rate: free on purpose, not a fallback.
+		self.assertEqual(priced.pricing_cost("p1", {"completion_tokens_above_272k": 1_000_000}), D("0"))
+
 	def test_rates_for_the_push_are_whole_nano_usd(self):
 		b = book(pricings={"p1": ("m", {"completion_tokens": "0.3", "request_count": "0"})})
 		self.assertEqual(b.nano_rates("p1"), {"completion_tokens": 300_000_000, "request_count": 0})
@@ -57,7 +75,7 @@ class TestMoneyUnits(unittest.TestCase):
 		self.assertEqual(pricing.nano(0.3), 300_000_000)
 		self.assertEqual(pricing.nano(D("1.000000001")), 1_000_000_001)
 
-	def test_tolerance_is_one_nano_per_counter_per_request(self):
+	def test_tolerance_is_one_nano_per_counter_a_request_can_move(self):
 		self.assertEqual(pricing.tolerance(3), D("0.000000021"))
 
 

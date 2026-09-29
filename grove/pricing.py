@@ -24,7 +24,20 @@ COUNTERS = {
 	"cache_write_1h_tokens": 1_000_000,
 	"completion_tokens": 1_000_000,
 	"audio_tokens": 1_000_000,
+	"input_tokens_above_272k": 1_000_000,
+	"cached_tokens_above_272k": 1_000_000,
+	"cache_write_tokens_above_272k": 1_000_000,
+	"completion_tokens_above_272k": 1_000_000,
 	"request_count": 1,
+}
+
+# What a request whose prompt exceeds 272k tokens is counted under, and the base counter each
+# falls back to: with no rate of its own it bills at the base rate. The gateway holds the same.
+LONG_CONTEXT_COUNTERS = {
+	"input_tokens_above_272k": "input_tokens",
+	"cached_tokens_above_272k": "cached_tokens",
+	"cache_write_tokens_above_272k": "cache_write_tokens",
+	"completion_tokens_above_272k": "completion_tokens",
 }
 
 
@@ -35,11 +48,12 @@ def nano(usd):
 
 
 def cost(counts, rates):
-	"""USD for `{counter: amount}` at `{counter: USD per unit}`. A counter with usage and no rate
-	bills 0 — the Model form flags a model with no enabled pricing. Never raises."""
+	"""USD for `{counter: amount}` at `{counter: USD per unit}`. An above-272k counter with no rate
+	bills at its base counter's; any other counter with usage and no rate bills 0 — the Model
+	form flags a model with no enabled pricing. Never raises."""
 	total = Decimal(0)
 	for counter, amount in counts.items():
-		rate = rates.get(counter)
+		rate = rates.get(counter, rates.get(LONG_CONTEXT_COUNTERS.get(counter)))
 		if amount and rate is not None and counter in COUNTERS:
 			total += Decimal(amount) * rate / COUNTERS[counter]
 	return total
@@ -119,8 +133,9 @@ def credit_summary(user):
 
 def tolerance(request_count):
 	"""The gateway truncates each counter's nano-USD per request, so it can undercharge by under
-	one nano per counter per request. Beyond that is a discrepancy, not rounding."""
-	return Decimal((request_count or 0) * len(COUNTERS)) / NANO
+	one nano per counter per request. A request is counted under a base counter or its above-272k
+	one, never both. Beyond that is a discrepancy, not rounding."""
+	return Decimal((request_count or 0) * (len(COUNTERS) - len(LONG_CONTEXT_COUNTERS))) / NANO
 
 
 def validate_price_rows(rows, key):
