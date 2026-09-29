@@ -59,13 +59,36 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			"provisioning pins the user to the geography whose endpoint it hands out",
 		)
 
-	def test_the_control_role_can_pull_usage_on_demand(self):
+	def pull_counter(self, email, full_name):
+		"""A user to pull and their counter, cleared now and after: Redis is not rolled back."""
+		grove_user = api._set_policy(email, full_name, None)
+		key = frappe.cache.make_key(f"usage_pull:{grove_user}")
+		frappe.cache.delete(key)
+		self.addCleanup(frappe.cache.delete, key)
+		return grove_user, key
+
+	def test_the_control_role_pulls_a_user_on_demand_a_few_times_an_hour(self):
+		email, other = "probe-pull@example.com", "probe-pull-other@example.com"
+		grove_user, key = self.pull_counter(email, "Probe Pull")
+		other_user, _ = self.pull_counter(other, "Probe Pull Other")
+
 		with unittest.mock.patch("grove.pathway.usage.pull_all", return_value="PS-1") as pull_all:
-			self.assertEqual(api.pull_usage(), {"sync": "PS-1"})
-		pull_all.assert_called_once_with(trigger="Manual", wait=60, user=None)
+			for _ in range(api.PULLS_PER_HOUR):
+				self.assertEqual(api.pull_usage(email), {"sync": "PS-1"})
+			pull_all.assert_called_with(trigger="Manual", wait=60, user=grove_user)
+			with self.assertRaises(frappe.RateLimitExceededError):
+				api.pull_usage(email)
+			self.assertEqual(pull_all.call_count, api.PULLS_PER_HOUR)
+
+			self.assertEqual(api.pull_usage(other), {"sync": "PS-1"}, "the count is per user")
+			pull_all.assert_called_with(trigger="Manual", wait=60, user=other_user)
+		self.assertGreater(frappe.cache.ttl(key), 0, "the counter expires")
+
 		frappe.set_user("Guest")
+		counted = int(frappe.cache.get(key))
 		with self.assertRaises(frappe.PermissionError):
-			api.pull_usage()
+			api.pull_usage(email)
+		self.assertEqual(int(frappe.cache.get(key)), counted, "a refused caller spends nothing")
 
 	def test_the_control_role_can_post_a_credit(self):
 		grove_user = api._set_policy("probe-credit@example.com", "Probe Credit", None)

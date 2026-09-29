@@ -13,6 +13,7 @@ from grove.utils import utc_today
 CONTROL_ROLE = "Grove Control"
 ALLOWED_ROLES = [CONTROL_ROLE]
 USAGE_FIELDS = ("requests", "cost")
+PULLS_PER_HOUR = 3
 
 # NOTE: user in grove will be the team owner in central (for now)
 # TODO: give machine info (like no of them, their type, etc) to central so they can find the unit economics
@@ -80,17 +81,28 @@ def balance(email: str):
 
 
 @frappe.whitelist()
-def pull_usage(email: str | None = None):
-	"""Drain now instead of at the next hourly pull, waiting for one in flight: every gateway, or
-	only the keys of the user behind `email` from every store — for a fresh `balance`. → the
-	Pathway Sync that logged it, or None when there was nothing to drain."""
+def pull_usage(email: str):
+	"""Drain the keys of the user behind `email` from every store now, waiting for a pull in
+	flight — for a fresh `balance`. PULLS_PER_HOUR per user. → the Pathway Sync that logged it,
+	or None when there was nothing to drain."""
 	frappe.only_for(ALLOWED_ROLES)
 	from grove.pathway.usage import pull_all
 
-	grove_user = None
-	if email and not (grove_user := for_email(email)):
+	if not (grove_user := for_email(email)):
 		frappe.throw(f"No Grove User for {email!r}.")
+	count_pull(grove_user)
 	return {"sync": pull_all(trigger="Manual", wait=60, user=grove_user)}
+
+
+def count_pull(grove_user):
+	"""Refuse past PULLS_PER_HOUR on-demand pulls of one user. The hour starts at the first."""
+	key = frappe.cache.make_key(f"usage_pull:{grove_user}")
+	count = frappe.cache.incr(key)
+	# Checked every call, not only on the first: a counter left without a TTL would block forever.
+	if frappe.cache.ttl(key) < 0:
+		frappe.cache.expire(key, 60 * 60)
+	if count > PULLS_PER_HOUR:
+		frappe.throw(f"{PULLS_PER_HOUR} usage pulls an hour per user.", frappe.RateLimitExceededError)
 
 
 @frappe.whitelist()
