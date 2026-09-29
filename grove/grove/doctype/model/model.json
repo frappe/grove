@@ -32,7 +32,7 @@
  ],
  "fields": [
   {
-   "description": "Who serves this model. Prefixes the model id (frappe/qwen3.5-4b) \u2014 set at creation, part of the name from then on. Blank names it under the Self Hosted provider; any other provider is a vendor the model routes straight to, with no engine started for it.",
+   "description": "Who serves this model. Blank names it under the Self Hosted provider; any other provider is a vendor the model routes straight to, with no engine started for it. A vendor with a record per Geography is picked by any one of them: every gateway dials its own geography's record of the same name. Its name prefixes the model id (frappe/qwen3.5-4b), so the link moves only between records of that name.",
    "fieldname": "provider",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -212,7 +212,7 @@
    "link_fieldname": "model"
   }
  ],
- "modified": "2026-09-30 09:00:00.000000",
+ "modified": "2026-09-30 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model",

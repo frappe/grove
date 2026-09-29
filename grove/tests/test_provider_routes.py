@@ -17,28 +17,28 @@ import frappe
 
 MODELS = [
 	# Ours, hosted. The engine answers to frappe/qwen3-8b, so nothing may be rewritten.
-	{"name": "frappe/qwen3-8b", "model_id": "qwen3-8b", "provider": "frappe", "published": 1,
+	{"name": "frappe/qwen3-8b", "model_id": "qwen3-8b", "provider_name": "frappe", "published": 1,
 	 "modality": "text"},
 	# A vendor, taking the id it knows itself by.
-	{"name": "anthropic/claude-4-5", "model_id": "claude-4-5", "provider": "anthropic",
+	{"name": "anthropic/claude-4-5", "model_id": "claude-4-5", "provider_name": "anthropic",
 	 "published": 1, "upstream_model_id": "claude-sonnet-4-5-20250929", "modality": "text"},
 	# A vendor with no override: the bare id is the best guess at its namespace.
-	{"name": "anthropic/claude-haiku", "model_id": "claude-haiku", "provider": "anthropic",
+	{"name": "anthropic/claude-haiku", "model_id": "claude-haiku", "provider_name": "anthropic",
 	 "published": 1, "modality": "text"},
 	# Ours, but the container advertises its own name — the one local case that rewrites.
-	{"name": "frappe/nemo-asr", "model_id": "nemo-asr", "provider": "frappe", "published": 1,
+	{"name": "frappe/nemo-asr", "model_id": "nemo-asr", "provider_name": "frappe", "published": 1,
 	 "upstream_model_id": "test-nemo-asr", "modality": "audio"},
 	# A vendor model nothing has published yet: no route at all.
-	{"name": "anthropic/claude-draft", "model_id": "claude-draft", "provider": "anthropic",
+	{"name": "anthropic/claude-draft", "model_id": "claude-draft", "provider_name": "anthropic",
 	 "published": 0, "modality": "text"},
 	# A vendor that speaks the other dialect.
-	{"name": "deepseek/deepseek-chat", "model_id": "deepseek-chat", "provider": "deepseek",
+	{"name": "deepseek/deepseek-chat", "model_id": "deepseek-chat", "provider_name": "deepseek",
 	 "published": 1, "modality": "text"},
 	# A vendor with no dialect set: claims both shapes at its base URL.
-	{"name": "dual/mix-1", "model_id": "mix-1", "provider": "dual", "published": 1,
+	{"name": "dual/mix-1", "model_id": "mix-1", "provider_name": "dual", "published": 1,
 	 "modality": "text"},
 	# A vendor running two fronts, one per dialect, under one provider record.
-	{"name": "kimi/k2", "model_id": "k2", "provider": "kimi", "published": 1,
+	{"name": "kimi/k2", "model_id": "k2", "provider_name": "kimi", "published": 1,
 	 "modality": "text"},
 ]
 PROVIDERS = {
@@ -79,7 +79,7 @@ class FakeQuery:
 
 
 def fake_cached_doc(doctype, name):
-	provider = frappe._dict(PROVIDERS[name])
+	provider = frappe._dict(PROVIDERS[name], provider_name=name)
 	provider.get_password = lambda *a, **k: provider.api_key or None
 	return provider
 

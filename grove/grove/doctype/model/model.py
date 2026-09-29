@@ -53,6 +53,7 @@ class Model(Document):
 				frappe.MandatoryError,
 			)
 
+		self.validate_provider_name()
 		self.validate_weights_source()
 		if self.published and self.has_value_changed("published"):
 			self.validate_publishable()
@@ -64,9 +65,19 @@ class Model(Document):
 			frappe.throw(
 				f"{self.name} has no Enabled Model Pricing. Enable one first — zero rates serve it free."
 			)
-		if not is_reachable(self.name, provider=self.provider):
+		if not is_reachable(self.name, provider_name=self.provider_name):
 			frappe.throw(
 				f"{self.name} has nothing serving it: no Active replica, Running pod or vendor endpoint."
+			)
+
+	def validate_provider_name(self):
+		"""The provider's name is inside the id every caller sends, so the link moves only
+		between records of that name."""
+		if not self.name.startswith(f"{self.provider_name}/"):
+			frappe.throw(
+				f"{self.name} is named under its provider: Provider can only move to another "
+				"record of the same name.",
+				frappe.CannotChangeConstantError,
 			)
 
 	def validate_weights_source(self):
@@ -83,9 +94,9 @@ class Model(Document):
 			)
 
 	def autoname(self):
-		"""Name = `<provider>/<model id>`. What clients send as `model` and what routes are keyed
-		by, so the id is normalised here and then frozen by `set_only_once` — an edit would rename
-		a live model out from under its callers.
+		"""Name = `<provider name>/<model id>`. What clients send as `model` and what routes are
+		keyed by, so the id is normalised here and then frozen by `set_only_once` — an edit would
+		rename a live model out from under its callers.
 
 		Always prefixed, blank provider included: the prefix IS the id."""
 		self.model_id = slugify(self.model_id)
@@ -100,7 +111,12 @@ class Model(Document):
 			frappe.throw(
 				"No Model Provider is marked Self Hosted, so a blank provider has nothing to default to."
 			)
-		self.name = f"{self.provider}/{self.model_id}"
+		self.name = f"{self.provider_name}/{self.model_id}"
+
+	@property
+	def provider_name(self):
+		"""The provider's name, read off the linked record: it prefixes this model's id."""
+		return frappe.db.get_value("Model Provider", self.provider, "provider_name")
 
 	@property
 	def repo_id(self):
@@ -126,7 +142,7 @@ class Model(Document):
 		whitelisted method is reachable without the button — and the errors underneath name a
 		missing repo, which is true and no help at all."""
 		if not self.is_self_hosted:
-			frappe.throw(f"{self.name} is served by {self.provider}. {what}, and there is none.")
+			frappe.throw(f"{self.name} is served by {self.provider_name}. {what}, and there is none.")
 
 	@frappe.whitelist()
 	def fetch_architecture(self):
@@ -261,12 +277,12 @@ def mirror_weights_to_s3(model):
 	return play_name, rc
 
 
-def is_reachable(model, exclude=None, provider=None):
+def is_reachable(model, exclude=None, provider_name=None):
 	"""True if a request for `model` has somewhere to go: an Active Model Replica, a Running Pod,
 	or a third-party provider we hold an endpoint and key for.
 
-	`exclude` drops one name, for on_trash where the row still exists during delete. `provider` is
-	for a caller mid-insert — see vendor_base_url."""
+	`exclude` drops one name, for on_trash where the row still exists during delete.
+	`provider_name` is for a caller mid-insert — see vendor_base_url."""
 	filters = {"model": model, "status": "Active"}
 	if exclude:
 		filters["name"] = ("!=", exclude)
@@ -278,18 +294,22 @@ def is_reachable(model, exclude=None, provider=None):
 	# validate refuses a provider holding an address without one.
 	# TODO: clearing a provider's Base URL leaves its models published until something
 	# touches them. They emit no route, so they 404 rather than mis-route.
-	return bool(vendor_base_url(model, provider))
+	return bool(vendor_base_url(model, provider_name))
 
 
-def vendor_base_url(model, provider=None):
-	"""Where a third party serves `model`, "" when we serve it. `provider` is passed by a doc still
-	being inserted: its row is not in the database yet, so reading the link off the name would find
-	nothing and call a vendor model dark."""
-	provider = provider or frappe.db.get_value("Model", model, "provider")
-	if not provider:
+def vendor_base_url(model, provider_name=None):
+	"""Where a third party serves `model` in any geography, "" when we serve it. `provider_name` is
+	passed by a doc still being inserted: its row is not in the database yet, so reading it off the
+	name would find nothing and call a vendor model dark."""
+	provider_name = provider_name or frappe.db.get_value("Model", model, "provider.provider_name")
+	if not provider_name:
 		return ""
-	provider = frappe.get_cached_doc("Model Provider", provider)
-	return provider.base_url or provider.anthropic_base_url or ""
+	fronts = frappe.get_all(
+		"Model Provider",
+		filters={"provider_name": provider_name},
+		fields=["base_url", "anthropic_base_url"],
+	)
+	return next((url for front in fronts for url in (front.base_url, front.anthropic_base_url) if url), "")
 
 
 # Read live off the Model, never mirrored onto a placement, so editing one reaches every placement

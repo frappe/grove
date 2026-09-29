@@ -13,16 +13,16 @@ from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.model_provider.model_provider import self_hosted_provider
 
 
-def provider(name, **fields):
-	if fields.get("base_url") or fields.get("anthropic_base_url"):
+def provider(provider_name, **fields):
+	if not fields.get("is_self_hosted"):
 		fields.setdefault("geography", make_test_geography())
-	return frappe.get_doc({"doctype": "Model Provider", "name": name, **fields})
+	return frappe.get_doc({"doctype": "Model Provider", "provider_name": provider_name, **fields})
 
 
-def vendor_model(model_id, provider_name):
+def vendor_model(model_id, provider):
 	"""A model nobody hosts: no HF Repo anywhere, which is the point."""
 	return frappe.get_doc(
-		{"doctype": "Model", "model_id": model_id, "provider": provider_name, "modality": "text"}
+		{"doctype": "Model", "model_id": model_id, "provider": provider, "modality": "text"}
 	)
 
 
@@ -58,7 +58,7 @@ class TestWhatAVendorModelNeeds(IntegrationTestCase):
 		for operation in (doc.fetch_architecture, doc.mirror_weights):
 			with self.subTest(operation.__name__), self.assertRaises(frappe.ValidationError) as caught:
 				operation()
-			self.assertIn(self.vendor.name, str(caught.exception))
+			self.assertIn(self.vendor.provider_name, str(caught.exception))
 
 	def test_nothing_of_ours_will_deploy_it(self):
 		# The form filters it out of the picker; an API insert lands here, on validate's first
@@ -70,7 +70,7 @@ class TestWhatAVendorModelNeeds(IntegrationTestCase):
 		):
 			with self.subTest(doc["doctype"]), self.assertRaises(frappe.ValidationError) as caught:
 				frappe.get_doc(doc).insert()
-			self.assertIn(self.vendor.name, str(caught.exception))
+			self.assertIn(self.vendor.provider_name, str(caught.exception))
 
 	def test_one_of_ours_still_needs_a_repo(self):
 		with self.assertRaises(frappe.MandatoryError):
@@ -102,6 +102,50 @@ class TestOneProviderIsSelfHosted(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError) as caught:
 			provider("probe-dialer", is_self_hosted=1, base_url="https://api.probe.test", api_key="k").insert()
 		self.assertIn("Self Hosted", str(caught.exception))
+
+
+class TestOneNameAcrossGeographies(IntegrationTestCase):
+	"""A vendor is one record per geography under one name, so the model id is the same everywhere."""
+
+	def test_a_second_geography_shares_the_name(self):
+		first = provider("probe-shared").insert()
+		second = provider("probe-shared", geography=make_test_geography("test-2")).insert()
+		self.assertEqual(first.provider_name, second.provider_name)
+		# The name is the prefix; the doc id says nothing.
+		self.assertNotIn("probe-shared", (first.name, second.name))
+
+	def test_a_geography_holds_one_record_per_name(self):
+		provider("probe-twice").insert()
+		with self.assertRaises(frappe.ValidationError) as caught:
+			provider("probe-twice").insert()
+		self.assertIn("probe-twice", str(caught.exception))
+
+	def test_the_database_refuses_the_pair_too(self):
+		# validate reads before it writes, so two inserts at once both pass it.
+		provider("probe-raced").insert()
+		twin = provider("probe-raced")
+		twin.flags.ignore_validate = True
+		with self.assertRaises(frappe.UniqueValidationError):
+			twin.insert()
+
+	def test_a_vendor_cannot_take_our_name(self):
+		# The flag is read off whichever record a Model links, so one name cannot be both.
+		ours = frappe.db.get_value("Model Provider", self_hosted_provider(), "provider_name")
+		with self.assertRaises(frappe.ValidationError):
+			provider(ours).insert()
+
+	def test_a_model_moves_only_between_records_of_its_own_name(self):
+		first = provider("probe-moves").insert()
+		sibling = provider("probe-moves", geography=make_test_geography("test-2")).insert()
+		stranger = provider("probe-stranger").insert()
+		doc = vendor_model("probe-moved", first.name).insert()
+		self.assertEqual("probe-moves/probe-moved", doc.name)
+		doc.provider = sibling.name
+		doc.save()
+		# The name is inside the id every caller already sends.
+		doc.provider = stranger.name
+		with self.assertRaises(frappe.CannotChangeConstantError):
+			doc.save()
 
 
 class TestWithNoSelfHostedProvider(IntegrationTestCase):

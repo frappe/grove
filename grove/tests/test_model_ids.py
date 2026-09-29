@@ -16,6 +16,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from grove.grove.doctype.model_provider.model_provider import self_hosted_provider
+from grove.grove.doctype.model_provider.test_model_provider import provider
 
 
 class TestTheIdIsAlwaysPrefixed(IntegrationTestCase):
@@ -43,11 +44,17 @@ class TestTheIdIsAlwaysPrefixed(IntegrationTestCase):
 		self.assertEqual(self_hosted_provider(), doc.provider)
 
 	def test_a_third_party_model_is_named_under_its_vendor(self):
-		if not frappe.db.exists("Model Provider", "anthropic"):
-			frappe.get_doc({"doctype": "Model Provider", "name": "anthropic"}).insert()
-		doc = self.model("Claude Sonnet 4.5", provider="anthropic")
-		self.assertEqual("anthropic/claude-sonnet-4.5", doc.name)
+		# Under the vendor's name, not its record: the doc id is a hash nobody could type.
+		vendor = provider("probe-anthropic").insert()
+		doc = self.model("Claude Sonnet 4.5", provider=vendor.name)
+		self.assertEqual("probe-anthropic/claude-sonnet-4.5", doc.name)
 		self.assertEqual("claude-sonnet-4.5", doc.model_id)
+
+	def test_the_provider_name_is_read_off_the_provider_not_stored(self):
+		vendor = provider("probe-unstored").insert()
+		doc = self.model("Unstored 7B", provider=vendor.name)
+		self.assertFalse(frappe.db.has_column("Model", "provider_name"))
+		self.assertEqual("probe-unstored", frappe.get_doc("Model", doc.name).provider_name)
 
 	def test_a_blank_provider_still_gets_a_prefix(self):
 		# The prefix IS the id: without it the route key would not match what /v1/models
@@ -89,11 +96,11 @@ class TestProviderNames(IntegrationTestCase):
 	def test_a_provider_name_must_be_a_slug(self):
 		for bad in ("Bad Name Inc", "UPPER", "trailing-", "under_score"):
 			with self.subTest(bad), self.assertRaises(frappe.ValidationError):
-				frappe.get_doc({"doctype": "Model Provider", "name": bad}).insert()
+				provider(bad).insert()
 
 	def test_a_hyphenated_lowercase_name_is_fine(self):
-		doc = frappe.get_doc({"doctype": "Model Provider", "name": "vertex-ai"}).insert()
-		self.assertEqual("vertex-ai", doc.name)
+		doc = provider("probe-vertex-ai").insert()
+		self.assertEqual("probe-vertex-ai", doc.provider_name)
 
 	def test_the_self_hosted_provider_ships_with_the_app(self):
 		# A fixture flags it, so it exists before the first Model is inserted — every Model defaults to it.

@@ -14,9 +14,8 @@ from grove.pathway.run import Target
 
 ZONE = "grove.example.com"
 MODELS = [
-	{"name": "frappe/qwen3-8b", "model_id": "qwen3-8b", "provider": "frappe", "published": 1},
-	{"name": "openai/gpt-5", "model_id": "gpt-5", "provider": "openai", "published": 1},
-	{"name": "openai-eu/gpt-5", "model_id": "gpt-5", "provider": "openai-eu", "published": 1},
+	{"name": "frappe/qwen3-8b", "model_id": "qwen3-8b", "provider_name": "frappe", "published": 1},
+	{"name": "openai/gpt-5", "model_id": "gpt-5", "provider_name": "openai", "published": 1},
 ]
 REPLICAS = [
 	{"name": "MD-in", "model": "frappe/qwen3-8b", "engine_url": "https://203.0.113.1/e/md-in",
@@ -29,10 +28,13 @@ SERVERS = [{"name": "INF-eu-behind", "ingress": "eu-i1"}]
 PODS = [{"name": "POD-1", "model": "frappe/qwen3-8b", "engine_url": "http://1.2.3.4:8081"}]
 # Every pod serves in this one, set on Grove Settings.
 POD_GEOGRAPHY = "in"
+# One vendor, a record per geography: the ids are hashes, the name is what they share.
 PROVIDERS = {
-	"frappe": {"geography": None},
-	"openai": {"base_url": "https://api.openai.com/v1", "api_key": "in-key", "geography": "in"},
-	"openai-eu": {"base_url": "https://eu.api.openai.com/v1", "api_key": "eu-key", "geography": "eu"},
+	"frappe": {"provider_name": "frappe", "geography": None},
+	"a1b2": {"provider_name": "openai", "base_url": "https://api.openai.com/v1", "api_key": "in-key",
+	         "geography": "in"},
+	"c3d4": {"provider_name": "openai", "base_url": "https://eu.api.openai.com/v1",
+	         "api_key": "eu-key", "geography": "eu"},
 }
 
 
@@ -86,11 +88,16 @@ class TestRoutesStayInTheirGeography(unittest.TestCase):
 		self.assertEqual({row["deployment"] for row in routes("eu")["frappe/qwen3-8b"]}, {"eu-i1"})
 		self.assertNotIn("eu-i1", str(routes("in")))
 
-	def test_a_vendor_is_dialled_only_where_it_processes(self):
-		self.assertEqual(routes("in")["openai/gpt-5"][0]["internal_key"], "in-key")
-		self.assertNotIn("openai-eu/gpt-5", routes("in"))
-		self.assertEqual(routes("eu")["openai-eu/gpt-5"][0]["engine_url"], "https://eu.api.openai.com/v1")
-		self.assertNotIn("openai/gpt-5", routes("eu"))
+	def test_one_id_is_dialled_through_each_geographys_own_record(self):
+		[row] = routes("in")["openai/gpt-5"]
+		self.assertEqual((row["engine_url"], row["internal_key"]), ("https://api.openai.com/v1", "in-key"))
+		[row] = routes("eu")["openai/gpt-5"]
+		self.assertEqual((row["engine_url"], row["internal_key"]), ("https://eu.api.openai.com/v1", "eu-key"))
+		# Usage is attributed to the vendor, not to a record id.
+		self.assertEqual(row["deployment"], "openai")
+
+	def test_a_vendor_is_dialled_only_where_it_has_a_record(self):
+		self.assertNotIn("openai/gpt-5", routes("us"))
 
 	def test_a_gateway_with_no_geography_gets_no_routes(self):
 		# Fail closed: blank must not match rows that were never given a geography.

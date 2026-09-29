@@ -133,12 +133,16 @@ def gateway_routes(geography):
 	# Stamped per row because deploy:<model> is the only thing pushed per model — a record of its
 	# own would be a new namespace for one short string. Blank means unrestricted.
 	models = frappe.get_all(
-		"Model", fields=["name", "modality", "model_id", "upstream_model_id", "provider", "published"]
+		"Model",
+		fields=[
+			"name", "modality", "model_id", "upstream_model_id", "published",
+			"provider.provider_name as provider_name",
+		],
 	)
 	modality = {m.name: m.modality or "" for m in models}
 	# Once, not per model: a handful of providers against thousands of models.
 	vendors = vendor_endpoints(geography)
-	upstream = {m.name: upstream_model(m, m.provider in vendors) for m in models}
+	upstream = {m.name: upstream_model(m, m.provider_name in vendors) for m in models}
 	routes = {}
 	targets = ingress_targets(geography)
 	# One row per (model, ingress), so deployments behind one ingress fold together instead of
@@ -247,7 +251,8 @@ def upstream_model(model, is_vendor):
 
 
 def vendor_endpoints(geography):
-	"""Every third party in `geography` we can actually dial. A provider is dialable as a whole — an
+	"""Every third party in `geography` we can actually dial, by provider name: a Model is served by
+	whichever record of its provider sits in the geography. A provider is dialable as a whole — an
 	address without a key is not a route."""
 	out = {}
 	for name in frappe.get_all("Model Provider", filters={"geography": geography}, pluck="name"):
@@ -268,7 +273,7 @@ def vendor_endpoints(geography):
 		# any truthiness check while carrying nothing.
 		api_key = provider.get_password("api_key", raise_exception=False)
 		if api_key:
-			out[name] = {
+			out[provider.provider_name] = {
 				"fronts": fronts,
 				"api_key": api_key,
 				"api_version": provider.api_version or "",
@@ -282,17 +287,17 @@ def add_vendor_routes(routes, models, vendors, modality, upstream):
 	divide — the vendor's own 429 is the only cap — so capacity stays 0 and the provider names
 	itself as the deployment."""
 	for model in models:
-		if not model.published or model.provider not in vendors:
+		if not model.published or model.provider_name not in vendors:
 			continue
-		vendor = vendors[model.provider]
+		vendor = vendors[model.provider_name]
 		for engine_url, dialect in vendor["fronts"]:
 			routes.setdefault(model.name, []).append({
 				"engine_url": engine_url,
 				"internal_key": vendor["api_key"],
 				"healthy": True,
 				"capacity": 0,
-				"deployment": model.provider,
-				"server": model.provider,
+				"deployment": model.provider_name,
+				"server": model.provider_name,
 				"kind": "provider",
 				"modality": modality.get(model.name, ""),
 				"upstream_model": upstream.get(model.name, ""),

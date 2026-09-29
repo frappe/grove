@@ -18,18 +18,18 @@ from grove.server import Server
 ZONE = "grove.example.com"
 
 
-def make_test_geography():
+def make_test_geography(name="test"):
 	"""The Geography site-backed tests put their regions and vendors in."""
-	if not frappe.db.exists("Geography", "test"):
+	if not frappe.db.exists("Geography", name):
 		geography = {
-			"doctype": "Geography", "__newname": "test",
-			"fleet_zone": "test.grove.localhost", "endpoint": "api.test.grove.localhost",
+			"doctype": "Geography", "__newname": name,
+			"fleet_zone": f"{name}.grove.localhost", "endpoint": f"api.{name}.grove.localhost",
 		}
 		frappe.get_doc(geography).insert(ignore_permissions=True)
 	# A Grove User needs a geography; on a site with no default, the test one is it.
 	if not frappe.db.exists("Geography", {"is_default": 1}):
-		frappe.db.set_value("Geography", "test", "is_default", 1)
-	return "test"
+		frappe.db.set_value("Geography", name, "is_default", 1)
+	return name
 
 
 def validate(endpoint, zone=ZONE, before=None, gateways=()):
@@ -137,14 +137,21 @@ class TestWhoCarriesAGeography(unittest.TestCase):
 
 	def test_a_vendor_must_name_where_it_processes(self):
 		def validate(**fields):
-			doc = SimpleNamespace(**{"name": "openai-eu", "base_url": None, "anthropic_base_url": None, "geography": None, "is_self_hosted": 0, "rate_card": [], **fields})
+			doc = SimpleNamespace(**{
+				"name": "a1b2", "provider_name": "openai", "base_url": None, "anthropic_base_url": None,
+				"geography": None, "is_self_hosted": 0, "rate_card": [],
+				"validate_self_hosted": lambda: None, "validate_siblings": lambda: None, **fields,
+			})
 			with patch("frappe.throw", side_effect=frappe.ValidationError):
 				ModelProvider.validate(doc)
 
 		with self.assertRaises(frappe.ValidationError):
 			validate(anthropic_base_url="https://bedrock-runtime.eu-central-1.amazonaws.com/anthropic")
+		# A record is one geography's, so a vendor names one before it has a URL.
+		with self.assertRaises(frappe.ValidationError):
+			validate()
 		validate(base_url="https://eu.api.openai.com/v1", geography="eu")
-		validate()  # our own engines take theirs from wherever they run
+		validate(is_self_hosted=1)  # our own engines take theirs from wherever they run
 
 
 class TestAServerNamedWithItsDomain(unittest.TestCase):
