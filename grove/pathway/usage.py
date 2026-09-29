@@ -37,7 +37,6 @@ from grove.pathway.run import SyncRun, Target, error_text, gateway_units, in_tur
 from grove.pricing import COUNTERS, PriceBook
 from grove.utils import utc_today
 
-MONEY = ("cost", "user_spent", "user_balance")
 DEAD = "dead:"
 
 
@@ -194,9 +193,8 @@ def read_dead_line(line, gateway_store):
 
 
 def parse_drain(h):
-	"""One drained hash split four ways: the key's request count, the per-(model, counter)
-	quantities the reports read, the counters and cost per pricing the gateway charged at, and the
-	money the gateway wrote about the holder."""
+	"""One drained hash split three ways: the key's request count, the per-(model, counter)
+	quantities the reports read, and the counters and cost per pricing the gateway charged at."""
 	requests = int(h.get("request_count", 0) or 0)
 	counters, pricings = {}, {}
 	for k, v in h.items():
@@ -208,5 +206,4 @@ def parse_drain(h):
 			pricing, _, counter = k[2:].partition(":")
 			if pricing and (counter in COUNTERS or counter == "cost"):
 				pricings.setdefault(pricing, {})[counter] = int(v or 0)
-	money = {f: int(h[f]) for f in MONEY if f in h}
-	return frappe._dict(requests=requests, counters=counters, pricings=pricings, money=money)
+	return frappe._dict(requests=requests, counters=counters, pricings=pricings)

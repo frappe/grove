@@ -71,15 +71,13 @@ class CreditsCase(IntegrationTestCase):
 	def balance(self, user):
 		return D(str(frappe.db.get_value("Grove User", user, "balance")))
 
-	def hash(self, tokens, cost=None, spent=None, pricing_id=None, requests=1):
+	def hash(self, tokens, cost=None, pricing_id=None, requests=1):
 		"""What one key's drained hash carries: the counters, tagged with the pricing the gateway
-		charged, and the money it wrote. Values are strings, as Redis returns them."""
+		charged, and its cost. Values are strings, as Redis returns them."""
 		p = f"p:{pricing_id or self.pricing}:"
 		cost = tokens * self.RATE * 1000 if cost is None else cost
 		h = {"completion_tokens": tokens, "request_count": requests, f"m:completion_tokens:{self.model}": tokens,
 		     f"{p}completion_tokens": tokens, f"{p}request_count": requests, f"{p}cost": cost, "cost": cost}
-		if spent is not None:
-			h["user_spent"], h["user_balance"] = spent, NANO - spent
 		return {k: str(v) for k, v in h.items()}
 
 	def pull(self, usages, store=None, drain_id=None):
@@ -102,7 +100,7 @@ class CreditsCase(IntegrationTestCase):
 class TestADrainIsBilledAtGrovesPrice(CreditsCase):
 	def test_a_drain_bills_grove_price_with_both_costs_on_the_record(self):
 		user, key = self.user(credit=1)
-		self.pull({key: self.hash(50_000, spent=500_000_000)})
+		self.pull({key: self.hash(50_000)})
 		self.assertEqual(self.state(user), (D("0.5"), 0))
 		record = frappe.get_doc("Usage Record", {"api_key": key})
 		self.assertEqual((record.cost, record.gateway_cost, record.gateway_store), (0.5, 0.5, self.store))
@@ -112,7 +110,6 @@ class TestADrainIsBilledAtGrovesPrice(CreditsCase):
 			(self.pricing, self.model, 1, 50_000, 0.5),
 		)
 		self.assertNotIn("gateway_cost", entry)
-		self.assertEqual(frappe.db.get_value("Gateway Spend", {"grove_user": user, "gateway_store": self.store}, "spent"), 0.5)
 		self.assertEqual(self.discrepancies(user), [])
 
 	def test_a_resent_drain_bills_nothing_twice(self):

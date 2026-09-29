@@ -12,7 +12,6 @@ from decimal import Decimal
 import frappe
 
 from grove.grove.doctype.credit_discrepancy.credit_discrepancy import record
-from grove.grove.doctype.gateway_spend.gateway_spend import record_spend
 from grove.pricing import COUNTERS, NANO, settle, tolerance
 
 NANO_USD = Decimal(1) / NANO
@@ -40,7 +39,6 @@ class Reconciler:
 		]
 		if billed:
 			self.bill(user, records)
-		self.record_gateway_spend(user, drains.values())
 		settle(user)
 
 	def bill(self, user, records):
@@ -101,13 +99,3 @@ class Reconciler:
 					model=entry["model"], gateway_store=self.gateway_store,
 					gateway_value=gateway, grove_value=grove, delta=gateway - grove,
 				)
-
-	def record_gateway_spend(self, user, drains):
-		"""The box's own view of the user on this store: the key with the highest lifetime counter
-		reported last."""
-		reported = [drain.money for drain in drains if "user_spent" in drain.money]
-		if reported:
-			best = max(reported, key=lambda money: money["user_spent"])
-			record_spend(
-				user, self.gateway_store, usd(best["user_spent"]), usd(best.get("user_balance", 0)), self.drain_id
-			)

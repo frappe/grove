@@ -129,11 +129,6 @@
   },
   {
    "group": "Usage",
-   "link_doctype": "Gateway Spend",
-   "link_fieldname": "grove_user"
-  },
-  {
-   "group": "Usage",
    "link_doctype": "Credit Discrepancy",
    "link_fieldname": "grove_user"
   },
@@ -143,7 +138,7 @@
    "link_fieldname": "grove_user"
   }
  ],
- "modified": "2026-09-30 01:00:00.000000",
+ "modified": "2026-09-30 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove User",

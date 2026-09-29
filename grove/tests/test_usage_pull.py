@@ -88,14 +88,12 @@ class TestADrainIsOneRecordPerKey(PullCase):
 		[entry] = self.detail(doc)
 		self.assertEqual((entry["model"], entry["pricing"], entry["requests"], entry["completion_tokens"]), (self.model, None, 2, 10))
 
-	def test_the_gateways_own_view_of_the_user_lands_on_gateway_spend(self):
-		key, other = self.key(), self.key()
-		self.pull({
-			key: {"request_count": "1", "user_spent": "300000000", "user_balance": "700000000"},
-			other: {"request_count": "1", "user_spent": "500000000", "user_balance": "500000000"},
-		}, drain_id="d-spend")
-		spend = frappe.get_doc("Gateway Spend", {"grove_user": self.user, "gateway_store": self.store})
-		self.assertEqual((spend.spent, spend.balance, spend.drain_id), (0.5, 0.5, "d-spend"))
+	def test_the_gateways_own_view_of_the_user_is_ignored(self):
+		# The box still writes these two; Grove bills from the pricing-tagged counters alone.
+		key = self.key()
+		self.pull({key: {"request_count": "1", "user_spent": "300000000", "user_balance": "700000000"}})
+		[doc] = self.records(key)
+		self.assertEqual((doc.request_count, doc.cost), (1, 0))
 
 	def test_the_next_drain_is_a_new_record_and_a_resent_one_records_nothing_twice(self):
 		key = self.key()
