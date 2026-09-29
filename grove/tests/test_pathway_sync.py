@@ -808,6 +808,20 @@ class TestSyncProjection(unittest.TestCase):
 		self.assertEqual(seen, [("Ingress Server", "ing1")])
 
 
+class TestAFailedTickIsLogged(unittest.TestCase):
+	"""The scheduler swallows a job's exception and keeps no log of this one, so the tick logs its
+	own."""
+
+	def test_a_tick_that_throws_lands_in_the_error_log_and_still_raises(self):
+		with (
+			unittest.mock.patch.object(projection.Projection, "run", side_effect=ValueError("no route")),
+			unittest.mock.patch.object(frappe, "log_error") as log_error,
+			self.assertRaises(ValueError),
+		):
+			projection.sync_projection()
+		log_error.assert_called_once_with(title="Pathway projection failed")
+
+
 class TestSyncTargets(unittest.TestCase):
 	"""Which gateways a run reaches: each Redis once, a store only through the gateways marked to."""
 

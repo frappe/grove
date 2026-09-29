@@ -56,8 +56,13 @@ class Projection(SyncRun):
 
 
 def sync_projection(trigger="Scheduled", proxies=None, ingresses=None, force=False, wait=0):
-	"""The cron tick: bring every target box to the current desired state."""
-	return Projection(trigger, proxies, ingresses, force, wait).run()
+	"""The cron tick: bring every target box to the current desired state. The scheduler swallows
+	a job's exception and keeps no log of this one, so a failure lands in the Error Log here."""
+	try:
+		return Projection(trigger, proxies, ingresses, force, wait).run()
+	except Exception:
+		frappe.log_error(title="Pathway projection failed")
+		raise
 
 
 def full_sync(proxies=None, trigger="Manual", ingresses=None, wait=60):
