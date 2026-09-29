@@ -77,7 +77,7 @@
   },
   {
    "default": "0",
-   "description": "Store this user's prompts and model outputs in the gateway's payload log (short retention, support queries). Customer content \u2014 off unless they have agreed to it.",
+   "description": "Store this user's prompts and model outputs in the gateway's payload log (short retention, support queries).",
    "fieldname": "log_payloads",
    "fieldtype": "Check",
    "label": "Log Prompts & Outputs"
