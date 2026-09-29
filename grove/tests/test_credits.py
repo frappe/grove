@@ -181,12 +181,12 @@ class TestAFreeUserIsNeverCharged(CreditsCase):
 		self.pull({key: self.hash(50_000, cost=600_000_000)})
 		self.assertEqual(self.discrepancies(free), [])
 
-	def test_the_usage_api_counts_their_tokens_and_no_cost(self):
+	def test_the_usage_api_counts_their_requests_and_no_cost(self):
 		free, key = self.user(credit=0, free=1)
 		self.pull({key: self.hash(80_000)})
 		email = frappe.db.get_value("Grove User", free, "user")
 		result = api.usage([email], period="Today")
-		self.assertEqual((result[email]["completion_tokens"], result[email]["cost"]), (80_000, 0))
+		self.assertEqual(result[email], {"requests": 1, "cost": 0})
 
 	def test_untagged_usage_of_a_known_model_is_recorded_and_bills_nothing(self):
 		user, key = self.user(credit=1)
@@ -226,17 +226,16 @@ class TestAFreeUserIsNeverCharged(CreditsCase):
 
 
 class TestTheUsageApiSumsInTheDatabase(CreditsCase):
-	def test_tokens_and_cost_per_user_and_model_over_a_period(self):
+	def test_requests_and_cost_per_user_and_model_over_a_period(self):
 		user, key = self.user(credit=5)
 		self.pull({key: self.hash(50_000)})
-		self.pull({key: self.hash(30_000)})
+		self.pull({key: self.hash(30_000, requests=2)})
 		email = frappe.db.get_value("Grove User", user, "user")
 		result = api.usage([email], period="Today")
-		self.assertEqual((result[email]["completion_tokens"], result[email]["cost"]), (80_000, 0.8))
-		[model] = result["model_summary"]
-		self.assertEqual((model["model"], model["completion_tokens"]), (self.model, 80_000))
+		self.assertEqual(result[email], {"requests": 3, "cost": 0.8})
+		self.assertEqual(result["model_summary"], [{"model": self.model, "requests": 3, "cost": 0.8}])
 		self.assertTrue(result["as_of"].endswith("Z"))
-		self.assertEqual(api.usage([email], period="Yesterday")[email]["completion_tokens"], 0)
+		self.assertEqual(api.usage([email], period="Yesterday")[email], {"requests": 0, "cost": 0})
 
 
 class TestTheGatewaysChargeIsAudited(CreditsCase):

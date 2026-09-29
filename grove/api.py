@@ -12,10 +12,10 @@ from grove.utils import utc_today
 
 CONTROL_ROLE = "Grove Control"
 ALLOWED_ROLES = [CONTROL_ROLE]
-USAGE_FIELDS = ("prompt_tokens", "completion_tokens", "cached_tokens")
-# What a caller sees as prompt tokens: every prompt-side counter, cached or written or plain.
-PROMPT_COUNTERS = ("input_tokens", "cached_tokens", "cache_write_tokens", "cache_write_1h_tokens")
-TOKEN_COUNTERS = (*PROMPT_COUNTERS, "completion_tokens")
+USAGE_FIELDS = ("requests", "cost")
+
+# NOTE: user in grove will be the team owner in central (for now)
+# TODO: give machine info (like no of them, their type, etc) to central so they can find the unit economics
 
 
 @frappe.whitelist()
@@ -145,11 +145,11 @@ def usage(
 	users: list[str] | str, from_date: str | None = None, to_date: str | None = None,
 	period: str | None = None, month: str | None = None,
 ):
-	"""Tokens and cost per user and per model over a UTC date range: `from_date`/`to_date`, a
+	"""Requests and cost per user and per model over a UTC date range: `from_date`/`to_date`, a
 	`period` (Today, Yesterday, Last 7 Days, Last 30 Days, This Month, Last Month) or a `month`
 	(YYYY-MM); This Month when none is given. Summed by the database in one grouped query. `cost`
-	is what was charged, so usage while the user was Free adds tokens and no cost. `as_of` is when
-	the newest usage in the range was pulled, in UTC."""
+	is what was charged, so usage while the user was Free adds requests and no cost. `as_of` is
+	when the newest usage in the range was pulled, in UTC."""
 	frappe.only_for(ALLOWED_ROLES)
 	from grove.grove.doctype.usage_record.usage_record import usage_table
 	from grove.pathway.routes import utc_timestamp
@@ -160,7 +160,7 @@ def usage(
 	# In and out by email; the records themselves are keyed by Grove User.
 	emails = dict(frappe.get_list("Grove User", {"user": ("in", users)}, ["name", "user"], as_list=True))
 	rows = frappe.db.sql(
-		f"""select r.user, u.model, {", ".join(f"sum(u.{c}) as {c}" for c in TOKEN_COUNTERS)},
+		f"""select r.user, u.model, sum(u.requests) as requests,
 		sum(if(r.billed, u.grove_cost, 0)) as cost, max(r.creation) as as_of
 		from `tabUsage Record` r, {usage_table()}
 		where r.user in %(users)s and r.day between %(from_date)s and %(to_date)s
@@ -168,15 +168,18 @@ def usage(
 		{"users": list(emails) or [""], "from_date": from_date, "to_date": to_date},
 		as_dict=True,
 	) if emails else []
-	per_model = [{**_token_totals(row), "model": row.model, "user": row.user} for row in rows]
-	totals = {email: dict.fromkeys(USAGE_FIELDS, 0) | {"cost": 0.0} for email in emails.values()}
+	per_model = [
+		{"model": row.model, "user": row.user, "requests": int(row.requests or 0), "cost": float(row.cost or 0)}
+		for row in rows
+	]
+	totals = {email: {"requests": 0, "cost": 0.0} for email in emails.values()}
 	for row in per_model:
-		for field in (*USAGE_FIELDS, "cost"):
+		for field in USAGE_FIELDS:
 			totals[emails[row["user"]]][field] += row[field]
 	return {
 		"users": users, "from_date": str(from_date), "to_date": str(to_date),
 		"as_of": utc_timestamp(max(row.as_of for row in rows)) if rows else None,
-		"model_summary": _totals_by_model(per_model, (*USAGE_FIELDS, "cost")), **totals,
+		"model_summary": _totals_by_model(per_model), **totals,
 	}
 
 
@@ -252,27 +255,15 @@ def _set_policy(email, full_name, models, geography=None, free=False):
 	return doc.name
 
 
-def _token_totals(row):
-	"""One grouped row as the token columns the endpoint has always returned: prompt is every
-	prompt-side counter, cached and completion their own."""
-	return {
-		"prompt_tokens": sum(int(row.get(c) or 0) for c in PROMPT_COUNTERS),
-		"cached_tokens": int(row.get("cached_tokens") or 0),
-		"completion_tokens": int(row.get("completion_tokens") or 0),
-		"cost": float(row.get("cost") or 0),
-	}
-
-
-def _totals_by_model(rows, fields):
-	"""Token rows folded into one entry per model, biggest consumer first. Rows arrive one per
-	(record, model) — a user holds several keys, each with its own day records — so a model is
-	summed across all of them rather than overwritten."""
+def _totals_by_model(rows):
+	"""Usage rows folded into one entry per model, costliest first, then busiest. Rows arrive one
+	per (user, model), so a model is summed across users rather than overwritten."""
 	per_model = {}
 	for row in rows:
 		totals = per_model.setdefault(
-			row["model"], {"model": row["model"], **dict.fromkeys(fields, 0)}
+			row["model"], {"model": row["model"], **dict.fromkeys(USAGE_FIELDS, 0)}
 		)
-		for f in fields:
+		for f in USAGE_FIELDS:
 			totals[f] += row.get(f) or 0
 
-	return sorted(per_model.values(), key=lambda totals: -totals["prompt_tokens"])
+	return sorted(per_model.values(), key=lambda totals: (-totals["cost"], -totals["requests"]))
