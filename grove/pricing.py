@@ -15,7 +15,7 @@ from grove.grove.doctype.grove_user.grove_user import set_credit_exhausted
 
 NANO = 10**9
 
-# Unit divisor per priced counter: a rate is USD per Mtok, per minute, per request. The gateway
+# Unit divisor per priced counter: a rate is USD per Mtok, per request. The gateway
 # holds the same table (pathway internal/domain/price.go); the README lists both.
 COUNTERS = {
 	"input_tokens": 1_000_000,
@@ -23,7 +23,7 @@ COUNTERS = {
 	"cache_write_tokens": 1_000_000,
 	"cache_write_1h_tokens": 1_000_000,
 	"completion_tokens": 1_000_000,
-	"audio_seconds": 60,
+	"audio_tokens": 1_000_000,
 	"request_count": 1,
 }
 

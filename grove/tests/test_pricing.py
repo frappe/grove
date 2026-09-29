@@ -25,7 +25,7 @@ def book(models=(), pricings=None):
 
 class TestPriceBook(unittest.TestCase):
 	RATES = {"input_tokens": "3", "cached_tokens": "0.3", "cache_write_tokens": "3.75",
-	         "cache_write_1h_tokens": "6", "completion_tokens": "15", "audio_seconds": "0.006"}
+	         "cache_write_1h_tokens": "6", "completion_tokens": "15", "audio_tokens": "40"}
 
 	def priced(self):
 		return book(pricings={"p1": ("anthropic/claude", self.RATES)})
@@ -35,8 +35,9 @@ class TestPriceBook(unittest.TestCase):
 		          "cache_write_1h_tokens": 100_000, "completion_tokens": 500_000}
 		self.assertEqual(self.priced().pricing_cost("p1", counts), D("9.795"))
 
-	def test_audio_is_priced_per_minute_and_a_counter_with_no_rate_bills_zero(self):
-		self.assertEqual(self.priced().pricing_cost("p1", {"audio_seconds": 90, "request_count": 4}), D("0.009"))
+	def test_audio_is_priced_per_mtok_and_a_counter_with_no_rate_bills_zero(self):
+		counts = {"audio_tokens": 500_000, "audio_seconds": 90, "request_count": 4}
+		self.assertEqual(self.priced().pricing_cost("p1", counts), D("20"))
 
 	def test_rates_for_the_push_are_whole_nano_usd(self):
 		b = book(pricings={"p1": ("m", {"completion_tokens": "0.3", "request_count": "0"})})
