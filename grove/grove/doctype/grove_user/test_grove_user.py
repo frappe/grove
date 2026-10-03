@@ -10,6 +10,7 @@ from frappe.tests import IntegrationTestCase
 
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_user.grove_user import GROVE_USER_ROLE, register_user
+from grove.grove.doctype.model_provider.test_model_provider import our_model, provider, vendor_model
 from grove.pathway.snapshot import effective_users
 
 
@@ -122,12 +123,37 @@ class IntegrationTestNewUsersStartInTheDefaultGroup(IntegrationTestCase):
 		doc = frappe.get_doc({"doctype": "Grove User", "user": user, "geography": away}).insert()
 		self.assertEqual(self.groups_of(doc), [theirs])
 
-	def test_a_user_holding_groups_cannot_be_moved_to_another_geography(self):
-		doc = frappe.get_doc({"doctype": "Grove User", "user": register_user("grove-group-moved@example.com")}).insert()
-		self.assertEqual(self.groups_of(doc), [self.default])
-		doc.geography = make_test_geography("grove-default-moved")
-		with self.assertRaises(frappe.ValidationError):
-			doc.save()
+
+class IntegrationTestOwnGrantsAreTheUsersGeographys(IntegrationTestCase):
+	"""An Allow or Deny row names the vendor doc the user's own geography serves."""
+
+	KEY = "allow-vendor/allow-big"
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.here, cls.away = make_test_geography("allow-here"), make_test_geography("allow-away")
+		cls.docs = {}
+		for geography in (cls.here, cls.away):
+			vendor = provider("allow-vendor", base_url="https://allow.test/v1", api_key="k", geography=geography).insert()
+			cls.docs[geography] = vendor_model("allow-big", vendor.name).insert().name
+		cls.ours = our_model("allow-ours-7b").insert().name
+
+	def user(self, email, **fields):
+		return frappe.get_doc({"doctype": "Grove User", "user": register_user(email), "geography": self.here, **fields})
+
+	def test_a_vendor_model_of_another_geography_is_refused_and_ours_is_not(self):
+		self.user("grove-allow-here@example.com", allow=[{"model": self.docs[self.here]}, {"model": self.ours}]).insert()
+		for field in ("allow", "deny"):
+			with self.assertRaises(frappe.ValidationError):
+				self.user(f"grove-{field}-away@example.com", **{field: [{"model": self.docs[self.away]}]}).insert()
+
+	def test_provisioning_by_key_allows_the_users_geographys_doc(self):
+		from grove import api
+
+		grove_user = api._set_policy("grove-allow-keyed@example.com", "Keyed", [self.KEY], geography=self.away)
+		allowed = frappe.get_all("Grove Model Row", filters={"parent": grove_user, "parentfield": "allow"}, pluck="model")
+		self.assertEqual(allowed, [self.docs[self.away]])
 
 
 class IntegrationTestOneGeographyPerUser(IntegrationTestCase):

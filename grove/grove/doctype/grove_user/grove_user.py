@@ -4,6 +4,8 @@
 import frappe
 from frappe.model.document import Document
 
+from grove.access import validate_model_geography
+
 
 class GroveUser(Document):
 	"""Grove's per-user policy: their groups, which models they may call, and their prepaid
@@ -53,17 +55,8 @@ class GroveUser(Document):
 		if not self.geography:
 			frappe.throw("Mark one Geography as default, or pick a geography for this user.")
 
-	def validate_group_geography(self):
-		"""A group grants what its own geography serves, so its members are in it. Also what
-		refuses moving a user who still holds groups."""
-		names = [row.model_group for row in self.model_groups]
-		groups = frappe.get_all("Model Group", filters={"name": ("in", names)}, fields=["name", "geography"])
-		elsewhere = sorted(group.name for group in groups if group.geography != self.geography)
-		if elsewhere:
-			frappe.throw(f"{', '.join(elsewhere)} is not a group in {self.geography}.")
-
 	def validate(self):
-		self.validate_group_geography()
+		validate_model_geography([*self.allow, *self.deny], self.geography)
 		# Deny wins anyway, so a model on both lists is a mistake worth surfacing.
 		both = {row.model_key for row in self.allow} & {row.model_key for row in self.deny}
 		if both:

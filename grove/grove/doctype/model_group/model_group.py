@@ -4,6 +4,8 @@
 import frappe
 from frappe.model.document import Document
 
+from grove.access import validate_model_geography
+
 
 class ModelGroup(Document):
 	"""A named set of models in one geography. Membership lives on Grove User, and a user reaches
@@ -37,19 +39,7 @@ class ModelGroup(Document):
 		# two groups that resolve to nothing.
 		if "," in self.name:
 			frappe.throw("A group name cannot contain a comma")
-		self.validate_model_geography()
-
-	def validate_model_geography(self):
-		"""A vendor's doc is one geography's, and members reach only the group's. Ours serve
-		wherever a replica runs."""
-		models = frappe.get_all(
-			"Model",
-			filters={"name": ("in", [row.model for row in self.models]), "provider_is_self_hosted": 0},
-			fields=["model_key", "geography"],
-		)
-		elsewhere = sorted(m.model_key for m in models if m.geography != self.geography)
-		if elsewhere:
-			frappe.throw(f"{', '.join(elsewhere)} is not a model in {self.geography}.")
+		validate_model_geography(self.models, self.geography)
 
 	def on_update(self):
 		"""One default per geography: this one ticked unticks every other there."""

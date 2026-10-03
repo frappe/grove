@@ -303,14 +303,14 @@ def _set_policy(email, full_name, models, geography=None, free=False):
 	name = for_email(email)
 	doc = frappe.get_doc("Grove User", name) if name else frappe.new_doc("Grove User")
 	doc.user = register_user(email, full_name)
+	if geography:
+		doc.geography = geography
 	if models:
 		from grove.access import model_doc
 
 		doc.allow = []
 		for model in models:
-			doc.append("allow", {"model": model_doc(model)})
-	if geography:
-		doc.geography = geography
+			doc.append("allow", {"model": model_doc(model, doc.geography)})
 	if free:
 		doc.free = 1
 	doc.save()
