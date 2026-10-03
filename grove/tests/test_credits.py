@@ -289,11 +289,11 @@ class TestTheGatewaysChargeIsAudited(CreditsCase):
 		)
 		self.assertEqual(self.state(user), (D("0.5"), 0))
 
-	def test_truncation_up_to_seven_nano_a_request_is_not_a_discrepancy(self):
+	def test_truncation_up_to_eight_nano_a_request_is_not_a_discrepancy(self):
 		user, key = self.user(credit=5)
-		self.pull({key: self.hash(50_000, cost=500_000_000 - 14, requests=2)})
+		self.pull({key: self.hash(50_000, cost=500_000_000 - 16, requests=2)})
 		self.assertEqual(self.discrepancies(user), [])
-		self.pull({key: self.hash(50_000, cost=500_000_000 - 15, requests=2)})
+		self.pull({key: self.hash(50_000, cost=500_000_000 - 17, requests=2)})
 		self.assertEqual(len(self.discrepancies(user)), 1)
 
 
@@ -367,13 +367,19 @@ class TestThePushCarriesTheAmountLoaded(CreditsCase):
 	def test_only_a_published_priced_model_is_routed_and_never_at_a_draft(self):
 		unpublished, _pricing = self.priced_model("credits-unpublished-7b", 5)
 		new_pricing(self.model, completion_tokens=12)
-		table = {name: [{"deployment": "d1"}] for name in (self.model, unpublished, "unpriced/model")}
+		# The table is keyed by model key; the rows beside it are the docs, pricing hanging off each.
+		table = {key: [{"deployment": "d1"}] for key in (self.model_key, "frappe/unpublished", "unpriced/model")}
 		models = [
-			frappe._dict(name=self.model, published=1),
-			frappe._dict(name=unpublished, published=0),
-			frappe._dict(name="unpriced/model", published=1),
+			frappe._dict(name=self.model, model_key=self.model_key, published=1),
+			frappe._dict(name=unpublished, model_key="frappe/unpublished", published=0),
+			frappe._dict(name="no-doc", model_key="unpriced/model", published=1),
 		]
+		# The counter table rides inside the pricing, so the gateway counts under the rows it prices.
+		counters = pricing.CounterTable.load().published
 		self.assertEqual(
 			routes.published_routes(table, models),
-			{self.model: [{"deployment": "d1", "pricing": {"id": self.pricing, "rates": {"completion_tokens": 10 * NANO}}}]},
+			{self.model_key: [{"deployment": "d1", "pricing": {
+				"id": self.pricing, "rates": {"completion_tokens": 10 * NANO}, "counters": counters,
+			}}]},
 		)
+		self.assertIn({"name": "prompt_tokens_above_272k", "divisor": 10**6, "base": "prompt_tokens", "min_prompt_tokens": 272000}, counters)

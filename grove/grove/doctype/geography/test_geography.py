@@ -139,7 +139,7 @@ class TestWhoCarriesAGeography(unittest.TestCase):
 		def validate(**fields):
 			doc = SimpleNamespace(**{
 				"name": "a1b2", "provider_name": "openai", "base_url": None, "anthropic_base_url": None,
-				"geography": None, "is_self_hosted": 0, "rate_card": [],
+				"geography": None, "is_self_hosted": 0,
 				"validate_self_hosted": lambda: None, "validate_siblings": lambda: None, **fields,
 			})
 			with patch("frappe.throw", side_effect=frappe.ValidationError):

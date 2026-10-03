@@ -7,6 +7,7 @@ from pathlib import Path
 import frappe
 
 from grove.catalog.seed import CATALOG
+from grove.pricing import CounterTable
 
 # The one geography the catalog ships: a name, its endpoint and zone filled on the site.
 MAIN = "Main"
@@ -16,12 +17,29 @@ MODEL_FIELDS = ("model_id", "upstream_model_id", "modality")
 
 def write(path=None):
 	"""Sorted and indented, so a second export of an unchanged site is an empty diff."""
-	catalog = {"geographies": [{"name": MAIN}], "providers": get_providers(), "models": get_models()}
+	catalog = {
+		"counters": get_counters(), "geographies": [{"name": MAIN}],
+		"providers": get_providers(), "models": get_models(),
+	}
 	Path(path or CATALOG).write_text(json.dumps(catalog, indent=1, sort_keys=True) + "\n")
 
 
+def get_counters():
+	"""Every counter in table order: roots first, so a load inserts a base before what derives
+	from it. A derived row carries no unit — it takes its base's."""
+	rows = []
+	for row in CounterTable.load().rows:
+		entry = {"counter_name": row.name, "label": row.label}
+		if row.base_counter:
+			entry |= {"base_counter": row.base_counter, "min_prompt_tokens": row.min_prompt_tokens}
+		else:
+			entry |= {"unit": row.unit} | ({"part_of": row.part_of} if row.part_of else {})
+		rows.append({k: v for k, v in entry.items() if v})
+	return rows
+
+
 def get_providers():
-	"""One entry per provider name, a vendor's moved to Main. No key, no rate card."""
+	"""One entry per provider name, a vendor's moved to Main. No key."""
 	providers = {}
 	for row in frappe.get_all("Model Provider", fields=PROVIDER_FIELDS, order_by="creation"):
 		entry = {field: row[field] for field in PROVIDER_FIELDS if row[field]}

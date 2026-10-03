@@ -1,14 +1,8 @@
 // Copyright (c) 2026, Frappe and contributors
 // For license information, please see license.txt
 
-const USAGE_COLUMNS = [
-	['model', 'Model'], ['pricing', 'Pricing'], ['requests', 'Requests'],
-	['input_tokens', 'Input'], ['cached_tokens', 'Cached'], ['cache_write_tokens', 'Cache write'],
-	['cache_write_1h_tokens', 'Cache write 1h'], ['completion_tokens', 'Completion'],
-	['audio_tokens', 'Audio'], ['input_tokens_above_272k', 'Input >272k'],
-	['cached_tokens_above_272k', 'Cached >272k'], ['cache_write_tokens_above_272k', 'Cache write >272k'],
-	['completion_tokens_above_272k', 'Completion >272k'],
-];
+// The entry's own keys first; the counters follow in table order, labelled by the Usage Counter.
+const HEAD_COLUMNS = [['model', 'Model'], ['pricing', 'Pricing'], ['requests', 'Requests']];
 // In the detail for the reports to sum, not shown: the record's Cost is the figure to read.
 const HIDDEN = ['grove_cost'];
 // Columns whose value names a document: shown as a link to it. `model` is a key, not a doc name —
@@ -18,11 +12,17 @@ const CELL = 'white-space: nowrap;';
 // The first column stays in view while the rest scrolls under it.
 const PINNED = `${CELL} position: sticky; left: 0; background: var(--fg-color);`;
 
-function usage_columns(rows) {
-	// A key the entries carry that is not listed is a counter added later: shown under its own name.
-	const known = [...USAGE_COLUMNS.map(([key]) => key), ...HIDDEN];
+async function counter_columns() {
+	const counters = await frappe.db.get_list('Usage Counter', { fields: ['name', 'label'], order_by: 'creation', limit: 0 });
+	return counters.filter((c) => c.name !== 'request_count').map((c) => [c.name, c.label || c.name]);
+}
+
+function usage_columns(rows, counters) {
+	// A key the entries carry that the table does not list is a counter since removed: shown under its own name.
+	const listed = [...HEAD_COLUMNS, ...counters];
+	const known = [...listed.map(([key]) => key), ...HIDDEN];
 	const added = [...new Set(rows.flatMap((row) => Object.keys(row)))].filter((key) => !known.includes(key));
-	return [...USAGE_COLUMNS.map(([key, label]) => [key, __(label)]), ...added.map((key) => [key, key])];
+	return [...listed.map(([key, label]) => [key, __(label)]), ...added.map((key) => [key, key])];
 }
 
 function usage_value(key, value) {
@@ -30,8 +30,8 @@ function usage_value(key, value) {
 	return LINKS[key] && value ? `<a href="${frappe.utils.get_form_link(LINKS[key], value)}">${text}</a>` : text;
 }
 
-function usage_table(rows) {
-	const columns = usage_columns(rows);
+function usage_table(rows, counters) {
+	const columns = usage_columns(rows, counters);
 	const cell = (tag, html, index) => `<${tag} style="${index ? CELL : PINNED}">${html}</${tag}>`;
 	const head = columns.map(([, label], index) => cell('th', frappe.utils.escape_html(label), index)).join('');
 	const body = rows.map((row) =>
@@ -41,7 +41,8 @@ function usage_table(rows) {
 }
 
 frappe.ui.form.on('Usage Record', {
-	refresh(frm) {
-		frm.get_field('usage_table').$wrapper.html(usage_table(JSON.parse(frm.doc.usage || '[]')));
+	async refresh(frm) {
+		const rows = JSON.parse(frm.doc.usage || '[]');
+		frm.get_field('usage_table').$wrapper.html(usage_table(rows, await counter_columns()));
 	},
 });

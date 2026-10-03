@@ -1,5 +1,5 @@
-"""What a site starts with: geographies, providers and vendor models, read from `catalog.json`.
-Not Frappe fixtures: those delete and re-insert on every migrate, secrets included."""
+"""What a site starts with: usage counters, geographies, providers and vendor models, read from
+`catalog.json`. Not Frappe fixtures: those delete and re-insert on every migrate, secrets included."""
 
 import json
 from pathlib import Path
@@ -16,6 +16,9 @@ def read(path=None):
 def insert_missing(path=None):
 	"""Insert what the catalog names and the site lacks. Never updates, never deletes."""
 	catalog = read(path)
+	for counter in catalog.get("counters", []):
+		if not frappe.db.exists("Usage Counter", counter["counter_name"]):
+			frappe.get_doc({"doctype": "Usage Counter", **counter}).insert()
 	for geography in catalog["geographies"]:
 		insert_geography(geography)
 	for provider in catalog["providers"]:

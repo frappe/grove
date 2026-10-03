@@ -12,7 +12,7 @@ from decimal import Decimal
 import frappe
 
 from grove.grove.doctype.credit_discrepancy.credit_discrepancy import record
-from grove.pricing import COUNTERS, NANO, settle, tolerance
+from grove.pricing import NANO, settle
 
 NANO_USD = Decimal(1) / NANO
 
@@ -85,7 +85,7 @@ class Reconciler:
 	def entry(model, pricing, counts, gateway_cost, grove_cost):
 		return {
 			"model": model, "pricing": pricing, "requests": counts.get("request_count", 0),
-			**{counter: counts.get(counter, 0) for counter in COUNTERS if counter != "request_count"},
+			**{counter: counts.get(counter, 0) for counter in self.book.counters.names if counter != "request_count"},
 			"gateway_cost": gateway_cost.quantize(NANO_USD), "grove_cost": grove_cost.quantize(NANO_USD),
 		}
 
@@ -93,7 +93,7 @@ class Reconciler:
 		"""The gateway undercharges by at most its truncation; anything else is a discrepancy."""
 		for entry in doc.entries:
 			gateway, grove = entry["gateway_cost"], entry["grove_cost"]
-			if entry["pricing"] and abs(gateway - grove) > tolerance(entry["requests"]):
+			if entry["pricing"] and abs(gateway - grove) > self.book.counters.tolerance(entry["requests"]):
 				record(
 					usage_record=doc.name, grove_user=doc.user, api_key=doc.api_key, pricing=entry["pricing"],
 					model=self.book.pricing(entry["pricing"]).model, gateway_store=self.gateway_store,

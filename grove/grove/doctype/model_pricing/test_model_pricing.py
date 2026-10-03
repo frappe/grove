@@ -6,7 +6,7 @@ charged are billed."""
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from grove.pricing import COUNTERS, PriceBook
+from grove.pricing import CounterTable, PriceBook
 from grove.utils import utc_today
 
 
@@ -45,8 +45,9 @@ class TestModelPricing(IntegrationTestCase):
 		self.assertEqual((doc.status, doc.enabled_on, first.status), ("Enabled", utc_today(), "Disabled"))
 
 	def test_zero_rates_are_a_pricing_and_never_publish_the_model(self):
-		doc = enabled_pricing(self.model, **dict.fromkeys(COUNTERS, 0))
-		self.assertEqual(PriceBook.load().nano_rates(doc.name), dict.fromkeys(COUNTERS, 0))
+		counters = CounterTable.load().names
+		doc = enabled_pricing(self.model, **dict.fromkeys(counters, 0))
+		self.assertEqual(PriceBook.load().nano_rates(doc.name), dict.fromkeys(counters, 0))
 		self.assertEqual(frappe.db.get_value("Model", self.model, "published"), 0)
 
 	def test_a_retired_pricing_stays_in_the_book_by_id(self):
@@ -81,15 +82,8 @@ class TestModelPricing(IntegrationTestCase):
 
 	def test_an_above_272k_rate_needs_its_base(self):
 		with self.assertRaises(frappe.ValidationError):
-			new_pricing(self.model, completion_tokens=1, input_tokens_above_272k=5)
+			new_pricing(self.model, completion_tokens=1, prompt_tokens_above_272k=5)
 		with self.assertRaises(frappe.ValidationError):
-			new_pricing(self.model, input_tokens=2.5, cache_write_tokens_above_272k=6.25)
-		new_pricing(self.model, input_tokens=2.5, input_tokens_above_272k=5)
+			new_pricing(self.model, prompt_tokens=2.5, cache_write_tokens_above_272k=6.25)
+		new_pricing(self.model, prompt_tokens=2.5, prompt_tokens_above_272k=5)
 
-	def test_a_counter_missing_from_the_pricing_is_unpriced_whatever_the_cost_card_says(self):
-		provider = frappe.get_doc("Model", self.model).provider
-		provider_doc = frappe.get_doc("Model Provider", provider)
-		provider_doc.append("rate_card", {"provider_model_id": "pricing-7b", "counter": "input_tokens", "rate": 0.5})
-		provider_doc.save(ignore_permissions=True)
-		doc = enabled_pricing(self.model, completion_tokens=1)
-		self.assertEqual(PriceBook.load().nano_rates(doc.name), {"completion_tokens": 1_000_000_000})

@@ -1,0 +1,99 @@
+{
+ "actions": [],
+ "autoname": "field:counter_name",
+ "creation": "2026-10-02 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "counter_name",
+  "label",
+  "unit",
+  "part_of",
+  "column_break_1",
+  "base_counter",
+  "min_prompt_tokens"
+ ],
+ "fields": [
+  {
+   "description": "The key a rate names, the gateway counts under, and a Usage Record carries: lowercase letters, digits and underscores.",
+   "fieldname": "counter_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Counter",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "description": "Column header in the Usage Record form.",
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Label"
+  },
+  {
+   "description": "What a rate is quoted per: USD per million tokens, or USD per request (a search, a call). Set on a root counter; a derived one takes its base's.",
+   "fieldname": "unit",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Unit",
+   "options": "\nMtok\nrequest"
+  },
+  {
+   "description": "The counter this one is carved out of. The container's rate charges what its parts left of it. Root counters only.",
+   "fieldname": "part_of",
+   "fieldtype": "Link",
+   "label": "Part Of",
+   "options": "Usage Counter"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Set on a derived counter: the root it splits off from, whose rate it bills at when the pricing holds none of its own.",
+   "fieldname": "base_counter",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Base Counter",
+   "options": "Usage Counter"
+  },
+  {
+   "depends_on": "base_counter",
+   "description": "A request whose whole prompt exceeds this many tokens is counted under this counter instead of its base.",
+   "fieldname": "min_prompt_tokens",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Prompt Above (tokens)"
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-02 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Grove",
+ "name": "Usage Counter",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Grove Control"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "ASC",
+ "states": [],
+ "track_changes": 1
+}

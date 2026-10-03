@@ -1,4 +1,75 @@
 {
+ "counters": [
+  {
+   "counter_name": "prompt_tokens",
+   "label": "Prompt",
+   "unit": "Mtok"
+  },
+  {
+   "counter_name": "cached_tokens",
+   "label": "Cached",
+   "part_of": "prompt_tokens",
+   "unit": "Mtok"
+  },
+  {
+   "counter_name": "cache_write_tokens",
+   "label": "Cache write",
+   "part_of": "prompt_tokens",
+   "unit": "Mtok"
+  },
+  {
+   "counter_name": "cache_write_1h_tokens",
+   "label": "Cache write 1h",
+   "part_of": "prompt_tokens",
+   "unit": "Mtok"
+  },
+  {
+   "counter_name": "audio_tokens",
+   "label": "Audio",
+   "part_of": "prompt_tokens",
+   "unit": "Mtok"
+  },
+  {
+   "counter_name": "completion_tokens",
+   "label": "Completion",
+   "unit": "Mtok"
+  },
+  {
+   "counter_name": "completion_audio_tokens",
+   "label": "Audio out",
+   "part_of": "completion_tokens",
+   "unit": "Mtok"
+  },
+  {
+   "counter_name": "request_count",
+   "label": "Requests",
+   "unit": "request"
+  },
+  {
+   "base_counter": "prompt_tokens",
+   "counter_name": "prompt_tokens_above_272k",
+   "label": "Prompt >272k",
+   "min_prompt_tokens": 272000
+  },
+  {
+   "base_counter": "cached_tokens",
+   "counter_name": "cached_tokens_above_272k",
+   "label": "Cached >272k",
+   "min_prompt_tokens": 272000
+  },
+  {
+   "base_counter": "cache_write_tokens",
+   "counter_name": "cache_write_tokens_above_272k",
+   "label": "Cache write >272k",
+   "min_prompt_tokens": 272000
+  },
+  {
+   "base_counter": "completion_tokens",
+   "counter_name": "completion_tokens_above_272k",
+   "label": "Completion >272k",
+   "min_prompt_tokens": 272000
+  }
+ ],
  "geographies": [],
  "models": [],
  "providers": [

@@ -78,7 +78,7 @@ class TestLoadPricing(IntegrationTestCase):
 		pricing = frappe.get_doc("Model Pricing", name)
 		self.assertEqual(
 			(pricing.status, [(row.counter, row.rate) for row in pricing.rates]),
-			("Disabled", [("input_tokens", 2.5), ("completion_tokens", 15)]),
+			("Disabled", [("prompt_tokens", 2.5), ("completion_tokens", 15)]),
 		)
 		self.assertEqual(frappe.db.count("Model Pricing", {"model": doc.name}), 1)
 

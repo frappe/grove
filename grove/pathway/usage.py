@@ -34,7 +34,7 @@ from grove.grove.doctype.stuck_usage.stuck_usage import record_stuck, resolve_st
 from grove.pathway import snapshot
 from grove.pathway.reconcile import Reconciler
 from grove.pathway.run import SyncRun, Target, error_text, gateway_units, in_turn
-from grove.pricing import COUNTERS, PriceBook
+from grove.pricing import PriceBook
 from grove.utils import utc_today
 
 DEAD = "dead:"
@@ -158,7 +158,9 @@ def record_drains(proxy_name, drains, dead=(), gateway_store=None, day=None):
 		frappe.db.savepoint("usage_user")
 		try:
 			for drain_id, hashes in shares.items():
-				Reconciler(book, day, gateway_store, drain_id).user(user, {k: parse_drain(h) for k, h in hashes.items()})
+				Reconciler(book, day, gateway_store, drain_id).user(
+					user, {k: parse_drain(h, book.counters) for k, h in hashes.items()}
+				)
 			resolve_stuck(user, gateway_store)
 		except Exception:
 			frappe.db.rollback(save_point="usage_user")
@@ -192,18 +194,22 @@ def read_dead_line(line, gateway_store):
 		return None
 
 
-def parse_drain(h):
+def parse_drain(h, table):
 	"""One drained hash split three ways: the key's request count, the per-(model, counter)
-	quantities the reports read, and the counters and cost per pricing the gateway charged at."""
+	quantities the reports read, and the counters and cost per pricing the gateway charged at. A
+	priced counter not in `table` is refused, not dropped: this Grove is behind the gateway, and the
+	user waits as Stuck Usage until it is not."""
 	requests = int(h.get("request_count", 0) or 0)
 	counters, pricings = {}, {}
 	for k, v in h.items():
 		if k.startswith("m:"):
 			metric, _, model = k[2:].partition(":")  # model may contain ':' — keep the rest
-			if model and metric in COUNTERS:
+			if model and metric in table:
 				counters.setdefault(model, {})[metric] = int(v or 0)
 		elif k.startswith("p:"):
 			pricing, _, counter = k[2:].partition(":")
-			if pricing and (counter in COUNTERS or counter == "cost"):
+			if counter not in table and counter != "cost":
+				raise ValueError(f"{k}: not a counter Grove prices — is Grove older than the gateway?")
+			if pricing:
 				pricings.setdefault(pricing, {})[counter] = int(v or 0)
 	return frappe._dict(requests=requests, counters=counters, pricings=pricings)

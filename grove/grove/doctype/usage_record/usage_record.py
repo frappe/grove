@@ -44,11 +44,11 @@ def on_doctype_update():
 
 def usage_table(record="r"):
 	"""The JSON_TABLE that unnests a record's per-model `usage` into rows, one column per counter —
-	built from `pricing.COUNTERS`, so a new counter needs no SQL edit. Alias the result `u`."""
-	from grove.pricing import COUNTERS
+	read off the Usage Counter table, so a new counter needs no SQL edit. Alias the result `u`."""
+	from grove.pricing import CounterTable
 
 	counters = ", ".join(
-		f"{counter} bigint path '$.{counter}'" for counter in COUNTERS if counter != "request_count"
+		f"{counter} bigint path '$.{counter}'" for counter in CounterTable.load().names if counter != "request_count"
 	)
 	return (
 		f"json_table({record}.`usage`, '$[*]' columns (model varchar(140) path '$.model', "

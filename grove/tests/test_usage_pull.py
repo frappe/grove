@@ -196,6 +196,13 @@ class TestAStuckUserHoldsOnlyThemselvesBack(PullCase):
 		self.assertEqual(frappe.parse_json(row.last_payload), {"d7": {bad: drained}})
 		self.assertIn("disk on fire", row.last_error)
 
+	def test_a_counter_grove_does_not_price_leaves_the_user_stuck_not_underbilled(self):
+		key, store = self.key(), a_store("usage-stuck-drift-store")
+		drained = {"request_count": "1", "p:abc:prompt_tokens_v2": "9", "p:abc:cost": "1"}
+		self.assertEqual(self.pull({key: drained}, drain_id="d9", store=store), (1, {}, [], 1))
+		self.assertEqual(self.records(key), [])
+		self.assertIn("p:abc:prompt_tokens_v2", self.stuck(store).last_error)
+
 	def test_it_stays_one_row_while_failing_and_resolves_when_it_lands(self):
 		key, store = self.key(), a_store("usage-stuck-heal-store")
 		with self.failing(key):
