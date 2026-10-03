@@ -45,6 +45,7 @@
     - grove_https
     - fleet_tls
     - install_gateway_agent
+    - pathway_memory
 
   tasks:
     # Guarded and non-fatal: most boxes never had OpenResty, and the ones that did must give up the

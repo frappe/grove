@@ -31,6 +31,7 @@ class IngressServer(PathwayHost, Document):
 		geography: DF.Link | None
 		is_in_maintenance: DF.Check
 		machine: DF.Link
+		memory_limit_mb: DF.Int
 		monitoring_agent: DF.Link | None
 		network: DF.Link
 		private_ip: DF.Data | None
@@ -149,6 +150,7 @@ class IngressServer(PathwayHost, Document):
 			# pre-TLS config, exactly as it does for a gateway.
 			**self.tls_variables,
 			**self.config_variables,
+			**self.memory_variables,
 		}
 
 	@frappe.whitelist()

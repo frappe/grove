@@ -1,0 +1,4 @@
+{# MemoryMax is the kernel's cap. GOMEMLIMIT, 90% of it, is where the Go runtime collects harder. #}
+[Service]
+MemoryMax={{ pathway_memory_cap_mb }}M
+Environment=GOMEMLIMIT={{ pathway_memory_cap_mb | int * 90 // 100 }}MiB

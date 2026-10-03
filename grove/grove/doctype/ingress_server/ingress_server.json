@@ -19,6 +19,7 @@
   "admin_url",
   "agent_version",
   "is_in_maintenance",
+  "memory_limit_mb",
   "last_synced_at",
   "admin_token",
   "data_token"
@@ -128,6 +129,14 @@
    "read_only": 1
   },
   {
+   "description": "pathway's memory cap in MB, as the box last took it. 0: the box's RAM less 512 MB. Update Memory Limit under Ingress.",
+   "fieldname": "memory_limit_mb",
+   "fieldtype": "Int",
+   "label": "Memory Limit (MB)",
+   "non_negative": 1,
+   "read_only": 1
+  },
+  {
    "fieldname": "last_synced_at",
    "fieldtype": "Datetime",
    "label": "Last Synced At",
@@ -150,7 +159,7 @@
   }
  ],
  "links": [],
- "modified": "2026-09-17 00:00:00.000000",
+ "modified": "2026-10-04 01:10:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Ingress Server",
