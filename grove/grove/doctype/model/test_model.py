@@ -11,7 +11,7 @@ from frappe.tests import IntegrationTestCase
 from grove.catalog import seed
 from grove.grove.doctype.grove_user.grove_user import register_user
 from grove.grove.doctype.model import model as model_module
-from grove.grove.doctype.model_pricing.test_model_pricing import enabled_pricing
+from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing
 
 
 class TestPublishing(IntegrationTestCase):

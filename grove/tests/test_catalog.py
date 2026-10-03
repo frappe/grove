@@ -13,7 +13,7 @@ from frappe.tests import IntegrationTestCase
 
 from grove.catalog import export, seed
 from grove.grove.doctype.geography.test_geography import make_test_geography
-from grove.grove.doctype.model_pricing.test_model_pricing import enabled_pricing
+from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing
 from grove.grove.doctype.model_provider.test_model_provider import our_model, provider, vendor_model
 
 COUNTED = ("Usage Counter", "Geography", "Model Provider", "Model", "Model Pricing")

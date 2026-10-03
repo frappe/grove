@@ -14,7 +14,7 @@ from frappe.tests import IntegrationTestCase
 
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_user.grove_user import register_user
-from grove.grove.doctype.stuck_usage.stuck_usage import StuckUsage
+from grove.billing.doctype.stuck_usage.stuck_usage import StuckUsage
 from grove.pathway import run, usage
 from grove.pathway.reconcile import Reconciler
 from grove.pathway.run import Target

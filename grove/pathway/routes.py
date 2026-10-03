@@ -12,7 +12,7 @@ from frappe.utils import get_system_timezone
 
 from grove.naming import short_name
 from grove.net import private_url
-from grove.pricing import PriceBook
+from grove.billing.pricing import PriceBook
 from grove.serving.base import engine_class
 
 # `model` is the doc; `model_key` is the id the row is keyed under.

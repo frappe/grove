@@ -6,7 +6,7 @@ today's twelve. The arithmetic over a table is `grove.tests.test_pricing`."""
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from grove.pricing import CounterTable
+from grove.billing.pricing import CounterTable
 
 
 def counter(name, **fields):

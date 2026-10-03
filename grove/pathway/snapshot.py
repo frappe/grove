@@ -14,7 +14,7 @@ import frappe
 
 from grove.access import group_rows, model_rows
 from grove.pathway import routes
-from grove.pricing import allocations, nano
+from grove.billing.pricing import allocations, nano
 
 
 def effective_groups():

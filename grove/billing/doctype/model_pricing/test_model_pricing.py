@@ -6,7 +6,7 @@ charged are billed."""
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from grove.pricing import CounterTable, PriceBook
+from grove.billing.pricing import CounterTable, PriceBook
 from grove.utils import utc_today
 
 

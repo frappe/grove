@@ -1,7 +1,7 @@
 import frappe
 from frappe.model.document import Document
 
-from grove.pricing import settle
+from grove.billing.pricing import settle
 
 
 class GroveCredit(Document):

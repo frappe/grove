@@ -8,9 +8,9 @@ from decimal import Decimal
 
 import frappe
 
-from grove import pricing
+from grove.billing import pricing
 from grove.catalog import seed
-from grove.pricing import CounterTable, PriceBook
+from grove.billing.pricing import CounterTable, PriceBook
 
 D = Decimal
 

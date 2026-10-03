@@ -1,7 +1,7 @@
 import frappe
 from frappe.model.document import Document
 
-from grove.pricing import CounterTable, validate_price_rows
+from grove.billing.pricing import CounterTable, validate_price_rows
 from grove.utils import utc_today
 
 
@@ -17,7 +17,7 @@ class ModelPricing(Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
-		from grove.grove.doctype.model_pricing_rate.model_pricing_rate import ModelPricingRate
+		from grove.billing.doctype.model_pricing_rate.model_pricing_rate import ModelPricingRate
 
 		enabled_on: DF.Date | None
 		model: DF.Link
