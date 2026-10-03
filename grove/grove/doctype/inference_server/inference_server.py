@@ -61,6 +61,22 @@ class InferenceServer(FleetHost, Document):
 		terminated = self.has_value_changed("status") and self.status == "Terminated"
 		if was_standalone and (terminated or not self.is_standalone):
 			self.remove_dns_records()
+		if terminated:
+			self.terminate_replicas()
+
+	def terminate_replicas(self):
+		"""The box is gone and its containers with it, so there is nothing to tear down — only
+		rows that would otherwise keep a route and their cards."""
+		from grove.grove.doctype.model.model import sync_published
+
+		replicas = frappe.get_all(
+			"Model Replica",
+			filters={"inference_server": self.name, "status": ("!=", "Terminated")},
+			fields=["name", "model"],
+		)
+		for replica in replicas:
+			frappe.db.set_value("Model Replica", replica.name, {"status": "Terminated", "engine_port": 0})
+			sync_published(replica.model)
 
 	def on_trash(self):
 		if self.is_standalone:
@@ -93,7 +109,6 @@ class InferenceServer(FleetHost, Document):
 			)
 
 	def before_insert(self):
-		super().before_insert()
 		self.default_to_network_singletons()
 
 	def before_rename(self, old, new, merge=False):

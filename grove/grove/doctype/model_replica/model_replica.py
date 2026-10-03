@@ -620,17 +620,7 @@ def deploy_model(model_replica):
 		reference_docname=md.name,
 	)
 
-	state = _post_play_state(md, rc)
-	frappe.db.set_value("Model Replica", md.name, state)
-	# db.set_value skips the controller on_update, so the published flag and the GPU claims are
-	# settled explicitly. Status is carried over rather than reloaded: it was just written from
-	# this same dict.
-	from grove.grove.doctype.model.model import sync_published
-
-	md.status = state["status"]
-	md.sync_gpu_claims()
-	sync_published(md.model)
-	frappe.db.commit()
+	_land_state(md, _post_play_state(md, rc))
 	return play_name, rc
 
 
@@ -671,13 +661,22 @@ def reconfigure_deployment(model_replica):
 		reference_docname=md.name,
 	)
 
-	state = _post_play_state(md, rc)
+	_land_state(md, _post_play_state(md, rc))
+	return play_name, rc
+
+
+def _land_state(md, state):
+	"""Write what a play left on the doc, and settle what follows from its status. `db.set_value`
+	skips the controller, so the GPU claims and the published flag are settled here — the one
+	place a job lands a status. Status is carried over rather than reloaded: it was just written
+	from this same dict."""
+	from grove.grove.doctype.model.model import sync_published
+
 	frappe.db.set_value("Model Replica", md.name, state)
-	# Both arrive here as a status the controller never saw, so claims are settled explicitly.
 	md.status = state["status"]
 	md.sync_gpu_claims()
+	sync_published(md.model)
 	frappe.db.commit()
-	return play_name, rc
 
 
 def _post_play_state(md, rc):
@@ -715,13 +714,7 @@ def set_container_state(model_replica, running):
 	)
 
 	if rc == 0:
-		frappe.db.set_value(
-			"Model Replica", md.name, "status", "Active" if running else "Inactive"
-		)
-		from grove.grove.doctype.model.model import sync_published
-
-		sync_published(md.model)
-		frappe.db.commit()
+		_land_state(md, {"status": "Active" if running else "Inactive"})
 	return play_name, rc
 
 
@@ -745,11 +738,5 @@ def teardown_deployment(model_replica):
 
 	if rc == 0:
 		# 0 = free, reallocated on a later redeploy. The Int column is NOT NULL, so 0 not None.
-		frappe.db.set_value(
-			"Model Replica", md.name, {"status": "Terminated", "engine_port": 0}
-		)
-		from grove.grove.doctype.model.model import sync_published
-
-		sync_published(md.model)
-		frappe.db.commit()
+		_land_state(md, {"status": "Terminated", "engine_port": 0})
 	return play_name, rc

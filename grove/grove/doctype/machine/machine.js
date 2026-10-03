@@ -45,7 +45,15 @@ frappe.ui.form.on('Machine', {
 			});
 		}
 
-		if (!frm.doc.cloud_provider) return;
+		if (!frm.doc.cloud_provider) {
+			// Nothing to destroy at a provider: this only retires the rows.
+			if (frm.doc.status !== 'Terminated') {
+				frm.add_custom_button(__('Terminate'), () => grove.confirm_call(frm,
+					__('Retire {0}? Nothing on the box is touched — its servers and their replicas are marked Terminated and its DNS record is removed.', [frm.doc.name]),
+					'terminate'), __('Danger'));
+			}
+			return;
+		}
 
 		if (!frm.doc.instance_id) {
 			// launch() sets Pending before instance_id lands; Provision then would launch a second

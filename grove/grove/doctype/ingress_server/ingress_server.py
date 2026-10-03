@@ -40,7 +40,6 @@ class IngressServer(PathwayHost, Document):
 	# end: auto-generated types
 
 	def before_insert(self):
-		super().before_insert()
 		# Generated rather than typed: both fields are read-only, and the agent refuses to start
 		# without a token. Two separate secrets, never one — admin_token is the control plane's
 		# credential, data_token is what every gateway holds.

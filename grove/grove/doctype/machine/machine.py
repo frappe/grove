@@ -304,8 +304,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 		except CloudClientError as e:
 			if e.code != "InvalidInstanceID.NotFound":
 				raise
-			self.db_set({"status": "Terminated", "instance_id": "", "public_ip": "", "private_ip": ""})
-			self.sync_dependent_servers()
+			self.mark_terminated()
 			frappe.msgprint(f"{self.name} no longer exists on AWS — marked Terminated.")
 			return
 		self.db_set({
@@ -439,16 +438,27 @@ class Machine(GeneratedName, AnsibleHost, Document):
 
 	@frappe.whitelist()
 	def terminate(self):
-		"""Button: destroy the instance. The root volume goes with it — weights and all."""
+		"""Button: destroy the instance. The root volume goes with it — weights and all. A
+		bare-metal box has no provider to destroy it at, so only its rows are retired."""
+		if self.cloud_provider:
+			self.destroy_instance()
+		self.mark_terminated()
+		frappe.msgprint(f"Terminated {self.name}.", alert=True)
+
+	def destroy_instance(self):
 		self.require_instance()
 		client = self.cloud_client
 		if self.static_ip_allocation_id:
 			client.release_static_ip(self.static_ip_allocation_id)
 			self.db_set("static_ip_allocation_id", "")
 		client.terminate_instance(self.instance_id)
-		self.db_set({"status": "Terminated", "instance_id": "", "public_ip": "", "private_ip": ""})
+
+	def mark_terminated(self):
+		"""Servers before the addresses: each one deletes its DNS record by the address it
+		fetches off this row, and a blank one leaves the record behind."""
+		self.db_set("status", "Terminated")
 		self.sync_dependent_servers()
-		frappe.msgprint(f"Terminated {self.name}.", alert=True)
+		self.db_set({"instance_id": "", "public_ip": "", "private_ip": ""})
 
 	def require_instance(self):
 		if not self.instance_id:
