@@ -19,6 +19,7 @@ def write(path=None):
 	"""Sorted and indented, so a second export of an unchanged site is an empty diff."""
 	catalog = {
 		"counters": get_counters(), "geographies": [{"name": MAIN}],
+		"cloud_providers": get_cloud_providers(), "regions": get_regions(),
 		"providers": get_providers(), "models": get_models(),
 	}
 	Path(path or CATALOG).write_text(json.dumps(catalog, indent=1, sort_keys=True) + "\n")
@@ -36,6 +37,17 @@ def get_counters():
 			entry |= {"unit": row.unit} | ({"part_of": row.part_of} if row.part_of else {})
 		rows.append({k: v for k, v in entry.items() if v})
 	return rows
+
+
+def get_cloud_providers():
+	"""The account's type only: no key, no access key id."""
+	return frappe.get_all("Cloud Provider", fields=["name", "provider_type"], order_by="name")
+
+
+def get_regions():
+	"""Every region, moved to Main."""
+	rows = frappe.get_all("Region", fields=["name", "label", "cloud_provider"], order_by="name")
+	return [{k: v for k, v in row.items() if v} | {"geography": MAIN} for row in rows]
 
 
 def get_providers():

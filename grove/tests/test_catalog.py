@@ -5,6 +5,7 @@ and loads back to the same file."""
 
 import json
 import tempfile
+import unittest
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,7 +17,7 @@ from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing
 from grove.grove.doctype.model_provider.test_model_provider import our_model, provider, vendor_model
 
-COUNTED = ("Usage Counter", "Geography", "Model Provider", "Model", "Model Pricing")
+COUNTED = ("Usage Counter", "Geography", "Cloud Provider", "Region", "Network", "Model Provider", "Model", "Model Pricing")
 
 
 class CatalogCase(IntegrationTestCase):
@@ -34,6 +35,8 @@ class TestInsertMissing(CatalogCase):
 	CATALOG = {
 		"counters": [{"counter_name": "web_search_requests", "label": "Web searches", "unit": "request"}],
 		"geographies": [{"name": "Catalog"}],
+		"cloud_providers": [{"name": "catalog-cloud", "provider_type": "aws"}],
+		"regions": [{"name": "catalog-south-1", "label": "Catalog South", "geography": "Catalog", "cloud_provider": "aws"}],
 		"providers": [{"provider_name": "catalog-vendor", "geography": "Catalog", "base_url": "https://api.vendor.test/v1"}],
 		"models": [{
 			"provider": "catalog-vendor", "model_id": "big-1", "upstream_model_id": "big-1-2026", "modality": "text",
@@ -52,6 +55,9 @@ class TestInsertMissing(CatalogCase):
 		self.assertEqual((model.upstream_model_id, model.published, model.provider_is_self_hosted), ("big-1-2026", 0, 0))
 		self.assertFalse(frappe.db.exists("Model Pricing", {"model": model.name}))
 		self.assertEqual(frappe.db.get_value("Usage Counter", "web_search_requests", "unit"), "request")
+		cloud = frappe.get_doc("Cloud Provider", "catalog-cloud")
+		self.assertEqual((cloud.resource_type, cloud.get_password("api_key", raise_exception=False)), ("Machine", None))
+		self.assertEqual(frappe.db.get_value("Region", "catalog-south-1", "geography"), "Catalog")
 		counts = [frappe.db.count(doctype) for doctype in COUNTED]
 		self.load(**self.CATALOG)
 		self.assertEqual([frappe.db.count(doctype) for doctype in COUNTED], counts)
@@ -103,10 +109,10 @@ class TestExport(CatalogCase):
 	def test_no_secret_no_model_of_ours_and_no_geography_but_main(self):
 		text = self.exported()
 		catalog = json.loads(text)
-		self.assertNotIn("api_key", text)
-		self.assertNotIn("export-secret", text)
-		self.assertNotIn("published", text)
+		for key in ("api_key", "export-secret", "published", "access_key_id", "vpc_id", "cidr_block"):
+			self.assertNotIn(key, text)
 		self.assertEqual(catalog["geographies"], [{"name": "Main"}])
+		self.assertEqual({r["geography"] for r in catalog["regions"]}, {"Main"})
 		# The shipped file is the site's table: roots with a unit first, derived rows after their base.
 		self.assertEqual(catalog["counters"], seed.read()["counters"])
 		self.assertEqual({p.get("geography") for p in catalog["providers"] if not p.get("is_self_hosted")}, {"Main"})
@@ -129,3 +135,31 @@ class TestExport(CatalogCase):
 		pricing.save()
 		self.assertEqual(self.exported(), first)
 
+
+
+class TestTheShippedFile(unittest.TestCase):
+	"""A typo here is seeded into every site on its next migrate."""
+
+	def setUp(self):
+		self.catalog = seed.read()
+
+	def test_every_name_a_model_uses_is_defined_in_the_file(self):
+		providers = {p["provider_name"] for p in self.catalog["providers"]}
+		counters = {c["counter_name"] for c in self.catalog["counters"]}
+		geographies = {g["name"] for g in self.catalog["geographies"]}
+		regions = {r["name"] for r in self.catalog["regions"]}
+		self.assertEqual([r for r in self.catalog["regions"] if r["geography"] not in geographies], [])
+		self.assertEqual([n for n in self.catalog["networks"] if n["region"] not in regions], [])
+		keys = [seed.get_model_name(m) for m in self.catalog["models"]]
+		self.assertEqual(len(keys), len(set(keys)), "a model key is listed twice")
+		for model in self.catalog["models"]:
+			with self.subTest(seed.get_model_name(model)):
+				self.assertIn(model["provider"], providers)
+				self.assertIn(model["modality"], ("text", "multimodal", "embedding", "audio"))
+				self.assertEqual([r["counter"] for r in model["rates"] if r["counter"] not in counters], [])
+				self.assertEqual([r for r in model["rates"] if r["rate"] < 0], [])
+
+	def test_it_carries_no_secret_and_no_operator_state(self):
+		text = seed.CATALOG.read_text()
+		for key in ("api_key", "access_key_id", "published", "endpoint", "fleet_zone", "vpc_id"):
+			self.assertNotIn(f'"{key}"', text)

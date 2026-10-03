@@ -164,11 +164,15 @@ drain is audited for, and the Revenue report.
 
 Providers, vendor models and their prices ship in `catalog/catalog.json`, not in `fixtures/`: a
 migrate deletes and re-inserts every fixture doc, which wipes its API key and resets what the
-operator set.
+operator set. The file is authored, not dumped from a site: the counter table, `Main`, and the
+vendors we sell — openai (`gpt-6-luna`, `gpt-6-sol`), anthropic (`claude-sonnet-5-5`), baseten
+(`deepseek-v4.1-flash`; DeepSeek is bought through Baseten, not direct) — at the vendors' list
+prices of 2026-10-03 — and the fleet skeleton: the `aws` account, `ap-south-1`, the `Mumbai` network.
 
-- `seed.insert_missing()` runs after install and after every migrate. It inserts a geography or
-  model the site has no doc named for, and a provider the site has no record named for in any
-  geography. It never updates and never deletes.
+- `seed.insert_missing()` runs after install and after every migrate. It inserts a geography,
+  cloud account (keyless, for the operator to fill), region or model the site has no doc
+  named for, and a provider the site has no record named for in any geography. It never updates
+  and never deletes.
 - A geography lands with `endpoint` and `fleet_zone` blank, for the operator to fill, and is the
   default only when the site has none. Until then a box in it serves :80 in the clear and
   `api.provision_key` refuses it.
@@ -177,7 +181,8 @@ operator set.
   model and no pricing names it. Enabling and publishing stay the operator's call.
 - `bench --site <site> execute grove.catalog.export.write` rewrites the file from the site: every
   provider once (no API key, a vendor's geography set to `Main`), vendor models only,
-  each with the rows of its Enabled pricing, and the one geography `Main`.
+  each with the rows of its Enabled pricing, the one geography `Main`, every cloud account's type
+  (no key) and every region.
 
 ## Scheduled jobs (`hooks.py`)
 

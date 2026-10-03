@@ -1,5 +1,5 @@
-"""What a site starts with: usage counters, geographies, providers and vendor models, read from
-`catalog.json`. Not Frappe fixtures: those delete and re-insert on every migrate, secrets included."""
+"""What a site starts with: usage counters, geographies, cloud accounts, regions, networks, providers
+and vendor models, read from `catalog.json`. Not Frappe fixtures: those delete and re-insert on every migrate, secrets included."""
 
 import json
 from pathlib import Path
@@ -21,6 +21,11 @@ def insert_missing(path=None):
 			frappe.get_doc({"doctype": "Usage Counter", **counter}).insert()
 	for geography in catalog["geographies"]:
 		insert_geography(geography)
+	# A cloud account ships without its key, for the operator to fill.
+	for cloud_provider in catalog.get("cloud_providers", []):
+		insert_named("Cloud Provider", cloud_provider, ignore_mandatory=True)
+	for region in catalog.get("regions", []):
+		insert_named("Region", region)
 	for provider in catalog["providers"]:
 		if not frappe.db.exists("Model Provider", {"provider_name": provider["provider_name"]}):
 			frappe.get_doc({"doctype": "Model Provider", **provider}).insert()
@@ -28,6 +33,15 @@ def insert_missing(path=None):
 	geographies = {p["provider_name"]: p.get("geography") for p in catalog["providers"]}
 	for model in catalog["models"]:
 		insert_model(model, geographies.get(model["provider"]) or default_geography())
+
+
+def insert_named(doctype, entry, ignore_mandatory=False):
+	"""A doc the catalog names outright, skipped when the site holds one of that name."""
+	if frappe.db.exists(doctype, entry["name"]):
+		return
+	doc = frappe.get_doc({"doctype": doctype, **entry})
+	doc.flags.ignore_mandatory = ignore_mandatory
+	doc.insert()
 
 
 def insert_geography(geography):
