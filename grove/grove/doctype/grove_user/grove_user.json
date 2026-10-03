@@ -91,10 +91,8 @@
    "reqd": 1
   },
   {
-   "description": "Models for this user alone, on top of whatever their group grants. A user with no grants anywhere reaches no models.",
    "fieldname": "section_allow",
-   "fieldtype": "Section Break",
-   "label": "Allow"
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "allow",
@@ -104,12 +102,11 @@
   },
   {
    "depends_on": "eval: doc.model_groups && doc.model_groups.length",
-   "description": "Models this user may never call. Deny wins over everything \u2014 a group grant and a Public release both lose to it.",
    "fieldname": "section_deny",
-   "fieldtype": "Section Break",
-   "label": "Deny"
+   "fieldtype": "Section Break"
   },
   {
+   "description": "Models this user may never call. Deny wins over everything \u2014 a group grant and a Public release both lose to it.",
    "fieldname": "deny",
    "fieldtype": "Table",
    "label": "Deny",
@@ -138,7 +135,7 @@
    "link_fieldname": "grove_user"
   }
  ],
- "modified": "2026-10-03 15:14:10.376990",
+ "modified": "2026-10-04 03:36:24.294931",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove User",
