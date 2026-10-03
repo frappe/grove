@@ -45,11 +45,14 @@ class TestWhatAVendorModelNeeds(IntegrationTestCase):
 		doc = vendor_model("probe-sonnet", self.vendor.name).insert()
 		self.assertFalse(doc.hf_repo)
 
-	def test_it_is_published_the_moment_it_is_created(self):
-		# Nothing else would ever flip it: no deployment status changes for a model we do not host,
-		# so a vendor model that had to wait for one would wait forever.
+	def test_it_is_not_published_until_someone_ticks_it(self):
+		# Publishing is by hand, and refused while no pricing is enabled: a new vendor model is on
+		# the catalog, not on sale.
 		doc = vendor_model("probe-published", self.vendor.name).insert()
-		self.assertTrue(doc.published)
+		self.assertFalse(doc.published)
+		doc.published = 1
+		with self.assertRaises(frappe.ValidationError):
+			doc.save()
 
 	def test_the_host_only_operations_refuse_it_by_name(self):
 		# The form hides the buttons; these are reachable without one, and the errors underneath
