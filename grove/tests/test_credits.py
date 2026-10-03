@@ -74,12 +74,13 @@ class CreditsCase(IntegrationTestCase):
 	def balance(self, user):
 		return D(str(frappe.db.get_value("Grove User", user, "balance")))
 
-	def hash(self, tokens, cost=None, pricing_id=None, requests=1):
+	def hash(self, tokens, cost=None, pricing_id=None, requests=1, charged=True):
 		"""What one key's drained hash carries: the counters, tagged with the pricing the gateway
-		charged, and its cost. Values are strings, as Redis returns them."""
-		p = f"p:{pricing_id or self.pricing}:"
+		priced at — `p:` charged, `f:` served free — and its cost. Values are strings, as Redis
+		returns them."""
+		p = f"{'p' if charged else 'f'}:{pricing_id or self.pricing}:"
 		cost = tokens * self.RATE * 1000 if cost is None else cost
-		h = {"completion_tokens": tokens, "request_count": requests, f"m:completion_tokens:{self.model}": tokens,
+		h = {"completion_tokens": tokens, "request_count": requests, f"m:completion_tokens:{self.model_key}": tokens,
 		     f"{p}completion_tokens": tokens, f"{p}request_count": requests, f"{p}cost": cost, "cost": cost}
 		return {k: str(v) for k, v in h.items()}
 
@@ -196,7 +197,7 @@ class TestAFreeUserIsNeverCharged(CreditsCase):
 
 	def test_their_usage_is_recorded_with_its_cost_but_spent_and_balance_do_not_move(self):
 		free, key = self.user(credit=0, free=1)
-		self.pull({key: self.hash(900_000)})
+		self.pull({key: self.hash(900_000, charged=False)})
 		self.assertEqual((self.state(free), self.balance(free)), ((D("0"), 0), D("0")))
 		self.assertEqual(self.record(key), {"billed": 0, "cost": 9, "gateway_cost": 9})
 
@@ -207,7 +208,7 @@ class TestAFreeUserIsNeverCharged(CreditsCase):
 
 	def test_turning_them_prepaid_starts_at_what_they_load(self):
 		user, key = self.user(credit=0, free=1)
-		self.pull({key: self.hash(900_000)})
+		self.pull({key: self.hash(900_000, charged=False)})
 		doc = frappe.get_doc("Grove User", user)
 		doc.free = 0
 		doc.save()
@@ -218,22 +219,39 @@ class TestAFreeUserIsNeverCharged(CreditsCase):
 
 	def test_a_different_gateway_charge_is_no_discrepancy_when_nothing_was_billed(self):
 		free, key = self.user(credit=0, free=1)
-		self.pull({key: self.hash(50_000, cost=600_000_000)})
+		self.pull({key: self.hash(50_000, cost=600_000_000, charged=False)})
 		self.assertEqual(self.discrepancies(free), [])
 
 	def test_the_usage_api_counts_their_requests_and_no_cost(self):
 		free, key = self.user(credit=0, free=1)
-		self.pull({key: self.hash(80_000)})
+		self.pull({key: self.hash(80_000, charged=False)})
 		email = frappe.db.get_value("Grove User", free, "user")
 		result = api.usage([email], period="Today")
 		self.assertEqual(result[email], {"requests": 1, "cost": 0})
 
 	def test_untagged_usage_of_a_known_model_is_recorded_and_bills_nothing(self):
 		user, key = self.user(credit=1)
-		self.pull({key: {"completion_tokens": "100000", "request_count": "1", f"m:completion_tokens:{self.model}": "100000"}})
+		self.pull({key: {"completion_tokens": "100000", "request_count": "1", f"m:completion_tokens:{self.model_key}": "100000"}})
 		self.assertEqual(self.state(user), (D("0"), 0))
 		[entry] = frappe.parse_json(frappe.db.get_value("Usage Record", {"api_key": key}, "usage"))
 		self.assertEqual((entry["pricing"], entry["completion_tokens"], entry["grove_cost"]), (None, 100_000, 0))
+
+	def test_a_drain_that_spans_a_flip_lands_as_a_billed_and_a_free_record(self):
+		user, key = self.user(credit=1)
+		self.pull({key: self.hash(30_000) | self.hash(50_000, charged=False) | {"request_count": "2"}})
+		self.assertEqual(self.state(user), (D("0.3"), 0), "only what the gateway charged moves spent")
+		records = frappe.get_all(
+			"Usage Record", {"api_key": key}, ["billed", "cost", "request_count"], order_by="billed desc", as_list=True
+		)
+		self.assertEqual(records, ((1, 0.3, 1), (0, 0.5, 1)))
+
+	def test_billing_follows_the_gateways_tag_not_the_users_flag_at_the_pull(self):
+		turned_free, charged_key = self.user(credit=1, free=1)
+		self.pull({charged_key: self.hash(20_000)})
+		self.assertEqual((self.state(turned_free)[0], self.record(charged_key).billed), (D("0.2"), 1))
+		turned_prepaid, free_key = self.user(credit=1)
+		self.pull({free_key: self.hash(20_000, charged=False)})
+		self.assertEqual((self.state(turned_prepaid)[0], self.record(free_key).billed), (D("0"), 0))
 
 	def test_an_unknown_pricing_leaves_the_users_share_stuck_and_unacknowledged(self):
 		user, key = self.user(credit=1)

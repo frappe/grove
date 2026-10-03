@@ -195,21 +195,21 @@ def read_dead_line(line, gateway_store):
 
 
 def parse_drain(h, table):
-	"""One drained hash split three ways: the key's request count, the per-(model, counter)
-	quantities the reports read, and the counters and cost per pricing the gateway charged at. A
-	priced counter not in `table` is refused, not dropped: this Grove is behind the gateway, and the
-	user waits as Stuck Usage until it is not."""
+	"""One drained hash split four ways: the key's request count, the per-(model, counter)
+	quantities the reports read, and the counters and cost per pricing — `p:` what the gateway
+	charged, `f:` what it served free. A priced counter not in `table` is refused, not dropped:
+	this Grove is behind the gateway, and the user waits as Stuck Usage until it is not."""
 	requests = int(h.get("request_count", 0) or 0)
-	counters, pricings = {}, {}
+	counters, pricings, free = {}, {}, {}
 	for k, v in h.items():
 		if k.startswith("m:"):
 			metric, _, model = k[2:].partition(":")  # model may contain ':' — keep the rest
 			if model and metric in table:
 				counters.setdefault(model, {})[metric] = int(v or 0)
-		elif k.startswith("p:"):
+		elif k.startswith(("p:", "f:")):
 			pricing, _, counter = k[2:].partition(":")
 			if counter not in table and counter != "cost":
 				raise ValueError(f"{k}: not a counter Grove prices — is Grove older than the gateway?")
 			if pricing:
-				pricings.setdefault(pricing, {})[counter] = int(v or 0)
-	return frappe._dict(requests=requests, counters=counters, pricings=pricings)
+				(pricings if k[0] == "p" else free).setdefault(pricing, {})[counter] = int(v or 0)
+	return frappe._dict(requests=requests, counters=counters, pricings=pricings, free=free)

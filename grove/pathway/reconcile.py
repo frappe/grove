@@ -4,8 +4,9 @@ Grove bills its own price: each pricing the gateway tagged a request with is pri
 pricing's rates, and `spent` moves by the sum. The gateway's own cost sits beside it; where the two
 differ beyond the gateway's truncation, a Credit Discrepancy says so.
 
-A Free user's usage is recorded and priced the same, but not billed: `spent` does not move and
-nothing is audited, since no money changed hands on either side."""
+What the gateway served free (tagged `f:`, not `p:`) is recorded and priced the same, in a record
+of its own, but not billed: `spent` does not move and nothing is audited, since no money changed
+hands on either side. The gateway decides per request, so a drain that spans a flip lands as both."""
 
 from decimal import Decimal
 
@@ -33,13 +34,25 @@ class Reconciler:
 	def user(self, user, drains):
 		"""`drains`: {API key: parsed hash} for `user`'s keys in this drain. A key this drain already
 		landed is skipped, so a re-sent drain bills nothing twice."""
-		billed = not frappe.db.get_value("Grove User", user, "free")
 		records = [
-			self.insert(user, prefix, drain, billed) for prefix, drain in drains.items() if not self.landed(prefix)
+			doc for prefix, drain in drains.items() if not self.landed(prefix)
+			for doc in self.records(user, prefix, drain)
 		]
-		if billed:
-			self.bill(user, records)
+		if billed := [doc for doc in records if doc.billed]:
+			self.bill(user, billed)
 		settle(user)
+
+	def records(self, user, prefix, drain):
+		"""One key's share as up to two records: what the gateway charged, and what it served free
+		or unpriced. Their request counts sum to the key's."""
+		charged, free = self.priced(drain.pricings), self.priced(drain.free) + self.unpriced(drain)
+		if not charged:
+			return [self.insert(user, prefix, 0, free, drain.requests)]
+		requests = sum(entry["requests"] for entry in charged) if free else drain.requests
+		records = [self.insert(user, prefix, 1, charged, requests)]
+		if free:
+			records.append(self.insert(user, prefix, 0, free, drain.requests - requests))
+		return records
 
 	def bill(self, user, records):
 		charged = sum((entry["grove_cost"] for doc in records for entry in doc.entries), Decimal(0))
@@ -50,12 +63,11 @@ class Reconciler:
 	def landed(self, prefix):
 		return frappe.db.exists("Usage Record", {"drain_id": self.drain_id, "api_key": prefix})
 
-	def insert(self, user, prefix, drain, billed):
-		entries = self.entries(drain)
+	def insert(self, user, prefix, billed, entries, requests):
 		doc = frappe.get_doc({
 			"doctype": "Usage Record", "api_key": prefix, "user": user, "day": self.day,
 			"gateway_store": self.gateway_store, "drain_id": self.drain_id,
-			"billed": int(billed), "request_count": drain.requests,
+			"billed": billed, "request_count": requests,
 			"cost": sum((e["grove_cost"] for e in entries), Decimal(0)),
 			"gateway_cost": sum((e["gateway_cost"] for e in entries), Decimal(0)),
 			# The gateway's cost is kept as the header total only; per pricing it is compared, not stored.
@@ -65,24 +77,28 @@ class Reconciler:
 		doc.entries = entries
 		return doc
 
-	def entries(self, drain):
-		"""The per-model detail: one entry per pricing the gateway charged at, then one per model
-		Grove knows that it served without a pricing. Costs are rounded to the nano, so the header
+	def priced(self, pricings):
+		"""One entry per pricing the gateway priced at. Costs are rounded to the nano, so the header
 		totals are exactly the sum of what is stored."""
-		entries = []
-		for pricing, counts in drain.pricings.items():
-			entries.append(self.entry(
+		return [
+			self.entry(
 				self.book.pricing(pricing).model_key, pricing, counts,
 				usd(counts.get("cost", 0)), self.book.pricing_cost(pricing, counts),
-			))
-		priced = {e["model"] for e in entries}
-		for model, counts in drain.counters.items():
-			if model in self.book.models and model not in priced:
-				entries.append(self.entry(model, None, counts, Decimal(0), Decimal(0)))
-		return entries
+			)
+			for pricing, counts in pricings.items()
+		]
 
-	@staticmethod
-	def entry(model, pricing, counts, gateway_cost, grove_cost):
+	def unpriced(self, drain):
+		"""One entry per model key Grove knows that the gateway served without a pricing."""
+		priced = {self.book.pricing(pricing).model_key for pricing in (*drain.pricings, *drain.free)}
+		return [
+			self.entry(model, None, counts, Decimal(0), Decimal(0))
+			for model, counts in drain.counters.items()
+			if model in self.book.models and model not in priced
+		]
+
+	def entry(self, model, pricing, counts, gateway_cost, grove_cost):
+		"""`model` is the key — what the bucket, the report and the customer name."""
 		return {
 			"model": model, "pricing": pricing, "requests": counts.get("request_count", 0),
 			**{counter: counts.get(counter, 0) for counter in self.book.counters.names if counter != "request_count"},

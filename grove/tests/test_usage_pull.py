@@ -171,9 +171,9 @@ class TestAStuckUserHoldsOnlyThemselvesBack(PullCase):
 	def failing(self, bad_key):
 		real = Reconciler.insert
 
-		def insert(reconciler, user, prefix, drain, billed):
+		def insert(reconciler, user, prefix, *share):
 			# The record is written first, so the failure lands after a write the savepoint must undo.
-			doc = real(reconciler, user, prefix, drain, billed)
+			doc = real(reconciler, user, prefix, *share)
 			if prefix == bad_key:
 				raise RuntimeError("disk on fire")
 			return doc

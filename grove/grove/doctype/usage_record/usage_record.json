@@ -28,6 +28,7 @@
    "in_list_view": 1,
    "label": "API Key",
    "options": "Grove API Key",
+   "read_only": 1,
    "reqd": 1
   },
   {
@@ -35,7 +36,8 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "User",
-   "options": "Grove User"
+   "options": "Grove User",
+   "read_only": 1
   },
   {
    "description": "The UTC day it was pulled.",
@@ -51,7 +53,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "The store drained. A key used in several geographies gets a record per store per drain.",
+   "description": "The store drained.",
    "fieldname": "gateway_store",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -113,7 +115,7 @@
   },
   {
    "default": "0",
-   "description": "Whether this usage was charged: the user was not Free when it landed. Only billed records move the user's Spent and count as revenue; an unbilled one still shows what the usage would have cost.",
+   "description": "Whether this usage was charged: the gateway served it while the user was prepaid. Only billed records move the user's Spent and count as revenue; an unbilled one still shows what the usage would have cost.",
    "fieldname": "billed",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -128,7 +130,7 @@
  ],
  "in_create": 1,
  "links": [],
- "modified": "2026-09-28 20:03:09.749496",
+ "modified": "2026-10-02 19:42:42.620594",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Usage Record",
