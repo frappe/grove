@@ -15,6 +15,7 @@ import unittest
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.model_provider.model_provider import self_hosted_provider
 from grove.grove.doctype.model_provider.test_model_provider import provider
 
@@ -37,17 +38,20 @@ class TestTheIdIsAlwaysPrefixed(IntegrationTestCase):
 		doc.insert()
 		return doc
 
-	def test_our_own_models_are_named_under_the_self_hosted_provider(self):
+	def test_our_own_models_are_keyed_under_the_self_hosted_provider(self):
 		doc = self.model("Ponytail Probe 7B")
-		self.assertEqual(f"{self_hosted_provider()}/ponytail-probe-7b", doc.name)
+		self.assertEqual(f"{self_hosted_provider()}/ponytail-probe-7b", doc.model_key)
+		# The doc name is a hash: the key is inside every route and grant, the name is nowhere.
+		self.assertNotIn("/", doc.name)
 		self.assertEqual("ponytail-probe-7b", doc.model_id)
 		self.assertEqual(self_hosted_provider(), doc.provider)
 
-	def test_a_third_party_model_is_named_under_its_vendor(self):
-		# Under the vendor's name, not its record: the doc id is a hash nobody could type.
+	def test_a_third_party_model_is_keyed_under_its_vendor(self):
+		# Under the vendor's name, not its record: the record id is a hash nobody could type.
 		vendor = provider("probe-anthropic").insert()
 		doc = self.model("Claude Sonnet 4.5", provider=vendor.name)
-		self.assertEqual("probe-anthropic/claude-sonnet-4.5", doc.name)
+		self.assertEqual("probe-anthropic/claude-sonnet-4.5", doc.model_key)
+		self.assertEqual(vendor.geography, doc.geography)
 		self.assertEqual("claude-sonnet-4.5", doc.model_id)
 
 	def test_the_provider_name_is_read_off_the_provider_not_stored(self):
@@ -60,15 +64,39 @@ class TestTheIdIsAlwaysPrefixed(IntegrationTestCase):
 		# The prefix IS the id: without it the route key would not match what /v1/models
 		# advertises.
 		doc = self.model("No Provider Named", provider="")
-		self.assertTrue(doc.name.startswith(f"{self_hosted_provider()}/"))
+		self.assertTrue(doc.model_key.startswith(f"{self_hosted_provider()}/"))
 
 	def test_the_id_cannot_be_edited_afterwards(self):
-		# `set_only_once` refuses the edit rather than leaving the doc named one thing and
+		# `set_only_once` refuses the edit rather than leaving the doc keyed one thing and
 		# labelled another.
 		doc = self.model("Before Rename 7B")
 		doc.model_id = "after-rename-7b"
 		with self.assertRaises(frappe.CannotChangeConstantError):
 			doc.save()
+
+	def test_the_key_cannot_be_edited_afterwards(self):
+		doc = self.model("Keyed 7B")
+		doc.model_key = f"{self_hosted_provider()}/other-7b"
+		with self.assertRaises(frappe.CannotChangeConstantError):
+			doc.save()
+
+	def test_one_key_is_a_doc_per_provider_record(self):
+		# The same vendor model in two geographies: two docs under one key, each its own
+		# upstream id. A third under a record that already holds the id is refused.
+		first = provider("probe-twice").insert()
+		second = provider("probe-twice", geography=make_test_geography("test-2")).insert()
+		here = self.model("Twice 7B", provider=first.name)
+		there = frappe.get_doc(
+			{"doctype": "Model", "model_id": "twice-7b", "provider": second.name, "modality": "text",
+			 "upstream_model_id": "twice-7b-eu"}
+		).insert()
+		self.assertEqual(here.model_key, there.model_key)
+		self.assertNotEqual(here.name, there.name)
+		self.assertEqual((here.geography, there.geography), (first.geography, second.geography))
+		with self.assertRaises(frappe.UniqueValidationError):
+			frappe.get_doc(
+				{"doctype": "Model", "model_id": "twice-7b", "provider": second.name, "modality": "text"}
+			).insert()
 
 	def test_a_name_with_nothing_sluggable_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):

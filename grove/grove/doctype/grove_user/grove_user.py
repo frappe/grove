@@ -45,7 +45,7 @@ class GroveUser(Document):
 
 	def validate(self):
 		# Deny wins anyway, so a model on both lists is a mistake worth surfacing.
-		both = {row.model for row in self.allow} & {row.model for row in self.deny}
+		both = {row.model_key for row in self.allow} & {row.model_key for row in self.deny}
 		if both:
 			frappe.throw(f"{', '.join(sorted(both))} is in both Allow and Deny")
 		if not self.is_new():

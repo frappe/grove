@@ -24,7 +24,7 @@ class TestPublishing(IntegrationTestCase):
 		).insert(ignore_permissions=True)
 
 	def served(self, is_served=True):
-		return patch.object(model_module, "vendor_base_url", return_value="https://vendor" if is_served else "")
+		return patch.object(model_module, "has_vendor_front", return_value=is_served)
 
 	def test_a_model_is_born_unpublished(self):
 		self.assertEqual(self.model().published, 0)

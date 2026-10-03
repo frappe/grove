@@ -11,15 +11,17 @@ import frappe
 
 
 def model_rows(parenttype, parents=None):
+	"""{parent: {parentfield: [model key, ...]}}. A row links a doc; what it grants is the key —
+	one grant reaches the id in every geography that serves it."""
 	filters = {"parenttype": parenttype}
 	if parents is not None:
 		filters["parent"] = ("in", list(parents))
 	rows = frappe.get_all(
-		"Grove Model Row", filters=filters, fields=["parent", "model", "parentfield"]
+		"Grove Model Row", filters=filters, fields=["parent", "model_key", "parentfield"]
 	)
 	grouped = {}
 	for row in rows:
-		grouped.setdefault(row.parent, {}).setdefault(row.parentfield, []).append(row.model)
+		grouped.setdefault(row.parent, {}).setdefault(row.parentfield, []).append(row.model_key)
 	for fields in grouped.values():
 		for models in fields.values():
 			models.sort()
@@ -35,3 +37,12 @@ def group_rows(parents=None):
 	for row in rows:
 		grouped.setdefault(row.parent, set()).add(row.model_group)
 	return {parent: sorted(names) for parent, names in grouped.items()}
+
+
+def model_doc(model_key):
+	"""Any doc under `model_key`, for a grant that names an id: a grant is by key, so which
+	geography's doc holds the link does not matter. Unknown is the caller's error."""
+	name = frappe.db.get_value("Model", {"model_key": model_key}, "name")
+	if not name:
+		frappe.throw(f"No model is keyed {model_key!r}.", frappe.DoesNotExistError)
+	return name

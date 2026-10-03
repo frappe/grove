@@ -9,23 +9,27 @@ from unittest.mock import patch
 import frappe
 
 from grove.pathway import projection, run, snapshot
+from grove.tests.model_rows import model_row, placement
 from grove.pathway.routes import gateway_routes
 from grove.pathway.run import Target
 
 ZONE = "grove.example.com"
 MODELS = [
-	{"name": "frappe/qwen3-8b", "model_id": "qwen3-8b", "provider_name": "frappe", "published": 1},
-	{"name": "openai/gpt-5", "model_id": "gpt-5", "provider_name": "openai", "published": 1},
+	model_row("frappe/qwen3-8b", model_id="qwen3-8b"),
+	# One key, a doc per provider record: each geography's doc carries its own upstream id.
+	model_row("gpt5-in", "openai", "in", model_key="openai/gpt-5", model_id="gpt-5"),
+	model_row("gpt5-eu", "openai", "eu", model_key="openai/gpt-5", model_id="gpt-5",
+	          upstream_model_id="gpt-5-eu"),
 ]
 REPLICAS = [
-	{"name": "MD-in", "model": "frappe/qwen3-8b", "engine_url": "https://203.0.113.1/e/md-in",
-	 "inference_server": "INF-in", "geography": "in"},
-	{"name": "MD-eu", "model": "frappe/qwen3-8b", "engine_url": "https://203.0.113.2/e/md-eu",
-	 "inference_server": "INF-eu-behind", "geography": "eu"},
+	placement("frappe/qwen3-8b", name="MD-in", engine_url="https://203.0.113.1/e/md-in",
+	          inference_server="INF-in", geography="in"),
+	placement("frappe/qwen3-8b", name="MD-eu", engine_url="https://203.0.113.2/e/md-eu",
+	          inference_server="INF-eu-behind", geography="eu"),
 ]
 INGRESSES = [{"name": "eu-i1", "region": "eu-central-1", "geography": "eu"}]
 SERVERS = [{"name": "INF-eu-behind", "ingress": "eu-i1"}]
-PODS = [{"name": "POD-1", "model": "frappe/qwen3-8b", "engine_url": "http://1.2.3.4:8081"}]
+PODS = [placement("frappe/qwen3-8b", name="POD-1", engine_url="http://1.2.3.4:8081")]
 # Every pod serves in this one, set on Grove Settings.
 POD_GEOGRAPHY = "in"
 # One vendor, a record per geography: the ids are hashes, the name is what they share.

@@ -139,7 +139,7 @@ class TestOneNameAcrossGeographies(IntegrationTestCase):
 		sibling = provider("probe-moves", geography=make_test_geography("test-2")).insert()
 		stranger = provider("probe-stranger").insert()
 		doc = vendor_model("probe-moved", first.name).insert()
-		self.assertEqual("probe-moves/probe-moved", doc.name)
+		self.assertEqual("probe-moves/probe-moved", doc.model_key)
 		doc.provider = sibling.name
 		doc.save()
 		# The name is inside the id every caller already sends.

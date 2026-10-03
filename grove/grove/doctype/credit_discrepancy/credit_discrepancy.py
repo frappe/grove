@@ -26,6 +26,7 @@ class CreditDiscrepancy(Document):
 		grove_user: DF.Link | None
 		grove_value: DF.Currency
 		model: DF.Link | None
+		model_key: DF.Data | None
 		note: DF.SmallText | None
 		pricing: DF.Link | None
 		resolution: DF.Literal['', 'Grove corrected', 'Gateway corrected']

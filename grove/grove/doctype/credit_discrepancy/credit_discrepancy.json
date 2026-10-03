@@ -10,6 +10,7 @@
   "api_key",
   "pricing",
   "model",
+  "model_key",
   "column_break_where",
   "gateway_store",
   "resolved",
@@ -62,6 +63,14 @@
    "label": "Model",
    "options": "Model",
    "read_only": 1
+  },
+  {
+   "fetch_from": "model.model_key",
+   "fieldname": "model_key",
+   "fieldtype": "Data",
+   "label": "Model Key",
+   "read_only": 1,
+   "in_list_view": 1
   },
   {
    "fieldname": "column_break_where",
@@ -148,7 +157,7 @@
   }
  ],
  "links": [],
- "modified": "2026-09-28 18:00:00.000000",
+ "modified": "2026-10-03 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Credit Discrepancy",

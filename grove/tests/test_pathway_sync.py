@@ -21,13 +21,14 @@ import frappe
 import grove
 from grove.pathway import projection, routes, run, snapshot
 from grove.pathway.run import Target, Unit
+from grove.tests.model_rows import model_row
 from grove.serving.vllm import VllmEngine
 
 
 def replica(name, model="qwen3-35b", server="INF-1", status="Active", max_num_seqs=0,
 	model_deployment=None):
 	return frappe._dict(
-		name=name, model=model, engine_url=f"https://10.0.0.9/e/{name.lower()}",
+		name=name, model=model, model_key=model, engine_url=f"https://10.0.0.9/e/{name.lower()}",
 		status=status, inference_server=server, max_num_seqs=max_num_seqs,
 		model_deployment=model_deployment,
 	)
@@ -39,7 +40,7 @@ def deployment(name="qwen3-35b-ap-south-1", max_num_seqs=0, engine_image=None):
 
 def pod(name, model="qwen3-35b", max_num_seqs=0):
 	return frappe._dict(
-		name=name, model=model, engine_url="http://1.2.3.4:8080", max_num_seqs=max_num_seqs
+		name=name, model=model, model_key=model, engine_url="http://1.2.3.4:8080", max_num_seqs=max_num_seqs
 	)
 
 
@@ -57,7 +58,7 @@ class TestGatewayRoutes(unittest.TestCase):
 				# The Active filter moved into the query, so the mock honours it.
 				return [r for r in replicas if r.status == (filters or {}).get("status")]
 			if doctype == "Model":
-				return [frappe._dict(name=m, modality="text") for m in models]
+				return [frappe._dict(model_row(m, modality="text")) for m in models]
 			if doctype == "Pod":
 				return list(pods)
 			if doctype == "Model Deployment":
@@ -146,7 +147,7 @@ class TestRouteModality(unittest.TestCase):
 	def routes(self, models, replicas=(), pods=()):
 		def get_all(doctype, **kwargs):
 			if doctype == "Model":
-				return [frappe._dict(name=n, modality=m) for n, m in models.items()]
+				return [frappe._dict(model_row(n, modality=m)) for n, m in models.items()]
 			if doctype == "Model Replica":
 				return list(replicas)
 			if doctype == "Pod":
@@ -207,7 +208,7 @@ class TestEffectiveGroups(unittest.TestCase):
 	def test_a_group_carries_its_name_and_models(self):
 		[group] = self.groups(
 			["acme"],
-			[frappe._dict(parent="acme", model="qwen3-35b", parentfield="models")],
+			[frappe._dict(parent="acme", model_key="qwen3-35b", parentfield="models")],
 		)
 		self.assertEqual(group, {"name": "acme", "models": "qwen3-35b"})
 
@@ -217,8 +218,8 @@ class TestEffectiveGroups(unittest.TestCase):
 		[group] = self.groups(
 			["acme"],
 			[
-				frappe._dict(parent="acme", model="b", parentfield="models"),
-				frappe._dict(parent="acme", model="a", parentfield="models"),
+				frappe._dict(parent="acme", model_key="b", parentfield="models"),
+				frappe._dict(parent="acme", model_key="a", parentfield="models"),
 			],
 		)
 		self.assertEqual(group["models"], "a,b")
@@ -262,8 +263,8 @@ class TestEffectiveUsers(unittest.TestCase):
 		[user] = self.users(
 			[frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=1)],
 			[
-				frappe._dict(parent="GU-1", model="qwen3-4b", parentfield="allow"),
-				frappe._dict(parent="GU-1", model="qwen3-35b", parentfield="deny"),
+				frappe._dict(parent="GU-1", model_key="qwen3-4b", parentfield="allow"),
+				frappe._dict(parent="GU-1", model_key="qwen3-35b", parentfield="deny"),
 			],
 			[frappe._dict(parent="GU-1", model_group="acme")],
 		)
@@ -280,8 +281,8 @@ class TestEffectiveUsers(unittest.TestCase):
 		[user] = self.users(
 			[frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0)],
 			[
-				frappe._dict(parent="GU-1", model="b", parentfield="allow"),
-				frappe._dict(parent="GU-1", model="a", parentfield="allow"),
+				frappe._dict(parent="GU-1", model_key="b", parentfield="allow"),
+				frappe._dict(parent="GU-1", model_key="a", parentfield="allow"),
 			],
 			[
 				frappe._dict(parent="GU-1", model_group="zeta"),
@@ -328,8 +329,8 @@ class TestEffectiveUsers(unittest.TestCase):
 				frappe._dict(name="GU-2", user="b@x.com", credit_exhausted=0),
 			],
 			[
-				frappe._dict(parent="GU-1", model="m1", parentfield="allow"),
-				frappe._dict(parent="GU-2", model="m2", parentfield="allow"),
+				frappe._dict(parent="GU-1", model_key="m1", parentfield="allow"),
+				frappe._dict(parent="GU-2", model_key="m2", parentfield="allow"),
 			],
 			[
 				frappe._dict(parent="GU-1", model_group="acme"),

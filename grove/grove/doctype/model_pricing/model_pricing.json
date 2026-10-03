@@ -6,6 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "model",
+  "model_key",
   "status",
   "column_break_vnjs",
   "enabled_on",
@@ -21,6 +22,15 @@
    "label": "Model",
    "options": "Model",
    "reqd": 1
+  },
+  {
+   "fetch_from": "model.model_key",
+   "fieldname": "model_key",
+   "fieldtype": "Data",
+   "label": "Model Key",
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
   },
   {
    "default": "Disabled",
@@ -59,7 +69,7 @@
   }
  ],
  "links": [],
- "modified": "2026-09-30 11:30:00.000000",
+ "modified": "2026-10-03 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model Pricing",
@@ -82,6 +92,6 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "title_field": "model",
+ "title_field": "model_key",
  "track_changes": 1
 }

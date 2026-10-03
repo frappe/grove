@@ -16,6 +16,8 @@ from unittest.mock import patch
 
 import frappe
 
+from grove.tests.model_rows import model_row
+
 from grove.net import private_url
 
 
@@ -82,7 +84,7 @@ class FakeQuery:
 		return [frappe._dict(r) for r in rows]
 
 
-MODELS = [{"name": "qwen3-35b"}, {"name": "llama-70b"}]
+MODELS = [model_row("qwen3-35b"), model_row("llama-70b")]
 SERVERS = [
 	{"name": "INF-local", "machine": "M-local", "ingress": "ING-1"},
 	{"name": "INF-elsewhere", "machine": "M-elsewhere", "ingress": "ING-2"},
@@ -96,15 +98,15 @@ MACHINES = [
 	{"name": "M-direct", "network": "Mumbai", "private_ip": "10.0.1.9"},
 ]
 REPLICAS = [
-	{"name": "MD-1", "model": "qwen3-35b", "engine_url": "https://203.0.113.7/e/md-1",
+	{"name": "MD-1", "model": "qwen3-35b", "model_key": "qwen3-35b", "engine_url": "https://203.0.113.7/e/md-1",
 	 "status": "Active", "inference_server": "INF-local", "max_num_seqs": 8},
-	{"name": "MD-2", "model": "llama-70b", "engine_url": "https://203.0.113.8/e/md-2",
+	{"name": "MD-2", "model": "llama-70b", "model_key": "llama-70b", "engine_url": "https://203.0.113.8/e/md-2",
 	 "status": "Active", "inference_server": "INF-elsewhere", "max_num_seqs": 4},
-	{"name": "MD-5", "model": "llama-70b", "engine_url": "https://203.0.113.10/e/md-5",
+	{"name": "MD-5", "model": "llama-70b", "model_key": "llama-70b", "engine_url": "https://203.0.113.10/e/md-5",
 	 "status": "Active", "inference_server": "INF-direct", "max_num_seqs": 4},
-	{"name": "MD-3", "model": "llama-70b", "engine_url": "https://203.0.113.9/e/md-3",
+	{"name": "MD-3", "model": "llama-70b", "model_key": "llama-70b", "engine_url": "https://203.0.113.9/e/md-3",
 	 "status": "Active", "inference_server": "INF-noprivate", "max_num_seqs": 4},
-	{"name": "MD-4", "model": "qwen3-35b", "engine_url": "https://203.0.113.7/e/md-4",
+	{"name": "MD-4", "model": "qwen3-35b", "model_key": "qwen3-35b", "engine_url": "https://203.0.113.7/e/md-4",
 	 "status": "Draft", "inference_server": "INF-local", "max_num_seqs": 8},
 ]
 
@@ -217,7 +219,7 @@ class TestTheIngressGateResolvesThroughTheDeployment(unittest.TestCase):
 
 	def capacity(self, max_num_seqs, deployment_max_num_seqs):
 		replica = {
-			"name": "MD-1", "model": "qwen3-35b", "engine_url": "https://203.0.113.7/e/md-1",
+			"name": "MD-1", "model": "qwen3-35b", "model_key": "qwen3-35b", "engine_url": "https://203.0.113.7/e/md-1",
 			"status": "Active", "inference_server": "INF-local",
 			"max_num_seqs": max_num_seqs, "model_deployment": "T1",
 		}

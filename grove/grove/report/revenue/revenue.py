@@ -7,7 +7,8 @@ import frappe
 from grove.grove.doctype.usage_record.usage_record import usage_table
 
 GROUP_BY = {
-	"Model": ("u.model", "Link", "Model"),
+	# The key the usage names, not a doc: one key may be a doc per geography.
+	"Model": ("u.model", "Data", None),
 	"API Key": ("r.api_key", "Link", "Grove API Key"),
 	"Grove User": ("r.user", "Link", "Grove User"),
 	"Day": ("r.day", "Date", None),

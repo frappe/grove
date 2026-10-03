@@ -72,7 +72,7 @@ class Reconciler:
 		entries = []
 		for pricing, counts in drain.pricings.items():
 			entries.append(self.entry(
-				self.book.pricing(pricing).model, pricing, counts,
+				self.book.pricing(pricing).model_key, pricing, counts,
 				usd(counts.get("cost", 0)), self.book.pricing_cost(pricing, counts),
 			))
 		priced = {e["model"] for e in entries}
@@ -96,6 +96,6 @@ class Reconciler:
 			if entry["pricing"] and abs(gateway - grove) > tolerance(entry["requests"]):
 				record(
 					usage_record=doc.name, grove_user=doc.user, api_key=doc.api_key, pricing=entry["pricing"],
-					model=entry["model"], gateway_store=self.gateway_store,
+					model=self.book.pricing(entry["pricing"]).model, gateway_store=self.gateway_store,
 					gateway_value=gateway, grove_value=grove, delta=gateway - grove,
 				)

@@ -391,6 +391,7 @@ class TestReconfigureKeepsTheModelRoutable(unittest.TestCase):
 		md = SimpleNamespace(
 			name="MD-00007",
 			model="qwen3.5-4b",
+			model_key="qwen3.5-4b",
 			derived_engine_url="https://10.0.0.9/e/md-00007",
 			get_password=lambda *args, **kwargs: "internal-key",
 			# No figure to learn or drop: _post_play_state asks both.
@@ -450,7 +451,7 @@ class TestExtraVarsFollowTheEngineKind(unittest.TestCase):
 
 	def extravars(self, engine, engine_kind="vllm"):
 		md = SimpleNamespace(
-			name="MD-00007", model="qwen3-35b", gpus=[], env=[], engine=engine,
+			name="MD-00007", model="qwen3-35b", model_key="qwen3-35b", gpus=[], env=[], engine=engine,
 			deployment=deployment(engine_image="img"),
 			# No pinned cards, so the device list is empty and the container gets --gpus all.
 			gpu_records=[],
@@ -643,7 +644,8 @@ class TestAReplicaNamesItselfBeforeFetchFromRuns(unittest.TestCase):
 	`self.model` as stored, it would be built from a blank."""
 
 	def name(self, **sent):
-		values = {"Model Deployment": "qwen3-35b", "Inference Server": "ap-south-1"}
+		# The deployment answers (doc, key); the key names the replica, the doc stays its link.
+		values = {"Model Deployment": ("md-doc", "frappe/qwen3-35b"), "Inference Server": "ap-south-1"}
 		md = frappe._dict(sent)
 		with (
 			patch.object(frappe, "db", frappe._dict(
@@ -655,9 +657,9 @@ class TestAReplicaNamesItselfBeforeFetchFromRuns(unittest.TestCase):
 
 	def test_the_model_comes_off_the_deployment_not_the_unfetched_field(self):
 		md = self.name(model_deployment="qwen3-35b-ap-south-1", inference_server="inf3")
-		self.assertEqual(md.name, "qwen3-35b|ap-south-1|inf3")
+		self.assertEqual(md.name, "frappe/qwen3-35b|ap-south-1|inf3")
 		# Left ON the doc, so the mandatory check and sync_published both see it.
-		self.assertEqual(md.model, "qwen3-35b")
+		self.assertEqual((md.model, md.model_key), ("md-doc", "frappe/qwen3-35b"))
 
 
 class TestAReplicaMustBeTheShapeItsDeploymentDeclares(unittest.TestCase):

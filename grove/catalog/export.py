@@ -32,18 +32,21 @@ def get_providers():
 
 
 def get_models():
-	"""Vendor models only, each with the rows of its Enabled pricing. Never `published`."""
+	"""Vendor models only, one entry per key, each with the rows of its Enabled pricing. Never
+	`published`. A key held in several geographies exports once: the default geography's doc,
+	else whichever sorts first."""
 	rows = frappe.get_all(
 		"Model",
 		filters={"provider_is_self_hosted": 0},
-		fields=["name", "provider.provider_name as provider_name", *MODEL_FIELDS],
-		order_by="name",
+		fields=["name", "model_key", "provider.provider_name as provider_name", "geography", *MODEL_FIELDS],
+		order_by="model_key, geography",
 	)
-	return [
-		{"provider": row.provider_name, "rates": get_rates(row.name)}
-		| {field: row[field] for field in MODEL_FIELDS if row[field]}
-		for row in rows
-	]
+	default = frappe.db.get_value("Geography", {"is_default": 1})
+	entries = {}
+	for row in sorted(rows, key=lambda row: (row.model_key, row.geography != default)):
+		entries.setdefault(row.model_key, {"provider": row.provider_name, "rates": get_rates(row.name)}
+			| {field: row[field] for field in MODEL_FIELDS if row[field]})
+	return list(entries.values())
 
 
 def get_rates(model):

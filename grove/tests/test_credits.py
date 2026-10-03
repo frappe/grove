@@ -33,6 +33,8 @@ class CreditsCase(IntegrationTestCase):
 		super().setUpClass()
 		make_test_geography()
 		cls.model, cls.pricing = cls.priced_model("credits-7b", cls.RATE)
+		# The doc links pricing; the key is what a bucket, an entry and the API name.
+		cls.model_key = frappe.db.get_value("Model", cls.model, "model_key")
 		cls.store = a_store("credits-store")
 		gateway_module = "grove.grove.doctype.gateway_server.gateway_server"
 		with (
@@ -107,7 +109,7 @@ class TestADrainIsBilledAtGrovesPrice(CreditsCase):
 		[entry] = frappe.parse_json(record.usage)
 		self.assertEqual(
 			(entry["pricing"], entry["model"], entry["requests"], entry["completion_tokens"], entry["grove_cost"]),
-			(self.pricing, self.model, 1, 50_000, 0.5),
+			(self.pricing, self.model_key, 1, 50_000, 0.5),
 		)
 		self.assertNotIn("gateway_cost", entry)
 		self.assertEqual(self.discrepancies(user), [])

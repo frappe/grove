@@ -11,8 +11,9 @@ const USAGE_COLUMNS = [
 ];
 // In the detail for the reports to sum, not shown: the record's Cost is the figure to read.
 const HIDDEN = ['grove_cost'];
-// Columns whose value names a document: shown as a link to it.
-const LINKS = { model: 'Model', pricing: 'Model Pricing' };
+// Columns whose value names a document: shown as a link to it. `model` is a key, not a doc name —
+// one key may be a doc per geography — so it stays text.
+const LINKS = { pricing: 'Model Pricing' };
 const CELL = 'white-space: nowrap;';
 // The first column stays in view while the rest scrolls under it.
 const PINNED = `${CELL} position: sticky; left: 0; background: var(--fg-color);`;

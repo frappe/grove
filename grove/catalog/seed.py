@@ -21,8 +21,10 @@ def insert_missing(path=None):
 	for provider in catalog["providers"]:
 		if not frappe.db.exists("Model Provider", {"provider_name": provider["provider_name"]}):
 			frappe.get_doc({"doctype": "Model Provider", **provider}).insert()
+	# A model lands under the record the catalog's own provider entry describes.
+	geographies = {p["provider_name"]: p.get("geography") for p in catalog["providers"]}
 	for model in catalog["models"]:
-		insert_model(model)
+		insert_model(model, geographies.get(model["provider"]) or default_geography())
 
 
 def insert_geography(geography):
@@ -36,23 +38,42 @@ def insert_geography(geography):
 	doc.insert()
 
 
-def insert_model(model):
-	if frappe.db.exists("Model", get_model_name(model)):
+def insert_model(model, geography):
+	"""Under one record of the provider: the one in `geography` — what the catalog's own entry for
+	the provider says — else the only one the site holds. Several and none there is a question
+	for the operator. A model in a second geography is a second doc added by hand."""
+	provider = provider_record(model["provider"], geography)
+	if frappe.db.exists("Model", {"provider": provider, "model_id": model["model_id"]}):
 		return
-	provider = frappe.db.get_value("Model Provider", {"provider_name": model["provider"]})
-	if not provider:
-		frappe.throw(f"The catalog names {get_model_name(model)} under a provider it does not carry.")
 	fields = {key: value for key, value in model.items() if key != "rates"}
 	frappe.get_doc({"doctype": "Model", **fields, "provider": provider}).insert()
 
 
+def provider_record(provider_name, geography):
+	records = frappe.get_all("Model Provider", {"provider_name": provider_name}, ["name", "geography"])
+	preferred = [r.name for r in records if r.geography == geography]
+	if preferred:
+		return preferred[0]
+	if len(records) == 1:
+		return records[0].name
+	frappe.throw(
+		f"The catalog names models under {provider_name}, which the site carries in "
+		f"{len(records)} geographies and not in {geography}."
+	)
+
+
+def default_geography():
+	return frappe.db.get_value("Geography", {"is_default": 1})
+
+
 def get_model_name(model):
+	"""The entry's model key."""
 	return f"{model['provider']}/{model['model_id']}"
 
 
-def get_rates(model_name, path=None):
-	"""The catalog's rate rows for a Model, [] when it prices none."""
+def get_rates(model_key, path=None):
+	"""The catalog's rate rows for a model key, [] when it prices none."""
 	for model in read(path)["models"]:
-		if get_model_name(model) == model_name:
+		if get_model_name(model) == model_key:
 			return model.get("rates") or []
 	return []

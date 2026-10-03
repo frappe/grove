@@ -15,7 +15,8 @@ from grove.net import private_url
 from grove.pricing import PriceBook
 from grove.serving.base import engine_class
 
-REPLICA_FIELDS = ["name", "model", "engine_url", "inference_server", "max_num_seqs", "model_deployment"]
+# `model` is the doc; `model_key` is the id the row is keyed under.
+REPLICA_FIELDS = ["name", "model", "model_key", "engine_url", "inference_server", "max_num_seqs", "model_deployment"]
 
 
 def ingress_targets(geography):
@@ -124,22 +125,20 @@ def active_replicas(**filters):
 
 
 def gateway_routes(geography):
-	"""deploy:<model> table for every gateway in `geography`, built only from what runs inside it. A
-	model with no Active engine is simply absent; the push prunes its key, so it drops out of Redis
-	and /v1/models next tick."""
+	"""deploy:<model key> table for every gateway in `geography`, built only from what runs inside
+	it: our own models, and the vendor docs whose provider record sits in this geography — a
+	model in two geographies is two docs under one key, each with its own upstream id and
+	pricing. A model with no Active engine is simply absent; the push prunes its key, so it drops
+	out of Redis and /v1/models next tick."""
 	if not geography:
 		return {}  # a gateway outside every geography serves nothing rather than anyone's
 	deps, kinds = active_replicas(geography=geography)
+	models = models_in(geography)
 	# Stamped per row because deploy:<model> is the only thing pushed per model — a record of its
-	# own would be a new namespace for one short string. Blank means unrestricted.
-	models = frappe.get_all(
-		"Model",
-		fields=[
-			"name", "modality", "model_id", "upstream_model_id", "published",
-			"provider.provider_name as provider_name",
-		],
-	)
+	# own would be a new namespace for one short string. Blank means unrestricted. Keyed by doc:
+	# a replica or pod links the doc, and the key is read off it.
 	modality = {m.name: m.modality or "" for m in models}
+	key_of = {m.name: m.model_key for m in models}
 	# Once, not per model: a handful of providers against thousands of models.
 	vendors = vendor_endpoints(geography)
 	upstream = {m.name: upstream_model(m, m.provider_name in vendors) for m in models}
@@ -163,7 +162,7 @@ def gateway_routes(geography):
 			row["capacity"] += cap
 			continue
 		internal_key = frappe.get_doc("Model Replica", d.name).get_password("internal_api_key") or ""
-		routes.setdefault(d.model, []).append({
+		routes.setdefault(key_of[d.model], []).append({
 			"engine_url": d.engine_url,
 			"internal_key": internal_key,
 			"healthy": True,
@@ -176,7 +175,7 @@ def gateway_routes(geography):
 			"upstream_model": upstream.get(d.model, ""),
 		})
 	for (model, _ingress), row in folded.items():
-		routes.setdefault(model, []).append({
+		routes.setdefault(key_of[model], []).append({
 			**row,
 			"modality": modality.get(model, ""),
 			# Here, not on the ingress: the gateway is the last hop that reads a body.
@@ -196,7 +195,7 @@ def gateway_routes(geography):
 		if not (p.model and p.engine_url):
 			continue
 		internal_key = frappe.get_doc("Pod", p.name).get_password("api_key") or ""
-		routes.setdefault(p.model, []).append({
+		routes.setdefault(key_of[p.model], []).append({
 			"engine_url": p.engine_url,
 			"internal_key": internal_key,
 			"healthy": True,
@@ -218,18 +217,36 @@ def gateway_routes(geography):
 	return routes
 
 
+def models_in(geography):
+	"""Every Model doc a gateway in `geography` may serve: ours, and a vendor's docs under its
+	record in this geography — one doc per key here, however many the vendor has elsewhere."""
+	return [
+		m
+		for m in frappe.get_all(
+			"Model",
+			fields=[
+				"name", "model_key", "modality", "model_id", "upstream_model_id", "published",
+				"provider", "provider.provider_name as provider_name", "provider.geography as geography",
+				"provider.is_self_hosted as is_self_hosted",
+			],
+		)
+		if m.is_self_hosted or m.geography == geography
+	]
+
+
 def published_routes(routes, models):
 	"""The table the gateways get: only a Published model's rows, each carrying its Enabled
 	pricing. Published without one is dropped too — never served unpriced. Rates are nano-USD
-	per unit; the gateway tags each request with the pricing id, which is what the pull prices."""
+	per unit; the gateway tags each request with the pricing id, which is what the pull prices.
+	A pricing names a doc, so a model in two geographies is priced in each."""
 	book = PriceBook.load()
 	enabled = frappe.get_all("Model Pricing", filters={"status": "Enabled"}, fields=["name", "model"])
 	pricing = {p.model: {"id": p.name, "rates": book.nano_rates(p.name)} for p in enabled}
-	published = {model.name for model in models if model.published}
+	by_key = {m.model_key: m for m in models}
 	return {
-		model: [{**row, "pricing": pricing[model]} for row in rows]
-		for model, rows in routes.items()
-		if model in published and model in pricing
+		key: [{**row, "pricing": pricing[by_key[key].name]} for row in rows]
+		for key, rows in routes.items()
+		if by_key[key].published and by_key[key].name in pricing
 	}
 
 
@@ -281,6 +298,25 @@ def vendor_endpoints(geography):
 	return out
 
 
+def get_dialects(models, geography):
+	"""{model doc name: the client surfaces that reach it in `geography`}, as the gateway routes it:
+	an engine of ours answers chat on both and the rest on OpenAI's, a vendor only on the fronts
+	it runs. `models` carry `provider_name` and `is_self_hosted` as `models_in` reads them."""
+	fronts = {
+		name: [dialect for _, dialect in vendor["fronts"]]
+		for name, vendor in vendor_endpoints(geography).items()
+	}
+	dialects = {}
+	for model in models:
+		if not model.is_self_hosted:
+			dialects[model.name] = fronts.get(model.provider_name, [])
+		elif (model.modality or "") in ("", "text", "multimodal"):
+			dialects[model.name] = ["openai", "anthropic"]
+		else:
+			dialects[model.name] = ["openai"]
+	return dialects
+
+
 def add_vendor_routes(routes, models, vendors, modality, upstream):
 	"""One row per published Model per front the third party runs — two for a dual-front vendor
 	(DeepSeek's /anthropic), so one provider record serves both surfaces. No capacity of ours to
@@ -291,7 +327,7 @@ def add_vendor_routes(routes, models, vendors, modality, upstream):
 			continue
 		vendor = vendors[model.provider_name]
 		for engine_url, dialect in vendor["fronts"]:
-			routes.setdefault(model.name, []).append({
+			routes.setdefault(model.model_key, []).append({
 				"engine_url": engine_url,
 				"internal_key": vendor["api_key"],
 				"healthy": True,
@@ -351,7 +387,7 @@ def replicas_for_ingress(ingress_name):
 		if not engine_url:
 			continue
 		internal_key = frappe.get_doc("Model Replica", replica.name).get_password("internal_api_key") or ""
-		routes.setdefault(replica.model, []).append({
+		routes.setdefault(replica.model_key, []).append({
 			"engine_url": engine_url,
 			"internal_key": internal_key,
 			"healthy": True,

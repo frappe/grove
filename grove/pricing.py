@@ -70,12 +70,15 @@ class PriceBook:
 	@classmethod
 	def load(cls):
 		book = cls()
-		book.models = {model.name for model in frappe.get_all("Model", fields=["name"])}
-		pricings = {p.name: p.model for p in frappe.get_all("Model Pricing", fields=["name", "model"])}
-		book.pricings = {name: frappe._dict(model=model, rates={}) for name, model in pricings.items()}
+		# Keys, not docs: a usage bucket names the key, and a key may be several docs.
+		book.models = {model.model_key for model in frappe.get_all("Model", fields=["model_key"])}
+		pricings = frappe.get_all("Model Pricing", fields=["name", "model", "model_key"])
+		book.pricings = {
+			p.name: frappe._dict(model=p.model, model_key=p.model_key, rates={}) for p in pricings
+		}
 		rates = frappe.get_all(
 			"Model Pricing Rate",
-			filters={"parent": ("in", list(pricings))},
+			filters={"parent": ("in", list(book.pricings))},
 			fields=["parent", "counter", "rate"],
 			parent_doctype="Model Pricing",
 		) if pricings else []
