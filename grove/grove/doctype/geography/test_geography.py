@@ -1,4 +1,4 @@
-# Copyright (c) 2026, Grove and contributors
+# Copyright (c) 2026, Frappe and contributors
 # See license.txt
 """A Geography's endpoint is a name the fleet certificate covers, and one DNS set names it. Pure — the
 docs are stubs, so no site."""
@@ -18,15 +18,18 @@ from grove.server import Server
 ZONE = "grove.example.com"
 
 
-def make_test_geography():
+def make_test_geography(name="test"):
 	"""The Geography site-backed tests put their regions and vendors in."""
-	if not frappe.db.exists("Geography", "test"):
+	if not frappe.db.exists("Geography", name):
 		geography = {
-			"doctype": "Geography", "__newname": "test",
-			"fleet_zone": "test.grove.localhost", "endpoint": "api.test.grove.localhost",
+			"doctype": "Geography", "__newname": name,
+			"fleet_zone": f"{name}.grove.localhost", "endpoint": f"api.{name}.grove.localhost",
 		}
 		frappe.get_doc(geography).insert(ignore_permissions=True)
-	return "test"
+	# A Grove User needs a geography; on a site with no default, the test one is it.
+	if not frappe.db.exists("Geography", {"is_default": 1}):
+		frappe.db.set_value("Geography", name, "is_default", 1)
+	return name
 
 
 def validate(endpoint, zone=ZONE, before=None, gateways=()):
@@ -134,23 +137,36 @@ class TestWhoCarriesAGeography(unittest.TestCase):
 
 	def test_a_vendor_must_name_where_it_processes(self):
 		def validate(**fields):
-			doc = SimpleNamespace(**{"name": "openai-eu", "base_url": None, "anthropic_base_url": None, "geography": None, "is_self_hosted": 0, **fields})
+			doc = SimpleNamespace(**{
+				"name": "a1b2", "provider_name": "openai", "base_url": None, "anthropic_base_url": None,
+				"geography": None, "is_self_hosted": 0,
+				"validate_self_hosted": lambda: None, "validate_siblings": lambda: None, **fields,
+			})
 			with patch("frappe.throw", side_effect=frappe.ValidationError):
 				ModelProvider.validate(doc)
 
 		with self.assertRaises(frappe.ValidationError):
 			validate(anthropic_base_url="https://bedrock-runtime.eu-central-1.amazonaws.com/anthropic")
+		# A record is one geography's, so a vendor names one before it has a URL.
+		with self.assertRaises(frappe.ValidationError):
+			validate()
 		validate(base_url="https://eu.api.openai.com/v1", geography="eu")
-		validate()  # our own engines take theirs from wherever they run
+		validate(is_self_hosted=1)  # our own engines take theirs from wherever they run
 
 
 class TestAServerNamedWithItsDomain(unittest.TestCase):
-	def insert(self, name, zone=ZONE):
-		doc = SimpleNamespace(doctype="Gateway Server", name=name, geography="in")
-		doc.short_name = Server.short_name.fget(doc)
-		doc.fleet_zone = zone
-		with patch("frappe.throw", side_effect=frappe.ValidationError):
-			Server.before_insert(doc)
+	"""Gated in autoname, after the name exists: frappe runs before_insert with a generated one
+	still blank."""
+
+	def insert(self, name=None, machine=None, zone=ZONE):
+		doc = Server.__new__(type("Named", (Server,), {}))
+		doc.__dict__.update(doctype="Gateway Server", geography="in", machine=machine, _chosen_name=name)
+		with (
+			patch.object(frappe, "db", SimpleNamespace(get_value=lambda *key: zone)),
+			patch("frappe.throw", side_effect=frappe.ValidationError),
+		):
+			Server.autoname(doc)
+		return doc.name
 
 	def test_a_label_or_a_label_under_its_own_zone_is_accepted(self):
 		self.insert("gw2-ap-south-1")
@@ -160,7 +176,13 @@ class TestAServerNamedWithItsDomain(unittest.TestCase):
 		# hostname is built from the first label and the zone, so a name elsewhere would lie about it.
 		for name, zone in ((f"gw2.other.example.com", ZONE), (f"gw2.{ZONE}", ""), (f"gw_2.{ZONE}", ZONE)):
 			with self.subTest(name), self.assertRaises(frappe.ValidationError):
-				self.insert(name, zone)
+				self.insert(name, zone=zone)
+
+	def test_a_name_generated_off_the_machine_is_gated_once_it_exists(self):
+		# The store the rollout creates: no name given, the Machine's taken.
+		self.assertEqual(self.insert(machine=f"store1-ap-south-1.{ZONE}"), f"store1-ap-south-1.{ZONE}")
+		with self.assertRaises(frappe.ValidationError):
+			self.insert(machine="store1.other.example.com")
 
 
 if __name__ == "__main__":

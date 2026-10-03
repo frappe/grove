@@ -1,71 +1,60 @@
-# Copyright (c) 2026, Grove and contributors
+# Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 """Usage aggregation. Pure — the rows are passed in, so no site needed."""
 
 import unittest
 
+from datetime import date
+from unittest.mock import patch
+
+from grove import api
 from grove.api import _totals_by_model as totals_by_model
-from grove.grove.doctype.usage_record.usage_record import billable
-
-FIELDS = ("prompt_tokens", "completion_tokens", "cached_tokens", "request_count")
 
 
-def row(model, prompt=0, completion=0, cached=0, requests=0):
-	return {
-		"model": model,
-		"prompt_tokens": prompt,
-		"completion_tokens": completion,
-		"cached_tokens": cached,
-		"request_count": requests,
-	}
+def row(model, requests=0, cost=0.0):
+	return {"model": model, "requests": requests, "cost": cost}
 
 
 class TestTotalsByModel(unittest.TestCase):
 	def test_no_rows_is_no_summary(self):
-		self.assertEqual(totals_by_model([], FIELDS), [])
+		self.assertEqual(totals_by_model([]), [])
 
 	def test_rows_for_one_model_are_summed_not_overwritten(self):
-		# A user's keys each hold their own monthly record, so the same model arrives twice.
-		summary = totals_by_model(
-			[row("qwen3-35b", prompt=10, completion=20, requests=1),
-			 row("qwen3-35b", prompt=5, completion=10, requests=2)],
-			FIELDS,
-		)
-		self.assertEqual(len(summary), 1)
-		self.assertEqual(summary[0]["prompt_tokens"], 15)
-		self.assertEqual(summary[0]["completion_tokens"], 30)
-		self.assertEqual(summary[0]["request_count"], 3)
+		# Two users on the same model arrive as two rows.
+		summary = totals_by_model([row("qwen3-35b", requests=1, cost=0.5), row("qwen3-35b", requests=2, cost=0.25)])
+		self.assertEqual(summary, [{"model": "qwen3-35b", "requests": 3, "cost": 0.75}])
 
-	def test_biggest_consumer_comes_first(self):
-		summary = totals_by_model(
-			[row("small", prompt=10), row("big", prompt=900), row("mid", prompt=100)], FIELDS
-		)
-		self.assertEqual([t["model"] for t in summary], ["big", "mid", "small"])
-
-	def test_the_model_is_named_in_each_entry(self):
-		summary = totals_by_model([row("qwen3-35b", prompt=1)], FIELDS)
-		self.assertEqual(summary[0]["model"], "qwen3-35b")
+	def test_costliest_comes_first_then_busiest(self):
+		summary = totals_by_model([
+			row("free-quiet", requests=1), row("big", requests=1, cost=9.0),
+			row("free-busy", requests=50), row("mid", requests=900, cost=1.0),
+		])
+		self.assertEqual([t["model"] for t in summary], ["big", "mid", "free-busy", "free-quiet"])
 
 	def test_missing_metrics_count_as_zero(self):
-		# get_all can hand back None for a column never written.
-		summary = totals_by_model([{"model": "qwen3-35b", "prompt_tokens": None}], FIELDS)
-		self.assertEqual(summary[0]["prompt_tokens"], 0)
+		summary = totals_by_model([{"model": "qwen3-35b", "requests": None}])
+		self.assertEqual(summary, [{"model": "qwen3-35b", "requests": 0, "cost": 0}])
 
 
-class TestBillable(unittest.TestCase):
-	"""The one definition the budget gate and the usage report both use."""
+class TestUsageWindow(unittest.TestCase):
+	"""Every way of asking resolves to two UTC days."""
 
-	def test_cache_hits_do_not_count_against_a_budget(self):
-		self.assertEqual(billable(100, 25, 40), 85)
+	def window(self, **kwargs):
+		with patch.object(api, "utc_today", return_value=date(2026, 9, 28)):
+			return api.usage_window(kwargs.get("from_date"), kwargs.get("to_date"), kwargs.get("period"), kwargs.get("month"))
 
-	def test_a_cache_overcount_never_eats_completion(self):
-		# One malformed record must not credit a user back under their limit.
-		self.assertEqual(billable(0, 0, 90), 0)
-		self.assertEqual(billable(10, 5, 90), 5)
+	def test_the_named_periods(self):
+		self.assertEqual(self.window(), (date(2026, 9, 1), date(2026, 9, 28)))
+		self.assertEqual(self.window(period="Today"), (date(2026, 9, 28), date(2026, 9, 28)))
+		self.assertEqual(self.window(period="Yesterday"), (date(2026, 9, 27), date(2026, 9, 27)))
+		self.assertEqual(self.window(period="Last 7 Days"), (date(2026, 9, 22), date(2026, 9, 28)))
+		self.assertEqual(self.window(period="Last 30 Days"), (date(2026, 8, 30), date(2026, 9, 28)))
+		self.assertEqual(self.window(period="Last Month"), (date(2026, 8, 1), date(2026, 8, 31)))
 
-	def test_a_column_never_written_reads_as_zero(self):
-		self.assertEqual(billable(None, None, None), 0)
-		self.assertEqual(billable(50, None, None), 50)
+	def test_a_month_and_an_explicit_range(self):
+		self.assertEqual(self.window(month="2026-02"), (date(2026, 2, 1), date(2026, 2, 28)))
+		self.assertEqual(self.window(from_date="2026-09-03", to_date="2026-09-05"), (date(2026, 9, 3), date(2026, 9, 5)))
+		self.assertEqual(self.window(from_date="2026-09-03"), (date(2026, 9, 3), date(2026, 9, 3)))
 
 
 if __name__ == "__main__":

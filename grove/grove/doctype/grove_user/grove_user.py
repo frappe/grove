@@ -1,4 +1,4 @@
-# Copyright (c) 2026, Grove and contributors
+# Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
 import frappe
@@ -6,9 +6,11 @@ from frappe.model.document import Document
 
 
 class GroveUser(Document):
-	"""Grove's per-user policy: their groups, which models they may call, and their monthly token
-	budget. All of it belongs to the PERSON — their keys are credentials and share this budget.
-	No doc means no group and no allow, so the user reaches no models at all.
+	"""Grove's per-user policy: their groups, which models they may call, and their prepaid
+	balance (every user has one unless marked Free). All of it belongs to the PERSON — their keys
+	are credentials and share this balance.
+	No doc means no group and no allow, so the user reaches no models at all. A new doc starts in
+	the default Model Group, when one is marked.
 
 	The gateway holds it the same way: one user:<name> record every key points at, so an access
 	change is a single write however many keys they hold."""
@@ -24,20 +26,48 @@ class GroveUser(Document):
 		from grove.grove.doctype.model_group_row.model_group_row import ModelGroupRow
 
 		allow: DF.Table[GroveModelRow]
+		balance: DF.Currency
+		credit_exhausted: DF.Check
 		deny: DF.Table[GroveModelRow]
-		geography: DF.Link | None
+		free: DF.Check
+		geography: DF.Link
 		log_payloads: DF.Check
-		max_tokens: DF.Int
 		model_groups: DF.TableMultiSelect[ModelGroupRow]
-		rate_limited: DF.Check
+		spent: DF.Currency
 		user: DF.Link
 	# end: auto-generated types
 
+	def before_insert(self):
+		"""A new user starts in the default Model Group, unless the insert names its own groups."""
+		default = frappe.db.get_value("Model Group", {"is_default": 1})
+		if default and not self.model_groups:
+			self.append("model_groups", {"model_group": default})
+
+	def before_validate(self):
+		"""One geography per user: blank is the default one."""
+		if not self.geography:
+			self.geography = frappe.db.get_value("Geography", {"is_default": 1})
+		if not self.geography:
+			frappe.throw("Mark one Geography as default, or pick a geography for this user.")
+
 	def validate(self):
 		# Deny wins anyway, so a model on both lists is a mistake worth surfacing.
-		both = {row.model for row in self.allow} & {row.model for row in self.deny}
+		both = {row.model_key for row in self.allow} & {row.model_key for row in self.deny}
 		if both:
 			frappe.throw(f"{', '.join(sorted(both))} is in both Allow and Deny")
+		if not self.is_new():
+			# save() writes every column and the pull writes these two behind the form's back, so a
+			# form left open across a pull would write its old totals back as free credit.
+			live = frappe.db.get_value("Grove User", self.name, ["spent", "balance"], as_dict=True, for_update=True)
+			self.spent, self.balance = live.spent, live.balance
+		# Mirrors pricing.settle, which on_update then runs for real: free is never gated.
+		self.credit_exhausted = int(not self.free and (self.balance or 0) <= 0)
+
+	def on_update(self):
+		"""The verdict is re-decided from what was just saved — the same writer the pull uses."""
+		from grove.pricing import settle
+
+		settle(self.name)
 
 
 GROVE_USER_ROLE = "Grove User"
@@ -69,19 +99,14 @@ def for_email(email):
 	return frappe.db.get_value("Grove User", {"user": email}) if email else None
 
 
-def monthly_budget(grove_user):
-	"""Billable tokens (uncached prompt + completion) this user may spend per calendar month, 0 = unlimited."""
-	return frappe.db.get_value("Grove User", grove_user, "max_tokens") or 0
-
-
-def set_rate_limited(grove_user, limited):
-	"""Flip the 429 gate for `grove_user`. Held here, not on the keys, because the budget is
+def set_credit_exhausted(grove_user, exhausted):
+	"""Flip the credit gate for `grove_user`. Held here, not on the keys, because the balance is
 	the person's — storing it per key let a blocked user mint a fresh one and walk past their
 	own cap. The next sync pushes one record, not one per key they hold.
 	Returns True when something actually changed."""
-	current = frappe.db.get_value("Grove User", grove_user, "rate_limited")
-	if current is None or current == int(limited):
+	current = frappe.db.get_value("Grove User", grove_user, "credit_exhausted")
+	if current is None or current == int(exhausted):
 		return False
 	# update_modified=False: a system flag flip is not a user edit and must not read as one.
-	frappe.db.set_value("Grove User", grove_user, "rate_limited", int(limited), update_modified=False)
+	frappe.db.set_value("Grove User", grove_user, "credit_exhausted", int(exhausted), update_modified=False)
 	return True

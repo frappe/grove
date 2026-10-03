@@ -1,10 +1,10 @@
-# Copyright (c) 2026, Grove and contributors
-# For license information, please see license.txt
-
 from frappe.model.document import Document
 
 
-class UsageGatewayRow(Document):
+class ModelProviderKey(Document):
+	"""One credential of a vendor (child of Model Provider). The row name is the id the gateway
+	picks, rotates and counts under, so the secret itself is never named anywhere."""
+
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -13,15 +13,11 @@ class UsageGatewayRow(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		cached_tokens: DF.Int
-		completion_tokens: DF.Int
-		gateway_server: DF.Link | None
-		last_pulled: DF.Datetime | None
+		api_key: DF.Password
 		parent: DF.Data
 		parentfield: DF.Data
 		parenttype: DF.Data
-		prompt_tokens: DF.Int
-		request_count: DF.Int
+		title: DF.Data | None
 	# end: auto-generated types
 
 	pass

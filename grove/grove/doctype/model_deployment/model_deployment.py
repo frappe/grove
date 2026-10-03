@@ -1,4 +1,4 @@
-# Copyright (c) 2026, Grove and contributors
+# Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
 import json
@@ -67,6 +67,7 @@ class ModelDeployment(Document):
 		max_num_seqs: DF.Int
 		min_vram_gb: DF.Float
 		model: DF.Link
+		model_key: DF.Data | None
 		pipeline_parallel_size: DF.Int
 		placement_policy: DF.Literal["balanced", "pack", "spread"]
 		serve_command: DF.Code | None
@@ -131,7 +132,7 @@ class ModelDeployment(Document):
 		kind, image_tuning = engine_tuning(self.engine_image)
 		return build_engine(
 			kind,
-			self.model,
+			self.model_key,
 			launch_config(self.model),
 			port=(replica.engine_port if replica else 0) or DEFAULT_PORT,
 			gpu_count=len(replica.gpus or []) if replica else self.gpus_per_replica,

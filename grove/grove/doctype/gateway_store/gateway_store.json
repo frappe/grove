@@ -5,23 +5,25 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "status",
   "machine",
-  "frappe_public_key",
   "public_ip",
   "private_ip",
   "network",
   "region",
   "geography",
-  "status",
   "column_break_redis",
-  "redis_password"
+  "redis_password",
+  "frappe_public_key",
+  "section_backup",
+  "last_backup_at",
+  "last_backup_key"
  ],
  "fields": [
   {
    "description": "The box Redis runs on. Its Network is the one whose gateways this store serves.",
    "fieldname": "machine",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Machine",
    "options": "Machine",
    "reqd": 1,
@@ -38,6 +40,7 @@
    "fetch_from": "machine.public_ip",
    "fieldname": "public_ip",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Public IP",
    "read_only": 1
   },
@@ -72,6 +75,7 @@
    "fetch_from": "machine.geography",
    "fieldname": "geography",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Geography",
    "options": "Geography",
    "read_only": 1
@@ -80,6 +84,7 @@
    "default": "Pending",
    "fieldname": "status",
    "fieldtype": "Select",
+   "hidden": 1,
    "in_list_view": 1,
    "label": "Status",
    "options": "Pending\nInstalling\nActive\nBroken\nTerminated",
@@ -95,10 +100,28 @@
    "fieldtype": "Password",
    "label": "Redis Password",
    "read_only": 1
+  },
+  {
+   "fieldname": "section_backup",
+   "fieldtype": "Section Break",
+   "label": "Backup"
+  },
+  {
+   "fieldname": "last_backup_at",
+   "fieldtype": "Datetime",
+   "label": "Last Backup At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_backup_key",
+   "fieldtype": "Data",
+   "label": "Last Backup Key",
+   "read_only": 1,
+   "description": "Object in the weights bucket. Restore uses a store's latest — this one's, or the Terminated store this box replaces."
   }
  ],
  "links": [],
- "modified": "2026-09-17 16:41:00.000000",
+ "modified": "2026-09-28 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Gateway Store",

@@ -6,6 +6,7 @@
  "field_order": [
   "model_deployment",
   "model",
+  "model_key",
   "inference_server",
   "region",
   "geography",
@@ -51,6 +52,14 @@
    "options": "Model",
    "read_only": 1,
    "reqd": 1
+  },
+  {
+   "fetch_from": "model.model_key",
+   "fieldname": "model_key",
+   "fieldtype": "Data",
+   "label": "Model Key",
+   "read_only": 1,
+   "in_list_view": 1
   },
   {
    "description": "Only provisioned (Active) boxes are offered \u2014 a deploy onto anything else fails on the is_provisioned gate.",
@@ -272,7 +281,7 @@
   }
  ],
  "links": [],
- "modified": "2026-09-17 00:00:00.000000",
+ "modified": "2026-10-03 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model Replica",

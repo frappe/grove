@@ -6,13 +6,31 @@
  "engine": "InnoDB",
  "istable": 1,
  "field_order": [
-  "model"
+  "model",
+  "model_key"
  ],
  "fields": [
-  {"fieldname": "model", "fieldtype": "Link", "options": "Model", "label": "Model", "reqd": 1, "in_list_view": 1, "columns": 6}
+  {
+   "fieldname": "model",
+   "fieldtype": "Link",
+   "options": "Model",
+   "label": "Model",
+   "reqd": 1,
+   "in_list_view": 1,
+   "columns": 4
+  },
+  {
+   "fetch_from": "model.model_key",
+   "fieldname": "model_key",
+   "fieldtype": "Data",
+   "label": "Model Key",
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 6
+  }
  ],
  "links": [],
- "modified": "2026-07-29 00:00:00",
+ "modified": "2026-10-03 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove Model Row",

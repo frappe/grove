@@ -9,6 +9,7 @@
   "pathway_release",
   "pathway_repo",
   "synthetic_session_ttl",
+  "usage_retention",
   "column_break_tls",
   "dns_provider",
   "acme_email",
@@ -139,7 +140,7 @@
    "label": "Weights Bucket"
   },
   {
-   "description": "s3://bucket, no trailing slash. Mirrored weights live under models/, the compile-cache pre-warm under compile-cache/. Blank turns both off.",
+   "description": "s3://bucket, no trailing slash. Mirrored weights live under models/, the compile-cache pre-warm under compile-cache/, Gateway Store RDB backups (every 5 minutes) under gateway-store/. Blank turns all three off.",
    "fieldname": "weights_bucket",
    "fieldtype": "Data",
    "label": "Weights Bucket"
@@ -165,7 +166,7 @@
    "label": "Engine Secret Access Key"
   },
   {
-   "description": "Control-plane-only credentials: PutObject on models/* (Mirror Weights To S3) + List/Get/DeleteObject on compile-cache/* (the Compile Cache registry's sync and delete). Never handed to a box.",
+   "description": "Control-plane credentials: PutObject on models/* (Mirror Weights To S3), Put+GetObject on gateway-store/* (the 5-minute store backup and Restore, both from the control plane) + List/Get/DeleteObject on compile-cache/* (the Compile Cache registry's sync and delete). Reach a box only as the mirror play's environment, never its disk.",
    "fieldname": "weights_s3_write_access_key_id",
    "fieldtype": "Data",
    "label": "Mirror Access Key ID"
@@ -184,11 +185,18 @@
    "fieldname": "pod_tab",
    "fieldtype": "Tab Break",
    "label": "Pod"
+  },
+  {
+   "default": "168h",
+   "description": "How long a gateway keeps usage after Grove acknowledged it, as a Go duration (168h = 7 days). Rendered into each gateway's config.json, which it re-reads on a signal; blank keeps the gateway's default.",
+   "fieldname": "usage_retention",
+   "fieldtype": "Data",
+   "label": "Usage Retention"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-09-17 10:52:41.546936",
+ "modified": "2026-09-29 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove Settings",

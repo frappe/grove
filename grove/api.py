@@ -6,30 +6,49 @@
 import hmac
 
 import frappe
+from frappe.utils import flt
 
 from grove.grove.doctype.grove_user.grove_user import for_email, register_user
+from grove.utils import utc_today
 
 CONTROL_ROLE = "Grove Control"
 ALLOWED_ROLES = [CONTROL_ROLE]
+USAGE_FIELDS = ("requests", "cost")
+PULLS_PER_HOUR = 3
+
+# NOTE: user in grove will be the team owner in central (for now)
+# TODO: give machine info (like no of them, their type, etc) to central so they can find the unit economics
 
 
 @frappe.whitelist()
-def provision_key(name: str, email: str, geography: str, token_limit: int=None, allowed_models: list[str]=None, pin: bool=False):
-	"""Register the user and mint a key for `geography`'s endpoint. `pin` also refuses the user everywhere else."""
+def provision_user(name: str, email: str, geography: str = None, allowed_models: list[str] = None, free: bool = False):
+	"""Register the user behind `email` — `name` is theirs — and pin them to `geography`, the
+	default one when none is given: every other geography refuses them. A new user starts in the
+	default Model Group; `allowed_models` are theirs on top. `free` ignores pricing for them —
+	otherwise they are prepaid and blocked until credited. Safe to repeat: a known user keeps
+	whatever is not given. → the geography they are pinned to."""
 	frappe.only_for(ALLOWED_ROLES)
-	# Blank would read as no filter and hand out whichever endpoint comes first.
-	host = frappe.db.get_value("Geography", geography, "endpoint") if geography else None
-	if not host:
-		frappe.throw(f"No Geography named {geography!r}.")
+	grove_user = _set_policy(email, name, allowed_models, geography, free)
+	return {"geography": frappe.db.get_value("Grove User", grove_user, "geography")}
 
-	# Access and budget are per-user, so both land on the Grove User rather than the key. The
-	# budget is SHARED by every key they hold. Written unconditionally: a blank one is the
-	# correct fail-closed default.
-	grove_user = _set_policy(email, name, allowed_models, token_limit, geography if pin else None)
+
+@frappe.whitelist()
+def provision_key(email: str, title: str = None):
+	"""Mint a key for the user behind `email`, for the endpoint of the geography they are pinned
+	to. `title` labels the key, to tell a user's keys apart."""
+	frappe.only_for(ALLOWED_ROLES)
+	grove_user = for_email(email)
+	if not grove_user:
+		frappe.throw(f"No Grove User for {email!r}.")
+	geography = frappe.db.get_value("Grove User", grove_user, "geography")
+	host = frappe.db.get_value("Geography", geography, "endpoint")
+	if not host:
+		frappe.throw(f"Geography {geography!r} has no endpoint.")
 
 	# The controller generates the secret and hash, and pushes to the gateways.
 	key = frappe.new_doc("Grove API Key")
 	key.user = grove_user
+	key.title = title
 	key.status = "active"
 	key.insert()
 
@@ -37,6 +56,64 @@ def provision_key(name: str, email: str, geography: str, token_limit: int=None, 
 		"gateway_url": f"https://{host}",
 		"api_key": key.get_password("api_secret"),
 	}
+
+
+@frappe.whitelist()
+def add_credit(email: str, amount: float, note: str = None, reference: str = None):
+	"""Append one ledger entry for the user behind `email` and settle them. 0 and an unexplained
+	negative are refused by the ledger itself. `reference` is the caller's own id for the top-up:
+	a call that repeats one adds nothing, so a call that timed out is safe to send again.
+	→ their balance after the entry."""
+	frappe.only_for(ALLOWED_ROLES)
+	grove_user = for_email(email)
+	if not grove_user:
+		frappe.throw(f"No Grove User for {email!r}.")
+	repeated = reference and frappe.db.get_value(
+		"Grove Credit", {"reference": reference}, ["grove_user", "amount"], as_dict=True
+	)
+	if not repeated:
+		frappe.get_doc(
+			{"doctype": "Grove Credit", "grove_user": grove_user, "amount": amount, "note": note, "reference": reference}
+		).insert()
+	# A repeat has to be the same top-up: one id on another user or amount is a caller bug.
+	elif (repeated.grove_user, flt(repeated.amount, 9)) != (grove_user, flt(amount, 9)):
+		frappe.throw(f"Reference {reference!r} already names another top-up.")
+	# TODO: we should send a message like it might take some time to reflect
+	return {"balance": frappe.db.get_value("Grove User", grove_user, "balance")}
+
+
+@frappe.whitelist()
+def balance(email: str):
+	"""What the user behind `email` has left: Σ ledger − usage priced so far, as of the last pull
+	(up to an hour behind the gateways; `pull_usage` first for a fresh figure). A free user is
+	never charged and never gated: their `spent` does not move."""
+	frappe.only_for(ALLOWED_ROLES)
+	from grove.pricing import credit_summary
+
+	grove_user = for_email(email)
+	if not grove_user:
+		frappe.throw(f"No Grove User for {email!r}.")
+	summary = credit_summary(grove_user)
+	return {
+		"balance": float(summary["remaining"]),
+		"spent": float(summary["spent"]),
+		"is_free_user": bool(frappe.db.get_value("Grove User", grove_user, ["free"])),
+	}
+
+
+@frappe.whitelist()
+def pull_usage(email: str):
+	"""Drain the keys of the user behind `email` from every store now, waiting for a pull in
+	flight — for a fresh `balance`. PULLS_PER_HOUR per user. → the Pathway Sync that logged it,
+	or None when there was nothing to drain."""
+	frappe.only_for(ALLOWED_ROLES)
+	from grove.pathway.usage import pull_all
+
+	# TODO: this needs to trigger it but not sync it in the web thread
+	if not (grove_user := for_email(email)):
+		frappe.throw(f"No Grove User for {email!r}.")
+	_count_pull(grove_user)
+	return {"sync": pull_all(trigger="Manual", wait=60, user=grove_user)}
 
 
 @frappe.whitelist()
@@ -87,57 +164,120 @@ def create_control_client_key():
 	return {"api_key": control_user.api_key, "api_secret": api_secret, "user": control_user.name}
 
 @frappe.whitelist()
-def usage(users: list[str] | str, month: str = None):
+def usage(
+	users: list[str] | str, from_date: str | None = None, to_date: str | None = None,
+	period: str | None = None, month: str | None = None, key_hash: str | None = None,
+):
+	"""Requests and cost per user and per model over a UTC date range: `from_date`/`to_date`, a
+	`period` (Today, Yesterday, Last 7 Days, Last 30 Days, This Month, Last Month) or a `month`
+	(YYYY-MM); This Month when none is given. Summed by the database in one grouped query. `cost`
+	is what was charged, so usage while the user was Free adds requests and no cost.
+	`daily_summary` is the per-model summary again, per UTC day, for a chart. `as_of` is when the
+	newest usage in the range was pulled, in UTC. `key_hash` narrows it all to one key of theirs."""
 	frappe.only_for(ALLOWED_ROLES)
-	from frappe.utils import now_datetime
-
-	if not month:
-		month = now_datetime().strftime("%Y-%m")
+	from grove.grove.doctype.usage_record.usage_record import usage_table
+	from grove.pathway.routes import utc_timestamp
 
 	if isinstance(users, str):
 		users = [users]
-
-	_fields = ("prompt_tokens", "completion_tokens", "cached_tokens")
+	from_date, to_date = usage_window(from_date, to_date, period, month)
 	# In and out by email; the records themselves are keyed by Grove User.
-	emails = dict(
-		frappe.get_list("Grove User", {"user": ("in", users)}, ["name", "user"], as_list=True)
-	)
-	records = frappe.get_list(
-		"Usage Record",
-		filters={"user": ["in", list(emails)], "month": month},
-		fields=["name", "user", *_fields],
-	)
-
-	usage = {}
-	for r in records:
-		# A user holds several keys and so several records a month — accumulate, don't
-		# overwrite.
-		totals = usage.setdefault(emails[r.user], dict.fromkeys(_fields, 0))
-		for f in _fields:
-			totals[f] += r.get(f) or 0
-
-	# model wise usage summary
-	names = [r.name for r in records]
-	model_rows = frappe.get_list(
-		"Usage Model Row",
-		filters={"parenttype": "Usage Record", "parent": ("in", names)},
-		fields=["model", *_fields],
-		parent_doctype="Usage Record",
-	) if names else []
-	model_summary = _totals_by_model(model_rows, _fields)
-	return {"users": users, "month": month, "model_summary": model_summary, **usage}
+	emails = dict(frappe.get_list("Grove User", {"user": ("in", users)}, ["name", "user"], as_list=True))
+	api_key = _key_of(key_hash, list(emails)) if key_hash else None
+	rows = frappe.db.sql(
+		f"""select r.user, u.model, sum(u.requests) as requests,
+		sum(if(r.billed, u.grove_cost, 0)) as cost, max(r.creation) as as_of
+		from `tabUsage Record` r, {usage_table()}
+		where r.user in %(users)s and r.day between %(from_date)s and %(to_date)s {_key_condition(api_key)}
+		group by r.user, u.model""",
+		{"users": list(emails) or [""], "from_date": from_date, "to_date": to_date, "api_key": api_key},
+		as_dict=True,
+	) if emails else []
+	per_model = [
+		{"model": row.model, "user": row.user, "requests": int(row.requests or 0), "cost": float(row.cost or 0)}
+		for row in rows
+	]
+	totals = {email: {"requests": 0, "cost": 0.0} for email in emails.values()}
+	for row in per_model:
+		for field in USAGE_FIELDS:
+			totals[emails[row["user"]]][field] += row[field]
+	return {
+		"users": users, "from_date": str(from_date), "to_date": str(to_date),
+		"as_of": utc_timestamp(max(row.as_of for row in rows)) if rows else None,
+		"model_summary": _totals_by_model(per_model),
+		"daily_summary": _daily_summary(list(emails), from_date, to_date, api_key) if emails else [],
+		**totals,
+	}
 
 
 @frappe.whitelist()
-def available_models():
-	"""Every model with a live route. A catalogue, not an entitlement list — the gateway is
-	what enforces which of these a given API key may actually call."""
+def available_models(email: str = None):
+	"""Every published model in the default geography, one row per key, `name` being the key a
+	caller sends. A catalogue, not an entitlement list — the gateway is what enforces which of
+	these a given API key may actually call. With `email`, only the ones the user behind it may
+	call, as their own geography serves them, to show a person what their keys reach: nothing for
+	a user Grove does not know. `dialects` names the surfaces (openai, anthropic) each one answers
+	on there."""
 	frappe.only_for(ALLOWED_ROLES)
-	return frappe.get_list(
-		"Model",
-		{"published": 1},
-		["name", "model_id", "modality"],
-	)
+	from grove.pathway.routes import get_dialects, models_in
+
+	geography = frappe.db.get_value("Geography", {"is_default": 1})
+	reachable = None
+	if email:
+		from grove.access import get_reachable_models
+
+		grove_user = for_email(email)
+		reachable = set(get_reachable_models(grove_user))
+		if not reachable:
+			return []
+		geography = frappe.db.get_value("Grove User", grove_user, "geography")
+	models = [
+		m for m in models_in(geography)
+		if m.published and (reachable is None or m.model_key in reachable)
+	]
+	dialects = get_dialects(models, geography)
+	return [
+		{
+			"name": m.model_key, "model_id": m.model_id, "modality": m.modality,
+			"provider": m.provider, "geography": m.geography, "dialects": dialects[m.name],
+		}
+		for m in sorted(models, key=lambda m: m.model_key)
+	]
+
+
+def _count_pull(grove_user):
+	"""Refuse past PULLS_PER_HOUR on-demand pulls of one user. The hour starts at the first."""
+	key = frappe.cache.make_key(f"usage_pull:{grove_user}")
+	count = frappe.cache.incr(key)
+	# Checked every call, not only on the first: a counter left without a TTL would block forever.
+	if frappe.cache.ttl(key) < 0:
+		frappe.cache.expire(key, 60 * 60)
+	if count > PULLS_PER_HOUR:
+		frappe.throw(f"{PULLS_PER_HOUR} usage pulls an hour per user.", frappe.RateLimitExceededError)
+
+
+def usage_window(from_date, to_date, period, month):
+	"""(first day, last day) in UTC for whichever way the range was asked."""
+	from frappe.utils import add_days, add_months, get_first_day, get_last_day, getdate
+
+	today = utc_today()
+	if from_date or to_date:
+		return getdate(from_date or to_date), getdate(to_date or from_date)
+	if month:
+		first = get_first_day(f"{month}-01")
+		return first, get_last_day(first)
+	last_month = add_months(get_first_day(today), -1)
+	windows = {
+		"Today": (today, today),
+		"Yesterday": (add_days(today, -1), add_days(today, -1)),
+		"Last 7 Days": (add_days(today, -6), today),
+		"Last 30 Days": (add_days(today, -29), today),
+		"This Month": (get_first_day(today), today),
+		"Last Month": (last_month, get_last_day(last_month)),
+	}
+	if (period or "This Month") not in windows:
+		frappe.throw(f"Unknown period {period!r}: one of {', '.join(windows)}.")
+	return windows[period or "This Month"]
 
 
 def _create_control_user(email):
@@ -155,36 +295,71 @@ def _create_control_user(email):
 	return doc
 
 
-def _set_policy(email, full_name, models, token_limit, geography=None):
+def _set_policy(email, full_name, models, geography=None, free=False):
 	"""Write the user's Grove User policy and return its name — the id every key, usage
-	record and access lookup carries. `models` is exactly what they may call; `token_limit`
-	is their shared monthly budget; `geography`, when given, pins them. `full_name` names the login
-	when this is the insert that creates it."""
+	record and access lookup carries. `models`, when given, replace their own Allow; `geography`,
+	when given, pins them there (else they keep theirs, or get the default); `free`, when given,
+	waives pricing. `full_name` names the login when this is the insert that creates it."""
 	name = for_email(email)
 	doc = frappe.get_doc("Grove User", name) if name else frappe.new_doc("Grove User")
 	doc.user = register_user(email, full_name)
 	if models:
+		from grove.access import model_doc
+
 		doc.allow = []
 		for model in models:
-			doc.append("allow", {"model": model})
-	if token_limit:
-		doc.max_tokens = token_limit
+			doc.append("allow", {"model": model_doc(model)})
 	if geography:
 		doc.geography = geography
+	if free:
+		doc.free = 1
 	doc.save()
 	return doc.name
 
 
-def _totals_by_model(rows, fields):
-	"""Usage Model Rows folded into one entry per model, biggest consumer first. Rows arrive
-	one per (record, model) — a user holds several keys, each with its own monthly record — so
-	a model is summed across all of them rather than overwritten."""
+def _totals_by_model(rows):
+	"""Usage rows folded into one entry per model, costliest first, then busiest. Rows arrive one
+	per (user, model), so a model is summed across users rather than overwritten."""
 	per_model = {}
 	for row in rows:
 		totals = per_model.setdefault(
-			row["model"], {"model": row["model"], **dict.fromkeys(fields, 0)}
+			row["model"], {"model": row["model"], **dict.fromkeys(USAGE_FIELDS, 0)}
 		)
-		for f in fields:
+		for f in USAGE_FIELDS:
 			totals[f] += row.get(f) or 0
 
-	return per_model.values() if per_model else []
+	return sorted(per_model.values(), key=lambda totals: (-totals["cost"], -totals["requests"]))
+
+
+def _key_of(key_hash, grove_users):
+	"""The key behind `key_hash`, only when one of these users holds it: another user's key must
+	not reveal its usage."""
+	name = frappe.db.get_value(
+		"Grove API Key", {"key_hash": key_hash, "user": ("in", grove_users or [""])}
+	)
+	if not name:
+		frappe.throw("No such API key for these users.", frappe.DoesNotExistError)
+	return name
+
+
+def _key_condition(api_key):
+	return "and r.api_key = %(api_key)s" if api_key else ""
+
+
+def _daily_summary(grove_users, from_date, to_date, api_key=None):
+	"""Requests and cost per UTC day and model across these users, and one key of theirs when
+	given, summed by the database, oldest day first. A day with no usage has no entry."""
+	from grove.grove.doctype.usage_record.usage_record import usage_table
+
+	rows = frappe.db.sql(
+		f"""select r.day, u.model, sum(u.requests) as requests, sum(if(r.billed, u.grove_cost, 0)) as cost
+		from `tabUsage Record` r, {usage_table()}
+		where r.user in %(users)s and r.day between %(from_date)s and %(to_date)s {_key_condition(api_key)}
+		group by r.day, u.model order by r.day, u.model""",
+		{"users": grove_users, "from_date": from_date, "to_date": to_date, "api_key": api_key},
+		as_dict=True,
+	)
+	return [
+		{"day": str(row.day), "model": row.model, "requests": int(row.requests or 0), "cost": float(row.cost or 0)}
+		for row in rows
+	]

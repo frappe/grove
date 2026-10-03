@@ -1,4 +1,4 @@
-# Copyright (c) 2026, Grove and contributors
+# Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 """Standalone cloud Pod lifecycle via provider APIs. A Pod is self-contained: it holds its own
 spawn spec and, for a serving pod, the vLLM config. Pods are NOT backed by a Machine — Machine +
@@ -286,16 +286,14 @@ class PodProvisioner:
 		return ready
 
 	def sync_model_published(self):
-		"""On a serving Pod lifecycle transition: recompute the Model's `published` flag — a
-		Running Pod is a live deployment, and a serving pod has no Model Replica to drive it.
-		No-op for a non-serving pod. The route itself follows from `engine_url`, which the
-		projection tick reads off the Pod."""
+		"""On a serving Pod lifecycle transition: unpublish the Model when this pod was the last
+		thing serving it — a serving pod has no Model Replica to drive that. Never publishes.
+		No-op for a non-serving pod."""
 		model = frappe.db.get_value("Pod", self.pod.name, "model")
 		if not model:
 			return
 		from grove.grove.doctype.model.model import sync_published
 
-		# Running pod → published=1; Stopped/Terminated → 0 (unless another live route).
 		sync_published(model)
 
 	def set_state(self, values):

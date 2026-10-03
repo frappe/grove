@@ -1,4 +1,4 @@
-# Copyright (c) 2026, Grove and contributors
+# Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
 import requests
@@ -7,6 +7,7 @@ import frappe
 from frappe.model.document import Document
 
 from grove import failure
+from grove.catalog import seed
 from grove.grove.doctype.model_provider.model_provider import self_hosted_provider
 from grove.utils import slugify
 
@@ -16,6 +17,11 @@ HF_TREE_URL = "https://huggingface.co/api/models/{repo}/tree/main?limit=1000"
 
 
 class Model(Document):
+	"""One model as one provider record serves it. The doc name is a hash; `model_key`
+	(`<provider name>/<model id>`) is what callers send, the route key and the usage bucket — set
+	on insert and frozen. A vendor with a record per Geography has a doc per record, all under one
+	key, each with its own upstream id and pricing; a Link means the doc, the key means the id."""
+
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -27,10 +33,12 @@ class Model(Document):
 		attention_heads: DF.Int
 		enable_auto_tool_choice: DF.Check
 		enable_prefix_caching: DF.Check
+		geography: DF.Link | None
 		hf_repo: DF.Data | None
 		hidden_layers: DF.Int
 		modality: DF.Literal["text", "multimodal", "embedding", "audio"]
 		model_id: DF.Data
+		model_key: DF.Data | None
 		provider: DF.Link | None
 		provider_is_self_hosted: DF.Check
 		published: DF.Check
@@ -44,6 +52,7 @@ class Model(Document):
 	# end: auto-generated types
 
 	def validate(self):
+		self.set_model_key()
 		self.provider_is_self_hosted = self.is_self_hosted
 		# mandatory_depends_on is client-side only; this is the gate an API insert hits.
 		if self.is_self_hosted and not self.hf_repo:
@@ -54,6 +63,83 @@ class Model(Document):
 			)
 
 		self.validate_weights_source()
+		if self.published and self.has_value_changed("published"):
+			self.validate_publishable()
+
+	def onload(self):
+		self.set_onload("has_catalog_pricing", self.has_catalog_pricing)
+		if self.published:
+			self.set_onload("is_granted", self.is_granted)
+
+	@property
+	def has_catalog_pricing(self):
+		"""The catalog prices this model and no Model Pricing names it yet."""
+		return bool(seed.get_rates(self.model_key)) and not frappe.db.exists("Model Pricing", {"model": self.name})
+
+	@property
+	def is_granted(self):
+		"""Someone can call it: a user's own Allow names the key, or a Model Group with a user in it
+		does. A group nobody is in grants nothing yet, the default one included."""
+		rows = frappe.get_all(
+			"Grove Model Row",
+			filters={"model_key": self.model_key, "parentfield": ("in", ("allow", "models"))},
+			fields=["parenttype", "parent"],
+		)
+		if any(row.parenttype == "Grove User" for row in rows):
+			return True
+		groups = [row.parent for row in rows if row.parenttype == "Model Group"]
+		return bool(groups) and bool(
+			frappe.db.exists("Model Group Row", {"parenttype": "Grove User", "model_group": ("in", groups)})
+		)
+
+	@frappe.whitelist()
+	def load_pricing(self):
+		"""Button: the catalog's rates as a Disabled draft. Enabling it stays the operator's call."""
+		rates = seed.get_rates(self.model_key)
+		if not rates:
+			frappe.throw(f"The catalog holds no pricing for {self.model_key}.")
+		if frappe.db.exists("Model Pricing", {"model": self.name}):
+			frappe.msgprint(f"{self.model_key} already has a Model Pricing. Nothing was loaded.")
+			return None
+		pricing = {"doctype": "Model Pricing", "model": self.name, "status": "Disabled", "rates": rates}
+		return frappe.get_doc(pricing).insert().name
+
+	def validate_publishable(self):
+		"""Publishing is the operator's call, and only a priced, served model can take it. Not an
+		access gate — access is granted per user via Model Group or Grove User."""
+		if not frappe.db.exists("Model Pricing", {"model": self.name, "status": "Enabled"}):
+			frappe.throw(
+				f"{self.model_key} has no Enabled Model Pricing. Enable one first — zero rates serve it free."
+			)
+		if not is_reachable(self.name, provider=self.provider):
+			frappe.throw(
+				f"{self.model_key} has nothing serving it: no Active replica, Running pod or vendor endpoint."
+			)
+
+	def set_model_key(self):
+		"""`<provider name>/<model id>`, normalised once and then frozen — the key is inside every
+		route, grant and usage bucket, so an edit would rename a live model out from under its
+		callers. The provider link may still move between records of the same name."""
+		self.model_id = slugify(self.model_id)
+		if not self.model_id:
+			frappe.throw("No Model ID set")
+		# slugify keeps a slash, and the slash separates provider from id — one here would name
+		# `<provider>/a/b` and read as a provider nobody registered.
+		if "/" in self.model_id:
+			frappe.throw("Model ID cannot contain '/'")
+		self.provider = self.provider or self_hosted_provider()
+		if not self.provider:
+			frappe.throw(
+				"No Model Provider is marked Self Hosted, so a blank provider has nothing to default to."
+			)
+		expected = f"{self.provider_name}/{self.model_id}"
+		if self.model_key and self.model_key != expected:
+			frappe.throw(
+				f"{self.model_key} is keyed under its provider: Provider can only move to another "
+				"record of the same name.",
+				frappe.CannotChangeConstantError,
+			)
+		self.model_key = expected
 
 	def validate_weights_source(self):
 		"""The streamer reads safetensors out of a bucket; a GGUF ref names one file it cannot
@@ -68,30 +154,10 @@ class Model(Document):
 				"Weights S3 URI, or point HF Repo at the safetensors repo."
 			)
 
-	def autoname(self):
-		"""Name = `<provider>/<model id>`. What clients send as `model` and what routes are keyed
-		by, so the id is normalised here and then frozen by `set_only_once` — an edit would rename
-		a live model out from under its callers.
-
-		Always prefixed, blank provider included: the prefix IS the id."""
-		self.model_id = slugify(self.model_id)
-		if not self.model_id:
-			frappe.throw("No Model ID set")
-		# slugify keeps a slash, and the slash separates provider from id — one here would name
-		# `<provider>/a/b` and read as a provider nobody registered.
-		if "/" in self.model_id:
-			frappe.throw("Model ID cannot contain '/'")
-		self.provider = self.provider or self_hosted_provider()
-		if not self.provider:
-			frappe.throw(
-				"No Model Provider is marked Self Hosted, so a blank provider has nothing to default to."
-			)
-		self.name = f"{self.provider}/{self.model_id}"
-
-		# `published` means "reachable", never a manual claim, and is not an access gate —
-		# access is granted per user via Model Group or Grove User.
-		if self.published and not is_reachable(self.name, provider=self.provider):
-			self.published = 0
+	@property
+	def provider_name(self):
+		"""The provider's name, read off the linked record: it prefixes this model's key."""
+		return frappe.db.get_value("Model Provider", self.provider, "provider_name")
 
 	@property
 	def repo_id(self):
@@ -117,7 +183,7 @@ class Model(Document):
 		whitelisted method is reachable without the button — and the errors underneath name a
 		missing repo, which is true and no help at all."""
 		if not self.is_self_hosted:
-			frappe.throw(f"{self.name} is served by {self.provider}. {what}, and there is none.")
+			frappe.throw(f"{self.model_key} is served by {self.provider_name}. {what}, and there is none.")
 
 	@frappe.whitelist()
 	def fetch_architecture(self):
@@ -158,7 +224,7 @@ class Model(Document):
 			frappe.throw("A GGUF ref cannot be mirrored — the streamer needs safetensors.")
 		if not mirror_server(self.name):
 			frappe.throw(
-				f"No Active Model Replica serves {self.name}. The mirror runs from a box "
+				f"No Active Model Replica serves {self.model_key}. The mirror runs from a box "
 				"that has the weights cached — deploy the model once first."
 			)
 		frappe.enqueue(
@@ -253,11 +319,11 @@ def mirror_weights_to_s3(model):
 
 
 def is_reachable(model, exclude=None, provider=None):
-	"""True if a request for `model` has somewhere to go: an Active Model Replica, a Running Pod,
-	or a third-party provider we hold an endpoint and key for.
+	"""True if a request for `model` (a doc) has somewhere to go: an Active Model Replica, a
+	Running Pod, or a front on its own provider record.
 
-	`exclude` drops one name, for on_trash where the row still exists during delete. `provider` is
-	for a caller mid-insert — see vendor_base_url."""
+	`exclude` drops one name, for on_trash where the row still exists during delete. `provider`
+	is passed by a doc still being inserted: its row is not in the database yet."""
 	filters = {"model": model, "status": "Active"}
 	if exclude:
 		filters["name"] = ("!=", exclude)
@@ -265,23 +331,19 @@ def is_reachable(model, exclude=None, provider=None):
 		return True
 	if frappe.db.get_all("Pod", filters={"model": model, "status": "Running"}, limit=1):
 		return True
-	# A vendor model is reachable from the moment it exists — nothing else would ever flip it
-	# published. The key is unchecked because validate refuses a provider holding an address
-	# without one.
+	# A vendor model is reachable from the moment it exists. The key is unchecked because
+	# validate refuses a provider holding an address without one.
 	# TODO: clearing a provider's Base URL leaves its models published until something
 	# touches them. They emit no route, so they 404 rather than mis-route.
-	return bool(vendor_base_url(model, provider))
+	return has_vendor_front(provider or frappe.db.get_value("Model", model, "provider"))
 
 
-def vendor_base_url(model, provider=None):
-	"""Where a third party serves `model`, "" when we serve it. `provider` is passed by a doc still
-	being inserted: its row is not in the database yet, so reading the link off the name would find
-	nothing and call a vendor model dark."""
-	provider = provider or frappe.db.get_value("Model", model, "provider")
+def has_vendor_front(provider):
+	"""Whether this provider record dials a vendor: the model's own geography, not any other's."""
 	if not provider:
-		return ""
-	provider = frappe.get_cached_doc("Model Provider", provider)
-	return provider.base_url or provider.anthropic_base_url or ""
+		return False
+	fronts = frappe.db.get_value("Model Provider", provider, ["base_url", "anthropic_base_url"])
+	return any(fronts or ())
 
 
 # Read live off the Model, never mirrored onto a placement, so editing one reaches every placement
@@ -314,10 +376,12 @@ def launch_config(model):
 
 
 def sync_published(model, exclude=None):
-	"""Recompute Model.published, called after every deployment status change. Written via
-	db.set_value so it skips validate — no recursion."""
-	if not model or not frappe.db.exists("Model", model):
-		return
+	"""Unpublish a model nothing serves any more, after every placement status change. Never
+	publishes: that is the operator's tick."""
+	if model and frappe.db.exists("Model", model) and not is_reachable(model, exclude=exclude):
+		frappe.db.set_value("Model", model, "published", 0)
 
-	want = 1 if is_reachable(model, exclude=exclude) else 0
-	frappe.db.set_value("Model", model, "published", want)
+
+def on_doctype_update():
+	"""One doc per provider record per id: the race-safe arbiter behind the key."""
+	frappe.db.add_unique("Model", ["provider", "model_id"], constraint_name="unique_provider_model")

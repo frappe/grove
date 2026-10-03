@@ -1,4 +1,4 @@
-# Copyright (c) 2026, Grove and contributors
+# Copyright (c) 2026, Frappe and contributors
 # See license.txt
 """The table a GATEWAY is given: one row per model, naming ingresses and direct engines.
 
@@ -14,9 +14,11 @@ from unittest.mock import patch
 
 import frappe
 
+from grove.tests.model_rows import model_row
+
 ZONE = "grove.example.com"
 
-MODELS = [{"name": "qwen3-35b"}, {"name": "llama-70b"}]
+MODELS = [model_row("qwen3-35b"), model_row("llama-70b")]
 INGRESSES = [
 	{"name": "aps1-i1", "region": "ap-south-1", "status": "Active"},
 	{"name": "aps1-i2", "region": "ap-south-1", "status": "Active"},
@@ -31,21 +33,21 @@ SERVERS = [
 ]
 DEPLOYMENTS = [
 	# Two boxes behind one ingress, same model: they must fold into a single row.
-	{"name": "MD-1", "model": "qwen3-35b", "engine_url": "https://203.0.113.1/e/md-1",
+	{"name": "MD-1", "model": "qwen3-35b", "model_key": "qwen3-35b", "engine_url": "https://203.0.113.1/e/md-1",
 	 "status": "Active", "inference_server": "INF-a", "max_num_seqs": 8},
-	{"name": "MD-2", "model": "qwen3-35b", "engine_url": "https://203.0.113.2/e/md-2",
+	{"name": "MD-2", "model": "qwen3-35b", "model_key": "qwen3-35b", "engine_url": "https://203.0.113.2/e/md-2",
 	 "status": "Active", "inference_server": "INF-b", "max_num_seqs": 4},
 	# A second ingress, same model: its own row.
-	{"name": "MD-3", "model": "qwen3-35b", "engine_url": "https://203.0.113.3/e/md-3",
+	{"name": "MD-3", "model": "qwen3-35b", "model_key": "qwen3-35b", "engine_url": "https://203.0.113.3/e/md-3",
 	 "status": "Active", "inference_server": "INF-c", "max_num_seqs": 16},
 	# No ingress: the direct path, exactly as before.
-	{"name": "MD-4", "model": "llama-70b", "engine_url": "https://203.0.113.4/e/md-4",
+	{"name": "MD-4", "model": "llama-70b", "model_key": "llama-70b", "engine_url": "https://203.0.113.4/e/md-4",
 	 "status": "Active", "inference_server": "INF-direct", "max_num_seqs": 4},
 	# Behind an ingress that is not Active — no row for it at all.
-	{"name": "MD-5", "model": "llama-70b", "engine_url": "https://203.0.113.5/e/md-5",
+	{"name": "MD-5", "model": "llama-70b", "model_key": "llama-70b", "engine_url": "https://203.0.113.5/e/md-5",
 	 "status": "Active", "inference_server": "INF-orphan", "max_num_seqs": 4},
 ]
-PODS = [{"name": "POD-1", "model": "llama-70b", "engine_url": "http://1.2.3.4:8081", "max_num_seqs": 2}]
+PODS = [{"name": "POD-1", "model": "llama-70b", "model_key": "llama-70b", "engine_url": "http://1.2.3.4:8081", "max_num_seqs": 2}]
 
 
 class FakeQuery:
@@ -71,17 +73,18 @@ class FakeQuery:
 
 
 def routes(zone=ZONE):
-	from grove import pathway_sync
+	from grove.pathway import routes
 
 	with (
 		patch.object(frappe, "get_all", side_effect=FakeQuery(zone)),
+		patch("grove.pathway.routes.published_routes", side_effect=lambda table, models: table),
 		patch.object(frappe, "db", frappe._dict(get_value=lambda *args: zone, get_single_value=lambda *args: "in")),
 		patch.object(
 			frappe, "get_doc",
 			side_effect=lambda *a, **k: frappe._dict(get_password=lambda *a, **k: "secret"),
 		),
 	):
-		return pathway_sync._gateway_routes("in")
+		return routes.gateway_routes("in")
 
 
 def rows_for(model, zone=ZONE):

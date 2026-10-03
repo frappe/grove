@@ -1,4 +1,4 @@
-# Copyright (c) 2026, Grove and contributors
+# Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
 import hashlib
@@ -32,6 +32,7 @@ class GroveAPIKey(Document):
 		api_secret: DF.Password | None
 		key_hash: DF.Data | None
 		status: DF.Literal["active", "revoked"]
+		title: DF.Data | None
 		user: DF.Link
 	# end: auto-generated types
 

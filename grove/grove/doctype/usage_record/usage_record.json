@@ -7,16 +7,19 @@
  "field_order": [
   "api_key",
   "user",
-  "month",
-  "column_break_tot",
-  "prompt_tokens",
-  "completion_tokens",
-  "cached_tokens",
+  "day",
+  "column_break_drain",
+  "gateway_store",
+  "drain_id",
+  "section_totals",
+  "billed",
   "request_count",
+  "column_break_avch",
+  "gateway_cost",
+  "cost",
   "section_models",
-  "model_usage",
-  "section_gw",
-  "gateway_usage"
+  "usage_table",
+  "usage"
  ],
  "fields": [
   {
@@ -25,6 +28,7 @@
    "in_list_view": 1,
    "label": "API Key",
    "options": "Grove API Key",
+   "read_only": 1,
    "reqd": 1
   },
   {
@@ -32,63 +36,101 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "User",
-   "options": "Grove User"
+   "options": "Grove User",
+   "read_only": 1
   },
   {
-   "fieldname": "month",
-   "fieldtype": "Data",
+   "description": "The UTC day it was pulled.",
+   "fieldname": "day",
+   "fieldtype": "Date",
    "in_list_view": 1,
-   "label": "Month (YYYY-MM)",
-   "reqd": 1
+   "label": "Day (UTC)",
+   "reqd": 1,
+   "search_index": 1
   },
   {
-   "fieldname": "column_break_tot",
+   "fieldname": "column_break_drain",
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "prompt_tokens",
-   "fieldtype": "Int",
-   "label": "Prompt Tokens"
+   "description": "The store drained.",
+   "fieldname": "gateway_store",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Gateway Store",
+   "options": "Gateway Store"
   },
   {
-   "fieldname": "completion_tokens",
-   "fieldtype": "Int",
-   "label": "Completion Tokens"
+   "description": "The gateway's id for the drain. One record per key per drain; a re-sent drain lands nothing twice. Blank on records from before drains were acknowledged.",
+   "fieldname": "drain_id",
+   "fieldtype": "Data",
+   "label": "Drain",
+   "read_only": 1
   },
   {
-   "description": "Prompt tokens served from the prefix cache",
-   "fieldname": "cached_tokens",
-   "fieldtype": "Int",
-   "label": "Cached Tokens"
+   "fieldname": "section_totals",
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "request_count",
    "fieldtype": "Int",
-   "label": "Request Count"
+   "label": "Requests",
+   "read_only": 1
+  },
+  {
+   "description": "Grove's price of this key's usage in this drain, at every pricing the gateway charged. Charged to the user only when Billed.",
+   "fieldname": "cost",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Cost (USD)",
+   "precision": "9",
+   "read_only": 1
+  },
+  {
+   "description": "What the gateway charged for the same requests.",
+   "fieldname": "gateway_cost",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Gateway Cost (USD)",
+   "precision": "9",
+   "read_only": 1
   },
   {
    "fieldname": "section_models",
    "fieldtype": "Section Break"
   },
   {
-   "fieldname": "model_usage",
-   "fieldtype": "Table",
-   "label": "Model Usage",
-   "options": "Usage Model Row"
+   "fieldname": "usage_table",
+   "fieldtype": "HTML",
+   "label": "Usage"
   },
   {
-   "fieldname": "section_gw",
-   "fieldtype": "Section Break"
+   "description": "One entry per model: pricing, requests, counters, gateway and Grove cost. Rendered above.",
+   "fieldname": "usage",
+   "fieldtype": "JSON",
+   "hidden": 1,
+   "label": "Usage JSON",
+   "read_only": 1
   },
   {
-   "fieldname": "gateway_usage",
-   "fieldtype": "Table",
-   "label": "Gateway Usage",
-   "options": "Usage Gateway Row"
+   "default": "0",
+   "description": "Whether this usage was charged: the gateway served it while the user was prepaid. Only billed records move the user's Spent and count as revenue; an unbilled one still shows what the usage would have cost.",
+   "fieldname": "billed",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Billed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_avch",
+   "fieldtype": "Column Break"
   }
  ],
+ "in_create": 1,
  "links": [],
- "modified": "2026-09-16 16:52:05.797995",
+ "modified": "2026-10-02 19:42:42.620594",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Usage Record",
@@ -97,7 +139,6 @@
  "permissions": [
   {
    "create": 1,
-   "delete": 1,
    "email": 1,
    "print": 1,
    "read": 1,

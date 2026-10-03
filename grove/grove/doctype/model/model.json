@@ -1,11 +1,13 @@
 {
  "actions": [],
- "allow_rename": 1,
- "creation": "2026-07-01 00:00:00",
+ "autoname": "hash",
+ "creation": "2026-10-03 04:22:21.144077",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "model_key",
   "provider",
+  "geography",
   "model_id",
   "modality",
   "column_break_bhjw",
@@ -32,7 +34,17 @@
  ],
  "fields": [
   {
-   "description": "Who serves this model. Prefixes the model id (frappe/qwen3.5-4b) \u2014 set at creation, part of the name from then on. Blank names it under the Self Hosted provider; any other provider is a vendor the model routes straight to, with no engine started for it.",
+   "description": "`/` \u2014 what a client sends as `model`, the route key and the usage bucket. Set on insert and frozen: the same id is one record per provider record, so a vendor model in two geographies is two docs under one key.",
+   "fieldname": "model_key",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Model Key",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "Who serves this model, as one record: a vendor's record in one Geography, or the Self Hosted provider when blank. A vendor with records in several geographies gets one Model doc per record, all under the same Model Key, each with its own upstream id and pricing. Its name prefixes the key (frappe/qwen3.5-4b), so the link moves only between records of that name.",
    "fieldname": "provider",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -41,13 +53,24 @@
    "options": "Model Provider"
   },
   {
-   "description": "The client-facing id, without its provider prefix \u2014 what a client sends as `model`. Lowercased on save, with spaces and underscores as dashes ('Qwen3.5 Coder' \u2192 qwen3.5-coder). Names the doc, so it is set once at creation.",
+   "description": "The provider record's geography, so two docs of one key tell apart. Blank on a model we serve ourselves.",
+   "fetch_from": "provider.geography",
+   "fieldname": "geography",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Geography",
+   "options": "Geography",
+   "read_only": 1
+  },
+  {
+   "description": "The client-facing id, without its provider prefix \u2014 what a client sends as `model`. Lowercased on save, with spaces and underscores as dashes ('Qwen3.5 Coder' \u2192 qwen3.5-coder). Makes the Model Key, so it is set once at creation; one per provider record.",
    "fieldname": "model_id",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Model ID",
-   "reqd": 1,
-   "set_only_once": 1
+   "read_only_depends_on": "eval: doc.published",
+   "reqd": 1
   },
   {
    "description": "What the upstream is asked for, when that is not the id above \u2014 a vendor's dated snapshot (claude-sonnet-4-5-20250929), or the name a container image advertises for itself. Blank sends the id the caller used, which is what our own engines are started under.",
@@ -78,7 +101,8 @@
    "fieldtype": "Column Break"
   },
   {
-   "default": "1",
+   "default": "0",
+   "description": "The serving gate, ticked by hand: the gateways hold a route only while it is set. Needs an Enabled Model Pricing and something serving the model; unticked on its own when nothing serves it any more.",
    "fieldname": "published",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -204,17 +228,22 @@
    "group": "Placements",
    "link_doctype": "Pod",
    "link_fieldname": "model"
+  },
+  {
+   "group": "Pricing",
+   "link_doctype": "Model Pricing",
+   "link_fieldname": "model"
   }
  ],
- "modified": "2026-09-17 12:00:00.000000",
+ "modified": "2026-10-03 16:12:14.293596",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model",
+ "naming_rule": "Random",
  "owner": "Administrator",
  "permissions": [
   {
    "create": 1,
-   "delete": 1,
    "email": 1,
    "print": 1,
    "read": 1,
@@ -229,7 +258,10 @@
   }
  ],
  "row_format": "Dynamic",
+ "search_fields": "model_key,geography",
+ "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "title_field": "model_key"
 }

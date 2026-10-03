@@ -20,6 +20,9 @@
 {% endif %}
   "log_level": {{ gateway_log_level | default('info') | to_json }},
   "synthetic_session_ttl": {{ (synthetic_session_ttl | default('0') or '0') | to_json }},
+{% if usage_retention | default('') %}
+  "usage_retention": {{ usage_retention | to_json }},
+{% endif %}
   "upstream_tls_verify": {{ (upstream_tls_verify | default(false)) | to_json }},
   "drain_timeout": {{ gateway_drain_timeout | default('630s') | to_json }},
   "lame_duck": {{ gateway_lame_duck | default('5s') | to_json }}

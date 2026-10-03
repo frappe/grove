@@ -5,6 +5,7 @@
  "engine": "InnoDB",
  "field_order": [
   "model",
+  "model_key",
   "engine_image",
   "engine_kind",
   "placement_policy",
@@ -42,6 +43,14 @@
    "options": "Model",
    "reqd": 1,
    "set_only_once": 1
+  },
+  {
+   "fetch_from": "model.model_key",
+   "fieldname": "model_key",
+   "fieldtype": "Data",
+   "label": "Model Key",
+   "read_only": 1,
+   "in_list_view": 1
   },
   {
    "description": "The image every replica serves from. Deployment-only — a replica on a different image would answer to the same model name with a different engine.",
@@ -224,7 +233,7 @@
   }
  ],
  "links": [],
- "modified": "2026-08-27 19:05:37.855292",
+ "modified": "2026-10-03 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model Deployment",

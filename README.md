@@ -14,6 +14,7 @@ a Go agent, `pathway`, which lives in its own repo — this app never sits on a 
 | [`grove/cloud_provider/`](grove/cloud_provider/README.md) | Provider clients, and the two DNS tiers with the Route53 rules they are shaped around. |
 | [`grove/playbooks/`](grove/playbooks/README.md) | How a box gets built, and how a play is invoked and tracked. |
 | [`grove/tests/`](grove/tests/README.md) | Pure vs site-backed, and the rollback trap between them. |
+| [`scripts/`](scripts/) | Run by hand with the bench's python. `dev_deploy_pathway.py`: build a pathway working tree and ship it to one Gateway Server. |
 | [`CLAUDE.md`](CLAUDE.md) | The rules for changing this repo. |
 
 ### Installation

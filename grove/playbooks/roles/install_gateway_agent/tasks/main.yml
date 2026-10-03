@@ -40,3 +40,13 @@
     dest: /tmp/pathway
     mode: "0755"
   when: agent_binary | length > 0
+
+# Where the agent spools usage it could not write to its store, and replays it from. The process
+# runs as grove_user, which cannot create a directory under /var/lib itself.
+- name: pathway state directory
+  ansible.builtin.file:
+    path: /var/lib/pathway
+    state: directory
+    owner: "{{ grove_user | default('frappe') }}"
+    group: "{{ grove_user | default('frappe') }}"
+    mode: "0750"

@@ -1,18 +1,16 @@
-# Copyright (c) 2026, Grove and contributors
+# Copyright (c) 2026, Frappe and contributors
 # See license.txt
 """Shared helpers. Pure — no site needed."""
 
-import re
 import unittest
 
 from grove.utils import (
-	is_dns_name,
 	is_env_key,
 	is_env_value,
-	is_id_safe,
+	is_label,
 	is_label_under,
 	slugify,
-	validate_id_safe_name,
+	validate_label_name,
 )
 
 
@@ -32,73 +30,42 @@ class TestSlugify(unittest.TestCase):
 			self.assertEqual(slugify(typed), want, typed)
 
 
-class TestIsIdSafe(unittest.TestCase):
-	"""Gateway Server and Inference Server names are typed by an operator and end up inside a
-	request id, which the gateway builds by rewriting '-' to '_'. The rule exists so that
-	rewrite can be undone."""
+class TestIsLabel(unittest.TestCase):
+	"""Gateway, Ingress and Inference Server names are typed by an operator and become the box's
+	DNS label under its Geography's zone, so they are held to letters, digits and '-'."""
 
 	def test_letters_digits_and_dashes_are_fine(self):
 		for name in ("inf-blackwell", "proxy-sg", "INF1", "a"):
-			self.assertTrue(is_id_safe(name), name)
+			self.assertTrue(is_label(name), name)
 
 	def test_an_underscore_is_refused(self):
-		# 'inf_a' and 'inf-a' both reach an id as 'inf_a', so it no longer names one box.
 		for name in ("inf_a", "_leading", "trailing_"):
-			self.assertFalse(is_id_safe(name), name)
+			self.assertFalse(is_label(name), name)
 
-	def test_anything_cleanidpart_would_drop_is_refused(self):
-		# Same bug, quieter: these lose characters rather than colliding.
+	def test_punctuation_is_refused(self):
 		for name in ("inf.a", "inf a", "inf/a", "inf:a", "inf+a"):
-			self.assertFalse(is_id_safe(name), name)
+			self.assertFalse(is_label(name), name)
 
 	def test_an_empty_name_is_refused(self):
 		for name in ("", None):
-			self.assertFalse(is_id_safe(name), repr(name))
-
-	def test_a_safe_name_is_recoverable_from_the_id_it_produces(self):
-		# Mirror of CleanIDPart (pathway, internal/domain/requestid.go): keep [A-Za-z0-9_],
-		# '-' → '_', drop
-		# the rest. For an id-safe name that is the ONLY transformation, so swapping back
-		# recovers the doc name — which is the whole point of the rule.
-		def clean_id_part(value):
-			return re.sub(r"[^A-Za-z0-9_-]", "", value).replace("-", "_") or "x"
-
-		for name in ("inf-blackwell", "proxy-sg-1", "plain"):
-			self.assertEqual(clean_id_part(name).replace("_", "-"), name)
-		# And the collision the rule exists to prevent: these are one id part, not two.
-		self.assertEqual(clean_id_part("inf_a"), clean_id_part("inf-a"))
+			self.assertFalse(is_label(name), repr(name))
 
 
-class TestValidateIdSafeName(unittest.TestCase):
-	"""The gate itself, as before_insert and before_rename call it. frappe.throw needs a bound
-	site, so what is asserted is that the call does not return."""
+class TestValidateLabelName(unittest.TestCase):
+	"""The gate itself, as autoname calls it. frappe.throw needs a bound site, so what is asserted
+	is that the call does not return."""
 
 	def test_a_bad_name_does_not_get_through(self):
 		with self.assertRaises(Exception):
-			validate_id_safe_name("Inference Server", "inf_a")
+			validate_label_name("Inference Server", "inf_a")
 
 	def test_a_good_name_passes(self):
-		validate_id_safe_name("Inference Server", "inf-a")
+		validate_label_name("Inference Server", "inf-a")
 
 	def test_a_blank_name_is_left_to_frappe(self):
 		# Frappe raises "Name is required" straight after, and says it better than this would.
 		for blank in ("", None):
-			validate_id_safe_name("Inference Server", blank)
-
-
-class TestIsDnsName(unittest.TestCase):
-	"""What can go in an nginx server_name and a certificate subject. Everything rejected here
-	would otherwise be caught by `openresty -t` on a box that is already serving traffic."""
-
-	def test_accepts_a_bare_name(self):
-		for name in ("grove.example.com", "api.grove.example.com", "use1-p1.grove.example.com", "localhost"):
-			self.assertTrue(is_dns_name(name), name)
-
-	def test_rejects_anything_that_is_not_one(self):
-		for name in ("", None, "https://api.grove.example.com", "api.grove.example.com/",
-			"api.grove.example.com:443", "grove.example.com.", "api..grove.example.com",
-			"-api.grove.example.com", "api_1.grove.example.com"):
-			self.assertFalse(is_dns_name(name), name)
+			validate_label_name("Inference Server", blank)
 
 
 class TestIsLabelUnder(unittest.TestCase):

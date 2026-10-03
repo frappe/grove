@@ -1,4 +1,4 @@
-# Copyright (c) 2026, Grove and contributors
+# Copyright (c) 2026, Frappe and contributors
 # See license.txt
 """Engine env assembly and box-local port allocation. Pure — the deployment is passed in and
 the sibling lookup is stubbed with a small table, so no site needed."""
@@ -26,6 +26,7 @@ from grove.grove.doctype.model_replica.model_replica import (
 	parse_kv_cache_memory,
 	reconfigure_deployment,
 	set_container_state,
+	teardown_deployment,
 )
 from grove.serving.base import DEFAULT_MAX_MODEL_LEN, parse_context_length
 from grove.serving.custom import CustomEngine
@@ -391,6 +392,7 @@ class TestReconfigureKeepsTheModelRoutable(unittest.TestCase):
 		md = SimpleNamespace(
 			name="MD-00007",
 			model="qwen3.5-4b",
+			model_key="qwen3.5-4b",
 			derived_engine_url="https://10.0.0.9/e/md-00007",
 			get_password=lambda *args, **kwargs: "internal-key",
 			# No figure to learn or drop: _post_play_state asks both.
@@ -416,6 +418,7 @@ class TestReconfigureKeepsTheModelRoutable(unittest.TestCase):
 			patch.object(frappe, "get_doc", lambda doctype, name=None: md),
 			patch.object(frappe, "db", db),
 			patch(f"{MODULE}._vllm_extravars", return_value={}),
+			patch("grove.grove.doctype.model.model.sync_published"),
 		):
 			reconfigure_deployment("MD-00007")
 		return written
@@ -450,7 +453,7 @@ class TestExtraVarsFollowTheEngineKind(unittest.TestCase):
 
 	def extravars(self, engine, engine_kind="vllm"):
 		md = SimpleNamespace(
-			name="MD-00007", model="qwen3-35b", gpus=[], env=[], engine=engine,
+			name="MD-00007", model="qwen3-35b", model_key="qwen3-35b", gpus=[], env=[], engine=engine,
 			deployment=deployment(engine_image="img"),
 			# No pinned cards, so the device list is empty and the container gets --gpus all.
 			gpu_records=[],
@@ -543,12 +546,15 @@ class TestStopAndStartRunAsAPlay(unittest.TestCase):
 
 	def run_state(self, running, rc):
 		"""Every db.set_value a Stop/Start emits, plus the play it ran and its extra-vars."""
+		written = []
 		md = SimpleNamespace(
 			name="MD-00007",
 			model="qwen3.5-4b",
+			model_key="qwen3.5-4b",
 			server=SimpleNamespace(name="INF-1", run_playbook=self.record_play(rc)),
+			# The status lands first, then the claims are settled against it.
+			sync_gpu_claims=lambda: written.append(f"claims:{md.status}"),
 		)
-		written = []
 
 		def set_value(doctype, name, values, value=None):
 			written.append({values: value} if isinstance(values, str) else values)
@@ -582,13 +588,52 @@ class TestStopAndStartRunAsAPlay(unittest.TestCase):
 		self.assertIs(self.extravars["vllm_container_running"], True)
 
 	def test_a_stop_lands_inactive_and_a_start_lands_active(self):
-		self.assertEqual(self.run_state(running=False, rc=0), [{"status": "Inactive"}])
-		self.assertEqual(self.run_state(running=True, rc=0), [{"status": "Active"}])
+		self.assertEqual(self.run_state(running=False, rc=0), [{"status": "Inactive"}, "claims:Inactive"])
+		self.assertEqual(self.run_state(running=True, rc=0), [{"status": "Active"}, "claims:Active"])
 
 	def test_a_failed_run_writes_nothing(self):
 		# A stop that did not take has to leave the doc Active: writing Inactive would pull a
 		# serving engine out of the route table.
 		self.assertEqual(self.run_state(running=False, rc=2), [])
+
+
+class TestTeardownFreesTheCards(unittest.TestCase):
+	"""Terminated is written by `db.set_value`, which the controller never sees, so the job settles
+	the claims itself — or the card stays held by a replica that no longer exists on the box, and
+	the panel shows a free GPU as taken until a placement collides with it."""
+
+	def teardown(self, rc):
+		"""Every db.set_value a teardown emits, and the claim settlement, in order."""
+		written = []
+		md = SimpleNamespace(
+			name="MD-00007",
+			model="qwen3.5-4b",
+			model_key="qwen3.5-4b",
+			server=SimpleNamespace(
+				name="INF-1", data_path="/opt/vllm", run_playbook=lambda *a, **kw: ("PLAY-1", rc)
+			),
+			sync_gpu_claims=lambda: written.append(f"claims:{md.status}"),
+		)
+
+		def set_value(doctype, name, values, value=None):
+			written.append({values: value} if isinstance(values, str) else values)
+
+		db = SimpleNamespace(set_value=set_value, commit=lambda: None)
+		with (
+			patch.object(frappe, "get_doc", lambda doctype, name=None: md),
+			patch.object(frappe, "db", db),
+			patch("grove.grove.doctype.model.model.sync_published"),
+		):
+			teardown_deployment("MD-00007")
+		return written
+
+	def test_a_torn_down_replica_lands_terminated_and_releases_its_cards(self):
+		self.assertEqual(
+			self.teardown(rc=0), [{"status": "Terminated", "engine_port": 0}, "claims:Terminated"]
+		)
+
+	def test_a_failed_teardown_writes_nothing(self):
+		self.assertEqual(self.teardown(rc=2), [])
 
 
 class TestEveryStatusHasItsOwnColour(unittest.TestCase):
@@ -643,7 +688,8 @@ class TestAReplicaNamesItselfBeforeFetchFromRuns(unittest.TestCase):
 	`self.model` as stored, it would be built from a blank."""
 
 	def name(self, **sent):
-		values = {"Model Deployment": "qwen3-35b", "Inference Server": "ap-south-1"}
+		# The deployment answers (doc, key); the key names the replica, the doc stays its link.
+		values = {"Model Deployment": ("md-doc", "frappe/qwen3-35b"), "Inference Server": "ap-south-1"}
 		md = frappe._dict(sent)
 		with (
 			patch.object(frappe, "db", frappe._dict(
@@ -655,9 +701,9 @@ class TestAReplicaNamesItselfBeforeFetchFromRuns(unittest.TestCase):
 
 	def test_the_model_comes_off_the_deployment_not_the_unfetched_field(self):
 		md = self.name(model_deployment="qwen3-35b-ap-south-1", inference_server="inf3")
-		self.assertEqual(md.name, "qwen3-35b|ap-south-1|inf3")
+		self.assertEqual(md.name, "frappe/qwen3-35b|ap-south-1|inf3")
 		# Left ON the doc, so the mandatory check and sync_published both see it.
-		self.assertEqual(md.model, "qwen3-35b")
+		self.assertEqual((md.model, md.model_key), ("md-doc", "frappe/qwen3-35b"))
 
 
 class TestAReplicaMustBeTheShapeItsDeploymentDeclares(unittest.TestCase):

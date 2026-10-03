@@ -1,0 +1,45 @@
+{
+ "actions": [],
+ "creation": "2026-09-22 00:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "counter",
+  "rate"
+ ],
+ "fields": [
+  {
+   "columns": 4,
+   "description": "What the rate is quoted per: USD per Mtok for a token counter, per request for request_count or a search. The Usage Counter table lists them.",
+   "fieldname": "counter",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Counter",
+   "options": "Usage Counter",
+   "reqd": 1
+  },
+  {
+   "columns": 3,
+   "description": "USD per Mtok for token counters, per request for request_count. 0 is a price: free.",
+   "fieldname": "rate",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Rate (USD)",
+   "precision": "6",
+   "reqd": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-02 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Grove",
+ "name": "Model Pricing Rate",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

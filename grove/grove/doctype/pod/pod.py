@@ -1,4 +1,4 @@
-# Copyright (c) 2026, Grove and contributors
+# Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
 import json
@@ -45,6 +45,7 @@ class Pod(Document):
 		max_model_len: DF.Data | None
 		max_num_seqs: DF.Int
 		model: DF.Link
+		model_key: DF.Data | None
 		monitoring_agent: DF.Link | None
 		pipeline_parallel_size: DF.Int
 		pod_id: DF.Data | None
@@ -80,7 +81,7 @@ class Pod(Document):
 		kind, image_tuning = engine_tuning(self.engine_image)
 		return build_engine(
 			kind,
-			self.model,
+			self.model_key,
 			launch_config(self.model),
 			port=self.serve_port,
 			gpu_count=self.gpu_count,

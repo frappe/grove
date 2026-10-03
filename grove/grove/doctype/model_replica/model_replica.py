@@ -1,4 +1,4 @@
-# Copyright (c) 2026, Grove and contributors
+# Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
 import hashlib
@@ -67,6 +67,7 @@ class ModelReplica(Document):
 		max_num_batched_tokens: DF.Int
 		max_num_seqs: DF.Int
 		model: DF.Link
+		model_key: DF.Data | None
 		model_deployment: DF.Link
 		region: DF.Link | None
 		serve_command: DF.Code | None
@@ -74,7 +75,7 @@ class ModelReplica(Document):
 	# end: auto-generated types
 
 	# No on_update sync hook: any change here moves the routes snapshot hash and
-	# grove.pathway_sync.sync_projection pushes it on the next tick.
+	# grove.pathway.projection.sync_projection pushes it on the next tick.
 
 	@property
 	def deployment(self):
@@ -123,9 +124,11 @@ class ModelReplica(Document):
 		Model and region are read directly because NEITHER field's `fetch_from` has run this
 		early — a replica created from a deployment would otherwise name itself with a blank model
 		and fail its own mandatory check."""
-		self.model = frappe.db.get_value("Model Deployment", self.model_deployment, "model")
+		self.model, self.model_key = frappe.db.get_value(
+			"Model Deployment", self.model_deployment, ["model", "model_key"]
+		)
 		region = frappe.db.get_value("Inference Server", self.inference_server, "region")
-		self.name = next_replica_name(self.model, self.inference_server, region)
+		self.name = next_replica_name(self.model_key, self.inference_server, region)
 
 	def validate(self):
 		self._assign_engine_port()
@@ -340,7 +343,7 @@ class ModelReplica(Document):
 		self.engine_url = self.derived_engine_url
 
 	def on_update(self):
-		# A model is "published" only while it has a live deployment.
+		# A model stays published only while something serves it.
 		if self.has_value_changed("status"):
 			from grove.grove.doctype.model.model import sync_published
 
@@ -371,7 +374,7 @@ class ModelReplica(Document):
 			timeout=3600,
 			model_replica=self.name,
 		)
-		frappe.msgprint(f"Deploying {self.model} on {self.inference_server} — watch its Ansible Plays.", alert=True)
+		frappe.msgprint(f"Deploying {self.model_key} on {self.inference_server} — watch its Ansible Plays.", alert=True)
 
 	@frappe.whitelist()
 	def apply_engine_config(self):
@@ -529,7 +532,8 @@ def _vllm_extravars(md, m, inf, key):
 
 	extravars = {
 		"vllm_model": serve.repo,
-		"vllm_served_name": md.model,
+		# The key, not the doc: the engine answers to what the client sends.
+		"vllm_served_name": md.model_key,
 		"vllm_serve_args": serve.args,
 		# Blank = no gate: a custom image that names none finishes the play once it starts.
 		"vllm_health_path": md.deployment.health_path or serve.health_path,
@@ -556,7 +560,7 @@ def _vllm_extravars(md, m, inf, key):
 		"vllm_cache_bucket": (settings.weights_bucket or "") if serve.repo else "",
 		"vllm_cache_sync_env": settings.weights_s3_engine_environment,
 		"vllm_tensor_parallel_size": serve.tensor_parallel_size,
-		"vllm_model_slug": (m.hf_repo or md.model).split(":")[0].replace("/", "--"),
+		"vllm_model_slug": (m.hf_repo or md.model_key).split(":")[0].replace("/", "--"),
 		# serve.yml runs grove_https and engine_proxy ahead of the vllm role, so it writes the
 		# box's htpasswd too. Unused by reconfigure.yml, which runs neither role.
 		**settings.scrape_auth_variables,
@@ -616,17 +620,7 @@ def deploy_model(model_replica):
 		reference_docname=md.name,
 	)
 
-	state = _post_play_state(md, rc)
-	frappe.db.set_value("Model Replica", md.name, state)
-	# db.set_value skips the controller on_update, so the published flag and the GPU claims are
-	# settled explicitly. Status is carried over rather than reloaded: it was just written from
-	# this same dict.
-	from grove.grove.doctype.model.model import sync_published
-
-	md.status = state["status"]
-	md.sync_gpu_claims()
-	sync_published(md.model)
-	frappe.db.commit()
+	_land_state(md, _post_play_state(md, rc))
 	return play_name, rc
 
 
@@ -667,13 +661,22 @@ def reconfigure_deployment(model_replica):
 		reference_docname=md.name,
 	)
 
-	state = _post_play_state(md, rc)
+	_land_state(md, _post_play_state(md, rc))
+	return play_name, rc
+
+
+def _land_state(md, state):
+	"""Write what a play left on the doc, and settle what follows from its status. `db.set_value`
+	skips the controller, so the GPU claims and the published flag are settled here — the one
+	place a job lands a status. Status is carried over rather than reloaded: it was just written
+	from this same dict."""
+	from grove.grove.doctype.model.model import sync_published
+
 	frappe.db.set_value("Model Replica", md.name, state)
-	# Both arrive here as a status the controller never saw, so claims are settled explicitly.
 	md.status = state["status"]
 	md.sync_gpu_claims()
+	sync_published(md.model)
 	frappe.db.commit()
-	return play_name, rc
 
 
 def _post_play_state(md, rc):
@@ -711,13 +714,7 @@ def set_container_state(model_replica, running):
 	)
 
 	if rc == 0:
-		frappe.db.set_value(
-			"Model Replica", md.name, "status", "Active" if running else "Inactive"
-		)
-		from grove.grove.doctype.model.model import sync_published
-
-		sync_published(md.model)
-		frappe.db.commit()
+		_land_state(md, {"status": "Active" if running else "Inactive"})
 	return play_name, rc
 
 
@@ -741,11 +738,5 @@ def teardown_deployment(model_replica):
 
 	if rc == 0:
 		# 0 = free, reallocated on a later redeploy. The Int column is NOT NULL, so 0 not None.
-		frappe.db.set_value(
-			"Model Replica", md.name, {"status": "Terminated", "engine_port": 0}
-		)
-		from grove.grove.doctype.model.model import sync_published
-
-		sync_published(md.model)
-		frappe.db.commit()
+		_land_state(md, {"status": "Terminated", "engine_port": 0})
 	return play_name, rc

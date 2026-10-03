@@ -1,4 +1,4 @@
-# Copyright (c) 2026, Grove and contributors
+# Copyright (c) 2026, Frappe and contributors
 # See license.txt
 """nvidia-smi parsing and the EC2 instance-type parsers. Pure — no site, box or AWS call."""
 
@@ -22,6 +22,7 @@ from grove.cloud_provider.aws import (
 	root_volume_id,
 )
 from grove.grove.doctype.geography.test_geography import make_test_geography
+from grove.grove.doctype.inference_server.inference_server import InferenceServer
 from grove.grove.doctype.machine.machine import (
 	SCAN_TASK,
 	TOPO_TASK,
@@ -766,6 +767,43 @@ class TestNetworkResolution(IntegrationTestCase):
 		self.addCleanup(machine.delete, ignore_permissions=True)
 		with self.assertRaises(frappe.ValidationError):
 			machine.resolved_machine_image
+
+
+class TestTerminatingABareMetalBox(IntegrationTestCase):
+	"""A box with no Cloud Provider has nothing to destroy, so Terminate only retires rows."""
+
+	def setUp(self):
+		self.machine = frappe.get_doc({
+			"doctype": "Machine", "name": "test-bare-metal-terminate", "machine_type": "Inference",
+			"public_ip": "203.0.113.7",
+		}).insert(ignore_permissions=True)
+		self.addCleanup(self.machine.delete, ignore_permissions=True)
+		self.server = frappe.get_doc({
+			"doctype": "Inference Server", "machine": self.machine.name, "status": "Active",
+			"data_path": "/opt/vllm",
+		}).insert(ignore_permissions=True)
+		self.addCleanup(self.server.delete, ignore_permissions=True)
+
+	def test_it_retires_the_box_and_its_server_without_a_provider(self):
+		with patch.object(Machine, "cloud_client", side_effect=AssertionError("no provider to call")):
+			self.machine.terminate()
+		self.assertEqual(
+			frappe.db.get_value("Machine", self.machine.name, ["status", "public_ip"]), ("Terminated", "")
+		)
+		self.assertEqual(frappe.db.get_value("Inference Server", self.server.name, "status"), "Terminated")
+
+	def test_a_server_still_knows_its_address_when_it_drops_its_records(self):
+		"""Cleared first, the address arrives blank and the DNS record is never deleted."""
+		seen = []
+		with patch.object(InferenceServer, "on_update", lambda server: seen.append(server.machine_ip)):
+			self.machine.terminate()
+		self.assertEqual(seen, ["203.0.113.7"])
+
+	def test_a_cloud_box_never_launched_still_refuses(self):
+		self.machine.cloud_provider = "aws"
+		with self.assertRaises(frappe.ValidationError):
+			self.machine.terminate()
+		self.assertEqual(frappe.db.get_value("Machine", self.machine.name, "status"), self.machine.status)
 
 
 if __name__ == "__main__":

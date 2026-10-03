@@ -128,7 +128,7 @@ def engine_targets(agent):
 		frappe.get_all(
 			"Model Replica",
 			filters={"inference_server": ("in", list(boxes)), "status": "Active"},
-			fields=["name", "model", "engine_url", "inference_server"],
+			fields=["name", "model_key", "engine_url", "inference_server"],
 		)
 		if boxes
 		else []
@@ -137,7 +137,7 @@ def engine_targets(agent):
 		engine_entry(
 			deployment.engine_url,
 			{
-				"model": deployment.model,
+				"model": deployment.model_key,
 				"deployment": deployment.name,
 				"server": deployment.inference_server,
 				"machine": boxes[deployment.inference_server]["machine"],
@@ -149,11 +149,11 @@ def engine_targets(agent):
 	]
 	# Pods carry no machine/region: they are not on a box we own.
 	entries += [
-		engine_entry(pod.engine_url, {"model": pod.model, "deployment": pod.name})
+		engine_entry(pod.engine_url, {"model": pod.model_key, "deployment": pod.name})
 		for pod in frappe.get_all(
 			"Pod",
 			filters={"monitoring_agent": agent, "status": "Running"},
-			fields=["name", "model", "engine_url"],
+			fields=["name", "model_key", "engine_url"],
 		)
 	]
 	return [entry for entry in entries if entry]
@@ -280,7 +280,7 @@ def engine_entry(engine_url, labels, address=None):
 	return {
 		"targets": [f"{address or parsed.hostname}:{port}"],
 		"labels": {
-			# Verbatim: the exact string pathway_sync pushes as this engine's route target.
+			# Verbatim: the exact string the projection pushes as this engine's route target.
 			# Reformatted, the series can no longer be joined to the route it describes.
 			"engine": engine_url,
 			"__scheme__": parsed.scheme or "http",

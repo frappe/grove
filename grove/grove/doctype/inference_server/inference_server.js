@@ -5,16 +5,22 @@ frappe.ui.form.on('Inference Server', {
 
 		if (frm.doc.status !== 'Terminated') {
 			if (!frm.doc.is_provisioned) {
-				frm.add_custom_button(__('Setup'), () => {
-					frm.call('setup').then(() => frm.reload_doc());
-				});
+				frm.add_custom_button(__('Setup'), () => grove.confirm_call(frm,
+					__('Provision {0} for serving? It installs Docker, the NVIDIA toolkit, exporters and its front — several minutes of Ansible.', [frm.doc.name]),
+					'setup'));
 			}
 			if (frm.doc.is_standalone) {
-				frm.add_custom_button(__('Sync DNS Records'), () => frm.call('sync_dns_records'), __('TLS'));
-				frm.add_custom_button(__('Deploy Fleet Certificate'), () => frm.call('deploy_tls'), __('TLS'));
+				frm.add_custom_button(__('Sync DNS Records'), () => grove.confirm_call(frm,
+					__("Rewrite {0}'s DNS records to its current address?", [frm.doc.name]),
+					'sync_dns_records'), __('TLS'));
+				frm.add_custom_button(__('Deploy Fleet Certificate'), () => grove.confirm_call(frm,
+					__("Push the Geography's certificate to {0} and reload nginx?", [frm.doc.name]),
+					'deploy_tls'), __('TLS'));
 			}
 			// The exporters listen on 9100/9400 for the agent above to scrape.
-			frm.add_custom_button(__('Update Scrape Auth'), () => frm.call('update_scrape_auth'));
+			frm.add_custom_button(__('Update Scrape Auth'), () => grove.confirm_call(frm,
+				__("Rewrite {0}'s exporter password from Grove Settings? Scrapes with the old one fail from then on.", [frm.doc.name]),
+				'update_scrape_auth'));
 			frm.add_custom_button(__('Archive'), () => {
 				frappe.confirm(
 					__('Archive {0}? Its Machine is terminated — the box and everything on its disk are gone — and this server leaves the fleet. Refused while anything still depends on it.', [frm.doc.name]),

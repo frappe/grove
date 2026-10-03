@@ -10,6 +10,22 @@ frappe.ui.form.on('Model', {
 	},
 
 	refresh(frm) {
+		if (!frm.is_new()) frm.trigger('pricing_headline');
+		// Published and routed, but no grant names it: every key is told access not allowed.
+		if (frm.doc.published && frm.doc.__onload && frm.doc.__onload.is_granted === false) {
+			frm.dashboard.set_headline(
+				__('Published, but no Model Group with a user and no user Allow names {0} — nobody can call it. {1}',
+					[frm.doc.model_key, `<a href="/app/model-group">${__('Model Groups')}</a>`]),
+				'orange'
+			);
+		}
+		if (frm.doc.__onload && frm.doc.__onload.has_catalog_pricing) {
+			frm.add_custom_button(__('Load Pricing'), () => {
+				frm.call('load_pricing').then((r) => {
+					if (r.message) frappe.set_route('Form', 'Model Pricing', r.message);
+				});
+			});
+		}
 		// A vendor serves this one: there is no repo to read and no box holding its weights.
 		if (frm.is_new() || !frm.doc.provider_is_self_hosted) return;
 
@@ -19,6 +35,18 @@ frappe.ui.form.on('Model', {
 
 		frm.add_custom_button(__('Mirror Weights To S3'), () => {
 			frm.call('mirror_weights');
+		});
+	},
+
+	pricing_headline(frm) {
+		// An unpriced model cannot be published, so the gateways hold no route for it.
+		frappe.db.get_value('Model Pricing', { model: frm.doc.name, status: 'Enabled' }, 'name').then((r) => {
+			if (r.message && r.message.name) return;
+			const href = `/app/model-pricing/new?model=${encodeURIComponent(frm.doc.name)}`;
+			frm.dashboard.set_headline(
+				__('No Model Pricing enabled — this model cannot be published. Zero rates serve it free. {0}', [`<a href="${href}">${__('Add one')}</a>`]),
+				'orange'
+			);
 		});
 	},
 });

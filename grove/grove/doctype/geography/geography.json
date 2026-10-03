@@ -9,6 +9,7 @@
   "fleet_zone",
   "column_break_htfv",
   "endpoint",
+  "is_default",
   "fleet_certificate_tab",
   "section_fleet_tls",
   "fleet_tls_expires_on",
@@ -88,6 +89,14 @@
   {
    "fieldname": "column_break_htfv",
    "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Grove Users saved without a geography are put here. Only one Geography is the default: ticking it here unticks the others.",
+   "fieldname": "is_default",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Default"
   }
  ],
  "links": [
@@ -107,7 +116,7 @@
    "link_fieldname": "geography"
   }
  ],
- "modified": "2026-09-17 10:47:12.752751",
+ "modified": "2026-09-28 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Geography",

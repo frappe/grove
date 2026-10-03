@@ -11,7 +11,7 @@ playbooks/
   inference_server/   provision.yml  serve.yml  reconfigure.yml  container_state.yml  teardown.yml  deploy_tls.yml
   machine/            ping.yml  grow_root.yml  scan_gpus.yml     — box-level, no role layered on yet
   monitoring_agent/   agent.yml  config.yml  exporters.yml  push_targets.yml
-  gateway_store/ store.yml                       — Redis only, shared by a Network's gateways
+  gateway_store/      store.yml  restore.yml     — Redis only, shared by a Network's gateways; restore.yml loads a backup through a side Redis + REPLICAOF
   roles/              grove_user  remove_cloud_user  auditd  dcgm_exporter  node_exporter  fleet_tls  grove_https  install_gateway_agent  openresty  redis
 ```
 
@@ -74,12 +74,15 @@ not what buttons call — it has no Frappe tracking.)
 - **Reconcile the *running* state, not just the file.** A `blockinfile` that already matches reports
   unchanged and never notifies its handler again, so a setting can sit correct in the config and inert
   in the process for the life of the box. See "enforce persistence on the running redis" in
-  `roles/redis`, which a gateway runs on its own Redis and a Gateway Store on the shared one.
+  `roles/redis`, which a Gateway Store runs.
 - **Non-fatal cleanup is guarded, not assumed.** Stopping OpenResty on a box that never had it uses
   `failed_when: false`.
 - **The binary is downloaded, never compiled.** The agent lives in its own repo; `install_gateway_agent`
   fetches a release with a `sha256:` checksum. Which release is a Grove Settings field, so a rollback
-  is an edit plus a Deploy Agent — not a control-plane release.
+  is an edit plus a Deploy Agent — not a control-plane release. The one exception is a dev deploy:
+  `scripts/dev_deploy_pathway.py` builds a pathway working tree into `<bench>/builds/` and ships it to
+  one Gateway Server through the same play. `agent_version` still records the pinned release, and the
+  next Deploy Agent or Setup puts that release back.
 
 ## Running one by hand
 

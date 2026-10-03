@@ -1,11 +1,11 @@
-# Copyright (c) 2026, Grove and contributors
+# Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
 import frappe
 from frappe.model.document import Document
 
 from grove import failure, tls
-from grove.utils import is_dns_name, is_label_under, slugify
+from grove.utils import is_label_under
 
 
 class Geography(Document):
@@ -28,25 +28,24 @@ class Geography(Document):
 		fleet_tls_last_output: DF.Code | None
 		fleet_tls_last_run: DF.Datetime | None
 		fleet_zone: DF.Data
+		is_default: DF.Check
 		label: DF.Data | None
 	# end: auto-generated types
 
 	def validate(self):
-		if self.name != slugify(self.name):
-			frappe.throw(f"Geography name {self.name!r} must be a lowercase slug, e.g. eu.")
 		self.validate_names()
 		self.validate_fixed_names()
 
+	def on_update(self):
+		"""One default: this one ticked unticks every other."""
+		if self.is_default:
+			frappe.db.set_value("Geography", {"is_default": 1, "name": ("!=", self.name)}, "is_default", 0)
+
 	def validate_names(self):
-		"""A scheme, port or path renders a server_name that matches nothing, and a name deeper than
-		one label under the zone is not covered by `*.<zone>`."""
 		for field in ("fleet_zone", "endpoint"):
 			value = (self.get(field) or "").strip()
 			self.set(field, value)
-			if value and not is_dns_name(value):
-				frappe.throw(f"{field} must be a bare hostname — no scheme, port, path or trailing dot. Got '{value}'.")
-		if not self.endpoint:
-			frappe.throw("Endpoint is required.")
+
 		if self.fleet_zone and not is_label_under(self.endpoint, self.fleet_zone):
 			frappe.throw(
 				f"Endpoint '{self.endpoint}' must be exactly one label under '{self.fleet_zone}' — "
@@ -90,4 +89,3 @@ class Geography(Document):
 	@failure.reports_failure()
 	def _issue_fleet_certificate(self):
 		tls.issue_fleet_certificate(self.name)
-

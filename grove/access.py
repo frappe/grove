@@ -1,4 +1,4 @@
-# Copyright (c) 2026, Grove and contributors
+# Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 """Who may call which Model. Every group a user belongs to grants, their own Allow adds, their Deny
 removes, and nothing else is reachable.
@@ -11,15 +11,17 @@ import frappe
 
 
 def model_rows(parenttype, parents=None):
+	"""{parent: {parentfield: [model key, ...]}}. A row links a doc; what it grants is the key —
+	one grant reaches the id in every geography that serves it."""
 	filters = {"parenttype": parenttype}
 	if parents is not None:
 		filters["parent"] = ("in", list(parents))
 	rows = frappe.get_all(
-		"Grove Model Row", filters=filters, fields=["parent", "model", "parentfield"]
+		"Grove Model Row", filters=filters, fields=["parent", "model_key", "parentfield"]
 	)
 	grouped = {}
 	for row in rows:
-		grouped.setdefault(row.parent, {}).setdefault(row.parentfield, []).append(row.model)
+		grouped.setdefault(row.parent, {}).setdefault(row.parentfield, []).append(row.model_key)
 	for fields in grouped.values():
 		for models in fields.values():
 			models.sort()
@@ -35,3 +37,23 @@ def group_rows(parents=None):
 	for row in rows:
 		grouped.setdefault(row.parent, set()).add(row.model_group)
 	return {parent: sorted(names) for parent, names in grouped.items()}
+
+
+def get_reachable_models(grove_user):
+	"""What one user may call, resolved the way the gateway does it: every group's grant and their
+	own Allow, less their Deny. For showing a person their models; the gateway never reads this."""
+	own = model_rows("Grove User", [grove_user]).get(grove_user, {})
+	groups = group_rows([grove_user]).get(grove_user, [])
+	granted = set(own.get("allow", []))
+	for group in model_rows("Model Group", groups).values() if groups else ():
+		granted.update(group.get("models", []))
+	return sorted(granted - set(own.get("deny", [])))
+
+
+def model_doc(model_key):
+	"""Any doc under `model_key`, for a grant that names an id: a grant is by key, so which
+	geography's doc holds the link does not matter. Unknown is the caller's error."""
+	name = frappe.db.get_value("Model", {"model_key": model_key}, "name")
+	if not name:
+		frappe.throw(f"No model is keyed {model_key!r}.", frappe.DoesNotExistError)
+	return name

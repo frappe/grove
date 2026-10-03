@@ -1,9 +1,10 @@
-# Copyright (c) 2026, Grove and contributors
+# Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 """Small helpers shared across the app. Nothing here reaches into a doctype; keep it that way."""
 
 import os
 import re
+from datetime import datetime, timezone
 
 import frappe
 
@@ -47,33 +48,23 @@ def is_env_value(value):
 	return not re.search(r'[\n\r"]', value or "")
 
 
-def is_id_safe(name):
-	"""True when a doc name survives the gateway's request-id sanitiser without losing itself.
+def is_label(name):
+	"""True when a name is one DNS-label-shaped token: letters, digits and '-'.
 
-	`CleanIDPart` rewrites '-' to '_' so the only '-' left in an id is its own separator, and
-	silently DROPS everything else. That is reversible only while the name carries no '_' of its
-	own: `inf-a` and `inf_a` both arrive as `inf_a`, and `inf.a` arrives as `infa`."""
+	A server's short name IS its record under its Geography's zone (fleet.py `hostname`) and
+	lands in a systemd Environment= line as GROVE_GATEWAY_ID, so it must be both."""
 	return bool(re.fullmatch(r"[A-Za-z0-9-]+", name or ""))
 
 
-def validate_id_safe_name(doctype, name):
-	if not name or is_id_safe(name):
+def validate_label_name(doctype, name):
+	if not name or is_label(name):
 		return
 
 	frappe.throw(
-		f"{doctype} name '{name}' can only contain letters, digits and '-'. The gateway "
-		f"rewrites '-' to '_' when it stamps a request id, so a name holding '_' or "
-		f"punctuation cannot be read back out of one.",
-		title="Name is not traceable",
+		f"{doctype} name '{name}' can only contain letters, digits and '-': it is the box's "
+		f"DNS label under its Geography's zone.",
+		title="Name is not a DNS label",
 	)
-
-
-def is_dns_name(name):
-	"""True for a bare DNS name — dot-separated labels and nothing else. What can go in an
-	nginx server_name and a certificate subject, so a scheme, a port, a path or a trailing dot
-	all fail here rather than at `openresty -t` on a box that is already live."""
-	labels = (name or "").split(".")
-	return bool(name) and len(name) <= 253 and all(DNS_LABEL.fullmatch(label) for label in labels)
 
 
 def is_label_under(name, zone):
@@ -82,6 +73,11 @@ def is_label_under(name, zone):
 	apex nor `api.eu.grove.example.com`."""
 	suffix = f".{zone}"
 	return name.endswith(suffix) and "." not in name[: -len(suffix)]
+
+
+def utc_today():
+	"""The billing day off OUR clock: usage days, price windows and top-ups all read it."""
+	return datetime.now(timezone.utc).date()
 
 
 def slugify(text):

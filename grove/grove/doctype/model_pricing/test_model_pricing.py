@@ -1,0 +1,89 @@
+# Copyright (c) 2026, Frappe and contributors
+# See license.txt
+"""Enabling a pricing retires its predecessor, and it is never edited after: the requests it
+charged are billed."""
+
+import frappe
+from frappe.tests import IntegrationTestCase
+
+from grove.pricing import CounterTable, PriceBook
+from grove.utils import utc_today
+
+
+def new_pricing(model, status="Disabled", **rates):
+	return frappe.get_doc({
+		"doctype": "Model Pricing", "model": model, "status": status,
+		"rates": [{"counter": counter, "rate": rate} for counter, rate in rates.items()],
+	}).insert(ignore_permissions=True)
+
+
+def enabled_pricing(model, **rates):
+	return new_pricing(model, status="Enabled", **rates)
+
+
+class TestModelPricing(IntegrationTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.model = frappe.get_doc(
+			{"doctype": "Model", "model_id": "pricing-7b", "modality": "text", "hf_repo": "org/pricing-7b"}
+		).insert(ignore_permissions=True).name
+
+	def test_a_draft_is_editable_until_it_is_enabled(self):
+		doc = new_pricing(self.model, completion_tokens=1)
+		doc.rates[0].rate = 5
+		doc.save()
+		self.assertIsNone(doc.enabled_on)
+		doc.status = "Enabled"
+		doc.save()
+		self.assertEqual(doc.enabled_on, utc_today())
+
+	def test_enabling_retires_the_predecessor(self):
+		first = enabled_pricing(self.model, completion_tokens=1)
+		doc = enabled_pricing(self.model, completion_tokens=2)
+		first.reload()
+		self.assertEqual((doc.status, doc.enabled_on, first.status), ("Enabled", utc_today(), "Disabled"))
+
+	def test_zero_rates_are_a_pricing_and_never_publish_the_model(self):
+		counters = CounterTable.load().names
+		doc = enabled_pricing(self.model, **dict.fromkeys(counters, 0))
+		self.assertEqual(PriceBook.load().nano_rates(doc.name), dict.fromkeys(counters, 0))
+		self.assertEqual(frappe.db.get_value("Model", self.model, "published"), 0)
+
+	def test_a_retired_pricing_stays_in_the_book_by_id(self):
+		first = enabled_pricing(self.model, completion_tokens=2)
+		enabled_pricing(self.model, completion_tokens=3)
+		self.assertEqual(PriceBook.load().nano_rates(first.name), {"completion_tokens": 2_000_000_000})
+
+	def test_an_enabled_pricing_is_frozen(self):
+		doc = enabled_pricing(self.model, completion_tokens=1)
+		doc.status = "Disabled"
+		with self.assertRaises(frappe.ValidationError):
+			doc.save()
+		frappe.db.set_value("Model Pricing", doc.name, "status", "Disabled")
+		doc.reload()
+		doc.status = "Enabled"
+		with self.assertRaises(frappe.ValidationError):
+			doc.save()
+		doc.reload()
+		doc.rates[0].rate = 9
+		with self.assertRaises(frappe.ValidationError):
+			doc.save()
+
+	def test_a_duplicate_is_a_disabled_draft_with_its_own_window(self):
+		# What the form's Duplicate does: no_copy fields are left behind.
+		first = enabled_pricing(self.model, completion_tokens=1)
+		doc = frappe.copy_doc(first, ignore_no_copy=False).insert(ignore_permissions=True)
+		first.reload()
+		self.assertEqual((doc.status, doc.enabled_on, first.status), ("Disabled", None, "Enabled"))
+		doc.status = "Enabled"
+		doc.save()
+		self.assertEqual(doc.enabled_on, utc_today())
+
+	def test_an_above_272k_rate_needs_its_base(self):
+		with self.assertRaises(frappe.ValidationError):
+			new_pricing(self.model, completion_tokens=1, prompt_tokens_above_272k=5)
+		with self.assertRaises(frappe.ValidationError):
+			new_pricing(self.model, prompt_tokens=2.5, cache_write_tokens_above_272k=6.25)
+		new_pricing(self.model, prompt_tokens=2.5, prompt_tokens_above_272k=5)
+

@@ -1,4 +1,4 @@
-# Copyright (c) 2026, Grove and contributors
+# Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 """RunPod request/response shaping, and what a Restart may apply in place. Pure — the HTTP
 call is stubbed and both docs are passed in, so no site or network."""
@@ -428,6 +428,16 @@ class TestRestartBlocker(unittest.TestCase):
 		self.assertIsNone(restart_blocker(pod(), live(gpu_count=None, gpu_type_id=None)))
 
 
+def validate_pod(pod):
+	"""Pod.validate with no site: its Model is one we host. → the `frappe.throw` mock."""
+	with (
+		patch("grove.grove.doctype.pod.pod.frappe.throw") as throw,
+		patch("grove.grove.doctype.pod.pod.frappe.get_cached_doc"),
+	):
+		Pod.validate(pod)
+	return throw
+
+
 class TestServePortIsOpened(unittest.TestCase):
 	"""A serve port the provider was never asked to open is refused at validate."""
 
@@ -437,15 +447,11 @@ class TestServePortIsOpened(unittest.TestCase):
 		# poll and the pod sat Loading forever with a live container behind it.
 		unopened = serving_pod(engine_kind="custom")
 		unopened.serve_port = 8000
-		with patch("grove.grove.doctype.pod.pod.frappe.throw") as throw:
-			Pod.validate(unopened)
-		self.assertIn("8000", throw.call_args.args[0])
+		self.assertIn("8000", validate_pod(unopened).call_args.args[0])
 
 	def test_a_serve_port_in_the_ports_table_passes(self):
 		custom = serving_pod(engine_kind="custom")
-		with patch("grove.grove.doctype.pod.pod.frappe.throw") as throw:
-			Pod.validate(custom)
-		throw.assert_not_called()
+		validate_pod(custom).assert_not_called()
 		self.assertEqual(custom.serve_command, "")
 
 
@@ -455,9 +461,7 @@ class TestContextLengthIsStored(unittest.TestCase):
 
 	def validated(self, max_model_len):
 		pod = serving_pod(engine_kind="custom", max_model_len=max_model_len)
-		with patch("grove.grove.doctype.pod.pod.frappe.throw") as throw:
-			Pod.validate(pod)
-		throw.assert_not_called()
+		validate_pod(pod).assert_not_called()
 		return pod.max_model_len
 
 	def test_a_suffix_is_normalised_to_tokens(self):

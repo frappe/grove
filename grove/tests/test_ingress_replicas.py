@@ -1,4 +1,4 @@
-# Copyright (c) 2026, Grove and contributors
+# Copyright (c) 2026, Frappe and contributors
 # See license.txt
 """The table one ingress is given: every Active replica it OWNS, dialled privately.
 
@@ -15,6 +15,8 @@ import unittest
 from unittest.mock import patch
 
 import frappe
+
+from grove.tests.model_rows import model_row
 
 from grove.net import private_url
 
@@ -82,7 +84,7 @@ class FakeQuery:
 		return [frappe._dict(r) for r in rows]
 
 
-MODELS = [{"name": "qwen3-35b"}, {"name": "llama-70b"}]
+MODELS = [model_row("qwen3-35b"), model_row("llama-70b")]
 SERVERS = [
 	{"name": "INF-local", "machine": "M-local", "ingress": "ING-1"},
 	{"name": "INF-elsewhere", "machine": "M-elsewhere", "ingress": "ING-2"},
@@ -96,22 +98,22 @@ MACHINES = [
 	{"name": "M-direct", "network": "Mumbai", "private_ip": "10.0.1.9"},
 ]
 REPLICAS = [
-	{"name": "MD-1", "model": "qwen3-35b", "engine_url": "https://203.0.113.7/e/md-1",
+	{"name": "MD-1", "model": "qwen3-35b", "model_key": "qwen3-35b", "engine_url": "https://203.0.113.7/e/md-1",
 	 "status": "Active", "inference_server": "INF-local", "max_num_seqs": 8},
-	{"name": "MD-2", "model": "llama-70b", "engine_url": "https://203.0.113.8/e/md-2",
+	{"name": "MD-2", "model": "llama-70b", "model_key": "llama-70b", "engine_url": "https://203.0.113.8/e/md-2",
 	 "status": "Active", "inference_server": "INF-elsewhere", "max_num_seqs": 4},
-	{"name": "MD-5", "model": "llama-70b", "engine_url": "https://203.0.113.10/e/md-5",
+	{"name": "MD-5", "model": "llama-70b", "model_key": "llama-70b", "engine_url": "https://203.0.113.10/e/md-5",
 	 "status": "Active", "inference_server": "INF-direct", "max_num_seqs": 4},
-	{"name": "MD-3", "model": "llama-70b", "engine_url": "https://203.0.113.9/e/md-3",
+	{"name": "MD-3", "model": "llama-70b", "model_key": "llama-70b", "engine_url": "https://203.0.113.9/e/md-3",
 	 "status": "Active", "inference_server": "INF-noprivate", "max_num_seqs": 4},
-	{"name": "MD-4", "model": "qwen3-35b", "engine_url": "https://203.0.113.7/e/md-4",
+	{"name": "MD-4", "model": "qwen3-35b", "model_key": "qwen3-35b", "engine_url": "https://203.0.113.7/e/md-4",
 	 "status": "Draft", "inference_server": "INF-local", "max_num_seqs": 8},
 ]
 
 
 class TestReplicasForIngress(unittest.TestCase):
 	def routes(self, ingress="ING-1", replicas=REPLICAS, deployments=()):
-		from grove import pathway_sync
+		from grove.pathway import routes
 
 		query = FakeQuery(SERVERS, MACHINES, replicas, MODELS, deployments)
 		with (
@@ -121,7 +123,7 @@ class TestReplicasForIngress(unittest.TestCase):
 				side_effect=lambda *a, **k: frappe._dict(get_password=lambda *a, **k: "internal"),
 			),
 		):
-			return pathway_sync._replicas_for_ingress(ingress)
+			return routes.replicas_for_ingress(ingress)
 
 	def test_a_local_replica_is_dialled_privately(self):
 		[route] = self.routes()["qwen3-35b"]
@@ -190,10 +192,10 @@ class TestIngressSnapshot(unittest.TestCase):
 	groups section on that plane, so the control plane can never leak tenant state to it."""
 
 	def snapshot(self, table):
-		from grove import pathway_sync
+		from grove.pathway import routes, snapshot
 
-		with patch.object(pathway_sync, "_replicas_for_ingress", return_value=table):
-			return pathway_sync.ingress_snapshot("ING-1")
+		with patch.object(routes, "replicas_for_ingress", return_value=table):
+			return snapshot.ingress_snapshot("ING-1")
 
 	def test_it_is_the_routes_section_and_nothing_else(self):
 		self.assertEqual(list(self.snapshot({"m": []})), ["routes"])
@@ -217,7 +219,7 @@ class TestTheIngressGateResolvesThroughTheDeployment(unittest.TestCase):
 
 	def capacity(self, max_num_seqs, deployment_max_num_seqs):
 		replica = {
-			"name": "MD-1", "model": "qwen3-35b", "engine_url": "https://203.0.113.7/e/md-1",
+			"name": "MD-1", "model": "qwen3-35b", "model_key": "qwen3-35b", "engine_url": "https://203.0.113.7/e/md-1",
 			"status": "Active", "inference_server": "INF-local",
 			"max_num_seqs": max_num_seqs, "model_deployment": "T1",
 		}
@@ -235,11 +237,11 @@ class TestTheIngressGateResolvesThroughTheDeployment(unittest.TestCase):
 
 	def test_the_two_planes_agree_on_the_same_replica(self):
 		# The property that matters: whatever number the gateway advertises for a replica is the
-		# number the ingress will hold it to. Both read _capacity off a deployment-resolved row, so
+		# number the ingress will hold it to. Both read capacity off a deployment-resolved row, so
 		# this asserts they cannot drift apart.
-		from grove import pathway_sync
+		from grove.pathway import routes
 
 		row = {"model_deployment": "T1", "max_num_seqs": 0}
 		deployments = {"T1": {"engine_image": None, "max_num_seqs": 256}}
-		resolved = pathway_sync._resolve_deployment(dict(row), deployments)
-		self.assertEqual(pathway_sync._capacity(resolved, {}), self.capacity(0, 256))
+		resolved = routes.resolve_deployment(dict(row), deployments)
+		self.assertEqual(routes.capacity(resolved, {}), self.capacity(0, 256))
