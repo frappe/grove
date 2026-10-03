@@ -62,6 +62,56 @@ class IntegrationTestGroveUser(IntegrationTestCase):
 		self.assertEqual(record["group"], "grove-probe-acme,grove-probe-zeta")
 
 
+class IntegrationTestNewUsersStartInTheDefaultGroup(IntegrationTestCase):
+	"""What a user may call is decided here, by group, not sent by whoever provisions them."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		make_test_geography()
+		frappe.db.set_value("Model Group", {"is_default": 1}, "is_default", 0)
+		cls.default = cls.group("grove-default-one", is_default=1)
+
+	@staticmethod
+	def group(name, is_default=0):
+		return frappe.get_doc({"doctype": "Model Group", "__newname": name, "is_default": is_default}).insert().name
+
+	def groups_of(self, grove_user):
+		return [row.model_group for row in grove_user.model_groups]
+
+	def test_a_new_user_is_put_in_the_default_group(self):
+		doc = frappe.get_doc({"doctype": "Grove User", "user": register_user("grove-group-new@example.com")}).insert()
+		self.assertEqual(self.groups_of(doc), [self.default])
+		[record] = [u for u in effective_users() if u["name"] == doc.name]
+		self.assertEqual(record["group"], self.default)
+
+	def test_groups_named_on_the_insert_are_kept(self):
+		picked = self.group("grove-default-picked")
+		doc = frappe.get_doc({
+			"doctype": "Grove User", "user": register_user("grove-group-picked@example.com"),
+			"model_groups": [{"model_group": picked}],
+		}).insert()
+		self.assertEqual(self.groups_of(doc), [picked])
+
+	def test_a_user_taken_out_of_every_group_stays_out(self):
+		doc = frappe.get_doc({"doctype": "Grove User", "user": register_user("grove-group-out@example.com")}).insert()
+		doc.model_groups = []
+		doc.save()
+		self.assertEqual(self.groups_of(doc.reload()), [])
+
+	def test_provisioning_a_key_puts_the_new_user_in_the_default_group(self):
+		from grove import api
+
+		grove_user = api._set_policy("grove-group-provisioned@example.com", "Provisioned", None)
+		self.assertEqual(self.groups_of(frappe.get_doc("Grove User", grove_user)), [self.default])
+
+	def test_ticking_a_second_default_unticks_the_first(self):
+		self.addCleanup(frappe.db.set_value, "Model Group", self.default, "is_default", 1)
+		other = self.group("grove-default-two", is_default=1)
+		self.addCleanup(frappe.db.set_value, "Model Group", other, "is_default", 0)
+		self.assertEqual(frappe.get_all("Model Group", filters={"is_default": 1}, pluck="name"), [other])
+
+
 class IntegrationTestOneGeographyPerUser(IntegrationTestCase):
 	"""A user's spend must land on one store, so every user is pinned to exactly one geography."""
 

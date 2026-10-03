@@ -22,6 +22,7 @@ class ModelGroup(Document):
 		from grove.grove.doctype.grove_model_row.grove_model_row import GroveModelRow
 
 		description: DF.Data | None
+		is_default: DF.Check
 		models: DF.Table[GroveModelRow]
 	# end: auto-generated types
 
@@ -30,3 +31,8 @@ class ModelGroup(Document):
 		# two groups that resolve to nothing.
 		if "," in self.name:
 			frappe.throw("A group name cannot contain a comma")
+
+	def on_update(self):
+		"""One default: this one ticked unticks every other."""
+		if self.is_default:
+			frappe.db.set_value("Model Group", {"is_default": 1, "name": ("!=", self.name)}, "is_default", 0)

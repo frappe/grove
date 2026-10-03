@@ -7,7 +7,8 @@
  "field_order": [
   "grove_user",
   "amount",
-  "note"
+  "note",
+  "reference"
  ],
  "fields": [
   {
@@ -32,10 +33,18 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Note"
+  },
+  {
+   "description": "The caller's own id for this top-up. No two entries share one, so a call repeated with the same reference adds nothing.",
+   "fieldname": "reference",
+   "fieldtype": "Data",
+   "label": "Reference",
+   "no_copy": 1,
+   "unique": 1
   }
  ],
  "links": [],
- "modified": "2026-09-23 17:00:00.000000",
+ "modified": "2026-09-30 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove Credit",

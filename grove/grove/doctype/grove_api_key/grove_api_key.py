@@ -32,6 +32,7 @@ class GroveAPIKey(Document):
 		api_secret: DF.Password | None
 		key_hash: DF.Data | None
 		status: DF.Literal["active", "revoked"]
+		title: DF.Data | None
 		user: DF.Link
 	# end: auto-generated types
 

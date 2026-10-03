@@ -20,7 +20,12 @@ class GroveCredit(Document):
 		amount: DF.Currency
 		grove_user: DF.Link
 		note: DF.Data | None
+		reference: DF.Data | None
 	# end: auto-generated types
+
+	def before_insert(self):
+		# The pull locks the user, then the ledger; the same order here keeps the two from deadlocking.
+		frappe.db.get_value("Grove User", self.grove_user, "name", for_update=True)
 
 	def validate(self):
 		if not self.amount:
@@ -28,7 +33,7 @@ class GroveCredit(Document):
 		if self.amount < 0 and not self.note:
 			frappe.throw("A negative entry needs a note saying why.")
 		before = self.get_doc_before_save()
-		if before and (before.amount != self.amount or before.grove_user != self.grove_user):
+		if before and any(before.get(field) != self.get(field) for field in ("amount", "grove_user", "reference")):
 			frappe.throw("A ledger entry is never edited — add a correcting entry instead.")
 
 	def on_update(self):

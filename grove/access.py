@@ -39,6 +39,17 @@ def group_rows(parents=None):
 	return {parent: sorted(names) for parent, names in grouped.items()}
 
 
+def get_reachable_models(grove_user):
+	"""What one user may call, resolved the way the gateway does it: every group's grant and their
+	own Allow, less their Deny. For showing a person their models; the gateway never reads this."""
+	own = model_rows("Grove User", [grove_user]).get(grove_user, {})
+	groups = group_rows([grove_user]).get(grove_user, [])
+	granted = set(own.get("allow", []))
+	for group in model_rows("Model Group", groups).values() if groups else ():
+		granted.update(group.get("models", []))
+	return sorted(granted - set(own.get("deny", [])))
+
+
 def model_doc(model_key):
 	"""Any doc under `model_key`, for a grant that names an id: a grant is by key, so which
 	geography's doc holds the link does not matter. Unknown is the caller's error."""

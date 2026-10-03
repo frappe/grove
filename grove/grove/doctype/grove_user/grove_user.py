@@ -9,7 +9,8 @@ class GroveUser(Document):
 	"""Grove's per-user policy: their groups, which models they may call, and their prepaid
 	balance (every user has one unless marked Free). All of it belongs to the PERSON — their keys
 	are credentials and share this balance.
-	No doc means no group and no allow, so the user reaches no models at all.
+	No doc means no group and no allow, so the user reaches no models at all. A new doc starts in
+	the default Model Group, when one is marked.
 
 	The gateway holds it the same way: one user:<name> record every key points at, so an access
 	change is a single write however many keys they hold."""
@@ -29,12 +30,18 @@ class GroveUser(Document):
 		credit_exhausted: DF.Check
 		deny: DF.Table[GroveModelRow]
 		free: DF.Check
-		geography: DF.Link | None
+		geography: DF.Link
 		log_payloads: DF.Check
 		model_groups: DF.TableMultiSelect[ModelGroupRow]
 		spent: DF.Currency
 		user: DF.Link
 	# end: auto-generated types
+
+	def before_insert(self):
+		"""A new user starts in the default Model Group, unless the insert names its own groups."""
+		default = frappe.db.get_value("Model Group", {"is_default": 1})
+		if default and not self.model_groups:
+			self.append("model_groups", {"model_group": default})
 
 	def before_validate(self):
 		"""One geography per user: blank is the default one."""

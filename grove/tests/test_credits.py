@@ -12,6 +12,7 @@ from frappe.tests import IntegrationTestCase
 
 from grove import api, pricing
 from grove.grove.doctype.geography.test_geography import make_test_geography
+from grove.grove.doctype.grove_credit.grove_credit import GroveCredit
 from grove.grove.doctype.grove_user.grove_user import register_user
 from grove.grove.doctype.model_pricing.test_model_pricing import enabled_pricing, new_pricing
 from grove.pathway import routes, snapshot, usage
@@ -263,6 +264,26 @@ class TestAFreeUserIsNeverCharged(CreditsCase):
 		with self.assertRaises(frappe.ValidationError):
 			entry.delete()
 
+	def test_a_top_up_locks_the_user_before_its_own_row_the_order_the_pull_takes(self):
+		user, _key = self.user(credit=0)
+		order, get_value, db_insert = [], frappe.db.get_value, GroveCredit.db_insert
+
+		def locking(doctype, *args, **kwargs):
+			if doctype == "Grove User" and kwargs.get("for_update"):
+				order.append("user")
+			return get_value(doctype, *args, **kwargs)
+
+		def inserting(doc, *args, **kwargs):
+			order.append("ledger")
+			return db_insert(doc, *args, **kwargs)
+
+		with (
+			unittest.mock.patch.object(frappe.db, "get_value", locking),
+			unittest.mock.patch.object(GroveCredit, "db_insert", inserting),
+		):
+			self.credit(user, 1)
+		self.assertEqual(order[:2], ["user", "ledger"])
+
 
 class TestTheUsageApiSumsInTheDatabase(CreditsCase):
 	def test_requests_and_cost_per_user_and_model_over_a_period(self):
@@ -272,9 +293,31 @@ class TestTheUsageApiSumsInTheDatabase(CreditsCase):
 		email = frappe.db.get_value("Grove User", user, "user")
 		result = api.usage([email], period="Today")
 		self.assertEqual(result[email], {"requests": 3, "cost": 0.8})
-		self.assertEqual(result["model_summary"], [{"model": self.model, "requests": 3, "cost": 0.8}])
+		self.assertEqual(result["model_summary"], [{"model": self.model_key, "requests": 3, "cost": 0.8}])
+		self.assertEqual(result["daily_summary"], [{"day": result["to_date"], "model": self.model_key, "requests": 3, "cost": 0.8}])
 		self.assertTrue(result["as_of"].endswith("Z"))
 		self.assertEqual(api.usage([email], period="Yesterday")[email], {"requests": 0, "cost": 0})
+
+	def test_a_key_hash_narrows_it_to_that_key(self):
+		user, key = self.user(credit=5)
+		other_key = frappe.get_doc({"doctype": "Grove API Key", "user": user}).insert(ignore_permissions=True).name
+		self.pull({key: self.hash(50_000), other_key: self.hash(30_000, requests=2)})
+		email = frappe.db.get_value("Grove User", user, "user")
+		key_hash = frappe.db.get_value("Grove API Key", key, "key_hash")
+
+		result = api.usage([email], period="Today", key_hash=key_hash)
+		self.assertEqual(result[email], {"requests": 1, "cost": 0.5})
+		self.assertEqual(result["model_summary"], [{"model": self.model_key, "requests": 1, "cost": 0.5}])
+		self.assertEqual(result["daily_summary"], [{"day": result["to_date"], "model": self.model_key, "requests": 1, "cost": 0.5}])
+
+	def test_another_users_key_is_refused(self):
+		user, _ = self.user(credit=5)
+		_, stranger_key = self.user(credit=5)
+		email = frappe.db.get_value("Grove User", user, "user")
+		key_hash = frappe.db.get_value("Grove API Key", stranger_key, "key_hash")
+
+		with self.assertRaises(frappe.DoesNotExistError):
+			api.usage([email], period="Today", key_hash=key_hash)
 
 
 class TestTheGatewaysChargeIsAudited(CreditsCase):

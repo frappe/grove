@@ -12,7 +12,7 @@ from frappe.tests import IntegrationTestCase
 
 from grove import api
 from grove.grove.doctype.geography.test_geography import make_test_geography
-from grove.grove.doctype.grove_api_key.grove_api_key import KEY_PREFIX
+from grove.grove.doctype.grove_api_key.grove_api_key import KEY_PREFIX, hash_secret
 
 PROBE = "control-probe@example.com"
 WITHHELD = ("Machine", "Inference Server", "Model Replica", "Monitoring Agent")
@@ -44,20 +44,60 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertIsInstance(api.available_models(), list)
 		self.assertEqual(api.usage(["nobody@example.com"])["model_summary"], [])
 
+	def test_a_user_is_shown_only_the_models_they_may_call(self):
+		def published_model(model_id):
+			model = frappe.get_doc(
+				{"doctype": "Model", "model_id": model_id, "modality": "text", "hf_repo": f"org/{model_id}"}
+			).insert(ignore_permissions=True).name
+			frappe.db.set_value("Model", model, "published", 1)
+			return model
+
+		grouped, denied, allowed, other = (published_model(f"probe-reach-{n}") for n in "abcd")
+		frappe.get_doc(
+			{"doctype": "Model Group", "__newname": "probe-reach", "models": [{"model": grouped}, {"model": denied}]}
+		).insert(ignore_permissions=True)
+		email = "probe-reach@example.com"
+		grove_user = frappe.get_doc("Grove User", api._set_policy(email, "Probe Reach", None))
+		grove_user.model_groups = []
+		grove_user.save()
+		self.assertEqual(api.available_models(email), [])
+		self.assertEqual(api.available_models("nobody-reach@example.com"), [])
+
+		grove_user.update(
+			{"model_groups": [{"model_group": "probe-reach"}], "allow": [{"model": allowed}], "deny": [{"model": denied}]}
+		)
+		grove_user.save()
+		# `name` on the wire is the key: what a caller sends, not a doc id.
+		key = lambda doc: frappe.db.get_value("Model", doc, "model_key")  # noqa: E731
+		self.assertEqual(sorted(row["name"] for row in api.available_models(email)), sorted([key(grouped), key(allowed)]))
+		self.assertIn(key(other), [row["name"] for row in api.available_models()])
+
 	def test_the_fleet_stays_out_of_reach(self):
 		for doctype in WITHHELD:
 			with self.assertRaises(frappe.PermissionError, msg=doctype):
 				frappe.get_list(doctype, limit=1)
 
-	def test_provisioning_a_key_registers_the_login_it_names(self):
-		result = api.provision_key("Probe Person", "probe-person@example.com", make_test_geography())
+	def test_provisioning_a_user_registers_the_login_it_names(self):
+		email = "probe-person@example.com"
+		geography = make_test_geography()
+		self.assertEqual(api.provision_user("Probe Person", email, geography), {"geography": geography})
+		self.assertEqual(frappe.db.get_value("User", email, "first_name"), "Probe Person")
+		# Safe to repeat: the same user, left as they are.
+		self.assertEqual(api.provision_user("Renamed", email), {"geography": geography})
+		self.assertEqual(frappe.db.count("Grove User", {"user": email}), 1)
+		self.assertEqual(frappe.db.count("Grove API Key", {"user": frappe.db.get_value("Grove User", {"user": email})}), 0)
+
+	def test_a_key_is_minted_for_a_known_user_at_their_geography(self):
+		email = "probe-keyed@example.com"
+		with self.assertRaises(frappe.ValidationError, msg="a key does not create its user"):
+			api.provision_key(email, title="laptop")
+
+		geography = api.provision_user("Probe Keyed", email, make_test_geography())["geography"]
+		result = api.provision_key(email, title="laptop")
 
 		self.assertTrue(result["api_key"].startswith(KEY_PREFIX))
-		self.assertEqual(frappe.db.get_value("User", "probe-person@example.com", "first_name"), "Probe Person")
-		self.assertEqual(
-			frappe.db.get_value("Grove User", {"user": "probe-person@example.com"}, "geography"), make_test_geography(),
-			"provisioning pins the user to the geography whose endpoint it hands out",
-		)
+		self.assertEqual(frappe.db.get_value("Grove API Key", {"key_hash": hash_secret(result["api_key"])}, "title"), "laptop")
+		self.assertEqual(result["gateway_url"], f"https://{frappe.db.get_value('Geography', geography, 'endpoint')}")
 
 	def pull_counter(self, email, full_name):
 		"""A user to pull and their counter, cleared now and after: Redis is not rolled back."""
@@ -101,13 +141,39 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertTrue(frappe.db.get_value("Grove User", grove_user, "credit_exhausted"))
 		self.assertEqual(api.add_credit(email, 7)["balance"], 7)
 		self.assertFalse(frappe.db.get_value("Grove User", grove_user, "credit_exhausted"))
-		self.assertEqual(
-			api.balance(email), {"balance": 7.0, "allocated": 7.0, "spent": 0.0, "free": False, "credit_exhausted": False}
-		)
+		self.assertEqual(api.balance(email), {"balance": 7.0, "spent": 0.0, "is_free_user": False})
 		with self.assertRaises(frappe.ValidationError):
 			api.add_credit(email, 0)
 		with self.assertRaises(frappe.ValidationError):
 			api.add_credit("nobody-topup@example.com", 1)
 		with self.assertRaises(frappe.ValidationError):
 			api.balance("nobody-topup@example.com")
+
+	def test_add_credit_repeated_with_a_reference_adds_nothing(self):
+		email = "probe-retry@example.com"
+		grove_user = api._set_policy(email, "Probe Retry", None)
+		for _ in range(2):
+			self.assertEqual(api.add_credit(email, 7, reference="ledger-1")["balance"], 7)
+		self.assertEqual(frappe.db.count("Grove Credit", {"grove_user": grove_user}), 1)
+		self.assertEqual(api.add_credit(email, 3, reference="ledger-2")["balance"], 10)
+		# The id names one top-up: another amount, or another user, under it is refused.
+		with self.assertRaises(frappe.ValidationError):
+			api.add_credit(email, 8, reference="ledger-1")
+		api._set_policy("probe-retry-other@example.com", "Probe Other", None)
+		with self.assertRaises(frappe.ValidationError):
+			api.add_credit("probe-retry-other@example.com", 7, reference="ledger-1")
+		# No reference, no dedupe: two calls are two top-ups.
+		for _ in range(2):
+			api.add_credit(email, 1)
+		self.assertEqual(api.balance(email)["balance"], 12.0)
+
+	def test_a_reference_is_unique_on_the_ledger_itself(self):
+		grove_user = api._set_policy("probe-unique@example.com", "Probe Unique", None)
+		entry = {"doctype": "Grove Credit", "grove_user": grove_user, "amount": 5, "reference": "ledger-9"}
+		credit = frappe.get_doc(entry).insert()
+		with self.assertRaises(frappe.UniqueValidationError):
+			frappe.get_doc(entry).insert()
+		credit.reference = "ledger-10"
+		with self.assertRaisesRegex(frappe.ValidationError, "never edited"):
+			credit.save(ignore_permissions=True)
 

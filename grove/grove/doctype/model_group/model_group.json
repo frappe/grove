@@ -1,11 +1,13 @@
 {
  "actions": [],
  "autoname": "prompt",
- "creation": "2026-07-29 00:00:00",
+ "creation": "2026-09-30 16:27:04.315456",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "description",
+  "column_break_unjy",
+  "is_default",
   "section_models",
   "models"
  ],
@@ -18,6 +20,14 @@
    "label": "Description"
   },
   {
+   "default": "0",
+   "description": "Every new Grove User starts in this group. Only one Model Group is the default: ticking it here unticks the others.",
+   "fieldname": "is_default",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Default"
+  },
+  {
    "description": "Models the members may call. This is the main way access is granted \u2014 add the model here and everyone in the group can reach it. Membership is set on each Grove User, not here.",
    "fieldname": "section_models",
    "fieldtype": "Section Break",
@@ -28,10 +38,14 @@
    "fieldtype": "Table",
    "label": "Models",
    "options": "Grove Model Row"
+  },
+  {
+   "fieldname": "column_break_unjy",
+   "fieldtype": "Column Break"
   }
  ],
  "links": [],
- "modified": "2026-09-17 14:46:00.000000",
+ "modified": "2026-10-01 03:46:40.385979",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model Group",
