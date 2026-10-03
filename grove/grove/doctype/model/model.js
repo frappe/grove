@@ -11,6 +11,14 @@ frappe.ui.form.on('Model', {
 
 	refresh(frm) {
 		if (!frm.is_new()) frm.trigger('pricing_headline');
+		// Published and routed, but no grant names it: every key is told access not allowed.
+		if (frm.doc.published && frm.doc.__onload && frm.doc.__onload.is_granted === false) {
+			frm.dashboard.set_headline(
+				__('Published, but no Model Group with a user and no user Allow names {0} — nobody can call it. {1}',
+					[frm.doc.model_key, `<a href="/app/model-group">${__('Model Groups')}</a>`]),
+				'orange'
+			);
+		}
 		if (frm.doc.__onload && frm.doc.__onload.has_catalog_pricing) {
 			frm.add_custom_button(__('Load Pricing'), () => {
 				frm.call('load_pricing').then((r) => {

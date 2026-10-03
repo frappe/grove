@@ -68,11 +68,29 @@ class Model(Document):
 
 	def onload(self):
 		self.set_onload("has_catalog_pricing", self.has_catalog_pricing)
+		if self.published:
+			self.set_onload("is_granted", self.is_granted)
 
 	@property
 	def has_catalog_pricing(self):
 		"""The catalog prices this model and no Model Pricing names it yet."""
 		return bool(seed.get_rates(self.model_key)) and not frappe.db.exists("Model Pricing", {"model": self.name})
+
+	@property
+	def is_granted(self):
+		"""Someone can call it: a user's own Allow names the key, or a Model Group with a user in it
+		does. A group nobody is in grants nothing yet, the default one included."""
+		rows = frappe.get_all(
+			"Grove Model Row",
+			filters={"model_key": self.model_key, "parentfield": ("in", ("allow", "models"))},
+			fields=["parenttype", "parent"],
+		)
+		if any(row.parenttype == "Grove User" for row in rows):
+			return True
+		groups = [row.parent for row in rows if row.parenttype == "Model Group"]
+		return bool(groups) and bool(
+			frappe.db.exists("Model Group Row", {"parenttype": "Grove User", "model_group": ("in", groups)})
+		)
 
 	@frappe.whitelist()
 	def load_pricing(self):
