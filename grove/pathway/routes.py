@@ -272,7 +272,8 @@ def upstream_model(model, is_vendor):
 def vendor_endpoints(geography):
 	"""Every third party in `geography` we can actually dial, by provider name: a Model is served by
 	whichever record of its provider sits in the geography. A provider is dialable as a whole — an
-	address without a key is not a route."""
+	address without a key is not a route. Every key goes, under its row's id: the gateway picks
+	one per request, swaps it on a per-key refusal, and counts what each answered."""
 	out = {}
 	for name in frappe.get_all("Model Provider", filters={"geography": geography}, pluck="name"):
 		provider = frappe.get_cached_doc("Model Provider", name)
@@ -290,11 +291,16 @@ def vendor_endpoints(geography):
 			continue
 		# get_password, not the field: a Password column reads back as asterisks and would pass
 		# any truthiness check while carrying nothing.
-		api_key = provider.get_password("api_key", raise_exception=False)
-		if api_key:
+		credentials = [
+			{"id": row.name, "secret": secret}
+			for row in provider.api_keys
+			if (secret := row.get_password("api_key", raise_exception=False))
+		]
+		if credentials:
 			out[provider.provider_name] = {
 				"fronts": fronts,
-				"api_key": api_key,
+				"credentials": credentials,
+				"key_selection": (provider.key_selection or "Round Robin").lower().replace(" ", "_"),
 				"api_version": provider.api_version or "",
 			}
 	return out
@@ -323,7 +329,8 @@ def add_vendor_routes(routes, models, vendors, modality, upstream):
 	"""One row per published Model per front the third party runs — two for a dual-front vendor
 	(DeepSeek's /anthropic), so one provider record serves both surfaces. No capacity of ours to
 	divide — the vendor's own 429 is the only cap — so capacity stays 0 and the provider names
-	itself as the deployment."""
+	itself as the deployment. The keys ride `credentials`, never `internal_key`: that is the
+	single-key spelling every engine row keeps."""
 	for model in models:
 		if not model.published or model.provider_name not in vendors:
 			continue
@@ -331,7 +338,9 @@ def add_vendor_routes(routes, models, vendors, modality, upstream):
 		for engine_url, dialect in vendor["fronts"]:
 			routes.setdefault(model.model_key, []).append({
 				"engine_url": engine_url,
-				"internal_key": vendor["api_key"],
+				"internal_key": "",
+				"credentials": vendor["credentials"],
+				"key_selection": vendor["key_selection"],
 				"healthy": True,
 				"capacity": 0,
 				"deployment": model.provider_name,

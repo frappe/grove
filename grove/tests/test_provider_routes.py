@@ -15,53 +15,54 @@ from unittest.mock import patch
 
 import frappe
 
+from grove.tests.model_rows import model_row, placement
+
 MODELS = [
 	# Ours, hosted. The engine answers to frappe/qwen3-8b, so nothing may be rewritten.
-	{"name": "frappe/qwen3-8b", "model_id": "qwen3-8b", "provider_name": "frappe", "published": 1,
-	 "modality": "text"},
+	model_row("frappe/qwen3-8b", model_id="qwen3-8b", modality="text"),
 	# A vendor, taking the id it knows itself by.
-	{"name": "anthropic/claude-4-5", "model_id": "claude-4-5", "provider_name": "anthropic",
-	 "published": 1, "upstream_model_id": "claude-sonnet-4-5-20250929", "modality": "text"},
+	model_row("anthropic/claude-4-5", "anthropic", model_id="claude-4-5",
+	          upstream_model_id="claude-sonnet-4-5-20250929", modality="text"),
 	# A vendor with no override: the bare id is the best guess at its namespace.
-	{"name": "anthropic/claude-haiku", "model_id": "claude-haiku", "provider_name": "anthropic",
-	 "published": 1, "modality": "text"},
+	model_row("anthropic/claude-haiku", "anthropic", model_id="claude-haiku", modality="text"),
 	# Ours, but the container advertises its own name — the one local case that rewrites.
-	{"name": "frappe/nemo-asr", "model_id": "nemo-asr", "provider_name": "frappe", "published": 1,
-	 "upstream_model_id": "test-nemo-asr", "modality": "audio"},
+	model_row("frappe/nemo-asr", model_id="nemo-asr", upstream_model_id="test-nemo-asr", modality="audio"),
 	# A vendor model nothing has published yet: no route at all.
-	{"name": "anthropic/claude-draft", "model_id": "claude-draft", "provider_name": "anthropic",
-	 "published": 0, "modality": "text"},
+	model_row("anthropic/claude-draft", "anthropic", model_id="claude-draft", published=0, modality="text"),
 	# A vendor that speaks the other dialect.
-	{"name": "deepseek/deepseek-chat", "model_id": "deepseek-chat", "provider_name": "deepseek",
-	 "published": 1, "modality": "text"},
+	model_row("deepseek/deepseek-chat", "deepseek", model_id="deepseek-chat", modality="text"),
 	# A vendor with no dialect set: claims both shapes at its base URL.
-	{"name": "dual/mix-1", "model_id": "mix-1", "provider_name": "dual", "published": 1,
-	 "modality": "text"},
+	model_row("dual/mix-1", "dual", model_id="mix-1", modality="text"),
 	# A vendor running two fronts, one per dialect, under one provider record.
-	{"name": "kimi/k2", "model_id": "k2", "provider_name": "kimi", "published": 1,
-	 "modality": "text"},
+	model_row("kimi/k2", "kimi", model_id="k2", modality="text"),
+	# The same vendor model under another geography's record: a doc of its own, not routed here.
+	model_row("kimi-eu/k2", "kimi", "eu", model_key="kimi/k2", model_id="k2",
+	          upstream_model_id="k2-eu", modality="text"),
 ]
 PROVIDERS = {
 	# The URL fields are the dialect declaration; there is no dialect field to keep in step.
-	"frappe": {"base_url": None, "api_version": None, "api_key": ""},
+	# `keys` becomes the Keys table: (row id, secret) pairs, a blank secret standing for a row whose
+	# password was never set.
+	"frappe": {"base_url": None, "api_version": None, "keys": []},
 	"anthropic": {"anthropic_base_url": "https://api.anthropic.com",
-	              "api_version": "2023-06-01", "api_key": "vendor-key"},
-	"deepseek": {"base_url": "https://api.deepseek.com", "api_version": "", "api_key": "ds-key"},
+	              "api_version": "2023-06-01", "keys": [("k-anthropic-1", "vendor-key")]},
+	"deepseek": {"base_url": "https://api.deepseek.com", "api_version": "",
+	             "keys": [("k-deepseek-1", "ds-key"), ("k-deepseek-2", "ds-key-2")]},
 	# One URL genuinely answering both shapes: the same address in both fields.
 	"dual": {"base_url": "https://api.dual.test",
 	         "anthropic_base_url": "https://api.dual.test", "api_version": "",
-	         "api_key": "dual-key"},
-	"kimi": {"base_url": "https://api.kimi.test", "api_version": "", "api_key": "kimi-key",
+	         "keys": [("k-dual-1", "dual-key")]},
+	"kimi": {"base_url": "https://api.kimi.test", "api_version": "", "keys": [("k-kimi-1", "kimi-key")],
 	         "anthropic_base_url": "https://api.kimi.test/anthropic"},
-	# An address with no key is not a route — half a provider dials nothing.
-	"halfway": {"base_url": "https://api.halfway.test", "api_version": "", "api_key": ""},
+	# An address with no key is not a route — half a provider dials nothing. A row with no
+	# password set is no key either.
+	"halfway": {"base_url": "https://api.halfway.test", "api_version": "", "keys": [("k-halfway-1", "")]},
 }
 DEPLOYMENTS = [
-	{"name": "MD-1", "model": "frappe/qwen3-8b", "engine_url": "https://203.0.113.1/e/md-1",
-	 "status": "Active", "inference_server": "INF-direct", "max_num_seqs": 4},
+	placement("frappe/qwen3-8b", name="MD-1", engine_url="https://203.0.113.1/e/md-1",
+	          status="Active", inference_server="INF-direct", max_num_seqs=4),
 ]
-PODS = [{"name": "POD-1", "model": "frappe/nemo-asr", "engine_url": "http://1.2.3.4:8081",
-         "max_num_seqs": 2}]
+PODS = [placement("frappe/nemo-asr", name="POD-1", engine_url="http://1.2.3.4:8081", max_num_seqs=2)]
 
 
 class FakeQuery:
@@ -78,9 +79,15 @@ class FakeQuery:
 		return [frappe._dict(r) for r in rows]
 
 
+def fake_key_row(row_id, secret):
+	row = frappe._dict(name=row_id, api_key="*****" if secret else None)
+	row.get_password = lambda *a, **k: secret or None
+	return row
+
+
 def fake_cached_doc(doctype, name):
 	provider = frappe._dict(PROVIDERS[name], provider_name=name)
-	provider.get_password = lambda *a, **k: provider.api_key or None
+	provider.api_keys = [fake_key_row(*pair) for pair in PROVIDERS[name]["keys"]]
 	return provider
 
 
@@ -105,7 +112,9 @@ class TestAVendorModelIsRoutable(unittest.TestCase):
 		[row] = routes()["anthropic/claude-4-5"]
 		self.assertEqual(row["kind"], "provider")
 		self.assertEqual(row["engine_url"], "https://api.anthropic.com")
-		self.assertEqual(row["internal_key"], "vendor-key")
+		self.assertEqual(row["internal_key"], "")
+		self.assertEqual(row["credentials"], [{"id": "k-anthropic-1", "secret": "vendor-key"}])
+		self.assertEqual(row["key_selection"], "round_robin")
 		self.assertEqual(row["api_version"], "2023-06-01")
 		self.assertEqual(row["dialect"], "anthropic")
 
@@ -131,9 +140,16 @@ class TestAVendorModelIsRoutable(unittest.TestCase):
 			 ("https://api.kimi.test/anthropic", "anthropic")},
 		)
 		for row in rows:
-			self.assertEqual(row["internal_key"], "kimi-key")
+			self.assertEqual(row["credentials"], [{"id": "k-kimi-1", "secret": "kimi-key"}])
 			self.assertEqual(row["upstream_model"], "k2")
 			self.assertEqual(row["deployment"], "kimi")
+
+	def test_another_geographys_doc_of_the_same_key_is_not_routed_here(self):
+		# kimi/k2 is two docs, one per provider record; this geography's table carries only its
+		# own — two rows for its two fronts, the eu doc's upstream id nowhere.
+		rows = routes()["kimi/k2"]
+		self.assertEqual(len(rows), 2)
+		self.assertNotIn("k2-eu", str(rows))
 
 	def test_an_engine_row_pushes_no_dialect(self):
 		# Blank means "both" on an engine; the gateway's blank rules depend on absence here.
@@ -161,6 +177,45 @@ class TestAVendorModelIsRoutable(unittest.TestCase):
 		for rows in routes().values():
 			for row in rows:
 				self.assertNotIn("halfway", str(row))
+
+	def test_every_key_goes_under_its_rows_id(self):
+		# The gateway picks among them per request; the id is what it rotates and counts by.
+		[row] = routes()["deepseek/deepseek-chat"]
+		self.assertEqual(
+			row["credentials"],
+			[{"id": "k-deepseek-1", "secret": "ds-key"}, {"id": "k-deepseek-2", "secret": "ds-key-2"}],
+		)
+
+
+class TestWhichSurfacesReachAModel(unittest.TestCase):
+	def dialects(self):
+		from grove.pathway import routes
+
+		models = [frappe._dict(m, provider=m["provider_name"]) for m in MODELS]
+		query = FakeQuery()
+
+		def get_all(doctype, filters=None, *args, **kwargs):
+			if doctype == "Model Provider" and filters == {"is_self_hosted": 1}:
+				return ["frappe"]
+			return query(doctype, filters, *args, **kwargs)
+
+		with (
+			patch.object(frappe, "get_all", side_effect=get_all),
+			patch.object(frappe, "get_cached_doc", side_effect=fake_cached_doc),
+		):
+			return routes.get_dialects(models, "in")
+
+	def test_our_chat_engines_answer_on_both(self):
+		self.assertEqual(self.dialects()["frappe/qwen3-8b"], ["openai", "anthropic"])
+
+	def test_our_other_engines_answer_on_openai_only(self):
+		self.assertEqual(self.dialects()["frappe/nemo-asr"], ["openai"])
+
+	def test_a_vendor_answers_on_the_fronts_it_runs(self):
+		dialects = self.dialects()
+		self.assertEqual(dialects["anthropic/claude-4-5"], ["anthropic"])
+		self.assertEqual(dialects["deepseek/deepseek-chat"], ["openai"])
+		self.assertEqual(dialects["kimi/k2"], ["openai", "anthropic"])
 
 
 class TestWhatTheUpstreamIsAskedFor(unittest.TestCase):

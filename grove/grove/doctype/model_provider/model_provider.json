@@ -8,13 +8,15 @@
   "provider_name",
   "geography",
   "is_self_hosted",
-  "api_version",
   "column_break_cred",
   "base_url",
   "anthropic_base_url",
-  "api_key",
-  "section_rate_card",
-  "rate_card"
+  "api_version",
+  "section_keys",
+  "key_selection",
+  "api_keys",
+  "section_break_qykf",
+  "key_stats_html"
  ],
  "fields": [
   {
@@ -75,28 +77,36 @@
   },
   {
    "depends_on": "eval:doc.base_url || doc.anthropic_base_url",
-   "description": "The credential we hold with this vendor. Pushed to every gateway as the route's own key; a customer's key never leaves us.",
-   "fieldname": "api_key",
-   "fieldtype": "Password",
-   "label": "API Key",
-   "length": 1024
-  },
-  {
-   "depends_on": "eval:!doc.is_self_hosted",
-   "fieldname": "section_rate_card",
+   "fieldname": "section_keys",
    "fieldtype": "Section Break",
-   "label": "Cost Rate Card"
+   "label": "Keys"
   },
   {
-   "description": "What this vendor charges us, per model id and counter, from a date. A Model with no sell price for a counter sells it at this rate; blank here bills 0 and logs it.",
-   "fieldname": "rate_card",
+   "default": "Round Robin",
+   "description": "How a gateway picks the key for a request: each in turn, in table order, one cursor per vendor across all its models. Whatever is picked, a key answering 429 is swapped for the next once, and one answering 401/402/403 is skipped for the rest of that request.",
+   "fieldname": "key_selection",
+   "fieldtype": "Select",
+   "label": "Key Selection",
+   "options": "Round Robin"
+  },
+  {
+   "fieldname": "api_keys",
    "fieldtype": "Table",
-   "label": "Rate Card",
-   "options": "Model Price Row"
+   "label": "Keys",
+   "options": "Model Provider Key"
+  },
+  {
+   "fieldname": "key_stats_html",
+   "fieldtype": "HTML",
+   "label": "Key Stats"
+  },
+  {
+   "fieldname": "section_break_qykf",
+   "fieldtype": "Section Break"
   }
  ],
  "links": [],
- "modified": "2026-09-29 23:07:07.046116",
+ "modified": "2026-10-03 03:46:57.064963",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model Provider",

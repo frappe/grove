@@ -6,8 +6,10 @@ import re
 import frappe
 from frappe.model.document import Document
 
-from grove.pricing import validate_price_rows
-from grove.utils import utc_today
+from grove.pathway.run import gateway_units, in_turn
+
+COUNTS = ("requests", "ok", "rate_limited", "rejected", "failed")
+LAST = ("last_used", "last_rate_limited")
 
 # Prefixes every model id this provider serves, so it has to survive being typed into a JSON body
 # by a customer.
@@ -34,16 +36,16 @@ class ModelProvider(Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
-		from grove.grove.doctype.model_price_row.model_price_row import ModelPriceRow
+		from grove.grove.doctype.model_provider_key.model_provider_key import ModelProviderKey
 
 		anthropic_base_url: DF.Data | None
-		api_key: DF.Password | None
+		api_keys: DF.Table[ModelProviderKey]
 		api_version: DF.Data | None
 		base_url: DF.Data | None
 		geography: DF.Link | None
 		is_self_hosted: DF.Check
+		key_selection: DF.Literal["Round Robin"]
 		provider_name: DF.Data
-		rate_card: DF.Table[ModelPriceRow]
 	# end: auto-generated types
 
 	def validate(self):
@@ -63,10 +65,6 @@ class ModelProvider(Document):
 			self.validate_self_hosted()
 		self.validate_siblings()
 		# self.validate_endpoint()
-		# A blank date is today in UTC, not the site's "Today": the day rows are UTC.
-		for row in self.rate_card:
-			row.effective_from = row.effective_from or utc_today()
-		validate_price_rows(self.rate_card, key=lambda row: (row.provider_model_id, row.counter, row.effective_from))
 
 	def validate_self_hosted(self):
 		"""One provider is ours, and it dials nothing — a URL is what makes a vendor."""
@@ -109,8 +107,25 @@ class ModelProvider(Document):
 		if not self.base_url.startswith("https://"):
 			# The key rides this hop; plaintext would put it on the wire in the clear.
 			frappe.throw(f"{self.provider_name}'s Base URL must be https — it carries the API key.")
-		if not self.get_password("api_key", raise_exception=False):
-			frappe.throw(f"{self.provider_name} has a Base URL but no API Key, so nothing could dial it.")
+		if not self.api_keys:
+			frappe.throw(f"{self.provider_name} has a Base URL but no key, so nothing could dial it.")
+
+	@frappe.whitelist()
+	def key_stats(self):
+		"""What every key of this record has answered, lifetime, summed over the gateway stores of
+		its geography — read live off one gateway per store, nothing kept here."""
+		frappe.only_for("System Manager")
+		ids = [row.name for row in self.api_keys]
+		totals = {row.name: {"title": row.title or row.name, **dict.fromkeys(COUNTS + LAST, 0)} for row in self.api_keys}
+		unreached = []
+		for unit in gateway_units(geography=self.geography):
+			reached, rows = in_turn(unit, lambda target: fetch_key_stats(target, ids))
+			if not reached:
+				unreached.append(unit.store or rows[0]["server"])
+				continue
+			for key, stats in rows[-1]["stats"].items():
+				add_key_stats(totals[key], stats)
+		return {"keys": [totals[key] for key in ids], "unreached": unreached}
 
 
 def on_doctype_update():
@@ -124,3 +139,20 @@ def on_doctype_update():
 def self_hosted_provider():
 	"""The one provider our own engines serve under, None until one is flagged."""
 	return frappe.db.get_value("Model Provider", {"is_self_hosted": 1}, "name")
+
+
+def fetch_key_stats(target, ids):
+	"""GET /provider-keys off one gateway: {key id: its counts}. Pool-safe: no frappe."""
+
+	def work(row):
+		row["stats"] = target.get("provider-keys?ids=" + ",".join(ids))
+
+	return target.dial(work, stats={})
+
+
+def add_key_stats(total, stats):
+	"""Counts add up across stores; a timestamp is the latest any store saw."""
+	for field in COUNTS:
+		total[field] += int(stats.get(field) or 0)
+	for field in LAST:
+		total[field] = max(total[field], int(stats.get(field) or 0))

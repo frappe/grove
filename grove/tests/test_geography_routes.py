@@ -65,7 +65,9 @@ def get_all(doctype, filters=None, pluck=None, **kwargs):
 
 def cached_provider(doctype, name):
 	provider = frappe._dict(PROVIDERS[name])
-	provider.get_password = lambda *args, **kwargs: provider.api_key
+	key = frappe._dict(name=f"key-{name}")
+	key.get_password = lambda *args, **kwargs: provider.api_key
+	provider.api_keys = [key] if provider.api_key else []
 	return provider
 
 
@@ -94,9 +96,12 @@ class TestRoutesStayInTheirGeography(unittest.TestCase):
 
 	def test_one_id_is_dialled_through_each_geographys_own_record(self):
 		[row] = routes("in")["openai/gpt-5"]
-		self.assertEqual((row["engine_url"], row["internal_key"]), ("https://api.openai.com/v1", "in-key"))
+		self.assertEqual((row["engine_url"], row["credentials"][0]["secret"]), ("https://api.openai.com/v1", "in-key"))
+		self.assertEqual(row["upstream_model"], "gpt-5")
 		[row] = routes("eu")["openai/gpt-5"]
-		self.assertEqual((row["engine_url"], row["internal_key"]), ("https://eu.api.openai.com/v1", "eu-key"))
+		self.assertEqual((row["engine_url"], row["credentials"][0]["secret"]), ("https://eu.api.openai.com/v1", "eu-key"))
+		# The eu doc's own upstream id; the in doc's never reaches this table.
+		self.assertEqual(row["upstream_model"], "gpt-5-eu")
 		# Usage is attributed to the vendor, not to a record id.
 		self.assertEqual(row["deployment"], "openai")
 

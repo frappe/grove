@@ -1,0 +1,43 @@
+{
+ "actions": [],
+ "creation": "2026-10-03 00:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "api_key"
+ ],
+ "fields": [
+  {
+   "columns": 4,
+   "description": "Which vendor account or console key this is, for the operator; the gateway never sees it.",
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title"
+  },
+  {
+   "columns": 6,
+   "description": "One credential we hold with this vendor. Pushed to every gateway of the geography under this row's id; a customer's key never leaves us.",
+   "fieldname": "api_key",
+   "fieldtype": "Password",
+   "in_list_view": 1,
+   "label": "API Key",
+   "length": 1024,
+   "reqd": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Grove",
+ "name": "Model Provider Key",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

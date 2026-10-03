@@ -32,6 +32,13 @@ class TestRedaction(unittest.TestCase):
 		[route] = redact({"routes": {"m": [{"internal_key": SECRET}]}})["routes"]["m"]
 		self.assertEqual(route["internal_key"], "***")
 
+	def test_a_vendors_whole_keyring_goes_as_one_mark(self):
+		# The ids beside the secrets are not worth keeping either: the row says keys were sent.
+		payload = {"routes": {"m": [{"internal_key": "", "credentials": [{"id": "k1", "secret": SECRET}]}]}}
+		[route] = redact(payload)["routes"]["m"]
+		self.assertEqual(route["credentials"], "***")
+		self.assertNotIn(SECRET, json.dumps(redact(payload)))
+
 	def test_every_credential_shaped_key_goes(self):
 		payload = {
 			"keys": [{"key_hash": "abc", "prefix": "k1", "user": "u1"}],

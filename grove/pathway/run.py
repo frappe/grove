@@ -22,7 +22,9 @@ NO_WRITER = "No Active Gateway Store Writer — mark one of this store's gateway
 
 # Redacted before a payload is written to a Pathway Sync Row, which anyone who can open the Desk
 # can read.
-SECRET_KEYS = frozenset({"internal_key", "key_hash", "admin_token", "data_token", "api_secret"})
+SECRET_KEYS = frozenset(
+	{"internal_key", "credentials", "key_hash", "admin_token", "data_token", "api_secret"}
+)
 # A log row, not an archive: a fleet-sized route table is megabytes.
 PAYLOAD_LIMIT = 8000
 
@@ -111,14 +113,17 @@ class Unit:
 	targets: tuple
 
 
-def sync_targets():
+def sync_targets(geography=None):
 	"""Where a run reaches each gateway Redis, as (store, gateways) groups: a gateway on its own
 	Redis alone, then each store through its Active writers in the order they are tried. A store
-	whose Active gateways include no writer is a group of none."""
+	whose Active gateways include no writer is a group of none. `geography` keeps it to one."""
 	alone, stores = [], {}
+	filters = {"status": "Active"}
+	if geography:
+		filters["geography"] = geography
 	gateways = frappe.get_all(
 		"Gateway Server",
-		filters={"status": "Active"},
+		filters=filters,
 		fields=["name", "gateway_store", "is_store_writer"],
 		order_by="name asc",
 	)
@@ -132,11 +137,11 @@ def sync_targets():
 	return alone + sorted(stores.items())
 
 
-def gateway_units(gateways=None):
+def gateway_units(gateways=None, geography=None):
 	"""One Unit per gateway Redis. A named gateway is dialled itself, whatever store it is on: that
 	is an operator's button. None means every Active box — `is None` and not truthiness, because
-	an empty list is a caller saying "no gateway work"."""
-	groups = sync_targets() if gateways is None else [(None, [gateway]) for gateway in gateways]
+	an empty list is a caller saying "no gateway work" — or every Active box of `geography`."""
+	groups = sync_targets(geography) if gateways is None else [(None, [gateway]) for gateway in gateways]
 	return [
 		Unit(store, tuple(Target.resolve("Gateway Server", gateway) for gateway in group))
 		for store, group in groups

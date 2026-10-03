@@ -62,7 +62,7 @@ class TestInsertMissing(CatalogCase):
 		[name] = frappe.get_all("Model Provider", filters={"provider_name": "catalog-held"}, pluck="name")
 		doc = frappe.get_doc("Model Provider", name)
 		self.assertEqual(
-			(doc.name, doc.base_url, doc.geography, doc.get_password("api_key")),
+			(doc.name, doc.base_url, doc.geography, doc.api_keys[0].get_password("api_key")),
 			(held.name, "https://held.test/v1", held.geography, "held-secret"),
 		)
 

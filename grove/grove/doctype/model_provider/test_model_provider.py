@@ -6,16 +6,22 @@ Site-backed — the flag decides whether a model under a provider can be publish
 all, and that is a real insert and a real db write.
 """
 
+from unittest.mock import patch
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
 from grove.grove.doctype.geography.test_geography import make_test_geography
+from grove.grove.doctype.model_provider import model_provider
 from grove.grove.doctype.model_provider.model_provider import self_hosted_provider
 
 
-def provider(provider_name, **fields):
+def provider(provider_name, api_key=None, **fields):
+	"""`api_key` is one row of the Keys table — the single-key spelling most tests want."""
 	if not fields.get("is_self_hosted"):
 		fields.setdefault("geography", make_test_geography())
+	if api_key:
+		fields["api_keys"] = [{"api_key": api_key}]
 	return frappe.get_doc({"doctype": "Model Provider", "provider_name": provider_name, **fields})
 
 
@@ -170,3 +176,59 @@ class TestWithNoSelfHostedProvider(IntegrationTestCase):
 		ours.is_self_hosted = 1
 		ours.save()
 		self.assertTrue(frappe.db.get_value("Model", doc.name, "provider_is_self_hosted"))
+
+
+class TestKeyStats(IntegrationTestCase):
+	"""Counts come off the boxes; Grove only adds them up per key row and names a store that
+	did not answer."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.vendor = provider(
+			"probe-counted", base_url="https://api.counted.test",
+			api_keys=[{"title": "first", "api_key": "k1"}, {"api_key": "k2"}],
+		).insert()
+
+	def stats(self, answers):
+		"""`answers`: {unit label: {key id: counts} or None for a store nobody answered for}."""
+		from grove.pathway.run import Target, Unit
+
+		units = [Unit(label, (Target("Gateway Server", f"gw-{label}"),)) for label in answers]
+
+		def fetch(target, ids):
+			answer = answers[target.name.removeprefix("gw-")]
+			if answer is None:
+				return {"success": 0, "error": "down", "stats": {}}
+			return {"success": 1, "stats": {key: counts for key, counts in answer.items() if key in ids}}
+
+		with (
+			patch.object(model_provider, "gateway_units", return_value=units) as units_of,
+			patch.object(model_provider, "fetch_key_stats", side_effect=fetch),
+		):
+			result = self.vendor.key_stats()
+		units_of.assert_called_once_with(geography=self.vendor.geography)
+		return result
+
+	def test_counts_add_up_across_stores_and_timestamps_take_the_latest(self):
+		first, second = (row.name for row in self.vendor.api_keys)
+		result = self.stats({
+			"store-a": {first: {"requests": "3", "ok": "2", "rate_limited": "1", "last_used": "100", "last_rate_limited": "90"},
+			            second: {"requests": "1", "rejected": "1", "last_used": "50"}},
+			"store-b": {first: {"requests": "2", "ok": "2", "last_used": "80"}},
+		})
+		self.assertEqual(result["unreached"], [])
+		self.assertEqual(
+			result["keys"],
+			[{"title": "first", "requests": 5, "ok": 4, "rate_limited": 1, "rejected": 0, "failed": 0,
+			  "last_used": 100, "last_rate_limited": 90},
+			 {"title": second, "requests": 1, "ok": 0, "rate_limited": 0, "rejected": 1, "failed": 0,
+			  "last_used": 50, "last_rate_limited": 0}],
+		)
+
+	def test_a_store_nobody_answered_for_is_named_not_summed(self):
+		first, _ = (row.name for row in self.vendor.api_keys)
+		result = self.stats({"store-a": {first: {"requests": "4"}}, "store-b": None})
+		self.assertEqual(result["unreached"], ["store-b"])
+		self.assertEqual(result["keys"][0]["requests"], 4)
+
