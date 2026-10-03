@@ -7,7 +7,7 @@ from pathlib import Path
 import frappe
 
 from grove.catalog.seed import CATALOG
-from grove.pricing import CounterTable
+from grove.billing.pricing import CounterTable
 
 # The one geography the catalog ships: a name, its endpoint and zone filled on the site.
 MAIN = "Main"

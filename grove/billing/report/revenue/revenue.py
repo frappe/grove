@@ -4,7 +4,7 @@ A Free user's usage is not billed, so it is not revenue."""
 
 import frappe
 
-from grove.grove.doctype.usage_record.usage_record import usage_table
+from grove.billing.doctype.usage_record.usage_record import usage_table
 
 GROUP_BY = {
 	# The key the usage names, not a doc: one key may be a doc per geography.

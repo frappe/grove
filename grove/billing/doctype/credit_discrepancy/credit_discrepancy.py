@@ -38,7 +38,7 @@ class CreditDiscrepancy(Document):
 	def correct_grove(self):
 		"""Grove priced it wrong: `spent` moves by the delta and the user is settled, so Grove's
 		balance meets the gateway's."""
-		from grove.pricing import settle
+		from grove.billing.pricing import settle
 
 		self.check_open()
 		delta = Decimal(str(self.delta))
@@ -51,7 +51,7 @@ class CreditDiscrepancy(Document):
 		"""The gateway charged it wrong: its spend counter for the user on that store moves by minus
 		the delta, so its balance meets Grove's. Sent through the store's writers in turn; the box
 		applies it once under this row's name, so pressing again after a failure is safe."""
-		from grove.pricing import NANO, nano
+		from grove.billing.pricing import NANO, nano
 
 		self.check_open()
 		answer = post_to_store(

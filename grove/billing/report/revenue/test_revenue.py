@@ -8,7 +8,7 @@ from frappe.tests import IntegrationTestCase
 
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_user.grove_user import register_user
-from grove.grove.report.revenue.revenue import execute
+from grove.billing.report.revenue.revenue import execute
 from grove.utils import utc_today
 
 

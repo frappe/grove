@@ -9,7 +9,7 @@ import json
 import unittest
 from pathlib import Path
 
-DOCTYPES = Path(__file__).resolve().parents[1] / "grove" / "doctype"
+APP = Path(__file__).resolve().parents[1]
 PROTECTED = (
 	"Grove User", "Grove API Key", "Grove Credit", "Usage Record", "Credit Discrepancy",
 	"Model Pricing", "Model", "Model Provider", "Stuck Usage",
@@ -18,7 +18,9 @@ PROTECTED = (
 
 def permissions(doctype):
 	folder = doctype.lower().replace(" ", "_")
-	return json.load(open(DOCTYPES / folder / f"{folder}.json"))["permissions"]
+	# Whichever module holds it.
+	(path,) = APP.glob(f"*/doctype/{folder}/{folder}.json")
+	return json.load(open(path))["permissions"]
 
 
 class TestNobodyMayDelete(unittest.TestCase):

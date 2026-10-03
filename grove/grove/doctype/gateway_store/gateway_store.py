@@ -139,7 +139,7 @@ class GatewayStore(Server, Document):
 		return key
 
 	@frappe.whitelist()
-	def restore(self, source=None):
+	def restore(self, source: str | None = None):
 		"""Button: replace this store's Redis with `source`'s latest backup — itself, or the
 		Terminated store this box replaces. Resolved here, before the insurance backup in the
 		worker moves this store's own pointer."""

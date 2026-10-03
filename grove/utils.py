@@ -67,6 +67,11 @@ def validate_label_name(doctype, name):
 	)
 
 
+def is_hostname(name):
+	"""True when `name` is labels joined by dots: no scheme, path or port."""
+	return bool(name) and all(is_label(label) for label in name.split("."))
+
+
 def is_label_under(name, zone):
 	"""True when `name` is exactly one label below `zone`. A wildcard certificate matches one
 	label and no more: `*.grove.example.com` covers `api.grove.example.com`, but neither the

@@ -10,11 +10,12 @@ from decimal import Decimal
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from grove import api, pricing
+from grove import api
+from grove.billing import pricing
 from grove.grove.doctype.geography.test_geography import make_test_geography
-from grove.grove.doctype.grove_credit.grove_credit import GroveCredit
+from grove.billing.doctype.grove_credit.grove_credit import GroveCredit
 from grove.grove.doctype.grove_user.grove_user import register_user
-from grove.grove.doctype.model_pricing.test_model_pricing import enabled_pricing, new_pricing
+from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing, new_pricing
 from grove.pathway import routes, snapshot, usage
 from grove.pathway.run import Target
 from grove.tests.test_usage_pull import a_store

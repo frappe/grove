@@ -5,7 +5,7 @@ import frappe
 from frappe.model.document import Document
 
 from grove import failure, tls
-from grove.utils import is_label_under
+from grove.utils import is_hostname, is_label_under
 
 
 class Geography(Document):
@@ -45,6 +45,8 @@ class Geography(Document):
 		for field in ("fleet_zone", "endpoint"):
 			value = (self.get(field) or "").strip()
 			self.set(field, value)
+			if value and not is_hostname(value):
+				frappe.throw(f"{field} '{value}' is not a hostname: labels joined by dots, no scheme, path or port.")
 
 		if self.fleet_zone and not is_label_under(self.endpoint, self.fleet_zone):
 			frappe.throw(

@@ -65,7 +65,7 @@ class GroveUser(Document):
 
 	def on_update(self):
 		"""The verdict is re-decided from what was just saved — the same writer the pull uses."""
-		from grove.pricing import settle
+		from grove.billing.pricing import settle
 
 		settle(self.name)
 

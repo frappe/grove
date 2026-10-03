@@ -51,5 +51,8 @@ class Server(GeneratedName, AnsibleHost):
 		machine = frappe.get_doc("Machine", self.machine) if self.machine else None
 		if machine and machine.cloud_provider:
 			machine.terminate()
-
+		self.reload()
+		if self.status != "Terminated":
+			self.status = "Terminated"
+			self.save()
 		frappe.msgprint(f"Archiving {self.name}.", alert=True)

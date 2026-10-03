@@ -88,7 +88,7 @@ def balance(email: str):
 	(up to an hour behind the gateways; `pull_usage` first for a fresh figure). A free user is
 	never charged and never gated: their `spent` does not move."""
 	frappe.only_for(ALLOWED_ROLES)
-	from grove.pricing import credit_summary
+	from grove.billing.pricing import credit_summary
 
 	grove_user = for_email(email)
 	if not grove_user:
@@ -175,7 +175,7 @@ def usage(
 	`daily_summary` is the per-model summary again, per UTC day, for a chart. `as_of` is when the
 	newest usage in the range was pulled, in UTC. `key_hash` narrows it all to one key of theirs."""
 	frappe.only_for(ALLOWED_ROLES)
-	from grove.grove.doctype.usage_record.usage_record import usage_table
+	from grove.billing.doctype.usage_record.usage_record import usage_table
 	from grove.pathway.routes import utc_timestamp
 
 	if isinstance(users, str):
@@ -349,7 +349,7 @@ def _key_condition(api_key):
 def _daily_summary(grove_users, from_date, to_date, api_key=None):
 	"""Requests and cost per UTC day and model across these users, and one key of theirs when
 	given, summed by the database, oldest day first. A day with no usage has no entry."""
-	from grove.grove.doctype.usage_record.usage_record import usage_table
+	from grove.billing.doctype.usage_record.usage_record import usage_table
 
 	rows = frappe.db.sql(
 		f"""select r.day, u.model, sum(u.requests) as requests, sum(if(r.billed, u.grove_cost, 0)) as cost

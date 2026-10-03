@@ -12,8 +12,8 @@ from decimal import Decimal
 
 import frappe
 
-from grove.grove.doctype.credit_discrepancy.credit_discrepancy import record
-from grove.pricing import NANO, settle
+from grove.billing.doctype.credit_discrepancy.credit_discrepancy import record
+from grove.billing.pricing import NANO, settle
 
 NANO_USD = Decimal(1) / NANO
 

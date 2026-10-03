@@ -128,6 +128,7 @@ class TestDnsRecordFollowsTheFlag(unittest.TestCase):
 		doc.has_value_changed = lambda field: field in changed
 		doc.sync_dns_records = MagicMock()
 		doc.remove_dns_records = MagicMock()
+		doc.terminate_replicas = MagicMock()
 		InferenceServer.on_update(doc)
 		return doc.sync_dns_records.called, doc.remove_dns_records.called
 

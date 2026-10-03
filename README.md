@@ -10,7 +10,8 @@ a Go agent, `pathway`, which lives in its own repo — this app never sits on a 
 | | |
 |---|---|
 | [`grove/`](grove/README.md) | The map: the two planes, what gets pushed under which Redis key, the scheduled jobs, the traps. **Start here.** |
-| [`grove/grove/doctype/`](grove/grove/doctype/README.md) | All thirty-odd records, grouped by what state each one owns. |
+| [`grove/grove/doctype/`](grove/grove/doctype/README.md) | The infrastructure, serving, tenancy and log records, grouped by what state each one owns. |
+| [`grove/billing/`](grove/billing/README.md) | Usage counters, prices, credits and usage records — the second module. |
 | [`grove/cloud_provider/`](grove/cloud_provider/README.md) | Provider clients, and the two DNS tiers with the Route53 rules they are shaped around. |
 | [`grove/playbooks/`](grove/playbooks/README.md) | How a box gets built, and how a play is invoked and tracked. |
 | [`grove/tests/`](grove/tests/README.md) | Pure vs site-backed, and the rollback trap between them. |
