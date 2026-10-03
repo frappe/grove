@@ -99,7 +99,7 @@ class TestGranted(IntegrationTestCase):
 
 
 class TestLoadPricing(IntegrationTestCase):
-	RATES = [{"counter": "input_tokens", "rate": 2.5}, {"counter": "completion_tokens", "rate": 15}]
+	RATES = [{"counter": "prompt_tokens", "rate": 2.5}, {"counter": "completion_tokens", "rate": 15}]
 
 	def model(self, model_id):
 		return frappe.get_doc(
