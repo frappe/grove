@@ -1,23 +1,5 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""How a Machine names itself (`gw1-ap-south-1`), how the server doc on it takes that name, and how
-a Model Replica names itself off those parts (`qwen3-8b-ap-south-1-inf3-00007`).
-
-Generated rather than typed because the name is infrastructure: a Gateway or Ingress Server's name
-IS its DNS record under the fleet zone. Named once, on the Machine, so a box and the server on it
-never answer to two names.
-
-The number comes from `tabSeries` under a key that includes the region, so each region counts from
-1 and two racing inserts cannot land on the same number. The name is then assembled HERE rather
-than by a naming series, because a series keys its counter on whatever precedes the `#` — put the
-digits after the prefix and every region shares one counter. Position and scope are the same
-decision there, and this is the only way to have both.
-
-The region is a suffix, not a namespace, because the first label is all `*.<zone>` covers. A box in
-a Geography with a zone is named for its whole hostname, `gw1-ap-south-1.<zone>`, so the domain shows
-at a glance; the agent carries only `short_name`. A box with no region simply has no
-region suffix, and one with no zone no domain.
-"""
 
 from frappe.model.naming import getseries
 
