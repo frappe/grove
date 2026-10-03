@@ -25,15 +25,41 @@ function stats_table(answer) {
 	return `<table class="table table-bordered table-sm"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>${unreached}`;
 }
 
+function pick_models(frm, answer) {
+	if (!answer.new.length) {
+		frappe.msgprint(__('{0} lists {1} models and this record holds every one.', [frm.doc.provider_name, answer.held.length]));
+		return;
+	}
+	const dialog = new frappe.ui.Dialog({
+		title: __('Add Models from {0}', [frm.doc.provider_name]),
+		fields: [{
+			fieldname: 'model_ids', fieldtype: 'MultiCheck', columns: 2, select_all: true,
+			label: __('{0} not yet held ({1} already are)', [answer.new.length, answer.held.length]),
+			options: answer.new.map((id) => ({ label: id, value: id })),
+		}],
+		primary_action_label: __('Add'),
+		primary_action(values) {
+			dialog.hide();
+			frm.call('add_models', { model_ids: values.model_ids }).then((r) => {
+				frappe.msgprint(__('Added {0} unpublished models.', [r.message.length]));
+			});
+		},
+	});
+	dialog.show();
+}
+
 frappe.ui.form.on('Model Provider', {
 	refresh(frm) {
 		frm.get_field('key_stats_html').$wrapper.empty();
 		if (frm.is_new() || frm.doc.is_self_hosted || !(frm.doc.api_keys || []).length) {
 			return;
 		}
-		// On a click, never on open: a form open must not dial the fleet.
+		// On a click, never on open: a form open must not dial the fleet or the vendor.
 		frm.add_custom_button(__('Key Stats'), () => frm.call('key_stats').then((r) => {
 			frm.get_field('key_stats_html').$wrapper.html(stats_table(r.message));
+		}));
+		frm.add_custom_button(__('Fetch Models'), () => frm.call('fetch_models').then((r) => {
+			pick_models(frm, r.message);
 		}));
 	},
 });

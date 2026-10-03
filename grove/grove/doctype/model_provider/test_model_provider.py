@@ -6,7 +6,7 @@ Site-backed — the flag decides whether a model under a provider can be publish
 all, and that is a real insert and a real db write.
 """
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -232,3 +232,90 @@ class TestKeyStats(IntegrationTestCase):
 		self.assertEqual(result["unreached"], ["store-b"])
 		self.assertEqual(result["keys"][0]["requests"], 4)
 
+
+class TestFetchModels(IntegrationTestCase):
+	"""The list comes off the vendor's own `/v1/models`; Grove splits it against what the record
+	holds and turns the picked ids into Models."""
+
+	def fetch(self, vendor, answers):
+		"""`answers`: {url: one body, or the bodies of successive pages}. Returns (result, calls)."""
+		calls = []
+
+		def get(url, headers, params, timeout):
+			calls.append((url, headers, dict(params)))
+			pages = answers[url]
+			body = pages.pop(0) if isinstance(pages, list) else pages
+			return Mock(ok=True, status_code=200, json=lambda: body)
+
+		with patch.object(model_provider.requests, "get", side_effect=get):
+			return vendor.fetch_models(), calls
+
+	def test_an_openai_front_is_asked_with_a_bearer(self):
+		vendor = provider("probe-lister", base_url="https://api.lister.test/", api_key="k").insert()
+		url = "https://api.lister.test/v1/models"
+		result, calls = self.fetch(vendor, {url: {"object": "list", "data": [{"id": "b"}, {"id": "a"}]}})
+		self.assertEqual(calls, [(url, {"Authorization": "Bearer k"}, {})])
+		self.assertEqual(result, {"new": ["a", "b"], "held": []})
+
+	def test_an_anthropic_front_is_asked_with_its_headers_and_paged(self):
+		vendor = provider("probe-pager", anthropic_base_url="https://api.pager.test", api_key="k").insert()
+		url = "https://api.pager.test/v1/models"
+		result, calls = self.fetch(vendor, {url: [
+			{"data": [{"id": "claude-a"}], "has_more": True, "last_id": "claude-a"},
+			{"data": [{"id": "claude-b"}], "has_more": False, "last_id": "claude-b"},
+		]})
+		headers = {"x-api-key": "k", "anthropic-version": "2023-06-01"}
+		self.assertEqual(
+			calls,
+			[(url, headers, {"limit": 1000}), (url, headers, {"limit": 1000, "after_id": "claude-a"})],
+		)
+		self.assertEqual(result["new"], ["claude-a", "claude-b"])
+
+	def test_a_dual_front_is_asked_on_its_openai_side_and_held_ids_are_set_apart(self):
+		# DeepSeek's Anthropic shim has no /v1/models; the OpenAI front lists the same vendor.
+		vendor = provider(
+			"probe-dual-list", base_url="https://api.dual.test",
+			anthropic_base_url="https://api.dual.test/anthropic", api_key="k",
+		).insert()
+		vendor_model("held-plain", vendor.name).insert()
+		frappe.get_doc({
+			"doctype": "Model", "provider": vendor.name, "model_id": "held-dated",
+			"upstream_model_id": "Held-Dated-20250101", "modality": "text",
+		}).insert()
+		listing = {"data": [{"id": "held-plain"}, {"id": "Held-Dated-20250101"}, {"id": "fresh"}]}
+		result, calls = self.fetch(vendor, {"https://api.dual.test/v1/models": listing})
+		self.assertEqual([url for url, _, _ in calls], ["https://api.dual.test/v1/models"])
+		self.assertEqual(result, {"new": ["fresh"], "held": ["Held-Dated-20250101", "held-plain"]})
+
+	def test_a_refusal_names_the_provider(self):
+		vendor = provider("probe-refused", base_url="https://api.refused.test", api_key="k").insert()
+		answer = Mock(ok=False, status_code=401, text="invalid key")
+		with patch.object(model_provider.requests, "get", return_value=answer):
+			with self.assertRaises(frappe.ValidationError) as caught:
+				vendor.fetch_models()
+		self.assertIn("probe-refused answered 401", str(caught.exception))
+
+	def test_a_record_with_nothing_to_dial_is_refused(self):
+		vendor = provider("probe-mute").insert()
+		with self.assertRaises(frappe.ValidationError):
+			vendor.fetch_models()
+
+	def test_picked_ids_become_unpublished_models_under_the_record(self):
+		vendor = provider("probe-adder", base_url="https://api.adder.test", api_key="k").insert()
+		keys = vendor.add_models(["gpt-4o", "GPT 4o Mini", "org/Model"])
+		self.assertEqual(keys, ["probe-adder/gpt-4o", "probe-adder/gpt-4o-mini", "probe-adder/org-model"])
+		rows = frappe.get_all(
+			"Model",
+			filters={"provider": vendor.name},
+			fields=["model_key", "upstream_model_id", "published"],
+			order_by="model_key",
+		)
+		# The vendor's own spelling is kept only where ours differs from it.
+		self.assertEqual(
+			[(row.model_key, row.upstream_model_id or None, row.published) for row in rows],
+			[
+				("probe-adder/gpt-4o", None, 0),
+				("probe-adder/gpt-4o-mini", "GPT 4o Mini", 0),
+				("probe-adder/org-model", "org/Model", 0),
+			],
+		)
