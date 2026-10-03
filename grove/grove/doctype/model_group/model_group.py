@@ -6,8 +6,8 @@ from frappe.model.document import Document
 
 
 class ModelGroup(Document):
-	"""A named set of models. Membership lives on Grove User, and a user reaches the union of every
-	group it lists.
+	"""A named set of models in one geography. Membership lives on Grove User, and a user reaches
+	the union of every group it lists.
 
 	The gateway holds this as its own Redis record and each member's user record names it, so an
 	edit here is ONE push however many members the group has."""
@@ -22,17 +22,37 @@ class ModelGroup(Document):
 		from grove.grove.doctype.grove_model_row.grove_model_row import GroveModelRow
 
 		description: DF.Data | None
+		geography: DF.Link
 		is_default: DF.Check
 		models: DF.Table[GroveModelRow]
 	# end: auto-generated types
+
+	def before_validate(self):
+		"""One geography per group: blank is the default one."""
+		if not self.geography:
+			self.geography = frappe.db.get_value("Geography", {"is_default": 1})
 
 	def validate(self):
 		# The name travels inside a comma-joined membership list, so a comma would split it into
 		# two groups that resolve to nothing.
 		if "," in self.name:
 			frappe.throw("A group name cannot contain a comma")
+		self.validate_model_geography()
+
+	def validate_model_geography(self):
+		"""A vendor's doc is one geography's, and members reach only the group's. Ours serve
+		wherever a replica runs."""
+		models = frappe.get_all(
+			"Model",
+			filters={"name": ("in", [row.model for row in self.models]), "provider_is_self_hosted": 0},
+			fields=["model_key", "geography"],
+		)
+		elsewhere = sorted(m.model_key for m in models if m.geography != self.geography)
+		if elsewhere:
+			frappe.throw(f"{', '.join(elsewhere)} is not a model in {self.geography}.")
 
 	def on_update(self):
-		"""One default: this one ticked unticks every other."""
+		"""One default per geography: this one ticked unticks every other there."""
 		if self.is_default:
-			frappe.db.set_value("Model Group", {"is_default": 1, "name": ("!=", self.name)}, "is_default", 0)
+			others = {"is_default": 1, "geography": self.geography, "name": ("!=", self.name)}
+			frappe.db.set_value("Model Group", others, "is_default", 0)

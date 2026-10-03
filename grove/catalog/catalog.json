@@ -81,6 +81,18 @@
    "name": "Main"
   }
  ],
+ "model_groups": [
+  {
+   "description": "Every model the catalog ships",
+   "models": [
+    "anthropic/claude-sonnet-5-5",
+    "baseten/deepseek-v4.1-flash",
+    "openai/gpt-6-luna",
+    "openai/gpt-6-sol"
+   ],
+   "name": "catalog"
+  }
+ ],
  "models": [
   {
    "modality": "multimodal",

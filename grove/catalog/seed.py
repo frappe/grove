@@ -1,5 +1,5 @@
-"""What a site starts with: usage counters, geographies, cloud accounts, regions, networks, providers
-and vendor models, read from `catalog.json`. Not Frappe fixtures: those delete and re-insert on every migrate, secrets included."""
+"""What a site starts with: usage counters, geographies, cloud accounts, regions, providers,
+vendor models and model groups, read from `catalog.json`. Not Frappe fixtures: those delete and re-insert on every migrate, secrets included."""
 
 import json
 from pathlib import Path
@@ -31,8 +31,12 @@ def insert_missing(path=None):
 			frappe.get_doc({"doctype": "Model Provider", **provider}).insert()
 	# A model lands under the record the catalog's own provider entry describes.
 	geographies = {p["provider_name"]: p.get("geography") for p in catalog["providers"]}
-	for model in catalog["models"]:
-		insert_model(model, geographies.get(model["provider"]) or default_geography())
+	docs = {
+		get_model_key(model): insert_model(model, geographies.get(model["provider"]) or default_geography())
+		for model in catalog["models"]
+	}
+	for group in catalog.get("model_groups", []):
+		insert_model_group(group, docs)
 
 
 def insert_named(doctype, entry, ignore_mandatory=False):
@@ -58,12 +62,25 @@ def insert_geography(geography):
 def insert_model(model, geography):
 	"""Under one record of the provider: the one in `geography` — what the catalog's own entry for
 	the provider says — else the only one the site holds. Several and none there is a question
-	for the operator. A model in a second geography is a second doc added by hand."""
+	for the operator. A model in a second geography is a second doc added by hand. Returns the
+	doc's name, held or inserted."""
 	provider = provider_record(model["provider"], geography)
-	if frappe.db.exists("Model", {"provider": provider, "model_id": model["model_id"]}):
-		return
 	fields = {key: value for key, value in model.items() if key != "rates"}
-	frappe.get_doc({"doctype": "Model", **fields, "provider": provider}).insert()
+	held = frappe.db.exists("Model", {"provider": provider, "model_id": model["model_id"]})
+	return held or frappe.get_doc({"doctype": "Model", **fields, "provider": provider}).insert().name
+
+
+def insert_model_group(group, docs):
+	"""A group the site lacks, in the geography its models landed in — `docs` is their doc per
+	key. That geography's default only when it has none."""
+	if frappe.db.exists("Model Group", group["name"]):
+		return
+	rows = [{"model": docs[key]} for key in group["models"]]
+	landed = frappe.db.get_value("Model", rows[0]["model"], "geography") if rows else None
+	geography = landed or default_geography()
+	is_default = int(not frappe.db.exists("Model Group", {"is_default": 1, "geography": geography}))
+	fields = {**group, "models": rows, "geography": geography, "is_default": is_default}
+	frappe.get_doc({"doctype": "Model Group", **fields}).insert()
 
 
 def provider_record(provider_name, geography):
@@ -83,7 +100,7 @@ def default_geography():
 	return frappe.db.get_value("Geography", {"is_default": 1})
 
 
-def get_model_name(model):
+def get_model_key(model):
 	"""The entry's model key."""
 	return f"{model['provider']}/{model['model_id']}"
 
@@ -91,6 +108,6 @@ def get_model_name(model):
 def get_rates(model_key, path=None):
 	"""The catalog's rate rows for a model key, [] when it prices none."""
 	for model in read(path)["models"]:
-		if get_model_name(model) == model_key:
+		if get_model_key(model) == model_key:
 			return model.get("rates") or []
 	return []

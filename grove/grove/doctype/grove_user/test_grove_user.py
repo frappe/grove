@@ -109,7 +109,25 @@ class IntegrationTestNewUsersStartInTheDefaultGroup(IntegrationTestCase):
 		self.addCleanup(frappe.db.set_value, "Model Group", self.default, "is_default", 1)
 		other = self.group("grove-default-two", is_default=1)
 		self.addCleanup(frappe.db.set_value, "Model Group", other, "is_default", 0)
-		self.assertEqual(frappe.get_all("Model Group", filters={"is_default": 1}, pluck="name"), [other])
+		here = frappe.db.get_value("Model Group", other, "geography")
+		ticked = frappe.get_all("Model Group", filters={"is_default": 1, "geography": here}, pluck="name")
+		self.assertEqual(ticked, [other])
+
+	def test_a_new_user_starts_in_their_own_geographys_default(self):
+		away = make_test_geography("grove-default-away")
+		theirs = frappe.get_doc(
+			{"doctype": "Model Group", "__newname": "grove-default-away", "geography": away, "is_default": 1}
+		).insert().name
+		user = register_user("grove-group-away@example.com")
+		doc = frappe.get_doc({"doctype": "Grove User", "user": user, "geography": away}).insert()
+		self.assertEqual(self.groups_of(doc), [theirs])
+
+	def test_a_user_holding_groups_cannot_be_moved_to_another_geography(self):
+		doc = frappe.get_doc({"doctype": "Grove User", "user": register_user("grove-group-moved@example.com")}).insert()
+		self.assertEqual(self.groups_of(doc), [self.default])
+		doc.geography = make_test_geography("grove-default-moved")
+		with self.assertRaises(frappe.ValidationError):
+			doc.save()
 
 
 class IntegrationTestOneGeographyPerUser(IntegrationTestCase):

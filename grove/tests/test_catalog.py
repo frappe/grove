@@ -17,7 +17,7 @@ from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing
 from grove.grove.doctype.model_provider.test_model_provider import our_model, provider, vendor_model
 
-COUNTED = ("Usage Counter", "Geography", "Cloud Provider", "Region", "Network", "Model Provider", "Model", "Model Pricing")
+COUNTED = ("Usage Counter", "Geography", "Cloud Provider", "Region", "Model Provider", "Model", "Model Pricing", "Model Group")
 
 
 class CatalogCase(IntegrationTestCase):
@@ -42,6 +42,7 @@ class TestInsertMissing(CatalogCase):
 			"provider": "catalog-vendor", "model_id": "big-1", "upstream_model_id": "big-1-2026", "modality": "text",
 			"rates": [{"counter": "prompt_tokens", "rate": 2.5}],
 		}],
+		"model_groups": [{"name": "catalog-group", "description": "Catalog", "models": ["catalog-vendor/big-1"]}],
 	}
 
 	def test_what_is_absent_is_inserted_once_and_never_its_pricing(self):
@@ -58,6 +59,12 @@ class TestInsertMissing(CatalogCase):
 		cloud = frappe.get_doc("Cloud Provider", "catalog-cloud")
 		self.assertEqual((cloud.resource_type, cloud.get_password("api_key", raise_exception=False)), ("Machine", None))
 		self.assertEqual(frappe.db.get_value("Region", "catalog-south-1", "geography"), "Catalog")
+		group = frappe.get_doc("Model Group", "catalog-group")
+		# Where its models landed, and the default there because that geography had none.
+		self.assertEqual(
+			([row.model_key for row in group.models], group.geography, group.is_default),
+			(["catalog-vendor/big-1"], "Catalog", 1),
+		)
 		counts = [frappe.db.count(doctype) for doctype in COUNTED]
 		self.load(**self.CATALOG)
 		self.assertEqual([frappe.db.count(doctype) for doctype in COUNTED], counts)
@@ -97,6 +104,9 @@ class TestExport(CatalogCase):
 		cls.model = vendor_model("big-2", vendor.name).insert().name
 		cls.pricing = enabled_pricing(cls.model, **cls.RATES).name
 		cls.ours = our_model("catalog-ours-7b").insert().name
+		rows = [{"model": cls.model}, {"model": cls.ours}]
+		group = {"name": "catalog-export-group", "geography": vendor.geography, "models": rows}
+		frappe.get_doc({"doctype": "Model Group", **group}).insert()
 
 	def exported(self):
 		export.write(self.path)
@@ -109,16 +119,19 @@ class TestExport(CatalogCase):
 	def test_no_secret_no_model_of_ours_and_no_geography_but_main(self):
 		text = self.exported()
 		catalog = json.loads(text)
+		# Quoted: a key or a whole value, not a word in a group's description.
 		for key in ("api_key", "export-secret", "published", "access_key_id", "vpc_id", "cidr_block"):
-			self.assertNotIn(key, text)
+			self.assertNotIn(f'"{key}"', text)
 		self.assertEqual(catalog["geographies"], [{"name": "Main"}])
 		self.assertEqual({r["geography"] for r in catalog["regions"]}, {"Main"})
 		# The shipped file is the site's table: roots with a unit first, derived rows after their base.
 		self.assertEqual(catalog["counters"], seed.read()["counters"])
 		self.assertEqual({p.get("geography") for p in catalog["providers"] if not p.get("is_self_hosted")}, {"Main"})
-		[model] = [m for m in catalog["models"] if seed.get_model_name(m) == self.key(self.model)]
+		[model] = [m for m in catalog["models"] if seed.get_model_key(m) == self.key(self.model)]
 		self.assertEqual(model["rates"], [{"counter": c, "rate": r} for c, r in self.RATES.items()])
-		self.assertNotIn(self.key(self.ours), [seed.get_model_name(m) for m in catalog["models"]])
+		self.assertNotIn(self.key(self.ours), [seed.get_model_key(m) for m in catalog["models"]])
+		[group] = [g for g in catalog["model_groups"] if g["name"] == "catalog-export-group"]
+		self.assertEqual(group["models"], [self.key(self.model)])
 
 	def test_the_file_loaded_where_its_entries_are_missing_exports_the_same(self):
 		first = self.exported()
@@ -149,11 +162,12 @@ class TestTheShippedFile(unittest.TestCase):
 		geographies = {g["name"] for g in self.catalog["geographies"]}
 		regions = {r["name"] for r in self.catalog["regions"]}
 		self.assertEqual([r for r in self.catalog["regions"] if r["geography"] not in geographies], [])
-		self.assertEqual([n for n in self.catalog["networks"] if n["region"] not in regions], [])
-		keys = [seed.get_model_name(m) for m in self.catalog["models"]]
+		keys = [seed.get_model_key(m) for m in self.catalog["models"]]
 		self.assertEqual(len(keys), len(set(keys)), "a model key is listed twice")
+		for group in self.catalog["model_groups"]:
+			self.assertEqual([key for key in group["models"] if key not in keys], [], group["name"])
 		for model in self.catalog["models"]:
-			with self.subTest(seed.get_model_name(model)):
+			with self.subTest(seed.get_model_key(model)):
 				self.assertIn(model["provider"], providers)
 				self.assertIn(model["modality"], ("text", "multimodal", "embedding", "audio"))
 				self.assertEqual([r["counter"] for r in model["rates"] if r["counter"] not in counters], [])

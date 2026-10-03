@@ -6,6 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "description",
+  "geography",
   "column_break_unjy",
   "is_default",
   "section_models",
@@ -20,8 +21,19 @@
    "label": "Description"
   },
   {
+   "description": "The one geography this group's members and vendor models are in. Left blank, it is the default Geography. Set once.",
+   "fieldname": "geography",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Geography",
+   "options": "Geography",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
    "default": "0",
-   "description": "Every new Grove User starts in this group. Only one Model Group is the default: ticking it here unticks the others.",
+   "description": "Every new Grove User in this group's geography starts in it. One default per geography: ticking it here unticks the others there.",
    "fieldname": "is_default",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -45,7 +57,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-01 03:46:40.385979",
+ "modified": "2026-10-04 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model Group",
