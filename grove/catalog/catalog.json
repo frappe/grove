@@ -1,4 +1,10 @@
 {
+ "cloud_providers": [
+  {
+   "name": "aws",
+   "provider_type": "aws"
+  }
+ ],
  "counters": [
   {
    "counter_name": "prompt_tokens",
@@ -70,12 +76,178 @@
    "min_prompt_tokens": 272000
   }
  ],
- "geographies": [],
- "models": [],
+ "geographies": [
+  {
+   "name": "Main"
+  }
+ ],
+ "model_groups": [
+  {
+   "description": "Every model the catalog ships",
+   "models": [
+    "anthropic/claude-sonnet-5-5",
+    "baseten/deepseek-v4.1-flash",
+    "openai/gpt-6-luna",
+    "openai/gpt-6-sol"
+   ],
+   "name": "catalog"
+  }
+ ],
+ "models": [
+  {
+   "modality": "multimodal",
+   "model_id": "gpt-6-luna",
+   "provider": "openai",
+   "rates": [
+    {
+     "counter": "prompt_tokens",
+     "rate": 0.1
+    },
+    {
+     "counter": "cached_tokens",
+     "rate": 0.01
+    },
+    {
+     "counter": "cache_write_tokens",
+     "rate": 0.125
+    },
+    {
+     "counter": "completion_tokens",
+     "rate": 0.5
+    },
+    {
+     "counter": "prompt_tokens_above_272k",
+     "rate": 0.2
+    },
+    {
+     "counter": "cached_tokens_above_272k",
+     "rate": 0.02
+    },
+    {
+     "counter": "cache_write_tokens_above_272k",
+     "rate": 0.25
+    },
+    {
+     "counter": "completion_tokens_above_272k",
+     "rate": 0.75
+    }
+   ]
+  },
+  {
+   "modality": "multimodal",
+   "model_id": "gpt-6-sol",
+   "provider": "openai",
+   "rates": [
+    {
+     "counter": "prompt_tokens",
+     "rate": 2.0
+    },
+    {
+     "counter": "cached_tokens",
+     "rate": 0.2
+    },
+    {
+     "counter": "cache_write_tokens",
+     "rate": 2.5
+    },
+    {
+     "counter": "completion_tokens",
+     "rate": 10.0
+    },
+    {
+     "counter": "prompt_tokens_above_272k",
+     "rate": 4.0
+    },
+    {
+     "counter": "cached_tokens_above_272k",
+     "rate": 0.4
+    },
+    {
+     "counter": "cache_write_tokens_above_272k",
+     "rate": 5.0
+    },
+    {
+     "counter": "completion_tokens_above_272k",
+     "rate": 15.0
+    }
+   ]
+  },
+  {
+   "modality": "multimodal",
+   "model_id": "claude-sonnet-5-5",
+   "provider": "anthropic",
+   "rates": [
+    {
+     "counter": "prompt_tokens",
+     "rate": 2.0
+    },
+    {
+     "counter": "cached_tokens",
+     "rate": 0.2
+    },
+    {
+     "counter": "cache_write_tokens",
+     "rate": 2.5
+    },
+    {
+     "counter": "cache_write_1h_tokens",
+     "rate": 4.0
+    },
+    {
+     "counter": "completion_tokens",
+     "rate": 10.0
+    }
+   ]
+  },
+  {
+   "modality": "multimodal",
+   "model_id": "deepseek-v4.1-flash",
+   "provider": "baseten",
+   "rates": [
+    {
+     "counter": "prompt_tokens",
+     "rate": 0.3
+    },
+    {
+     "counter": "cached_tokens",
+     "rate": 0.007
+    },
+    {
+     "counter": "completion_tokens",
+     "rate": 1.2
+    }
+   ],
+   "upstream_model_id": "deepseek-ai/DeepSeek-V4.1-Flash"
+  }
+ ],
  "providers": [
+  {
+   "anthropic_base_url": "https://api.anthropic.com",
+   "geography": "Main",
+   "provider_name": "anthropic"
+  },
+  {
+   "anthropic_base_url": "https://inference.baseten.co",
+   "base_url": "https://inference.baseten.co",
+   "geography": "Main",
+   "provider_name": "baseten"
+  },
   {
    "is_self_hosted": 1,
    "provider_name": "frappe"
+  },
+  {
+   "base_url": "https://api.openai.com",
+   "geography": "Main",
+   "provider_name": "openai"
+  }
+ ],
+ "regions": [
+  {
+   "cloud_provider": "aws",
+   "geography": "Main",
+   "label": "Mumbai",
+   "name": "ap-south-1"
   }
  ]
 }

@@ -50,10 +50,24 @@ def get_reachable_models(grove_user):
 	return sorted(granted - set(own.get("deny", [])))
 
 
-def model_doc(model_key):
-	"""Any doc under `model_key`, for a grant that names an id: a grant is by key, so which
-	geography's doc holds the link does not matter. Unknown is the caller's error."""
-	name = frappe.db.get_value("Model", {"model_key": model_key}, "name")
-	if not name:
-		frappe.throw(f"No model is keyed {model_key!r}.", frappe.DoesNotExistError)
-	return name
+def model_doc(model_key, geography):
+	"""The doc under `model_key` that `geography` serves, for a grant that names an id: the
+	vendor's record there, or ours. Unknown is the caller's error."""
+	served_here = {"geography": geography, "provider_is_self_hosted": 1}
+	names = frappe.get_all("Model", filters={"model_key": model_key}, or_filters=served_here, pluck="name")
+	if not names:
+		frappe.throw(f"No model is keyed {model_key!r} in {geography}.", frappe.DoesNotExistError)
+	return names[0]
+
+
+def validate_model_geography(rows, geography):
+	"""A vendor's doc is one geography's, so a grant row names the doc, and the price, reached
+	there. Ours serve wherever a replica runs."""
+	models = frappe.get_all(
+		"Model",
+		filters={"name": ("in", [row.model for row in rows]), "provider_is_self_hosted": 0},
+		fields=["model_key", "geography"],
+	)
+	elsewhere = sorted(m.model_key for m in models if m.geography != geography)
+	if elsewhere:
+		frappe.throw(f"{', '.join(elsewhere)} is not a model in {geography}.")

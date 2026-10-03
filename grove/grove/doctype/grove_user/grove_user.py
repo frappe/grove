@@ -4,13 +4,15 @@
 import frappe
 from frappe.model.document import Document
 
+from grove.access import validate_model_geography
+
 
 class GroveUser(Document):
 	"""Grove's per-user policy: their groups, which models they may call, and their prepaid
 	balance (every user has one unless marked Free). All of it belongs to the PERSON — their keys
 	are credentials and share this balance.
 	No doc means no group and no allow, so the user reaches no models at all. A new doc starts in
-	the default Model Group, when one is marked.
+	their geography's default Model Group, when one is marked.
 
 	The gateway holds it the same way: one user:<name> record every key points at, so an access
 	change is a single write however many keys they hold."""
@@ -38,12 +40,15 @@ class GroveUser(Document):
 	# end: auto-generated types
 
 	def before_insert(self):
-		"""A new user starts in the default Model Group, unless the insert names its own groups."""
-		default = frappe.db.get_value("Model Group", {"is_default": 1})
+		"""A new user starts in their geography's default Model Group, unless the insert names its
+		own groups."""
+		self.set_geography()
+		default = frappe.db.get_value("Model Group", {"is_default": 1, "geography": self.geography})
 		if default and not self.model_groups:
 			self.append("model_groups", {"model_group": default})
 
-	def before_validate(self):
+
+	def set_geography(self):
 		"""One geography per user: blank is the default one."""
 		if not self.geography:
 			self.geography = frappe.db.get_value("Geography", {"is_default": 1})
@@ -51,6 +56,7 @@ class GroveUser(Document):
 			frappe.throw("Mark one Geography as default, or pick a geography for this user.")
 
 	def validate(self):
+		validate_model_geography([*self.allow, *self.deny], self.geography)
 		# Deny wins anyway, so a model on both lists is a mistake worth surfacing.
 		both = {row.model_key for row in self.allow} & {row.model_key for row in self.deny}
 		if both:

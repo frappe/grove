@@ -6,7 +6,8 @@ from pathlib import Path
 
 import frappe
 
-from grove.catalog.seed import CATALOG
+from grove.access import model_rows
+from grove.catalog.seed import CATALOG, get_model_key
 from grove.billing.pricing import CounterTable
 
 # The one geography the catalog ships: a name, its endpoint and zone filled on the site.
@@ -17,9 +18,11 @@ MODEL_FIELDS = ("model_id", "upstream_model_id", "modality")
 
 def write(path=None):
 	"""Sorted and indented, so a second export of an unchanged site is an empty diff."""
+	models = get_models()
 	catalog = {
 		"counters": get_counters(), "geographies": [{"name": MAIN}],
-		"providers": get_providers(), "models": get_models(),
+		"cloud_providers": get_cloud_providers(), "regions": get_regions(),
+		"providers": get_providers(), "models": models, "model_groups": get_model_groups(models),
 	}
 	Path(path or CATALOG).write_text(json.dumps(catalog, indent=1, sort_keys=True) + "\n")
 
@@ -36,6 +39,17 @@ def get_counters():
 			entry |= {"unit": row.unit} | ({"part_of": row.part_of} if row.part_of else {})
 		rows.append({k: v for k, v in entry.items() if v})
 	return rows
+
+
+def get_cloud_providers():
+	"""The account's type only: no key, no access key id."""
+	return frappe.get_all("Cloud Provider", fields=["name", "provider_type"], order_by="name")
+
+
+def get_regions():
+	"""Every region, moved to Main."""
+	rows = frappe.get_all("Region", fields=["name", "label", "cloud_provider"], order_by="name")
+	return [{k: v for k, v in row.items() if v} | {"geography": MAIN} for row in rows]
 
 
 def get_providers():
@@ -65,6 +79,18 @@ def get_models():
 		entries.setdefault(row.model_key, {"provider": row.provider_name, "rates": get_rates(row.name)}
 			| {field: row[field] for field in MODEL_FIELDS if row[field]})
 	return list(entries.values())
+
+
+def get_model_groups(models):
+	"""Every group with the exported models it grants, by key: ours are not in the file. Never
+	`is_default`, nor its geography: a group lands where its models do."""
+	exported = {get_model_key(model) for model in models}
+	granted = model_rows("Model Group")
+	return [
+		{k: v for k, v in group.items() if v}
+		| {"models": [key for key in granted.get(group.name, {}).get("models", []) if key in exported]}
+		for group in frappe.get_all("Model Group", fields=["name", "description"], order_by="name")
+	]
 
 
 def get_rates(model):

@@ -43,7 +43,7 @@ topology stays inside its VPC and several deployments behind one ingress fold in
 | `pathway/projection.py` | `Projection`: every push to every box. A push that left no Pathway Sync row did not happen. |
 | `pathway/usage.py` | `Usage`: each store's drain (or one user's keys) into one Usage Record per key (two when it holds both billed and free usage), then the ack of what landed. `reconcile.py` lands each touched user: records, `spent` moved by Grove's price, the gateway's charge audited, the verdict settled. |
 | `billing/` | Usage counters, sell prices, the credit ledger, usage records and the Revenue report — its own Frappe module, [`billing/README.md`](billing/README.md). |
-| `catalog/` | What a site starts with: `catalog.json` (geographies, providers, vendor models and their rates; no secret, no `published`), `seed.insert_missing` (after install and after every migrate), `export.write` (by hand). |
+| `catalog/` | What a site starts with: `catalog.json` (geographies, providers, vendor models and their rates, model groups; no secret, no `published`), `seed.insert_missing` (after install and after every migrate), `export.write` (by hand). |
 | `pathway/snapshot.py` | The desired state a box is pushed, and the hash gate that decides which sections travel. |
 | `pathway/routes.py` | `deploy:<model>` tables — a gateway's for its Geography, an ingress's for the boxes it owns. |
 | `access.py` | Which models a user may call, as the CSV each grant record carries. |
@@ -164,20 +164,29 @@ drain is audited for, and the Revenue report.
 
 Providers, vendor models and their prices ship in `catalog/catalog.json`, not in `fixtures/`: a
 migrate deletes and re-inserts every fixture doc, which wipes its API key and resets what the
-operator set.
+operator set. The file is authored, not dumped from a site: the counter table, `Main`, and the
+vendors we sell — openai (`gpt-6-luna`, `gpt-6-sol`), anthropic (`claude-sonnet-5-5`), baseten
+(`deepseek-v4.1-flash`; DeepSeek is bought through Baseten, not direct) — at the vendors' list
+prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south-1`.
 
-- `seed.insert_missing()` runs after install and after every migrate. It inserts a geography or
-  model the site has no doc named for, and a provider the site has no record named for in any
-  geography. It never updates and never deletes.
+- `seed.insert_missing()` runs after install and after every migrate. It inserts a geography,
+  cloud account (keyless, for the operator to fill), region or model the site has no doc
+  named for, and a provider the site has no record named for in any geography. It never updates
+  and never deletes.
 - A geography lands with `endpoint` and `fleet_zone` blank, for the operator to fill, and is the
   default only when the site has none. Until then a box in it serves :80 in the clear and
   `api.provision_key` refuses it.
+- A model group the site has no doc named for lands with the models the file lists for it, by key,
+  in the geography those models landed in, and is that geography's default only when it has none.
+  The file ships one, `catalog`, granting every model in it. A model added to the file later does
+  not join a group the site already holds.
 - Pricing is loaded per model, by hand: **Load Pricing** on the Model form (`Model.load_pricing`)
   inserts the catalog's rates as a Disabled `Model Pricing`. Shown while the catalog prices the
   model and no pricing names it. Enabling and publishing stay the operator's call.
 - `bench --site <site> execute grove.catalog.export.write` rewrites the file from the site: every
   provider once (no API key, a vendor's geography set to `Main`), vendor models only,
-  each with the rows of its Enabled pricing, and the one geography `Main`.
+  each with the rows of its Enabled pricing, the one geography `Main`, every cloud account's type
+  (no key), every region, and every model group with the exported models it grants (no `is_default`, no geography).
 
 ## Scheduled jobs (`hooks.py`)
 
