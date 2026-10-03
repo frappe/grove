@@ -41,8 +41,8 @@ topology stays inside its VPC and several deployments behind one ingress fold in
 |---|---|
 | `pathway/run.py` | What every run shares: `Target` (one box's admin API), `SyncRun` (lock, parallel dial, rows in the order asked). Every path that reaches a box goes through it. |
 | `pathway/projection.py` | `Projection`: every push to every box. A push that left no Pathway Sync row did not happen. |
-| `pathway/usage.py` | `Usage`: each store's drain (or one user's keys) into one Usage Record per key, then the ack of what landed. `reconcile.py` lands each touched user: records, `spent` moved by Grove's price, the gateway's charge audited, the verdict settled. |
-| `pricing.py` | Prices per counter (`PriceBook`: by the pricing id the gateway charged), the prepaid balance, `settle` (the one writer of `balance` and `credit_exhausted`). |
+| `pathway/usage.py` | `Usage`: each store's drain (or one user's keys) into one Usage Record per key (two when it holds both billed and free usage), then the ack of what landed. `reconcile.py` lands each touched user: records, `spent` moved by Grove's price, the gateway's charge audited, the verdict settled. |
+| `pricing.py` | The counter table (`CounterTable`: the Usage Counter rows, their units, parts and bases, validated before a push), prices per counter (`PriceBook`: by the pricing id the gateway charged), the prepaid balance, `settle` (the one writer of `balance` and `credit_exhausted`). |
 | `catalog/` | What a site starts with: `catalog.json` (geographies, providers, vendor models and their rates; no secret, no `published`), `seed.insert_missing` (after install and after every migrate), `export.write` (by hand). |
 | `grove/report/revenue/` | Revenue report: what each drain was billed, cut by model, API key, user or day. |
 | `pathway/snapshot.py` | The desired state a box is pushed, and the hash gate that decides which sections travel. |
@@ -108,7 +108,7 @@ fleet gets re-pushed over row order. Order means nothing on the wire; it exists 
 | `model_group:<name>` | state push (groups) | the model grant for everyone in it |
 | `deploy:<model>` | state push (routes) | every placement of one model |
 | `grove:state_hash` | state push | per-section/bucket hashes of what the box holds |
-| `usage:<prefix>` | the agent | live counters: `m:<metric>:<model>` for reports, `p:<pricing>:<counter>` and `p:<pricing>:cost` for billing |
+| `usage:<prefix>` | the agent | live counters: `m:<metric>:<model>` for reports, `p:<pricing>:<counter>` and `p:<pricing>:cost` for billing, the same under `f:` for what was served free |
 | `drained:<drain>:<prefix>`, `drain:unacked` | the agent's drain | a key's counters set aside under a drain id, re-sent until Grove acks that pair; kept for `usage_retention` after |
 | `sticky:<session>` | the agent | session → engine, for prefix-cache reuse |
 | `inflight:<engine>` | the agent | what is running right now |
@@ -119,15 +119,33 @@ record however many members, a budget flip is one record however many keys, and 
 all three at request time — unioning every group the user names before applying their own
 allow/deny.
 
-A model id is always `<provider>/<name>` (`frappe/qwen3.5-4b`). One id, one route key, one grant —
-the bare form was deliberately broken, because routing keys on `deploy:<id>` while access is matched
-against the string the caller *sent*, so a route key with no matching grant is a 403 before routing
-is ever consulted.
+A model id is always `<provider>/<name>` (`frappe/qwen3.5-4b`) — the Model's **key**, not its doc
+name, which is a hash. One key, one route key, one grant — the bare form was deliberately broken,
+because routing keys on `deploy:<key>` while access is matched against the string the caller *sent*,
+so a route key with no matching grant is a 403 before routing is ever consulted. A key may be several
+docs, one per provider record: `openai/gpt-5` under the `in` record and under the `eu` record are two
+Models, each with its own upstream id and pricing, and a gateway's table carries only its own
+geography's. A Link (pricing, replica, grant row) names a doc; everything on the wire — routes,
+grants, usage buckets, `available_models` — names the key. A grant is by key, so it reaches the id
+wherever a geography serves it; availability is by geography.
 
 The provider is not only a prefix. Give a `Model Provider` a Base URL and a key and its published
 models route straight to that vendor — a `kind: "provider"` row naming the provider as the placement,
-with no deployment, no pod and no capacity of ours to divide. What the vendor is *asked* for is the
-route's `upstream_model`, which the control plane computes in one place (`_upstream_model`):
+with no deployment, no pod and no capacity of ours to divide. The record's **Keys** table rides the
+row as `credentials` (`[{id, secret}]`, the id being the key row's name, in table order) with the
+record's **Key Selection** (`round_robin`); `internal_key` stays blank on a provider row and is the
+single-key spelling only an engine row uses. The gateway takes the keys in turn — one cursor per
+vendor across all its models, so the limits the keys share are drawn on evenly — swaps a key the
+vendor answers 429 for the next (each tried once, then once more round), skips one answering
+401/402/403 for the rest of that request, and counts what every key answered. **Key Stats** on the
+form reads those counts live off one gateway per store in the geography; nothing is stored here.
+**Fetch Models** asks the vendor's `/v1/models` on one front — the OpenAI one with a Bearer when set
+(a dual vendor's Anthropic shim, DeepSeek's, has no list), else Anthropic's with `x-api-key` and the
+version header, paged with `after_id` — hides what the record already holds, and adds the ticked ids
+as unpublished Models, the vendor's spelling kept as `Upstream Model ID` where ours differs
+(`org/Model` → `org-model`).
+What the vendor is *asked* for is the route's `upstream_model`, which the control plane computes in
+one place (`_upstream_model`):
 
 | | sent upstream |
 |---|---|
@@ -151,59 +169,78 @@ evaluation and never snapshotted onto usage:
   charged, so the pull bills the same rates whichever side of the switch a request fell on. A
   Disabled draft is editable. Never disabled by hand, never re-enabled, never edited once enabled:
   a wrong price is a new pricing plus a credit row. `enabled_on` is the day it was enabled.
-- **COST** — `Model Provider.rate_card` (`Model Price Row`): dated rows per vendor model id.
-  Reference data only; nothing bills from it.
 
 **No pricing, no serving.** A model is routed only while it is **Published**
 (`routes.published_routes`), and Published is ticked by hand: the save refuses a model with no
 Enabled pricing or with nothing serving it. Enabling a pricing never publishes, nor does a replica
 going Active; a model nothing serves any more is unpublished on its own and re-ticked by hand.
 Free on purpose is a pricing with rates 0 — a self-hosted ASR, an internal model — so a missing
-pricing always means a model not yet on sale. The Model form shows a banner while it has none.
+pricing always means a model not yet on sale. The Model form shows a banner while it has none, and
+another once Published while no grant names it (`Model.is_granted`: a user's Allow, or a Model Group
+with a user in it) — routed, but every key is told access not allowed and `/v1/models` omits it.
 
 Usage is recorded whatever the price. A counter with no sell row bills 0, and nothing is logged.
-Every counter a model emits needs a row (vLLM emits `input_tokens`,
+Every counter a model emits needs a row (vLLM emits `prompt_tokens`,
 `cached_tokens` with `--enable-prompt-tokens-details`, `completion_tokens`). A transcription that
 reports a duration moves no priced counter but `request_count`: audio is priced by the token.
 
+The counters are the `Usage Counter` table, shipped in the catalog (`catalog/catalog.json`,
+inserted when missing) and pushed to the gateways inside each pricing, so the two sides count
+under the same rows. A **root** counter is a bucket the gateway fills from the response; a
+**derived** one is a root plus a condition, counted instead of its base when the request's whole
+prompt exceeds `min_prompt_tokens`. Today's rows:
+
 | counter | rate unit | from the response |
 |---|---|---|
-| `input_tokens` | USD / Mtok | prompt − cached − cache writes − audio (guard: cached + writes > prompt → all plain) |
+| `prompt_tokens` | USD / Mtok | the whole prompt; its rate charges what the four counters below left of it (guard: cached + writes > prompt → all plain) |
 | `cached_tokens` | USD / Mtok | Anthropic `cache_read_input_tokens`, OpenAI/vLLM `prompt_tokens_details.cached_tokens` |
 | `cache_write_tokens` | USD / Mtok | Anthropic 5-minute writes: `cache_creation_input_tokens` − 1h; OpenAI `prompt_tokens_details.cache_write_tokens` |
 | `cache_write_1h_tokens` | USD / Mtok | Anthropic `cache_creation.ephemeral_1h_input_tokens` |
-| `completion_tokens` | USD / Mtok | `completion_tokens` / `output_tokens` |
 | `audio_tokens` | USD / Mtok | audio in the prompt: `prompt_tokens_details.audio_tokens`, a transcription's `input_token_details.audio_tokens`; capped at what the cache left |
-| `input_tokens_above_272k` | USD / Mtok | `input_tokens` of a request whose prompt exceeds 272 000 tokens |
-| `cached_tokens_above_272k` | USD / Mtok | `cached_tokens` of such a request |
-| `cache_write_tokens_above_272k` | USD / Mtok | `cache_write_tokens` of such a request |
-| `completion_tokens_above_272k` | USD / Mtok | `completion_tokens` of such a request |
+| `completion_tokens` | USD / Mtok | the whole completion, `completion_tokens` / `output_tokens`; its rate charges what audio output left of it |
+| `completion_audio_tokens` | USD / Mtok | audio in the completion: `completion_tokens_details.audio_tokens`; capped at the completion |
 | `request_count` | USD / request | every request |
+| `*_above_272k` | USD / Mtok | derived from `prompt_tokens`, `cached_tokens`, `cache_write_tokens` and `completion_tokens` at 272 000: that counter's tokens of a request whose prompt exceeds it |
+
+**The prompt rate charges the uncached part.** Counting records what the vendor reports; charging
+subtracts (`pricing.cost`, pathway `domain.Cost`). A counter's rate is charged on what its parts
+left of it, and each part at its own rate, so a token bills once:
+
+`part_of` on a root row names its container (`cached_tokens`, `cache_write_tokens`,
+`cache_write_1h_tokens` and `audio_tokens` are parts of `prompt_tokens`; `completion_audio_tokens`
+of `completion_tokens`). A derived counter's parts are its base's parts at the same threshold.
+
+A part with no row bills 0, like any counter: a pricing with no `cached_tokens` row gives cached
+tokens away, and an audio-out model needs a `completion_audio_tokens` row.
 
 **Above 272k.** A vendor that charges a higher rate for the whole request once the prompt passes
 272 000 tokens (OpenAI) is priced with the `_above_272k` rows. Two rules:
 
-- **Counting**, in pathway. A request whose prompt (plain, cached, written and audio together) is
-  strictly past the threshold is counted under the four `_above_272k` counters instead of their
-  base counters, whatever the pricing.
-- **Charging**, the same on both sides (`pricing.cost`, pathway `domain.Rate`). A counter bills at
-  its own rate. An `_above_272k` counter the pricing holds no row for bills at its base counter's
+- **Counting**, in pathway, from the pushed table. A request whose prompt (plain, cached, written
+  and audio together) is strictly past a derived counter's threshold is counted under that counter
+  instead of its base, whatever the pricing. A root with no derived row at that threshold stays
+  where it is: hour writes and audio have one rate at any prompt size, so a long request's are
+  counted in `prompt_tokens`, its audio output in `completion_tokens`, and only the rest above
+  272k. That keeps a summed drain priced as its requests would be apart.
+- **Charging**, the same on both sides (`pricing.cost`, pathway `domain.CounterTable.Cost`). A
+  counter bills at its own rate. A derived counter the pricing holds no row for bills at its base's
   rate, so a pricing without those rows charges as it always did.
 
-An above-272k row needs its base row (`Model Pricing` refuses it otherwise): a shorter prompt
-bills there.
+A derived row needs its base row (`Model Pricing` refuses it otherwise): a shorter prompt bills
+there. A part is bracketed exactly like its container or not at all (`CounterTable.validate`,
+run before every push): otherwise a request could land a part's variant inside a container
+variant whose parts do not subtract it.
 
-The divisors live in `pricing.COUNTERS` and pathway's `internal/domain/price.go`, the above-272k
-counters and their base in `pricing.LONG_CONTEXT_COUNTERS` and the same file; the two must agree.
-Adding a quantity is one parser on the gateway plus one line in each.
+A new bracket or a new vendor fee is rows, not a release: a derived counter is a doc; a new root
+is a doc plus the one parser line in pathway that fills its bucket from the response.
 
 **Revenue and usage reads.** The `Revenue` report (Desk) sums what each billed drain was charged —
 Grove's cost in each record's per-model detail, records of Free users left out — grouped by model, API key, user or day over a date range,
-with a total row; export from the report toolbar. Revenue only: margin against the cost card is not
-built. `api.usage(users, from_date, to_date | period | month)` gives a control client requests and cost (what was charged: usage while Free adds requests, no cost)
+with a total row; export from the report toolbar. Revenue only, no margin. `api.usage(users, from_date, to_date | period | month, key_hash)` gives a control client requests and cost (what was charged: usage while Free adds requests, no cost)
 per user and model (periods: Today, Yesterday, Last 7 Days, Last 30 Days, This Month, Last Month),
-with `as_of` = when the newest usage in the range was pulled. Both are one grouped SQL statement
-over `JSON_TABLE` of the records (`usage_record.usage_table`, built from `pricing.COUNTERS`), on
+and the per-model summary again per UTC day (`daily_summary`, for a chart; a day with no usage has no entry),
+with `as_of` = when the newest usage in the range was pulled. Each is one grouped SQL statement
+over `JSON_TABLE` of the records (`usage_record.usage_table`, one column per Usage Counter), on
 the (user, day) and (api_key, day) indexes: nothing is summed in Python.
 
 **Nothing here is deleted.** No role holds `delete` on Grove User, Grove API Key, Grove Credit,
@@ -215,9 +252,11 @@ history, and Log Settings clears it after 90 days.
 
 **The balance.** Every `Grove User` is prepaid unless marked **Free**. Top-ups are `Grove Credit`
 entries — an append-only ledger, one doc per top-up or negative correction (with a note), never
-edited or deleted; a control client calls `api.add_credit(email, amount, note)` or posts one
-through `/api/resource/Grove Credit`, and reads `api.balance(email)` — balance, allocated, spent,
-free, credit_exhausted — to show the person what they have left (`api.pull_usage(email)` first
+edited or deleted; a control client calls `api.add_credit(email, amount, note, reference)` or posts one
+through `/api/resource/Grove Credit` (`reference` is the client's own id for the top-up, unique on
+the ledger: `add_credit` repeated with one adds nothing, so a call that timed out is sent again
+safely, and the same id on another user or amount is refused), and reads `api.balance(email)` — balance, spent,
+is_free_user — to show the person what they have left (`api.pull_usage(email)` first
 pulls just that user's keys from every store, for a figure less than an hour old; 3 an hour per
 user, then 429). On the user, `spent` is the USD Grove has billed and `balance` =
 Σ ledger − `spent`; both are read-only and both are written by `pricing.settle`, the one writer,
@@ -225,7 +264,9 @@ which also decides `credit_exhausted = not free and balance <= 0` in both direct
 every pull, every ledger entry, every save of the form and every correction, so a top-up unblocks
 the moment it is posted. A **Free** user is never charged and never gated: their usage lands as Usage Records with what it
 would have cost, marked not `billed`, and `spent` and `balance` do not move on Grove or on the
-gateway. Turning Free off later starts them at what they load. A
+gateway. Turning Free off later starts them at what they load. The gateway decides per request:
+Free takes effect when the push reaches it (the next sync), and the pull bills what it tagged
+`p:`, never the user's flag at the time of the pull. A
 negative balance stays on the user until a top-up covers it.
 
 **Two balances, one input.** The push carries each user `prepaid` (= not free; absent on an old
@@ -246,7 +287,8 @@ compare below cannot see either.
 **The drain.** A pull GETs `/usage`: the gateway sets every live `usage:<prefix>` aside under a new
 drain id and returns it with every earlier pair Grove has not acknowledged, grouped by drain id
 (`?keys=` narrows both to one user's keys, with no scan). Grove inserts one Usage Record per key
-(unique on drain id + key), bills it, commits, then POSTs `/usage/ack` with the (drain id, key)
+— two when the drain holds both charged (`p:`) and free (`f:`) usage of it; unique on drain id +
+key + `billed` — bills the charged one, commits, then POSTs `/usage/ack` with the (drain id, key)
 pairs of every user that landed. Every other pair comes back next pull; a re-sent pair records
 nothing twice. The acked keys are kept for Grove Settings' **Usage Retention** (rendered into each
 gateway's `config.json`, default `168h`). A record is one row: the key, the store (a Link — a key
@@ -295,7 +337,7 @@ operator set.
   inserts the catalog's rates as a Disabled `Model Pricing`. Shown while the catalog prices the
   model and no pricing names it. Enabling and publishing stay the operator's call.
 - `bench --site <site> execute grove.catalog.export.write` rewrites the file from the site: every
-  provider once (no API key, no rate card, a vendor's geography set to `Main`), vendor models only,
+  provider once (no API key, a vendor's geography set to `Main`), vendor models only,
   each with the rows of its Enabled pricing, and the one geography `Main`.
 
 ## Scheduled jobs (`hooks.py`)
@@ -338,8 +380,9 @@ automatically. The first gateway set up on or moved onto a store is marked for y
 ## Gotchas worth knowing before you touch something
 
 - **One bad user holds only themselves back.** Each touched user lands in its own savepoint. A user
-  whose share cannot be recorded (an unknown pricing id, a bug) is rolled back alone and left
-  unacknowledged, so the gateway keeps it and re-sends it every pull; everyone else is acked. Grove
+  whose share cannot be recorded (an unknown pricing id, a priced counter this Grove does not know
+  because the gateway is newer, a bug) is rolled back alone and left unacknowledged, so the gateway
+  keeps it and re-sends it every pull; everyone else is acked. Grove
   logs it as one open **Stuck Usage** row per user and store — keys, first and last failure,
   attempts, last error and payload — updated each failing pull and resolved by the pull that lands
   it. **Pull Now** on the row pulls just that user. The usage itself lives only on the gateway
