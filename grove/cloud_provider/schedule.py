@@ -60,7 +60,7 @@ def reconcile(pod, now):
 	"""Spawn once per window while inside it and unprovisioned; terminate while outside and live."""
 	window = Window(pod.provision_at, pod.terminate_at)
 	if window.contains(now):
-		if pod.pod_id:
+		if pod.pod_id or pod.scheduled_for == window.started_on(now):
 			return
 		frappe.db.set_value("Pod", pod.name, "scheduled_for", window.started_on(now))
 		frappe.db.commit()
