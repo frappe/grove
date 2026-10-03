@@ -79,7 +79,10 @@ not what buttons call — it has no Frappe tracking.)
   `failed_when: false`.
 - **The binary is downloaded, never compiled.** The agent lives in its own repo; `install_gateway_agent`
   fetches a release with a `sha256:` checksum. Which release is a Grove Settings field, so a rollback
-  is an edit plus a Deploy Agent — not a control-plane release.
+  is an edit plus a Deploy Agent — not a control-plane release. The one exception is a dev deploy:
+  `scripts/dev_deploy_pathway.py` builds a pathway working tree into `<bench>/builds/` and ships it to
+  one Gateway Server through the same play. `agent_version` still records the pinned release, and the
+  next Deploy Agent or Setup puts that release back.
 
 ## Running one by hand
 
