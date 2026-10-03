@@ -15,11 +15,12 @@
   "network",
   "is_static_ip",
   "column_break_admin",
-  "monitoring_agent",
+  "is_in_maintenance",
   "admin_url",
   "admin_token",
   "agent_version",
-  "is_in_maintenance",
+  "monitoring_agent",
+  "memory_limit_mb",
   "gateway_store",
   "is_store_writer",
   "health_check_id"
@@ -138,6 +139,14 @@
    "read_only": 1
   },
   {
+   "description": "pathway's memory cap in MB, as the box last took it. 0: the box's RAM less 512 MB. Update Memory Limit under Gateway.",
+   "fieldname": "memory_limit_mb",
+   "fieldtype": "Int",
+   "label": "Memory Limit (MB)",
+   "non_negative": 1,
+   "read_only": 1
+  },
+  {
    "description": "The Gateway Store this box's agent runs on: written by Setup, kept by every deploy. Blank only until its first Setup.",
    "fieldname": "gateway_store",
    "fieldtype": "Link",
@@ -167,7 +176,7 @@
   }
  ],
  "links": [],
- "modified": "2026-09-22 16:05:00.000000",
+ "modified": "2026-10-04 00:59:27.903854",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Gateway Server",

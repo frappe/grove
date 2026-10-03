@@ -75,6 +75,13 @@ not what buttons call — it has no Frappe tracking.)
   unchanged and never notifies its handler again, so a setting can sit correct in the config and inert
   in the process for the life of the box. See "enforce persistence on the running redis" in
   `roles/redis`, which a Gateway Store runs.
+- **Pathway's memory cap is one number, in a drop-in.** `roles/pathway_memory` writes
+  `pathway.service.d/memory.conf` with `MemoryMax`: the limit the Update Memory Limit button was
+  given, or 0 for the box's RAM less a 512 MB reserve for everything else on it. Setup writes it
+  too; on a live box the button runs `gateway_server/memory.yml` (Ingress Servers too), and the doc
+  records the limit only once the play succeeds. The same file sets `GOMEMLIMIT` to 90% of the cap.
+  `MemoryMax` lands on the running process at the `daemon-reload`; `GOMEMLIMIT` is environment, so
+  it is read at pathway's next restart, which the role never causes.
 - **Non-fatal cleanup is guarded, not assumed.** Stopping OpenResty on a box that never had it uses
   `failed_when: false`.
 - **The binary is downloaded, never compiled.** The agent lives in its own repo; `install_gateway_agent`

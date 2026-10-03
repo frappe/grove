@@ -1,0 +1,8 @@
+---
+# What the rest of the box keeps: the OS, node_exporter, and the log and metric exporters.
+pathway_memory_reserve_mb: 512
+
+# The Memory Limit on the server doc. 0 is automatic: the box's RAM less the reserve.
+pathway_memory_limit_mb: 0
+
+pathway_memory_cap_mb: "{{ pathway_memory_limit_mb | int or (ansible_memtotal_mb | int - pathway_memory_reserve_mb | int) }}"

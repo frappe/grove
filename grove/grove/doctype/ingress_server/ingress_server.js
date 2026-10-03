@@ -33,6 +33,14 @@ frappe.ui.form.on('Ingress Server', {
 				__('Ship the pathway release from Grove Settings to {0} and restart its agent?', [frm.doc.name]),
 				'deploy_agent'), __('Ingress'));
 
+			frm.add_custom_button(__('Update Memory Limit'), () => frappe.prompt({
+				fieldname: 'limit_mb',
+				fieldtype: 'Int',
+				label: __('Memory Limit (MB)'),
+				default: frm.doc.memory_limit_mb || 0,
+				description: __("0 is automatic: the box's RAM less 512 MB. The cap applies at once; the Go limit, 90% of it, at pathway's next restart."),
+			}, ({ limit_mb }) => frm.call('set_memory_limit', { limit_mb }),
+			__('Cap pathway on {0}', [frm.doc.name]), __('Update')), __('Ingress'));
 
 			frm.add_custom_button(__('Update Scrape Auth'), () => grove.confirm_call(frm,
 				__("Rewrite {0}'s exporter password from Grove Settings? Scrapes with the old one fail from then on.", [frm.doc.name]),

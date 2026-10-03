@@ -1,0 +1,12 @@
+---
+# Cap pathway's memory at the limit the Update Memory Limit button was given — 0 is the box's RAM
+# less the reserve. MemoryMax lands on the running process; GOMEMLIMIT is environment, so it waits
+# for pathway's next restart rather than causing one. Runs against an Ingress Server too.
+#
+# extra-vars: pathway_memory_limit_mb (PathwayHost.memory_variables in grove/fleet.py).
+- hosts: all
+  become: true
+  gather_facts: true
+
+  roles:
+    - pathway_memory

@@ -79,17 +79,19 @@ def extravars_for(doctype_class, module, doc, **kwargs):
 class FakeGateway(SimpleNamespace):
 	get_agent_extravars = GatewayServer.get_agent_extravars
 	config_variables = GatewayServer.config_variables
+	memory_variables = GatewayServer.memory_variables
 	short_name = GatewayServer.short_name
 
 
 class FakeIngress(SimpleNamespace):
 	config_variables = IngressServer.config_variables
+	memory_variables = IngressServer.memory_variables
 	short_name = IngressServer.short_name
 
 
 def fake_ingress(**fields):
 	defaults = dict(
-		name="ing-1", hostname="ing-1.grove.test", is_in_maintenance=0, tls_variables=dict(TLS),
+		name="ing-1", hostname="ing-1.grove.test", is_in_maintenance=0, memory_limit_mb=0, tls_variables=dict(TLS),
 		get_password=lambda field, **kwargs: f"secret-{field}",
 	)
 	return FakeIngress(**{**defaults, **fields})
@@ -105,6 +107,7 @@ def fake_gateway(**fields):
 		gateway_store="store1",
 		network_store="store1",
 		is_in_maintenance=0,
+		memory_limit_mb=0,
 		get_password=lambda field, **kwargs: f"secret-{field}",
 	)
 	return FakeGateway(**{**defaults, **fields})
@@ -513,3 +516,27 @@ class TestMaintenanceIsHeldInConfigJson(unittest.TestCase):
 		with self.assertRaises(requests.HTTPError):
 			GatewayServer.set_maintenance(doc, 1)
 		doc.db_set.assert_not_called()
+
+
+class TestSetupCapsMemoryAtTheDocsLimit(unittest.TestCase):
+	"""A limit typed before provisioning is what Setup writes, not the automatic one."""
+
+	def test_a_gateway_setup_passes_the_limit(self):
+		doc = fake_gateway(
+			doctype="Gateway Server", memory_limit_mb=600, admin_url="", set_admin_url=lambda: None,
+			record_agent_version=lambda rc: None, record_store=lambda rc, store: None,
+			run_playbook=Mock(return_value=("play-1", 1)),
+		)
+		doc.get_agent_extravars = Mock(return_value={})
+		with patch.object(frappe, "db", Mock()), patch("frappe.get_single", return_value=SETTINGS):
+			GatewayServer.provision(doc)
+		self.assertEqual(600, doc.run_playbook.call_args.kwargs["extravars"]["pathway_memory_limit_mb"])
+
+	def test_an_ingress_setup_passes_the_limit(self):
+		doc = fake_ingress(memory_limit_mb=600)
+		with (
+			patch("frappe.get_single", return_value=SETTINGS),
+			patch.object(frappe, "db", SimpleNamespace(get_single_value=lambda *args: PINNED)),
+		):
+			variables = IngressServer.provision_variables(doc, SETTINGS)
+		self.assertEqual(600, variables["pathway_memory_limit_mb"])

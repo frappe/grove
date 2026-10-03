@@ -223,6 +223,34 @@ class PathwayHost(FleetHost):
 			time.sleep(1)
 		frappe.throw(f"{self.name} kept maintenance={not want}: pathway rejected config.json, see its journal.")
 
+	@property
+	def memory_variables(self):
+		"""What the pathway_memory role reads. 0 is automatic: the box's RAM less the reserve."""
+		return {"pathway_memory_limit_mb": self.memory_limit_mb or 0}
+
+	@frappe.whitelist()
+	def set_memory_limit(self, limit_mb: int):
+		"""Button: cap pathway at `limit_mb` — 0 is automatic. The cap lands on the running process;
+		the Go runtime's own limit, 90% of it, is read at pathway's next restart."""
+		if limit_mb < 0:
+			frappe.throw("Memory Limit cannot be negative. 0 is automatic.")
+		frappe.enqueue_doc(
+			self.doctype, self.name, "apply_memory_limit", queue="long", timeout=600, limit_mb=limit_mb
+		)
+		frappe.msgprint(f"Updating the memory limit on {self.name} — watch its Ansible Plays.", alert=True)
+
+	@failure.reports_failure(mark_broken=False)
+	def apply_memory_limit(self, limit_mb: int):
+		"""Write the drop-in. The doc records the limit only once the box holds it."""
+		self.memory_limit_mb = limit_mb
+		play_name, rc = self.run_playbook(
+			"memory.yml", project="Gateway Server", extravars=self.memory_variables
+		)
+		if rc != 0:
+			frappe.throw(f"memory.yml failed on {self.name} (Ansible Play {play_name}).")
+		self.db_set("memory_limit_mb", limit_mb)
+		return play_name, rc
+
 	def get_in_flight(self):
 		"""The box's own answer: {"maintenance": bool, "in_flight": requests still running}."""
 		return Target.of(self).get("in-flight")

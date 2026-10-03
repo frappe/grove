@@ -36,6 +36,7 @@ class GatewayServer(PathwayHost, Document):
 		is_static_ip: DF.Check
 		is_store_writer: DF.Check
 		machine: DF.Link
+		memory_limit_mb: DF.Int
 		monitoring_agent: DF.Link | None
 		network: DF.Link | None
 		private_ip: DF.Data | None
@@ -305,7 +306,11 @@ class GatewayServer(PathwayHost, Document):
 			"gateway.yml",
 			# The fleet key too: Setup is what writes the certificate. Blank zone renders a box that
 			# serves :80 in the clear.
-			extravars={**self.get_agent_extravars(store, agent_binary), **self.tls_variables},
+			extravars={
+				**self.get_agent_extravars(store, agent_binary),
+				**self.tls_variables,
+				**self.memory_variables,
+			},
 		)
 
 		# Derived at validate, so a zone set after the last save leaves it naming the old address.

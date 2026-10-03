@@ -49,6 +49,7 @@
     - grove_https
     - fleet_tls
     - install_gateway_agent
+    - pathway_memory
 
   tasks:
     - name: stop and disable openresty
