@@ -13,7 +13,6 @@ from frappe.core.doctype.log_settings.log_settings import _supports_log_clearing
 from frappe.tests import IntegrationTestCase
 
 from grove.grove.doctype.geography.test_geography import make_test_geography
-from grove.grove.doctype.grove_user.grove_user import register_user
 from grove.billing.doctype.stuck_usage.stuck_usage import StuckUsage
 from grove.pathway import run, usage
 from grove.pathway.reconcile import Reconciler
@@ -61,7 +60,7 @@ class PullCase(IntegrationTestCase):
 
 	@classmethod
 	def grove_user(cls, email):
-		return frappe.get_doc({"doctype": "Grove User", "user": register_user(email)}).insert(ignore_permissions=True).name
+		return frappe.get_doc({"doctype": "Grove User", "email": email}).insert(ignore_permissions=True).name
 
 	def key(self, user=None):
 		return frappe.get_doc({"doctype": "Grove API Key", "user": user or self.user}).insert(ignore_permissions=True).name

@@ -120,11 +120,11 @@ history, and Log Settings clears it after 90 days.
 
 **The balance.** Every `Grove User` is prepaid unless marked **Free**. Top-ups are `Grove Credit`
 entries — an append-only ledger, one doc per top-up or negative correction (with a note), never
-edited or deleted; a control client calls `api.add_credit(email, amount, note, reference)` or posts one
+edited or deleted; a control client calls `api.add_credit(user, amount, note, reference)` or posts one
 through `/api/resource/Grove Credit` (`reference` is the client's own id for the top-up, unique on
 the ledger: `add_credit` repeated with one adds nothing, so a call that timed out is sent again
-safely, and the same id on another user or amount is refused), and reads `api.balance(email)` — balance, spent,
-is_free_user — to show the person what they have left (`api.pull_usage(email)` first
+safely, and the same id on another user or amount is refused), and reads `api.balance(user)` — balance, spent,
+is_free_user — to show the user what they have left (`api.pull_usage(user)` first
 pulls just that user's keys from every store, for a figure less than an hour old; 3 an hour per
 user, then 429). On the user, `spent` is the USD Grove has billed and `balance` =
 Σ ledger − `spent`; both are read-only and both are written by `pricing.settle`, the one writer,

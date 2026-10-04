@@ -9,7 +9,6 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from grove.catalog import seed
-from grove.grove.doctype.grove_user.grove_user import register_user
 from grove.grove.doctype.model import model as model_module
 from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing
 
@@ -72,7 +71,7 @@ class TestGranted(IntegrationTestCase):
 		).insert(ignore_permissions=True).name
 		cls.group = frappe.get_doc({"doctype": "Model Group", "__newname": "probe-granted-group"}).insert().name
 		cls.user = frappe.get_doc(
-			{"doctype": "Grove User", "user": register_user("probe-granted@example.com")}
+			{"doctype": "Grove User", "email": "probe-granted@example.com"}
 		).insert(ignore_permissions=True).name
 
 	def is_granted(self):

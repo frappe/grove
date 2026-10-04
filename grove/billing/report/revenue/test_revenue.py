@@ -7,7 +7,6 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from grove.grove.doctype.geography.test_geography import make_test_geography
-from grove.grove.doctype.grove_user.grove_user import register_user
 from grove.billing.report.revenue.revenue import execute
 from grove.utils import utc_today
 
@@ -24,7 +23,7 @@ class TestRevenue(IntegrationTestCase):
 			{"doctype": "Model", "model_id": "revenue-7b", "modality": "text", "hf_repo": "org/revenue-7b"}
 		).insert(ignore_permissions=True).name
 		cls.user = frappe.get_doc(
-			{"doctype": "Grove User", "user": register_user("revenue@grove.test")}
+			{"doctype": "Grove User", "email": "revenue@grove.test"}
 		).insert(ignore_permissions=True).name
 		cls.key = frappe.get_doc({"doctype": "Grove API Key", "user": cls.user}).insert(ignore_permissions=True).name
 		cls.other_key = frappe.get_doc({"doctype": "Grove API Key", "user": cls.user}).insert(ignore_permissions=True).name

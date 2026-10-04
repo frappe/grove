@@ -31,10 +31,10 @@ def effective_groups():
 
 
 def effective_users():
-	"""Every Grove User projected for the gateway. One record per person however many keys they
+	"""Every Grove User projected for the gateway. One record per user however many keys they
 	hold — the reason none of this is flattened onto the keys.
 
-	`limited` is Grove's own verdict (`credit_exhausted`). Holding it on the PERSON stops a
+	`limited` is Grove's own verdict (`credit_exhausted`). Holding it on the USER stops a
 	blocked user minting a fresh key. Every user is prepaid unless marked Free, and carries `budget`:
 	the amount they loaded (Σ Grove Credit), the same on every store. The box subtracts its own
 	spend from it and refuses at zero. The wire says `prepaid`, not `free`: a field absent on an
@@ -44,12 +44,12 @@ def effective_users():
 	limits = limit_rows()
 	loaded = allocations()
 	users = frappe.get_all(
-		"Grove User", fields=["name", "user", "credit_exhausted", "log_payloads", "geography", "free"]
+		"Grove User", fields=["name", "email", "credit_exhausted", "log_payloads", "geography", "free"]
 	)
 	return [
 		{
 			"name": u.name,
-			"email": u.user or "",  # for humans reading Redis; no decision reads it
+			"email": u.email or "",  # for humans reading Redis; no decision reads it
 			# One comma list: the gateway unions the grants per entry. Sorted, so the same
 			# membership always hashes the same.
 			"group": ",".join(memberships.get(u.name, [])),
@@ -72,7 +72,7 @@ def effective_users():
 
 def effective_keys():
 	"""Every LIVE API Key projected for the gateway. A key is a pointer to whoever holds it and
-	nothing else — what they may call belongs to the person.
+	nothing else — what they may call belongs to the user.
 
 	Revoked keys are not projected: absent from their bucket, the push prunes them off every box.
 	The row stays in Grove as the record of a credential that existed."""

@@ -263,7 +263,7 @@ class TestEffectiveUsers(unittest.TestCase):
 
 	def test_a_user_carries_their_groups_their_deltas_and_their_budget_flag(self):
 		[user] = self.users(
-			[frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=1)],
+			[frappe._dict(name="GU-1", email="a@x.com", credit_exhausted=1)],
 			[
 				frappe._dict(parent="GU-1", model_key="qwen3-4b", parentfield="allow"),
 				frappe._dict(parent="GU-1", model_key="qwen3-35b", parentfield="deny"),

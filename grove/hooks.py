@@ -13,7 +13,7 @@ app_include_js = ["/assets/grove/js/gpu_table.js", "/assets/grove/js/confirm_cal
 notification_config = "grove.notifications.get_notification_config"
 
 fixtures = [
-	{"dt": "Role", "filters": [["name", "in", ["Grove Control", "Grove User"]]]},
+	{"dt": "Role", "filters": [["name", "in", ["Grove Control"]]]},
 ]
 
 # Providers, models and geographies ship as a catalog: inserted when missing, never overwritten.

@@ -14,8 +14,9 @@ DEFAULT_LIMITS = (
 
 class GroveUser(Document):
 	"""Grove's per-user policy: their groups, which models they may call, and their prepaid
-	balance (every user has one unless marked Free). All of it belongs to the PERSON — their keys
-	are credentials and share this balance.
+	balance (every user has one unless marked Free). All of it belongs to the USER — whatever the
+	control client's `reference` names, a team in Central — and their keys are credentials that
+	share this balance. `email` is where their alerts go, not a login.
 	No doc means no group and no allow, so the user reaches no models at all. A new doc starts in
 	their geography's default Model Group, when one is marked, and under the default rate limits.
 
@@ -37,13 +38,14 @@ class GroveUser(Document):
 		balance: DF.Currency
 		credit_exhausted: DF.Check
 		deny: DF.Table[GroveModelRow]
+		email: DF.Data
 		free: DF.Check
 		geography: DF.Link
 		limits: DF.Table[ModelLimit]
 		log_payloads: DF.Check
 		model_groups: DF.TableMultiSelect[ModelGroupRow]
+		reference: DF.Data | None
 		spent: DF.Currency
-		user: DF.Link
 	# end: auto-generated types
 
 	def before_insert(self):
@@ -97,38 +99,15 @@ class GroveUser(Document):
 		settle(self.name)
 
 
-GROVE_USER_ROLE = "Grove User"
-
-
-def register_user(email, full_name=None):
-	"""The Website User behind `email`, created if nobody holds it. A policy is provisioned for
-	someone who may never have signed in, and frappe checks the Link before any hook here runs — so
-	the login is registered a step AHEAD, not from before_insert.
-
-	The role is an identity marker with no perms; it grants nothing in Grove."""
-	if not frappe.db.exists("User", email):
-		frappe.get_doc(
-			{
-				"doctype": "User",
-				"email": email,
-				"first_name": full_name or email.split("@")[0],
-				"user_type": "Website User",
-				"send_welcome_email": 0,
-				"roles": [{"role": GROVE_USER_ROLE}],
-			}
-		).insert(ignore_permissions=True)
-	return email
-
-
-def for_email(email):
-	"""Only the outward-facing edges speak email; everything downstream of a key carries this
-	name."""
-	return frappe.db.get_value("Grove User", {"user": email}) if email else None
+def for_reference(reference):
+	"""Only the outward-facing edges speak the control client's reference; everything downstream
+	of a key carries this name."""
+	return frappe.db.get_value("Grove User", {"reference": reference}) if reference else None
 
 
 def set_credit_exhausted(grove_user, exhausted):
 	"""Flip the credit gate for `grove_user`. Held here, not on the keys, because the balance is
-	the person's — storing it per key let a blocked user mint a fresh one and walk past their
+	the user's — storing it per key let a blocked user mint a fresh one and walk past their
 	own cap. The next sync pushes one record, not one per key they hold.
 	Returns True when something actually changed."""
 	current = frappe.db.get_value("Grove User", grove_user, "credit_exhausted")

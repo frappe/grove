@@ -15,7 +15,6 @@ from grove.billing import pricing
 from grove.billing.doctype.credit_discrepancy.credit_discrepancy import mark_corrected, pending_adjustments
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.billing.doctype.grove_credit.grove_credit import GroveCredit
-from grove.grove.doctype.grove_user.grove_user import register_user
 from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing, new_pricing
 from grove.pathway import routes, snapshot, usage
 from grove.pathway.run import Target
@@ -61,7 +60,8 @@ class CreditsCase(IntegrationTestCase):
 	def user(self, credit=1, free=0):
 		CreditsCase.counter += 1
 		doc = frappe.get_doc({
-			"doctype": "Grove User", "user": register_user(f"credits-{CreditsCase.counter}@grove.test"), "free": free,
+			"doctype": "Grove User", "reference": f"credits-{CreditsCase.counter}",
+			"email": f"credits-{CreditsCase.counter}@grove.test", "free": free,
 		}).insert(ignore_permissions=True)
 		if credit:
 			self.credit(doc.name, credit)
@@ -227,9 +227,9 @@ class TestAFreeUserIsNeverCharged(CreditsCase):
 	def test_the_usage_api_counts_their_requests_and_no_cost(self):
 		free, key = self.user(credit=0, free=1)
 		self.pull({key: self.hash(80_000, charged=False)})
-		email = frappe.db.get_value("Grove User", free, "user")
-		result = api.usage([email], period="Today")
-		self.assertEqual(result[email], {"requests": 1, "cost": 0})
+		reference = frappe.db.get_value("Grove User", free, "reference")
+		result = api.usage([reference], period="Today")
+		self.assertEqual(result[reference], {"requests": 1, "cost": 0})
 
 	def test_untagged_usage_of_a_known_model_is_recorded_and_bills_nothing(self):
 		user, key = self.user(credit=1)
@@ -310,34 +310,34 @@ class TestTheUsageApiSumsInTheDatabase(CreditsCase):
 		user, key = self.user(credit=5)
 		self.pull({key: self.hash(50_000)})
 		self.pull({key: self.hash(30_000, requests=2)})
-		email = frappe.db.get_value("Grove User", user, "user")
-		result = api.usage([email], period="Today")
-		self.assertEqual(result[email], {"requests": 3, "cost": 0.8})
+		reference = frappe.db.get_value("Grove User", user, "reference")
+		result = api.usage([reference], period="Today")
+		self.assertEqual(result[reference], {"requests": 3, "cost": 0.8})
 		self.assertEqual(result["model_summary"], [{"model": self.model_key, "requests": 3, "cost": 0.8}])
 		self.assertEqual(result["daily_summary"], [{"day": result["to_date"], "model": self.model_key, "requests": 3, "cost": 0.8}])
 		self.assertTrue(result["as_of"].endswith("Z"))
-		self.assertEqual(api.usage([email], period="Yesterday")[email], {"requests": 0, "cost": 0})
+		self.assertEqual(api.usage([reference], period="Yesterday")[reference], {"requests": 0, "cost": 0})
 
 	def test_a_key_hash_narrows_it_to_that_key(self):
 		user, key = self.user(credit=5)
 		other_key = frappe.get_doc({"doctype": "Grove API Key", "user": user}).insert(ignore_permissions=True).name
 		self.pull({key: self.hash(50_000), other_key: self.hash(30_000, requests=2)})
-		email = frappe.db.get_value("Grove User", user, "user")
+		reference = frappe.db.get_value("Grove User", user, "reference")
 		key_hash = frappe.db.get_value("Grove API Key", key, "key_hash")
 
-		result = api.usage([email], period="Today", key_hash=key_hash)
-		self.assertEqual(result[email], {"requests": 1, "cost": 0.5})
+		result = api.usage([reference], period="Today", key_hash=key_hash)
+		self.assertEqual(result[reference], {"requests": 1, "cost": 0.5})
 		self.assertEqual(result["model_summary"], [{"model": self.model_key, "requests": 1, "cost": 0.5}])
 		self.assertEqual(result["daily_summary"], [{"day": result["to_date"], "model": self.model_key, "requests": 1, "cost": 0.5}])
 
 	def test_another_users_key_is_refused(self):
 		user, _ = self.user(credit=5)
 		_, stranger_key = self.user(credit=5)
-		email = frappe.db.get_value("Grove User", user, "user")
+		reference = frappe.db.get_value("Grove User", user, "reference")
 		key_hash = frappe.db.get_value("Grove API Key", stranger_key, "key_hash")
 
 		with self.assertRaises(frappe.DoesNotExistError):
-			api.usage([email], period="Today", key_hash=key_hash)
+			api.usage([reference], period="Today", key_hash=key_hash)
 
 
 class TestTheGatewaysChargeIsAudited(CreditsCase):

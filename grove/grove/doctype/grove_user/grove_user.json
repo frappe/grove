@@ -5,7 +5,8 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "user",
+  "email",
+  "reference",
   "geography",
   "model_groups",
   "column_break_head",
@@ -23,13 +24,21 @@
  ],
  "fields": [
   {
-   "description": "The login this policy belongs to. One policy per user \u2014 a second one for the same login is what let a budget be doubled by re-provisioning.",
-   "fieldname": "user",
-   "fieldtype": "Link",
+   "description": "Where alerts for this user go. Not a login, and not unique: one person may own several users.",
+   "fieldname": "email",
+   "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "User",
-   "options": "User",
-   "reqd": 1,
+   "label": "Email",
+   "options": "Email",
+   "reqd": 1
+  },
+  {
+   "description": "The control client's own id for this user; Central sends its team id. One user per reference \u2014 a second one is what let a budget be doubled by re-provisioning. Blank on a user made by hand.",
+   "fieldname": "reference",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Reference",
+   "no_copy": 1,
    "unique": 1
   },
   {
@@ -148,7 +157,7 @@
    "link_fieldname": "grove_user"
   }
  ],
- "modified": "2026-10-04 16:52:42.797363",
+ "modified": "2026-10-04 18:10:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove User",
@@ -177,6 +186,6 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "title_field": "user",
+ "title_field": "email",
  "track_changes": 1
 }
