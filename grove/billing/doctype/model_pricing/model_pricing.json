@@ -6,8 +6,9 @@
  "engine": "InnoDB",
  "field_order": [
   "model",
-  "status",
+  "geography",
   "column_break_vnjs",
+  "status",
   "enabled_on",
   "section_rates",
   "rates"
@@ -22,6 +23,17 @@
    "label": "Model",
    "options": "Model",
    "reqd": 1
+  },
+  {
+   "description": "The model's geography, so the pricings of one key \u2014 a doc per geography \u2014 tell apart. Blank for a model we serve ourselves.",
+   "fetch_from": "model.geography",
+   "fieldname": "geography",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Geography",
+   "options": "Geography",
+   "read_only": 1
   },
   {
    "default": "Disabled",
@@ -60,7 +72,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-04 00:00:00.000000",
+ "modified": "2026-10-04 23:29:27.622791",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Model Pricing",
