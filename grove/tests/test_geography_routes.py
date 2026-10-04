@@ -148,7 +148,7 @@ class TestOneSnapshotPerGeography(unittest.TestCase):
 			built.append(geography)
 			return {"geography": geography}
 
-		def push_target(target, desired, force):
+		def push_target(target, desired, force, _adjustments):
 			pushed.append((target.name, desired["geography"]))
 			return None
 
@@ -162,6 +162,7 @@ class TestOneSnapshotPerGeography(unittest.TestCase):
 			patch.object(snapshot, "gateway_snapshot", side_effect=build),
 			patch.object(Target, "resolve", side_effect=lambda kind, name: Target(kind, name, "u", "t")),
 			patch.object(projection, "push_target", side_effect=push_target),
+			patch.object(projection, "pending_adjustments", return_value={}),
 			patch.object(frappe, "db", frappe._dict(commit=lambda: None)),
 		):
 			projection.sync_projection()

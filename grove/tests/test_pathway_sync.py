@@ -545,6 +545,46 @@ class TestSyncTarget(unittest.TestCase):
 		self.assertEqual((row["reachable"], row["success"], row["http_status"]), (1, 0, 404))
 
 
+class TestAPushCarriesOwedAdjustments(unittest.TestCase):
+	"""A store's pending spend adjustments go out after the state, each answer kept under its row."""
+
+	SNAPSHOT = {"groups": {"records": [], "catalog": "", "hash": "h1"}}
+	OWED = [{"user": "GU-1", "delta": -5, "id": "CD-1"}, {"user": "GU-2", "delta": 7, "id": "CD-2"}]
+
+	def push(self, remote, refused=None):
+		posted = []
+
+		def post(path, body):
+			posted.append((path, body))
+			if refused and body.get("id") == refused:
+				raise ConnectionError("box gone")
+			return {"spent": 40}
+
+		with (
+			unittest.mock.patch.object(Target, "post", side_effect=post),
+			unittest.mock.patch.object(Target, "remote_hashes", return_value=remote),
+		):
+			target = Target("Gateway Server", "gw1", "http://x", "t")
+			row = projection.push_target(target, self.SNAPSHOT, False, self.OWED)
+		return row, posted
+
+	def test_state_goes_first_then_each_adjustment(self):
+		row, posted = self.push(remote={})
+		self.assertEqual(posted, [("state", self.SNAPSHOT), ("spend-adjust", self.OWED[0]), ("spend-adjust", self.OWED[1])])
+		self.assertEqual((row["success"], row["adjusted"]), (1, {"CD-1": 40, "CD-2": 40}))
+		self.assertEqual([sent["push"] for sent in row["payload"]], ["state", "spend-adjust", "spend-adjust"])
+
+	def test_a_box_holding_the_state_is_still_sent_what_it_is_owed(self):
+		row, posted = self.push(remote={"groups": "h1"})
+		self.assertEqual([path for path, _body in posted], ["spend-adjust", "spend-adjust"])
+		self.assertEqual((row["success"], row["detail"]), (1, "spend-adjust:2"))
+
+	def test_a_failed_adjustment_fails_the_row_and_keeps_the_answers_before_it(self):
+		row, posted = self.push(remote={}, refused="CD-2")
+		self.assertEqual(posted[0][0], "state")
+		self.assertEqual((row["success"], row["adjusted"]), (0, {"CD-1": 40}))
+
+
 class TestAPushNeedsNoFrappe(unittest.TestCase):
 	"""push_target and in_turn run on a pool thread, where there is no frappe.local."""
 
@@ -649,13 +689,15 @@ class TestSyncProjection(unittest.TestCase):
 	"""The run: one snapshot built for all gateways, one per ingress, and a log doc only when
 	something was actually pushed — a fleet in sync leaves nothing behind."""
 
-	def run_projection(self, results, proxies=("gw1", "gw2"), entry=None, groups=None, **kwargs):
+	def run_projection(self, results, proxies=("gw1", "gw2"), entry=None, groups=None, owed=None, **kwargs):
 		doc = FakeRun()
 		targets = []
 		self.stamps = []
+		self.handed = {}
 
-		def push_target(target, _snapshot, force):
+		def push_target(target, _snapshot, force, adjustments=()):
 			targets.append((target.server_type, target.name, force))
+			self.handed[target.name] = adjustments
 			result = results.get(target.name)
 			return result(target) if callable(result) else result
 
@@ -673,6 +715,8 @@ class TestSyncProjection(unittest.TestCase):
 			unittest.mock.patch.object(snapshot, "gateway_geography", return_value="in"),
 			unittest.mock.patch.object(Target, "resolve", side_effect=resolved),
 			unittest.mock.patch.object(projection, "push_target", side_effect=push_target),
+			unittest.mock.patch.object(projection, "pending_adjustments", return_value=owed or {}),
+			unittest.mock.patch.object(projection, "mark_corrected") as self.mark_corrected,
 			unittest.mock.patch.object(
 				frappe, "db", frappe._dict(commit=lambda: None, set_value=set_value)
 			),
@@ -686,6 +730,16 @@ class TestSyncProjection(unittest.TestCase):
 	def row(self, success=1):
 		return {"reachable": 1, "success": success, "http_status": 0, "error": None,
 		        "duration_ms": 1, "detail": "", "payload": ""}
+
+	def test_a_stores_owed_adjustments_go_with_its_push_and_the_answers_mark_the_rows(self):
+		owed = {"store1": [{"user": "GU-1", "delta": -5, "id": "CD-1"}]}
+		_name, doc, _targets = self.run_projection(
+			{"gw1": {**self.row(), "adjusted": {"CD-1": 40}}}, groups=[("store1", ["gw1"]), (None, ["gw2"])], owed=owed,
+		)
+		self.assertEqual(self.handed, {"gw1": owed["store1"], "gw2": ()})
+		self.mark_corrected.assert_called_once_with({"CD-1": 40})
+		[row] = doc.results
+		self.assertNotIn("adjusted", row)
 
 	def test_a_fleet_in_sync_logs_no_doc(self):
 		name, doc, targets = self.run_projection({})
@@ -797,6 +851,7 @@ class TestSyncProjection(unittest.TestCase):
 				projection, "push_target",
 				side_effect=lambda target, *_: seen.append((target.server_type, target.name)) or None,
 			),
+			unittest.mock.patch.object(projection, "pending_adjustments", return_value={}),
 			unittest.mock.patch.object(
 				frappe, "db",
 				frappe._dict(commit=lambda: None, set_value=lambda *a, **k: None),

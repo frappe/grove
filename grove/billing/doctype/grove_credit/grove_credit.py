@@ -37,6 +37,7 @@ class GroveCredit(Document):
 			frappe.throw("A ledger entry is never edited — add a correcting entry instead.")
 
 	def on_update(self):
+		# Nothing is sent from here: the next projection push carries the new `budget`.
 		settle(self.grove_user)
 
 	def on_trash(self):

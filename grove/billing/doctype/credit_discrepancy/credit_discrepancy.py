@@ -20,17 +20,15 @@ class CreditDiscrepancy(Document):
 		api_key: DF.Link | None
 		correction: DF.Currency
 		delta: DF.Currency
+		gateway_correction_pending: DF.Check
 		gateway_spent: DF.Currency
 		gateway_store: DF.Link | None
 		gateway_value: DF.Currency
 		grove_user: DF.Link | None
 		grove_value: DF.Currency
-		model: DF.Link | None
-		model_key: DF.Data | None
 		note: DF.SmallText | None
 		pricing: DF.Link | None
 		resolution: DF.Literal['', 'Grove corrected', 'Gateway corrected']
-		resolved: DF.Check
 		usage_record: DF.Link | None
 	# end: auto-generated types
 
@@ -44,50 +42,52 @@ class CreditDiscrepancy(Document):
 		delta = Decimal(str(self.delta))
 		frappe.db.sql("update `tabGrove User` set spent = spent + %s where name = %s", [delta, self.grove_user])
 		settle(self.grove_user)
-		self.db_set({"correction": delta, "resolution": "Grove corrected", "resolved": 1})
+		self.db_set({"correction": delta, "resolution": "Grove corrected"})
 
 	@frappe.whitelist()
 	def correct_gateway(self):
-		"""The gateway charged it wrong: its spend counter for the user on that store moves by minus
-		the delta, so its balance meets Grove's. Sent through the store's writers in turn; the box
-		applies it once under this row's name, so pressing again after a failure is safe."""
-		from grove.billing.pricing import NANO, nano
-
+		"""The gateway charged it wrong: its spend counter for the user on that store is owed minus
+		the delta. Only recorded here — the next projection tick sends it, and every tick after until
+		the box answers. Grove's side can no longer be corrected."""
 		self.check_open()
-		answer = post_to_store(
-			self.gateway_store, "spend-adjust", {"user": self.grove_user, "delta": -nano(self.delta), "id": self.name}
-		)
-		self.db_set({
-			"correction": -Decimal(str(self.delta)), "resolution": "Gateway corrected", "resolved": 1,
-			"gateway_spent": Decimal(answer["spent"]) / NANO,
-		})
+		if not self.gateway_store:
+			frappe.throw("This drain names no store, so there is nothing to send the correction through.")
+		self.db_set("gateway_correction_pending", 1)
 
 	def check_open(self):
 		frappe.only_for("System Manager")
-		if self.resolved:
-			frappe.throw("This discrepancy is already resolved.")
+		if self.resolution or self.gateway_correction_pending:
+			frappe.throw(f"This discrepancy is already decided: {self.resolution or 'waiting on the gateway'}.")
 
 
-def post_to_store(gateway_store, path, body):
-	"""POST through the store's Active writers in name order until one answers; the last error
-	otherwise. Every box on a store shares its Redis, so any writer will do."""
-	from grove.pathway.run import Target
+def pending_adjustments():
+	"""{store: [spend-adjust body]} for every correction no gateway has answered. The box applies
+	each once under the row's name, so sending again is safe."""
+	from grove.billing.pricing import nano
 
-	writers = frappe.get_all(
-		"Gateway Server", filters={"gateway_store": gateway_store, "is_store_writer": 1, "status": "Active"},
-		pluck="name", order_by="name asc",
+	# ponytail: the box forgets an id after 7 days, so a row pending longer could apply twice.
+	# Keep ids forever in pathway if one ever does.
+	rows = frappe.get_all(
+		"Credit Discrepancy", filters={"gateway_correction_pending": 1},
+		fields=["name", "grove_user", "gateway_store", "delta"], order_by="creation asc",
 	)
-	if not writers:
-		frappe.throw(f"{gateway_store} has no Active writer to send this through.")
-	for index, writer in enumerate(writers):
-		try:
-			target = Target.resolve("Gateway Server", writer)
-			if target.error:
-				raise RuntimeError(target.error)
-			return target.post(path, body)
-		except Exception:
-			if index == len(writers) - 1:
-				raise
+	owed = {}
+	for row in rows:
+		body = {"user": row.grove_user, "delta": -nano(row.delta), "id": row.name}
+		owed.setdefault(row.gateway_store, []).append(body)
+	return owed
+
+
+def mark_corrected(spent_by_row):
+	"""What a box answered: {row name: its spend counter for the user after, in nano-USD}."""
+	from grove.billing.pricing import NANO
+
+	for name, spent in spent_by_row.items():
+		delta = frappe.db.get_value("Credit Discrepancy", name, "delta")
+		frappe.db.set_value("Credit Discrepancy", name, {
+			"correction": -delta, "resolution": "Gateway corrected", "gateway_spent": Decimal(spent) / NANO,
+			"gateway_correction_pending": 0,
+		})
 
 
 def record(**facts):

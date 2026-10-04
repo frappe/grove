@@ -12,6 +12,7 @@ from frappe.tests import IntegrationTestCase
 
 from grove import api
 from grove.billing import pricing
+from grove.billing.doctype.credit_discrepancy.credit_discrepancy import mark_corrected, pending_adjustments
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.billing.doctype.grove_credit.grove_credit import GroveCredit
 from grove.grove.doctype.grove_user.grove_user import register_user
@@ -97,7 +98,7 @@ class CreditsCase(IntegrationTestCase):
 
 	def discrepancies(self, user):
 		return frappe.get_all(
-			"Credit Discrepancy", filters={"grove_user": user, "resolved": 0},
+			"Credit Discrepancy", filters={"grove_user": user, "resolution": ("is", "not set")},
 			fields=["name", "usage_record", "pricing", "gateway_value", "grove_value", "delta"],
 		)
 
@@ -371,30 +372,53 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		row.correct_grove()
 		row.reload()
 		self.assertEqual((self.state(user)[0], self.balance(user)), (D("0.6"), D("4.4")))
-		self.assertEqual((row.resolved, row.resolution, D(str(row.correction))), (1, "Grove corrected", D("0.1")))
+		self.assertEqual((row.resolution, D(str(row.correction))), ("Grove corrected", D("0.1")))
 		with self.assertRaises(frappe.ValidationError):
 			row.correct_grove()
 
-	def test_gateway_is_wrong_sends_the_adjustment_once_under_the_rows_name(self):
+	def test_gateway_is_wrong_marks_the_row_pending_and_dials_nothing(self):
 		user, row = self.discrepancy()
-		box = unittest.mock.Mock(error=None)
-		box.post.return_value = {"spent": 500_000_000, "applied": True}
-		with unittest.mock.patch.object(Target, "resolve", return_value=box) as resolve:
+		with unittest.mock.patch.object(Target, "post") as post:
 			row.correct_gateway()
-		box.post.assert_called_once_with("spend-adjust", {"user": user, "delta": -100_000_000, "id": row.name})
-		self.assertEqual(resolve.call_args.args, ("Gateway Server", self.gateway))
+		post.assert_not_called()
 		row.reload()
-		self.assertEqual((row.resolved, row.resolution, D(str(row.gateway_spent))), (1, "Gateway corrected", D("0.5")))
+		self.assertEqual((row.gateway_correction_pending, row.resolution or ""), (1, ""))
 		self.assertEqual(self.state(user)[0], D("0.5"), "Grove's own spend is untouched")
 
-	def test_a_failed_gateway_correction_leaves_the_row_open(self):
+	def test_a_pending_row_takes_neither_button(self):
 		_user, row = self.discrepancy()
-		box = unittest.mock.Mock(error=None)
-		box.post.side_effect = ConnectionError("box gone")
-		with unittest.mock.patch.object(Target, "resolve", return_value=box), self.assertRaises(ConnectionError):
+		row.correct_gateway()
+		for press in (row.correct_grove, row.correct_gateway):
+			with self.assertRaises(frappe.ValidationError):
+				press()
+
+	def test_a_row_with_no_store_cannot_be_sent(self):
+		_user, row = self.discrepancy()
+		row.gateway_store = None
+		with self.assertRaises(frappe.ValidationError):
 			row.correct_gateway()
+		self.assertFalse(frappe.db.get_value("Credit Discrepancy", row.name, "gateway_correction_pending"))
+
+	def test_the_tick_is_handed_a_pending_row_under_its_store_and_name(self):
+		user, row = self.discrepancy()
+		self.assertNotIn(row.name, self.owed_ids())
+		row.correct_gateway()
+		self.assertIn({"user": user, "delta": -100_000_000, "id": row.name}, pending_adjustments()[self.store])
+
+	def test_the_boxs_answer_marks_the_row_corrected_and_it_is_owed_no_more(self):
+		user, row = self.discrepancy()
+		row.correct_gateway()
+		mark_corrected({row.name: 500_000_000})
 		row.reload()
-		self.assertEqual(row.resolved, 0)
+		self.assertEqual(
+			(row.resolution, row.gateway_correction_pending, D(str(row.correction)), D(str(row.gateway_spent))),
+			("Gateway corrected", 0, D("-0.1"), D("0.5")),
+		)
+		self.assertNotIn(row.name, self.owed_ids())
+		self.assertEqual(self.state(user)[0], D("0.5"), "Grove's own spend is untouched")
+
+	def owed_ids(self):
+		return [body["id"] for body in pending_adjustments().get(self.store, [])]
 
 	def test_correcting_needs_a_system_manager(self):
 		_user, row = self.discrepancy()
