@@ -162,7 +162,7 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 	def test_a_new_user_starts_under_the_default_limits(self):
 		doc = self.user("grove-limit-default@example.com", []).insert()
 		[record] = [u for u in effective_users() if u["name"] == doc.name]
-		self.assertEqual(record["limits"], "requests:1m:20,total_tokens:1m:100000")
+		self.assertEqual(record["limits"], "requests:1m:20,total_tokens:1m:20000")
 
 	def test_limits_reach_the_wire_sorted(self):
 		doc = self.user("grove-limit-wire@example.com", [

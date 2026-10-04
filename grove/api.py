@@ -31,7 +31,7 @@ def provision_user(
 	users. A new user starts in the default Model Group; `allowed_models` are theirs on top.
 	`free` ignores pricing for them — otherwise they are prepaid and blocked until credited.
 	`limits` are their rate limits, rows of `metric` (requests, total_tokens), `window` (1m, 1h,
-	1d, 1M) and `value`. A new user given none starts under the defaults, 20 requests and 100 000
+	1d, 1M) and `value`. A new user given none starts under the defaults, 20 requests and 20 000
 	tokens a minute; on a known user an empty list lifts them all. Safe to repeat: a known user
 	keeps whatever else is not given. → the geography they are pinned to."""
 	frappe.only_for(ALLOWED_ROLES)
