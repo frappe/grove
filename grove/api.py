@@ -21,14 +21,20 @@ PULLS_PER_HOUR = 3
 
 
 @frappe.whitelist()
-def provision_user(name: str, email: str, geography: str = None, allowed_models: list[str] = None, free: bool = False):
+def provision_user(
+	name: str, email: str, geography: str = None, allowed_models: list[str] = None, free: bool = False,
+	limits: list[dict] = None,
+):
 	"""Register the user behind `email` — `name` is theirs — and pin them to `geography`, the
 	default one when none is given: every other geography refuses them. A new user starts in the
 	default Model Group; `allowed_models` are theirs on top. `free` ignores pricing for them —
-	otherwise they are prepaid and blocked until credited. Safe to repeat: a known user keeps
-	whatever is not given. → the geography they are pinned to."""
+	otherwise they are prepaid and blocked until credited. `limits` are their rate limits, rows of
+	`metric` (requests, total_tokens), `window` (1m, 1h, 1d, 1M) and `value`. A new user given
+	none starts under the defaults, 20 requests and 100 000 tokens a minute; on a known user an
+	empty list lifts them all. Safe to repeat: a known user keeps whatever is not given. → the
+	geography they are pinned to."""
 	frappe.only_for(ALLOWED_ROLES)
-	grove_user = _set_policy(email, name, allowed_models, geography, free)
+	grove_user = _set_policy(email, name, allowed_models, geography, free, limits)
 	return {"geography": frappe.db.get_value("Grove User", grove_user, "geography")}
 
 
@@ -295,11 +301,12 @@ def _create_control_user(email):
 	return doc
 
 
-def _set_policy(email, full_name, models, geography=None, free=False):
+def _set_policy(email, full_name, models, geography=None, free=False, limits=None):
 	"""Write the user's Grove User policy and return its name — the id every key, usage
 	record and access lookup carries. `models`, when given, replace their own Allow; `geography`,
 	when given, pins them there (else they keep theirs, or get the default); `free`, when given,
-	waives pricing. `full_name` names the login when this is the insert that creates it."""
+	waives pricing; `limits`, when given, replace their rate limits. `full_name` names the login
+	when this is the insert that creates it."""
 	name = for_email(email)
 	doc = frappe.get_doc("Grove User", name) if name else frappe.new_doc("Grove User")
 	doc.user = register_user(email, full_name)
@@ -313,6 +320,8 @@ def _set_policy(email, full_name, models, geography=None, free=False):
 			doc.append("allow", {"model": model_doc(model, doc.geography)})
 	if free:
 		doc.free = 1
+	if limits is not None:
+		doc.set("limits", limits)
 	doc.save()
 	return doc.name
 

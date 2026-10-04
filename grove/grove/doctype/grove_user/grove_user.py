@@ -6,13 +6,18 @@ from frappe.model.document import Document
 
 from grove.access import validate_model_geography
 
+DEFAULT_LIMITS = (
+	{"metric": "requests", "window": "1m", "value": 20},
+	{"metric": "total_tokens", "window": "1m", "value": 100_000},
+)
+
 
 class GroveUser(Document):
 	"""Grove's per-user policy: their groups, which models they may call, and their prepaid
 	balance (every user has one unless marked Free). All of it belongs to the PERSON — their keys
 	are credentials and share this balance.
 	No doc means no group and no allow, so the user reaches no models at all. A new doc starts in
-	their geography's default Model Group, when one is marked.
+	their geography's default Model Group, when one is marked, and under the default rate limits.
 
 	The gateway holds it the same way: one user:<name> record every key points at, so an access
 	change is a single write however many keys they hold."""
@@ -26,6 +31,7 @@ class GroveUser(Document):
 		from frappe.types import DF
 		from grove.grove.doctype.grove_model_row.grove_model_row import GroveModelRow
 		from grove.grove.doctype.model_group_row.model_group_row import ModelGroupRow
+		from grove.grove.doctype.model_limit.model_limit import ModelLimit
 
 		allow: DF.Table[GroveModelRow]
 		balance: DF.Currency
@@ -33,6 +39,7 @@ class GroveUser(Document):
 		deny: DF.Table[GroveModelRow]
 		free: DF.Check
 		geography: DF.Link
+		limits: DF.Table[ModelLimit]
 		log_payloads: DF.Check
 		model_groups: DF.TableMultiSelect[ModelGroupRow]
 		spent: DF.Currency
@@ -40,12 +47,15 @@ class GroveUser(Document):
 	# end: auto-generated types
 
 	def before_insert(self):
-		"""A new user starts in their geography's default Model Group, unless the insert names its
-		own groups."""
+		"""A new user starts in their geography's default Model Group and under DEFAULT_LIMITS,
+		unless the insert names its own groups or limits."""
 		self.set_geography()
 		default = frappe.db.get_value("Model Group", {"is_default": 1, "geography": self.geography})
 		if default and not self.model_groups:
 			self.append("model_groups", {"model_group": default})
+		if not self.limits:
+			for limit in DEFAULT_LIMITS:
+				self.append("limits", dict(limit))
 
 
 	def set_geography(self):
@@ -61,6 +71,7 @@ class GroveUser(Document):
 		both = {row.model_key for row in self.allow} & {row.model_key for row in self.deny}
 		if both:
 			frappe.throw(f"{', '.join(sorted(both))} is in both Allow and Deny")
+		self.validate_limits()
 		if not self.is_new():
 			# save() writes every column and the pull writes these two behind the form's back, so a
 			# form left open across a pull would write its old totals back as free credit.
@@ -68,6 +79,16 @@ class GroveUser(Document):
 			self.spent, self.balance = live.spent, live.balance
 		# Mirrors pricing.settle, which on_update then runs for real: free is never gated.
 		self.credit_exhausted = int(not self.free and (self.balance or 0) <= 0)
+
+	def validate_limits(self):
+		"""One limit per metric and window; the gateway refuses a push carrying one it cannot read."""
+		seen = set()
+		for row in self.limits:
+			if (row.value or 0) <= 0:
+				frappe.throw(f"Limit row {row.idx}: the value must be above zero.")
+			if (row.metric, row.window) in seen:
+				frappe.throw(f"Two limits on {row.metric} per {row.window}.")
+			seen.add((row.metric, row.window))
 
 	def on_update(self):
 		"""The verdict is re-decided from what was just saved — the same writer the pull uses."""

@@ -17,7 +17,9 @@
   "section_allow",
   "allow",
   "section_deny",
-  "deny"
+  "deny",
+  "section_limits",
+  "limits"
  ],
  "fields": [
   {
@@ -111,6 +113,17 @@
    "fieldtype": "Table",
    "label": "Deny",
    "options": "Grove Model Row"
+  },
+  {
+   "fieldname": "section_limits",
+   "fieldtype": "Section Break"
+  },
+  {
+   "description": "Counted on the gateway, per Gateway Store. A window resets on the UTC clock: top of the minute, the hour, midnight, the 1st. No rows = uncapped.",
+   "fieldname": "limits",
+   "fieldtype": "Table",
+   "label": "Limits",
+   "options": "Model Limit"
   }
  ],
  "links": [
@@ -135,7 +148,7 @@
    "link_fieldname": "grove_user"
   }
  ],
- "modified": "2026-10-04 03:36:24.294931",
+ "modified": "2026-10-04 16:52:42.797363",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove User",

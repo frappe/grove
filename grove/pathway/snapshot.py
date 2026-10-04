@@ -12,7 +12,7 @@ import json
 
 import frappe
 
-from grove.access import group_rows, model_rows
+from grove.access import group_rows, limit_rows, model_rows
 from grove.pathway import routes
 from grove.billing.pricing import allocations, nano
 
@@ -41,6 +41,7 @@ def effective_users():
 	old push must read as no gate."""
 	deltas = model_rows("Grove User")
 	memberships = group_rows()
+	limits = limit_rows()
 	loaded = allocations()
 	users = frappe.get_all(
 		"Grove User", fields=["name", "user", "credit_exhausted", "log_payloads", "geography", "free"]
@@ -61,6 +62,9 @@ def effective_users():
 			"geography": u.get("geography") or "",
 			"prepaid": not u.get("free"),
 			"budget": 0 if u.get("free") else nano(loaded.get(u.name, 0)),
+			# Rate limits, `metric:window:value` each. Blank when none: the box merges fields, so
+			# leaving it out would keep a removed limit in force.
+			"limits": ",".join(limits.get(u.name, [])),
 		}
 		for u in sorted(users, key=lambda u: u.name)
 	]

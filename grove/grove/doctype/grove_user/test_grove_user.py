@@ -8,6 +8,7 @@ tests, so anything registered here is still there for the next one."""
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from grove.access import limit_rows
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_user.grove_user import GROVE_USER_ROLE, register_user
 from grove.grove.doctype.model_provider.test_model_provider import our_model, provider, vendor_model
@@ -154,6 +155,58 @@ class IntegrationTestOwnGrantsAreTheUsersGeographys(IntegrationTestCase):
 		grove_user = api._set_policy("grove-allow-keyed@example.com", "Keyed", [self.KEY], geography=self.away)
 		allowed = frappe.get_all("Grove Model Row", filters={"parent": grove_user, "parentfield": "allow"}, pluck="model")
 		self.assertEqual(allowed, [self.docs[self.away]])
+
+
+class IntegrationTestRateLimits(IntegrationTestCase):
+	"""A user's limits are rows here and one sorted list on the wire."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		make_test_geography()
+
+	def user(self, email, limits):
+		return frappe.get_doc({"doctype": "Grove User", "user": register_user(email), "limits": limits})
+
+	def test_a_new_user_starts_under_the_default_limits(self):
+		doc = self.user("grove-limit-default@example.com", []).insert()
+		[record] = [u for u in effective_users() if u["name"] == doc.name]
+		self.assertEqual(record["limits"], "requests:1m:20,total_tokens:1m:100000")
+
+	def test_limits_reach_the_wire_sorted(self):
+		doc = self.user("grove-limit-wire@example.com", [
+			{"metric": "total_tokens", "window": "1M", "value": 50_000_000},
+			{"metric": "requests", "window": "1m", "value": 200},
+		]).insert()
+		[record] = [u for u in effective_users() if u["name"] == doc.name]
+		self.assertEqual(record["limits"], "requests:1m:200,total_tokens:1M:50000000")
+
+	def test_two_limits_on_one_metric_and_window_are_refused(self):
+		with self.assertRaises(frappe.ValidationError):
+			self.user("grove-limit-twice@example.com", [
+				{"metric": "requests", "window": "1m", "value": 200},
+				{"metric": "requests", "window": "1m", "value": 300},
+			]).insert()
+
+	def test_a_limit_must_be_above_zero(self):
+		with self.assertRaises(frappe.ValidationError):
+			self.user("grove-limit-zero@example.com", [{"metric": "requests", "window": "1m", "value": 0}]).insert()
+
+	def test_a_window_the_gateway_does_not_know_is_refused(self):
+		with self.assertRaises(frappe.ValidationError):
+			self.user("grove-limit-week@example.com", [{"metric": "requests", "window": "1w", "value": 5}]).insert()
+
+	def test_provisioning_replaces_the_limits_it_is_given_and_keeps_them_otherwise(self):
+		from grove import api
+
+		email = "grove-limit-provisioned@example.com"
+		grove_user = api._set_policy(email, "Limited", None, limits=[{"metric": "requests", "window": "1m", "value": 5}])
+		api._set_policy(email, "Limited", None)
+		self.assertEqual(limit_rows()[grove_user], ["requests:1m:5"])
+		api._set_policy(email, "Limited", None, limits=[{"metric": "requests", "window": "1h", "value": 9}])
+		self.assertEqual(limit_rows()[grove_user], ["requests:1h:9"])
+		api._set_policy(email, "Limited", None, limits=[])
+		self.assertNotIn(grove_user, limit_rows())
 
 
 class IntegrationTestOneGeographyPerUser(IntegrationTestCase):

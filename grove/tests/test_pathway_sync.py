@@ -240,7 +240,7 @@ class TestEffectiveUsers(unittest.TestCase):
 	"""user:<name> — the record that holds everything belonging to the person rather than to a
 	credential, so a budget flip or an access edit is one push however many keys they hold."""
 
-	def users(self, users=(), rows=(), groups=(), loaded=None):
+	def users(self, users=(), rows=(), groups=(), loaded=None, limits=()):
 		self.calls = {}
 
 		def get_all(doctype, **kwargs):
@@ -251,6 +251,8 @@ class TestEffectiveUsers(unittest.TestCase):
 				return list(rows)
 			if doctype == "Model Group Row":
 				return list(groups)
+			if doctype == "Model Limit":
+				return list(limits)
 			raise AssertionError(f"unexpected get_all({doctype})")
 
 		with (
@@ -339,8 +341,37 @@ class TestEffectiveUsers(unittest.TestCase):
 		)
 		self.assertEqual([u["allow"] for u in users], ["m1", "m2"])
 		self.assertEqual([u["group"] for u in users], ["acme", "beta"])
-		# Three tables, still three queries: membership must not become the N+1 again.
-		self.assertEqual(self.calls, {"Grove User": 1, "Grove Model Row": 1, "Model Group Row": 1})
+		# Four tables, still four queries: membership and limits must not become the N+1 again.
+		self.assertEqual(
+			self.calls, {"Grove User": 1, "Grove Model Row": 1, "Model Group Row": 1, "Model Limit": 1}
+		)
+
+	def test_limits_are_one_sorted_comma_list(self):
+		# pathway, internal/domain/limit.go `ParseLimits`: metric:window:value, comma-joined.
+		[user] = self.users(
+			[frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0)],
+			limits=[
+				frappe._dict(parent="GU-1", metric="total_tokens", window="1h", value=50000),
+				frappe._dict(parent="GU-1", metric="requests", window="1m", value=200),
+			],
+		)
+		self.assertEqual(user["limits"], "requests:1m:200,total_tokens:1h:50000")
+
+	def test_a_user_with_no_limits_is_still_pushed_blank(self):
+		# Blank overwrites Redis; omitting the field would leave a removed limit in force.
+		[user] = self.users([frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0)])
+		self.assertEqual(user["limits"], "")
+
+	def test_a_limit_edit_rehashes_only_that_users_bucket(self):
+		people = [
+			frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0),
+			frappe._dict(name="GU-2", user="b@x.com", credit_exhausted=0),
+		]
+		limit = frappe._dict(parent="GU-1", metric="requests", window="1m", value=5)
+		before = snapshot.bucketed_section(self.users(people), "name")["buckets"]
+		after = snapshot.bucketed_section(self.users(people, limits=[limit]), "name")["buckets"]
+		changed = {label for label in before if before[label]["hash"] != after[label]["hash"]}
+		self.assertEqual(changed, {snapshot.bucket_of("GU-1")})
 
 	def test_a_user_carries_the_amount_they_loaded_in_nano_usd(self):
 		# Σ credits, the same on every store; each box subtracts its own spend.
