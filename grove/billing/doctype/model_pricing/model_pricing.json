@@ -1,7 +1,7 @@
 {
  "actions": [],
  "autoname": "hash",
- "creation": "2026-09-22 00:00:00",
+ "creation": "2026-10-04 23:19:20.871609",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -72,7 +72,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-04 23:29:27.622791",
+ "modified": "2026-10-05 03:20:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Model Pricing",
@@ -94,5 +94,6 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
+ "title_field": "model",
  "track_changes": 1
 }
