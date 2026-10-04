@@ -4,8 +4,6 @@ After=network-online.target redis-server.service
 Wants=network-online.target redis-server.service
 
 [Service]
-# The service account grove_user creates. /run is root's, and tableflip writes the pid file via a
-# temp file + rename in its directory, so the process needs one of its own there.
 User=frappe
 Group=frappe
 RuntimeDirectory=pathway

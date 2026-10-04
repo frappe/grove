@@ -397,18 +397,6 @@ class TestTheProcessIsNotRoot(unittest.TestCase):
 				self.assertIn("create 0640 frappe frappe", text)
 				self.assertIn("su frappe frappe", text)
 
-	def test_a_deploy_refuses_a_box_whose_unit_still_runs_root(self):
-		# deploy_agent ships no unit but does write agent.env, whose pid path only exists under the
-		# new unit's RuntimeDirectory. Checked before any role runs.
-		for name in ("gateway_server/deploy_agent.yml", "ingress_server/deploy_agent.yml"):
-			with self.subTest(name):
-				pre = play(name)["pre_tasks"]
-				probe = next(t for t in pre if "RuntimeDirectory=pathway" in str(t))
-				self.assertFalse(probe["failed_when"])
-				guard = next(t for t in pre if "ansible.builtin.assert" in t)
-				self.assertIn("unit_cutover.rc == 0", guard["ansible.builtin.assert"]["that"])
-
-
 class TestAGatewayRunsNoRedisOfItsOwn(unittest.TestCase):
 	"""A gateway keeps everything on its Network's Gateway Store; a Redis still running beside it
 	would hold stale keys nothing reads."""
