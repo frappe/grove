@@ -50,7 +50,7 @@ class VllmEngine(Engine):
 	@property
 	def is_embedding(self):
 		"""Pooling model: serves /v1/embeddings, so the chat-only flags are meaningless."""
-		return self.model.get("modality") == "embedding"
+		return "embeddings" in self.model.get("output_modalities", ())
 
 	@property
 	def weight_dtype(self):
@@ -117,7 +117,7 @@ class VllmEngine(Engine):
 
 		/v1/completions, not chat: chat needs a tokenizer template, and a base repo without one
 		answers 400 on an engine that serves fine. Both paths run the same pipeline."""
-		if self.model.get("modality") == "audio":
+		if "transcription" in self.model.get("output_modalities", ()):
 			# Transcription wants a base64 audio file. Not worth carrying to prove one forward pass.
 			return {}
 		if self.is_embedding:
@@ -173,7 +173,7 @@ class VllmEngine(Engine):
 		# silently left the engine auto-selecting.
 		if self.attention_backend != "auto":
 			args += ["--attention-backend", self.attention_backend]
-		if self.model.get("modality") == "text":
+		if self.model.get("input_modalities") == ["text"] and self.model.get("output_modalities") == ["text"]:
 			args.append("--language-model-only")
 		if self.model.get("enable_prefix_caching"):
 			args.append("--enable-prefix-caching")

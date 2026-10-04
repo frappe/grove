@@ -15,6 +15,9 @@ HF_CONFIG_URL = "https://huggingface.co/{repo}/resolve/main/config.json"
 # Root listing with a size per file. The limit is well past any real shard count.
 HF_TREE_URL = "https://huggingface.co/api/models/{repo}/tree/main?limit=1000"
 
+# The two lists of a Model, and the Modality flag a word needs to go in each.
+MODALITY_FIELDS = {"input_modalities": "is_input", "output_modalities": "is_output"}
+
 
 class Model(Document):
 	"""One model as one provider record serves it. The doc name is a hash; `model_key`
@@ -29,6 +32,7 @@ class Model(Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
+		from grove.grove.doctype.model_modality_row.model_modality_row import ModelModalityRow
 
 		attention_heads: DF.Int
 		enable_auto_tool_choice: DF.Check
@@ -36,9 +40,10 @@ class Model(Document):
 		geography: DF.Link | None
 		hf_repo: DF.Data | None
 		hidden_layers: DF.Int
-		modality: DF.Literal["text", "multimodal", "embedding", "audio"]
+		input_modalities: DF.TableMultiSelect[ModelModalityRow]
 		model_id: DF.Data
 		model_key: DF.Data | None
+		output_modalities: DF.TableMultiSelect[ModelModalityRow]
 		provider: DF.Link | None
 		provider_is_self_hosted: DF.Check
 		published: DF.Check
@@ -53,6 +58,7 @@ class Model(Document):
 
 	def validate(self):
 		self.set_model_key()
+		self.set_modalities()
 		self.provider_is_self_hosted = self.is_self_hosted
 		# mandatory_depends_on is client-side only; this is the gate an API insert hits.
 		if self.is_self_hosted and not self.hf_repo:
@@ -140,6 +146,21 @@ class Model(Document):
 				frappe.CannotChangeConstantError,
 			)
 		self.model_key = expected
+
+	def set_modalities(self):
+		"""What the model takes and what it gives. A blank list is text — a chat model — and a
+		word goes only in the list its Modality is for."""
+		for fieldname, flag in MODALITY_FIELDS.items():
+			if not self.get(fieldname):
+				self.append(fieldname, {"modality": "Text"})
+			words = [row.modality for row in self.get(fieldname)]
+			known = frappe.get_all("Modality", filters={flag: 1}, pluck="name")
+			wrong = sorted({word for word in words if word not in known or words.count(word) > 1})
+			if wrong:
+				frappe.throw(
+					f"{self.meta.get_label(fieldname)} takes each of {', '.join(sorted(known))} once; "
+					f"not {', '.join(wrong)}."
+				)
 
 	def validate_weights_source(self):
 		"""The streamer reads safetensors out of a bucket; a GGUF ref names one file it cannot
@@ -274,6 +295,31 @@ class Model(Document):
 		return response.json()
 
 
+def get_modalities(models=None):
+	"""`get_modality_names` as the words the gateway and the engine read: each name lowercased."""
+	return {
+		model: {fieldname: [name.lower() for name in names] for fieldname, names in lists.items()}
+		for model, lists in get_modality_names(models).items()
+	}
+
+
+def get_modality_names(models=None):
+	"""{Model doc: {"input_modalities": [...], "output_modalities": [...]}}: the Modality records
+	of each list in the order written, for `models` or for every Model. Both lists are there for
+	every doc named."""
+	filters = {"parenttype": "Model"}
+	if models is not None:
+		filters["parent"] = ("in", list(models))
+	rows = frappe.get_all(
+		"Model Modality Row", filters=filters, fields=["parent", "parentfield", "modality"], order_by="idx"
+	)
+	modalities = {model: {fieldname: [] for fieldname in MODALITY_FIELDS} for model in models or ()}
+	for row in rows:
+		lists = modalities.setdefault(row.parent, {fieldname: [] for fieldname in MODALITY_FIELDS})
+		lists[row.parentfield].append(row.modality)
+	return modalities
+
+
 def is_root_weights_file(path, suffix):
 	"""At the root, not in a subfolder. The listing is already non-recursive, so this is a second
 	line of defence: counting a subfolder's quantizations bills the same model twice."""
@@ -349,7 +395,7 @@ def has_vendor_front(provider):
 # Read live off the Model, never mirrored onto a placement, so editing one reaches every placement
 # on the next deploy.
 LAUNCH_FIELDS = (
-	"hf_repo", "weights_s3_uri", "modality", "enable_prefix_caching",
+	"hf_repo", "weights_s3_uri", "enable_prefix_caching",
 	"enable_auto_tool_choice", "tool_call_parser", "thinking", "reasoning_parser",
 	"attention_heads", "weights_gb", "torch_dtype",
 )
@@ -372,7 +418,8 @@ def launch_config(model):
 	grove/serving so that package stays frappe-free."""
 	if not model:
 		return {}
-	return frappe.db.get_value("Model", model, LAUNCH_FIELDS, as_dict=True) or {}
+	config = frappe.db.get_value("Model", model, LAUNCH_FIELDS, as_dict=True)
+	return {**config, **get_modalities([model])[model]} if config else {}
 
 
 def sync_published(model, exclude=None):

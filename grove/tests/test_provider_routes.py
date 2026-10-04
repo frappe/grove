@@ -15,29 +15,30 @@ from unittest.mock import patch
 
 import frappe
 
-from grove.tests.model_rows import model_row, placement
+from grove.tests.model_rows import modality_rows, model_row, placement
 
 MODELS = [
 	# Ours, hosted. The engine answers to frappe/qwen3-8b, so nothing may be rewritten.
-	model_row("frappe/qwen3-8b", model_id="qwen3-8b", modality="text"),
+	model_row("frappe/qwen3-8b", model_id="qwen3-8b"),
 	# A vendor, taking the id it knows itself by.
 	model_row("anthropic/claude-4-5", "anthropic", model_id="claude-4-5",
-	          upstream_model_id="claude-sonnet-4-5-20250929", modality="text"),
+	          upstream_model_id="claude-sonnet-4-5-20250929"),
 	# A vendor with no override: the bare id is the best guess at its namespace.
-	model_row("anthropic/claude-haiku", "anthropic", model_id="claude-haiku", modality="text"),
+	model_row("anthropic/claude-haiku", "anthropic", model_id="claude-haiku"),
 	# Ours, but the container advertises its own name — the one local case that rewrites.
-	model_row("frappe/nemo-asr", model_id="nemo-asr", upstream_model_id="test-nemo-asr", modality="audio"),
+	model_row("frappe/nemo-asr", model_id="nemo-asr", upstream_model_id="test-nemo-asr",
+	          input_modalities=["audio"], output_modalities=["transcription"]),
 	# A vendor model nothing has published yet: no route at all.
-	model_row("anthropic/claude-draft", "anthropic", model_id="claude-draft", published=0, modality="text"),
+	model_row("anthropic/claude-draft", "anthropic", model_id="claude-draft", published=0),
 	# A vendor that speaks the other dialect.
-	model_row("deepseek/deepseek-chat", "deepseek", model_id="deepseek-chat", modality="text"),
+	model_row("deepseek/deepseek-chat", "deepseek", model_id="deepseek-chat"),
 	# A vendor with no dialect set: claims both shapes at its base URL.
-	model_row("dual/mix-1", "dual", model_id="mix-1", modality="text"),
+	model_row("dual/mix-1", "dual", model_id="mix-1"),
 	# A vendor running two fronts, one per dialect, under one provider record.
-	model_row("kimi/k2", "kimi", model_id="k2", modality="text"),
+	model_row("kimi/k2", "kimi", model_id="k2"),
 	# The same vendor model under another geography's record: a doc of its own, not routed here.
 	model_row("kimi-eu/k2", "kimi", "eu", model_key="kimi/k2", model_id="k2",
-	          upstream_model_id="k2-eu", modality="text"),
+	          upstream_model_id="k2-eu"),
 ]
 PROVIDERS = {
 	# The URL fields are the dialect declaration; there is no dialect field to keep in step.
@@ -69,6 +70,7 @@ class FakeQuery:
 	def __call__(self, doctype, filters=None, fields=None, pluck=None, **kwargs):
 		rows = {
 			"Model": MODELS,
+			"Model Modality Row": modality_rows(MODELS),
 			"Model Replica": DEPLOYMENTS,
 			"Pod": PODS,
 			"Model Provider": [{"name": name} for name in PROVIDERS],

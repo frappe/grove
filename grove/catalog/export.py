@@ -8,12 +8,13 @@ import frappe
 
 from grove.access import model_rows
 from grove.catalog.seed import CATALOG, get_model_key
+from grove.grove.doctype.model.model import get_modality_names
 from grove.billing.pricing import CounterTable
 
 # The one geography the catalog ships: a name, its endpoint and zone filled on the site.
 MAIN = "Main"
 PROVIDER_FIELDS = ("provider_name", "is_self_hosted", "base_url", "anthropic_base_url", "api_version")
-MODEL_FIELDS = ("model_id", "upstream_model_id", "modality")
+MODEL_FIELDS = ("model_id", "upstream_model_id")
 
 
 def write(path=None):
@@ -21,6 +22,7 @@ def write(path=None):
 	models = get_models()
 	catalog = {
 		"counters": get_counters(), "geographies": [{"name": MAIN}],
+		"modalities": frappe.get_all("Modality", fields=["name", "is_input", "is_output"], order_by="name"),
 		"cloud_providers": get_cloud_providers(), "regions": get_regions(),
 		"providers": get_providers(), "models": models, "model_groups": get_model_groups(models),
 	}
@@ -64,7 +66,8 @@ def get_providers():
 
 
 def get_models():
-	"""Vendor models only, one entry per key, each with the rows of its Enabled pricing. Never
+	"""Vendor models only, one entry per key, each with what it takes and gives and the rows of its
+	Enabled pricing. Never
 	`published`. A key held in several geographies exports once: the default geography's doc,
 	else whichever sorts first."""
 	rows = frappe.get_all(
@@ -74,10 +77,11 @@ def get_models():
 		order_by="model_key, geography",
 	)
 	default = frappe.db.get_value("Geography", {"is_default": 1})
+	modalities = get_modality_names([row.name for row in rows])
 	entries = {}
 	for row in sorted(rows, key=lambda row: (row.model_key, row.geography != default)):
 		entries.setdefault(row.model_key, {"provider": row.provider_name, "rates": get_rates(row.name)}
-			| {field: row[field] for field in MODEL_FIELDS if row[field]})
+			| modalities[row.name] | {field: row[field] for field in MODEL_FIELDS if row[field]})
 	return list(entries.values())
 
 

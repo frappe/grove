@@ -48,7 +48,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 	def test_a_user_is_shown_only_the_models_they_may_call(self):
 		def published_model(model_id):
 			model = frappe.get_doc(
-				{"doctype": "Model", "model_id": model_id, "modality": "text", "hf_repo": f"org/{model_id}"}
+				{"doctype": "Model", "model_id": model_id, "hf_repo": f"org/{model_id}"}
 			).insert(ignore_permissions=True).name
 			frappe.db.set_value("Model", model, "published", 1)
 			return model

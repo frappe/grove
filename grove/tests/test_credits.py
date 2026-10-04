@@ -53,7 +53,7 @@ class CreditsCase(IntegrationTestCase):
 	@classmethod
 	def priced_model(cls, model_id, rate):
 		model = frappe.get_doc(
-			{"doctype": "Model", "model_id": model_id, "modality": "text", "hf_repo": f"org/{model_id}"}
+			{"doctype": "Model", "model_id": model_id, "hf_repo": f"org/{model_id}"}
 		).insert(ignore_permissions=True).name
 		return model, enabled_pricing(model, completion_tokens=rate).name
 

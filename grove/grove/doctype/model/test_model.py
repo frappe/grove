@@ -20,7 +20,7 @@ class TestPublishing(IntegrationTestCase):
 		TestPublishing.counter += 1
 		model_id = f"publish-{TestPublishing.counter}"
 		return frappe.get_doc(
-			{"doctype": "Model", "model_id": model_id, "modality": "text", "hf_repo": f"org/{model_id}"}
+			{"doctype": "Model", "model_id": model_id, "hf_repo": f"org/{model_id}"}
 		).insert(ignore_permissions=True)
 
 	def served(self, is_served=True):
@@ -67,7 +67,7 @@ class TestGranted(IntegrationTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		cls.model = frappe.get_doc(
-			{"doctype": "Model", "model_id": "probe-granted", "modality": "text", "hf_repo": "org/probe-granted"}
+			{"doctype": "Model", "model_id": "probe-granted", "hf_repo": "org/probe-granted"}
 		).insert(ignore_permissions=True).name
 		cls.group = frappe.get_doc({"doctype": "Model Group", "__newname": "probe-granted-group"}).insert().name
 		cls.user = frappe.get_doc(
@@ -102,7 +102,7 @@ class TestLoadPricing(IntegrationTestCase):
 
 	def model(self, model_id):
 		return frappe.get_doc(
-			{"doctype": "Model", "model_id": model_id, "modality": "text", "hf_repo": f"org/{model_id}"}
+			{"doctype": "Model", "model_id": model_id, "hf_repo": f"org/{model_id}"}
 		).insert(ignore_permissions=True)
 
 	def test_the_catalogs_rates_land_as_one_disabled_draft(self):
@@ -124,3 +124,45 @@ class TestLoadPricing(IntegrationTestCase):
 		self.assertFalse(doc.has_catalog_pricing)
 		with self.assertRaisesRegex(frappe.ValidationError, "no pricing"):
 			doc.load_pricing()
+
+
+class TestModalities(IntegrationTestCase):
+	"""What a model takes and gives: two lists of Modality records, Text when left blank, read
+	back as the lowercase words the gateway takes."""
+
+	counter = 0
+
+	def model(self, **lists):
+		TestModalities.counter += 1
+		model_id = f"modalities-{TestModalities.counter}"
+		rows = {fieldname: [{"modality": word} for word in words] for fieldname, words in lists.items()}
+		return frappe.get_doc(
+			{"doctype": "Model", "model_id": model_id, "hf_repo": f"org/{model_id}", **rows}
+		).insert(ignore_permissions=True)
+
+	def lists(self, doc):
+		lists = model_module.get_modalities([doc.name])[doc.name]
+		return lists["input_modalities"], lists["output_modalities"]
+
+	def test_a_blank_list_is_text(self):
+		self.assertEqual(self.lists(self.model()), (["text"], ["text"]))
+		self.assertEqual(self.lists(self.model(output_modalities=["Embeddings"])), (["text"], ["embeddings"]))
+
+	def test_the_lists_hold_what_was_picked_in_its_order(self):
+		doc = self.model(input_modalities=["Image", "Text", "File"], output_modalities=["Text", "Image"])
+		self.assertEqual(self.lists(doc), (["image", "text", "file"], ["text", "image"]))
+
+	def test_a_word_goes_only_in_the_list_it_is_for(self):
+		with self.assertRaisesRegex(frappe.ValidationError, "not Embeddings"):
+			self.model(input_modalities=["Text", "Embeddings"])
+		with self.assertRaisesRegex(frappe.ValidationError, "not Audio"):
+			self.model(output_modalities=["Audio"])
+
+	def test_a_word_is_picked_once(self):
+		with self.assertRaisesRegex(frappe.ValidationError, "once; not Text"):
+			self.model(input_modalities=["Text", "Text"])
+
+	def test_the_launch_config_carries_both_lists(self):
+		doc = self.model(input_modalities=["Audio"], output_modalities=["Transcription"])
+		config = model_module.launch_config(doc.name)
+		self.assertEqual((config["input_modalities"], config["output_modalities"]), (["audio"], ["transcription"]))

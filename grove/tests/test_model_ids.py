@@ -31,7 +31,6 @@ class TestTheIdIsAlwaysPrefixed(IntegrationTestCase):
 				"doctype": "Model",
 				"model_id": model_id,
 				"hf_repo": "probe/Repo",
-				"modality": "text",
 				"provider": provider,
 			}
 		)
@@ -87,7 +86,7 @@ class TestTheIdIsAlwaysPrefixed(IntegrationTestCase):
 		second = provider("probe-twice", geography=make_test_geography("test-2")).insert()
 		here = self.model("Twice 7B", provider=first.name)
 		there = frappe.get_doc(
-			{"doctype": "Model", "model_id": "twice-7b", "provider": second.name, "modality": "text",
+			{"doctype": "Model", "model_id": "twice-7b", "provider": second.name,
 			 "upstream_model_id": "twice-7b-eu"}
 		).insert()
 		self.assertEqual(here.model_key, there.model_key)
@@ -95,7 +94,7 @@ class TestTheIdIsAlwaysPrefixed(IntegrationTestCase):
 		self.assertEqual((here.geography, there.geography), (first.geography, second.geography))
 		with self.assertRaises(frappe.UniqueValidationError):
 			frappe.get_doc(
-				{"doctype": "Model", "model_id": "twice-7b", "provider": second.name, "modality": "text"}
+				{"doctype": "Model", "model_id": "twice-7b", "provider": second.name}
 			).insert()
 
 	def test_a_name_with_nothing_sluggable_is_refused(self):
@@ -112,7 +111,7 @@ class TestTheIdIsAlwaysPrefixed(IntegrationTestCase):
 class TestAModelSaysWhereItsWeightsCome(IntegrationTestCase):
 	def test_a_model_with_no_repo_is_refused(self):
 		# Every serving path reads the repo, so a Model without one cannot start an engine.
-		doc = frappe.get_doc({"doctype": "Model", "model_id": "no-repo-7b", "modality": "text"})
+		doc = frappe.get_doc({"doctype": "Model", "model_id": "no-repo-7b"})
 		with self.assertRaises(frappe.MandatoryError):
 			doc.insert()
 

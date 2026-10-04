@@ -81,6 +81,33 @@
    "name": "Main"
   }
  ],
+ "modalities": [
+  {
+   "is_input": 0,
+   "is_output": 1,
+   "name": "Embeddings"
+  },
+  {
+   "is_input": 1,
+   "is_output": 0,
+   "name": "File"
+  },
+  {
+   "is_input": 1,
+   "is_output": 1,
+   "name": "Image"
+  },
+  {
+   "is_input": 1,
+   "is_output": 1,
+   "name": "Text"
+  },
+  {
+   "is_input": 1,
+   "is_output": 0,
+   "name": "Video"
+  }
+ ],
  "model_groups": [
   {
    "description": "Every model the catalog ships",
@@ -95,8 +122,14 @@
  ],
  "models": [
   {
-   "modality": "multimodal",
+   "input_modalities": [
+    "Text",
+    "Image"
+   ],
    "model_id": "gpt-6-luna",
+   "output_modalities": [
+    "Text"
+   ],
    "provider": "openai",
    "rates": [
     {
@@ -134,8 +167,14 @@
    ]
   },
   {
-   "modality": "multimodal",
+   "input_modalities": [
+    "Text",
+    "Image"
+   ],
    "model_id": "gpt-6-sol",
+   "output_modalities": [
+    "Text"
+   ],
    "provider": "openai",
    "rates": [
     {
@@ -173,8 +212,14 @@
    ]
   },
   {
-   "modality": "multimodal",
+   "input_modalities": [
+    "Text",
+    "Image"
+   ],
    "model_id": "claude-sonnet-5-5",
+   "output_modalities": [
+    "Text"
+   ],
    "provider": "anthropic",
    "rates": [
     {
@@ -200,8 +245,14 @@
    ]
   },
   {
-   "modality": "multimodal",
+   "input_modalities": [
+    "Text",
+    "Image"
+   ],
    "model_id": "deepseek-v4.1-flash",
+   "output_modalities": [
+    "Text"
+   ],
    "provider": "baseten",
    "rates": [
     {

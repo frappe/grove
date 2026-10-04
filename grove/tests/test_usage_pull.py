@@ -44,7 +44,7 @@ class PullCase(IntegrationTestCase):
 		cls.user = cls.grove_user(cls.email)
 		model_id = f"{cls.box}-7b"
 		doc = frappe.db.exists("Model", {"model_id": model_id}) or frappe.get_doc(
-			{"doctype": "Model", "model_id": model_id, "modality": "text", "hf_repo": f"org/{model_id}"}
+			{"doctype": "Model", "model_id": model_id, "hf_repo": f"org/{model_id}"}
 		).insert(ignore_permissions=True).name
 		# The key: what a bucket and an entry name. The doc is never looked at here.
 		cls.model = frappe.db.get_value("Model", doc, "model_key")

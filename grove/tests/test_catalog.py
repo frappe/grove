@@ -39,7 +39,7 @@ class TestInsertMissing(CatalogCase):
 		"regions": [{"name": "catalog-south-1", "label": "Catalog South", "geography": "Catalog", "cloud_provider": "aws"}],
 		"providers": [{"provider_name": "catalog-vendor", "geography": "Catalog", "base_url": "https://api.vendor.test/v1"}],
 		"models": [{
-			"provider": "catalog-vendor", "model_id": "big-1", "upstream_model_id": "big-1-2026", "modality": "text",
+			"provider": "catalog-vendor", "model_id": "big-1", "upstream_model_id": "big-1-2026",
 			"rates": [{"counter": "prompt_tokens", "rate": 2.5}],
 		}],
 		"model_groups": [{"name": "catalog-group", "description": "Catalog", "models": ["catalog-vendor/big-1"]}],
@@ -81,7 +81,7 @@ class TestInsertMissing(CatalogCase):
 
 	def test_a_model_under_a_provider_nobody_carries_throws(self):
 		with self.assertRaises(frappe.ValidationError):
-			self.load(models=[{"provider": "catalog-nobody", "model_id": "big-1", "modality": "text"}])
+			self.load(models=[{"provider": "catalog-nobody", "model_id": "big-1"}])
 
 
 class TestASiteWithNoDefaultGeography(CatalogCase):
@@ -161,6 +161,8 @@ class TestTheShippedFile(unittest.TestCase):
 		counters = {c["counter_name"] for c in self.catalog["counters"]}
 		geographies = {g["name"] for g in self.catalog["geographies"]}
 		regions = {r["name"] for r in self.catalog["regions"]}
+		inputs = {m["name"] for m in self.catalog["modalities"] if m["is_input"]}
+		outputs = {m["name"] for m in self.catalog["modalities"] if m["is_output"]}
 		self.assertEqual([r for r in self.catalog["regions"] if r["geography"] not in geographies], [])
 		keys = [seed.get_model_key(m) for m in self.catalog["models"]]
 		self.assertEqual(len(keys), len(set(keys)), "a model key is listed twice")
@@ -169,7 +171,8 @@ class TestTheShippedFile(unittest.TestCase):
 		for model in self.catalog["models"]:
 			with self.subTest(seed.get_model_key(model)):
 				self.assertIn(model["provider"], providers)
-				self.assertIn(model["modality"], ("text", "multimodal", "embedding", "audio"))
+				self.assertEqual([word for word in model["input_modalities"] if word not in inputs], [])
+				self.assertEqual([word for word in model["output_modalities"] if word not in outputs], [])
 				self.assertEqual([r["counter"] for r in model["rates"] if r["counter"] not in counters], [])
 				self.assertEqual([r for r in model["rates"] if r["rate"] < 0], [])
 

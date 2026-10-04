@@ -28,14 +28,14 @@ def provider(provider_name, api_key=None, **fields):
 def vendor_model(model_id, provider):
 	"""A model nobody hosts: no HF Repo anywhere, which is the point."""
 	return frappe.get_doc(
-		{"doctype": "Model", "model_id": model_id, "provider": provider, "modality": "text"}
+		{"doctype": "Model", "model_id": model_id, "provider": provider}
 	)
 
 
 def our_model(model_id):
 	"""A model under the Self Hosted provider, named there by leaving the provider blank."""
 	return frappe.get_doc(
-		{"doctype": "Model", "model_id": model_id, "hf_repo": "probe/Repo", "modality": "text"}
+		{"doctype": "Model", "model_id": model_id, "hf_repo": "probe/Repo"}
 	)
 
 
@@ -280,7 +280,7 @@ class TestFetchModels(IntegrationTestCase):
 		vendor_model("held-plain", vendor.name).insert()
 		frappe.get_doc({
 			"doctype": "Model", "provider": vendor.name, "model_id": "held-dated",
-			"upstream_model_id": "Held-Dated-20250101", "modality": "text",
+			"upstream_model_id": "Held-Dated-20250101",
 		}).insert()
 		listing = {"data": [{"id": "held-plain"}, {"id": "Held-Dated-20250101"}, {"id": "fresh"}]}
 		result, calls = self.fetch(vendor, {"https://api.dual.test/v1/models": listing})

@@ -128,6 +128,19 @@ geography's. A Link (pricing, replica, grant row) names a doc; everything on the
 grants, usage buckets, `available_models` — names the key. A grant is by key, so it reaches the id
 wherever a geography serves it; availability is by geography.
 
+What a model takes and gives is two multi-selects on the Model, **Input Modalities** and **Output
+Modalities**, each a list of `Modality` records (`Text`, `Image`, `Audio`, `Video`, `File`; `Text`,
+`Image`, `Embeddings`, `Transcription` for a speech-to-text model's transcript), each marked as an
+input, an output or both, seeded from the catalog. A record's name starts with a capital, however
+it was typed; the gateway, the engine and `available_models` get it lowercased (`text`). A list
+left blank is `Text`.
+There is no single `modality` word any more: everything that read it reads the lists. Every row of
+`deploy:<key>` carries both as `input_modalities` and `output_modalities`; the gateway reads which
+surfaces the model answers on off the outputs (`text` for chat, `embeddings` for `/v1/embeddings`,
+`transcription` for `/v1/audio`); the inputs it only carries. `available_models` answers
+the two lists per model. An engine we launch is `--language-model-only` when it is text in and
+text out, and a pooling model when it gives `embeddings`.
+
 The provider is not only a prefix. Give a `Model Provider` a Base URL and a key and its published
 models route straight to that vendor — a `kind: "provider"` row naming the provider as the placement,
 with no deployment, no pod and no capacity of ours to divide. The record's **Keys** table rides the

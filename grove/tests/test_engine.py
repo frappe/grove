@@ -16,7 +16,7 @@ from grove.serving.base import (
 from grove.serving.custom import CustomEngine
 from grove.serving.vllm import VllmEngine
 
-CHAT_MODEL = {"hf_repo": "Qwen/Qwen3-35B", "modality": "text"}
+CHAT_MODEL = {"hf_repo": "Qwen/Qwen3-35B", "input_modalities": ["text"], "output_modalities": ["text"]}
 
 
 class TestParallelism(unittest.TestCase):

@@ -20,7 +20,7 @@ class TestRevenue(IntegrationTestCase):
 		make_test_geography()
 		cls.today = utc_today()
 		cls.model = frappe.get_doc(
-			{"doctype": "Model", "model_id": "revenue-7b", "modality": "text", "hf_repo": "org/revenue-7b"}
+			{"doctype": "Model", "model_id": "revenue-7b", "hf_repo": "org/revenue-7b"}
 		).insert(ignore_permissions=True).name
 		cls.user = frappe.get_doc(
 			{"doctype": "Grove User", "email": "revenue@grove.test"}

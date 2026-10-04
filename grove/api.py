@@ -238,6 +238,7 @@ def available_models(user: str = None):
 	a user Grove does not know. `dialects` names the surfaces (openai, anthropic) each one answers
 	on there."""
 	frappe.only_for(ALLOWED_ROLES)
+	from grove.grove.doctype.model.model import get_modalities
 	from grove.pathway.routes import get_dialects, models_in
 
 	geography = frappe.db.get_value("Geography", {"is_default": 1})
@@ -255,9 +256,10 @@ def available_models(user: str = None):
 		if m.published and (reachable is None or m.model_key in reachable)
 	]
 	dialects = get_dialects(models, geography)
+	modalities = get_modalities([m.name for m in models])
 	return [
 		{
-			"name": m.model_key, "model_id": m.model_id, "modality": m.modality,
+			"name": m.model_key, "model_id": m.model_id, **modalities[m.name],
 			"provider": m.provider, "geography": m.geography, "dialects": dialects[m.name],
 		}
 		for m in sorted(models, key=lambda m: m.model_key)

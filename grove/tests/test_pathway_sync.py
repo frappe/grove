@@ -21,7 +21,7 @@ import frappe
 import grove
 from grove.pathway import projection, routes, run, snapshot
 from grove.pathway.run import Target, Unit
-from grove.tests.model_rows import model_row
+from grove.tests.model_rows import modality_rows, model_row
 from grove.serving.vllm import VllmEngine
 
 
@@ -58,7 +58,9 @@ class TestGatewayRoutes(unittest.TestCase):
 				# The Active filter moved into the query, so the mock honours it.
 				return [r for r in replicas if r.status == (filters or {}).get("status")]
 			if doctype == "Model":
-				return [frappe._dict(model_row(m, modality="text")) for m in models]
+				return [frappe._dict(model_row(m)) for m in models]
+			if doctype == "Model Modality Row":
+				return [frappe._dict(row) for row in modality_rows([model_row(m) for m in models])]
 			if doctype == "Pod":
 				return list(pods)
 			if doctype == "Model Deployment":
@@ -137,17 +139,21 @@ class TestGatewayRoutes(unittest.TestCase):
 		self.assertEqual(route["capacity"], VllmEngine.default_concurrency)
 
 
-class TestRouteModality(unittest.TestCase):
-	"""Which OpenAI surface a model answers on rides on its route rows.
+class TestRouteModalities(unittest.TestCase):
+	"""What a model takes and gives rides on its route rows.
 
 	Stamped per row because deploy:<model> is the only thing pushed per model — a separate record
-	would mean a new namespace for one short string. The gateway refuses a request for a surface
-	the modality does not cover, so a wrong value here is a 404 on a working model."""
+	would mean a new namespace for two short lists. The gateway refuses a request for a surface
+	the outputs do not cover, so a wrong value here is a 404 on a working model."""
 
 	def routes(self, models, replicas=(), pods=()):
+		rows = [model_row(name, **lists) for name, lists in models.items()]
+
 		def get_all(doctype, **kwargs):
 			if doctype == "Model":
-				return [frappe._dict(model_row(n, modality=m)) for n, m in models.items()]
+				return [frappe._dict(row) for row in rows]
+			if doctype == "Model Modality Row":
+				return [frappe._dict(row) for row in modality_rows(rows)]
 			if doctype == "Model Replica":
 				return list(replicas)
 			if doctype == "Pod":
@@ -166,28 +172,31 @@ class TestRouteModality(unittest.TestCase):
 		):
 			return routes.gateway_routes("in")
 
-	def test_a_deployment_row_carries_its_models_modality(self):
+	def test_a_deployment_row_carries_what_its_model_takes_and_gives(self):
 		routes = self.routes(
-			{"qwen3-4b": "text"},
+			{"qwen3-4b": {"input_modalities": ["text", "image"]}},
 			replicas=[replica("MD-1", model="qwen3-4b")],
 		)
-		self.assertEqual(routes["qwen3-4b"][0]["modality"], "text")
+		row = routes["qwen3-4b"][0]
+		self.assertEqual((row["input_modalities"], row["output_modalities"]), (["text", "image"], ["text"]))
 
 	def test_a_pod_row_carries_it_too(self):
 		# The ASR container is a Pod, never a Model Replica.
 		routes = self.routes(
-			{"nemotron-asr": "audio"},
+			{"nemotron-asr": {"input_modalities": ["audio"], "output_modalities": ["transcription"]}},
 			pods=[pod("test-nemo-asr", model="nemotron-asr")],
 		)
-		self.assertEqual(routes["nemotron-asr"][0]["modality"], "audio")
+		row = routes["nemotron-asr"][0]
+		self.assertEqual((row["input_modalities"], row["output_modalities"]), (["audio"], ["transcription"]))
 
-	def test_a_model_with_no_modality_sends_blank_not_null(self):
-		# Blank reads as unrestricted; None would serialise as null and read as a value.
+	def test_a_model_that_declares_nothing_sends_empty_lists_not_null(self):
+		# Empty reads as unrestricted; None would serialise as null and read as a value.
 		routes = self.routes(
-			{"qwen3-4b": None},
+			{"qwen3-4b": {"input_modalities": [], "output_modalities": []}},
 			replicas=[replica("MD-1", model="qwen3-4b")],
 		)
-		self.assertEqual(routes["qwen3-4b"][0]["modality"], "")
+		row = routes["qwen3-4b"][0]
+		self.assertEqual((row["input_modalities"], row["output_modalities"]), ([], []))
 
 
 class TestEffectiveGroups(unittest.TestCase):
