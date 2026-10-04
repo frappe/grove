@@ -21,7 +21,6 @@ class ModelPricing(Document):
 
 		enabled_on: DF.Date | None
 		model: DF.Link
-		model_key: DF.Data | None
 		rates: DF.Table[ModelPricingRate]
 		status: DF.Literal["Disabled", "Enabled"]
 	# end: auto-generated types
