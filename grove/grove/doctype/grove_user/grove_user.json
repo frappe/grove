@@ -17,7 +17,6 @@
   "log_payloads",
   "section_allow",
   "allow",
-  "section_deny",
   "deny",
   "section_limits",
   "limits"
@@ -110,11 +109,6 @@
    "fieldtype": "Table",
    "label": "Allow",
    "options": "Grove Model Row"
-  },
-  {
-   "depends_on": "eval: doc.model_groups && doc.model_groups.length",
-   "fieldname": "section_deny",
-   "fieldtype": "Section Break"
   },
   {
    "description": "Models this user may never call. Deny wins over everything \u2014 a group grant and a Public release both lose to it.",
