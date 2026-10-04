@@ -108,6 +108,22 @@ def balance(email: str):
 
 
 @frappe.whitelist()
+def limits(email: str):
+	"""The rate limits of the user behind `email`, rows of `metric`, `window` and `value`, as the
+	gateway counts them across every key they hold. Nothing for a user Grove does not know."""
+	frappe.only_for(ALLOWED_ROLES)
+	if not (grove_user := for_email(email)):
+		return []
+	return frappe.get_list(
+		"Model Limit",
+		filters={"parent": grove_user},
+		fields=["metric", "window", "value"],
+		parent_doctype="Grove User",
+		order_by="metric asc, window asc",
+	)
+
+
+@frappe.whitelist()
 def pull_usage(email: str):
 	"""Drain the keys of the user behind `email` from every store now, waiting for a pull in
 	flight — for a fresh `balance`. PULLS_PER_HOUR per user. → the Pathway Sync that logged it,

@@ -72,6 +72,12 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertEqual(sorted(row["name"] for row in api.available_models(email)), sorted([key(grouped), key(allowed)]))
 		self.assertIn(key(other), [row["name"] for row in api.available_models()])
 
+	def test_a_users_rate_limits_are_readable(self):
+		email = "probe-limits@example.com"
+		api._set_policy(email, "Probe Limits", None, limits=[{"metric": "requests", "window": "1m", "value": 200}])
+		self.assertEqual(api.limits(email), [{"metric": "requests", "window": "1m", "value": 200}])
+		self.assertEqual(api.limits("nobody-limits@example.com"), [])
+
 	def test_the_fleet_stays_out_of_reach(self):
 		for doctype in WITHHELD:
 			with self.assertRaises(frappe.PermissionError, msg=doctype):
