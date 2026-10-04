@@ -24,6 +24,9 @@ def build(source, architecture, label):
 
 
 def connect(site):
+	# The play runs inside this process, and Ansible exits on a non-blocking stdout.
+	for descriptor in (0, 1, 2):
+		os.set_blocking(descriptor, True)
 	# frappe's logger writes relative to the working directory.
 	os.chdir(BENCH / "sites")
 	frappe.init(site=site, sites_path=".")
