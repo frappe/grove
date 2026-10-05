@@ -48,7 +48,7 @@ module's doctypes.
 | `Grove Model Row` | One model in a grant (child). |
 | `Model Group Row` | One group a user belongs to (child). |
 | `Model Limit` | One rate limit on its parent (child): `metric` (`requests`, `total_tokens`), `window` (`1m`, `1h`, `1d`, `1M`, reset on the UTC clock) and `value`. One row per metric and window. The gateway refuses a push carrying a metric or window it does not know, so a new option ships in pathway first. |
-| `Grove API Key` | One credential. Its only facts of its own are whether it has been revoked and an optional `title`, a label to tell a user's keys apart (`api.provision_key(title=...)`); the gateways never see it. |
+| `Grove API Key` | One credential. Its only facts of its own are whether it has been revoked, an optional `title`, a label to tell a user's keys apart (`api.provision_key(title=...)`) that the gateways never see, and `can_read_balance`: whether it may read its user's credit at the gateway's `/v1/credits`. A user's only live key starts with it; `api.set_key_balance_access` changes it. |
 | `Grove Settings` | Single. The fleet-wide knobs: Pod Geography (where every pod serves), Usage Retention (how long a gateway keeps acked usage; rendered into its `config.json`), DNS provider (owns every geography's zone), ACME email, pathway release and repo, monitoring, the weights bucket and its two key pairs (engine read; Mirror write, which the store backup also uses). |
 
 ## Logs — what happened, and to which box

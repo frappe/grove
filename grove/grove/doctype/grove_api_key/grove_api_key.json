@@ -7,6 +7,7 @@
  "field_order": [
   "title",
   "user",
+  "can_read_balance",
   "status",
   "key_hash",
   "column_break_pcmc",
@@ -26,6 +27,13 @@
    "label": "User",
    "options": "Grove User",
    "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "Lets this key read its user's credit at the gateway's /v1/credits. A user's only live key starts with it.",
+   "fieldname": "can_read_balance",
+   "fieldtype": "Check",
+   "label": "Can Read Balance"
   },
   {
    "default": "active",
@@ -56,7 +64,7 @@
   }
  ],
  "links": [],
- "modified": "2026-09-30 12:00:00.000000",
+ "modified": "2026-10-05 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove API Key",

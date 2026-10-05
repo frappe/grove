@@ -40,9 +40,10 @@ def provision_user(
 
 
 @frappe.whitelist()
-def provision_key(user: str, title: str = None):
+def provision_key(user: str, title: str = None, can_read_balance: bool = False):
 	"""Mint a key for `user`, for the endpoint of the geography they are pinned to. `title` labels
-	the key, to tell a user's keys apart."""
+	the key, to tell a user's keys apart. `can_read_balance` lets it read the user's credit at the
+	gateway's /v1/credits; a user's only live key gets that whatever is asked."""
 	frappe.only_for(ALLOWED_ROLES)
 	grove_user = get_grove_user(user)
 	geography = frappe.db.get_value("Grove User", grove_user, "geography")
@@ -55,11 +56,13 @@ def provision_key(user: str, title: str = None):
 	key.user = grove_user
 	key.title = title
 	key.status = "active"
+	key.can_read_balance = 1 if can_read_balance else 0
 	key.insert()
 
 	return {
 		"gateway_url": f"https://{host}",
 		"api_key": key.get_password("api_secret"),
+		"can_read_balance": bool(key.can_read_balance),
 	}
 
 
@@ -137,14 +140,18 @@ def revoke_key(api_key: str):
 	"""Revoke by the full key, not the doc name. The row stays as the record it existed; a revoked
 	key is no longer projected, so the next sync prunes it from every proxy."""
 	frappe.only_for(ALLOWED_ROLES)
-	from grove.grove.doctype.grove_api_key.grove_api_key import hash_secret
-
-	key = frappe.db.get_value("Grove API Key", {"key_hash": hash_secret(api_key.strip())})
-	if not key:
-		frappe.throw("no such API key", frappe.DoesNotExistError)
-
-	frappe.get_doc("Grove API Key", key).revoke()
+	get_api_key(api_key).revoke()
 	return "Revoked. Might take some time to reflect."
+
+
+@frappe.whitelist()
+def set_key_balance_access(api_key: str, can_read_balance: bool):
+	"""Let a key read its user's credit at the gateway's /v1/credits, or stop it. By the full key,
+	like `revoke_key`; the gateways follow at the next sync."""
+	frappe.only_for(ALLOWED_ROLES)
+	key = get_api_key(api_key)
+	key.set_balance_access(can_read_balance)
+	return {"can_read_balance": bool(key.can_read_balance)}
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -272,6 +279,16 @@ def get_grove_user(user):
 	if not grove_user:
 		frappe.throw(f"No Grove User for {user!r}.")
 	return grove_user
+
+
+def get_api_key(api_key):
+	"""The Grove API Key doc behind a full key; an unknown one is refused."""
+	from grove.grove.doctype.grove_api_key.grove_api_key import hash_secret
+
+	name = frappe.db.get_value("Grove API Key", {"key_hash": hash_secret(api_key.strip())})
+	if not name:
+		frappe.throw("no such API key", frappe.DoesNotExistError)
+	return frappe.get_doc("Grove API Key", name)
 
 
 def _count_pull(grove_user):
