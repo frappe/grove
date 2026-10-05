@@ -30,6 +30,7 @@ class GroveAPIKey(Document):
 		from frappe.types import DF
 
 		api_secret: DF.Password | None
+		can_read_balance: DF.Check
 		key_hash: DF.Data | None
 		status: DF.Literal["active", "revoked"]
 		title: DF.Data | None
@@ -42,6 +43,14 @@ class GroveAPIKey(Document):
 		full_key = KEY_PREFIX + secrets.token_hex(24)
 		self.key_hash = hash_secret(full_key)
 		self.api_secret = full_key
+		# A user's only live key reads their balance; a later one does only when asked to.
+		if not frappe.db.exists("Grove API Key", {"user": self.user, "status": "active"}):
+			self.can_read_balance = 1
+
+	def set_balance_access(self, allowed: bool):
+		"""Let this key read its user's credit at the gateway's /v1/credits, or stop it."""
+		self.can_read_balance = 1 if allowed else 0
+		self.save(ignore_permissions=True)
 
 	@frappe.whitelist()
 	def revoke(self):

@@ -118,6 +118,26 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("Grove API Key", {"key_hash": hash_secret(result["api_key"])}, "title"), "laptop")
 		self.assertEqual(result["gateway_url"], f"https://{frappe.db.get_value('Geography', geography, 'endpoint')}")
 
+	def test_a_users_only_key_reads_the_balance_and_a_later_one_when_asked(self):
+		user = "probe-balance"
+		api.provision_user(user, ALERTS, make_test_geography())
+		only, later, asked = (
+			api.provision_key(user, title="only"),
+			api.provision_key(user, title="later"),
+			api.provision_key(user, title="asked", can_read_balance=True),
+		)
+		self.assertEqual([key["can_read_balance"] for key in (only, later, asked)], [True, False, True])
+
+		self.assertEqual(api.set_key_balance_access(later["api_key"], True), {"can_read_balance": True})
+		self.assertEqual(api.set_key_balance_access(only["api_key"], False), {"can_read_balance": False})
+		stored = [
+			frappe.db.get_value("Grove API Key", {"key_hash": hash_secret(key["api_key"])}, "can_read_balance")
+			for key in (only, later)
+		]
+		self.assertEqual(stored, [0, 1])
+		with self.assertRaises(frappe.DoesNotExistError):
+			api.set_key_balance_access(KEY_PREFIX + "nobody", True)
+
 	def pull_counter(self, user):
 		"""A user to pull and their counter, cleared now and after: Redis is not rolled back."""
 		grove_user = api._set_policy(user, ALERTS, None)
