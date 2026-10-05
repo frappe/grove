@@ -21,7 +21,7 @@ import frappe
 import grove
 from grove.pathway import projection, routes, run, snapshot
 from grove.pathway.run import Target, Unit
-from grove.tests.model_rows import model_row
+from grove.tests.model_rows import modality_rows, model_row
 from grove.serving.vllm import VllmEngine
 
 
@@ -58,7 +58,9 @@ class TestGatewayRoutes(unittest.TestCase):
 				# The Active filter moved into the query, so the mock honours it.
 				return [r for r in replicas if r.status == (filters or {}).get("status")]
 			if doctype == "Model":
-				return [frappe._dict(model_row(m, modality="text")) for m in models]
+				return [frappe._dict(model_row(m)) for m in models]
+			if doctype == "Model Modality Row":
+				return [frappe._dict(row) for row in modality_rows([model_row(m) for m in models])]
 			if doctype == "Pod":
 				return list(pods)
 			if doctype == "Model Deployment":
@@ -137,17 +139,21 @@ class TestGatewayRoutes(unittest.TestCase):
 		self.assertEqual(route["capacity"], VllmEngine.default_concurrency)
 
 
-class TestRouteModality(unittest.TestCase):
-	"""Which OpenAI surface a model answers on rides on its route rows.
+class TestRouteModalities(unittest.TestCase):
+	"""What a model takes and gives rides on its route rows.
 
 	Stamped per row because deploy:<model> is the only thing pushed per model — a separate record
-	would mean a new namespace for one short string. The gateway refuses a request for a surface
-	the modality does not cover, so a wrong value here is a 404 on a working model."""
+	would mean a new namespace for two short lists. The gateway refuses a request for a surface
+	the outputs do not cover, so a wrong value here is a 404 on a working model."""
 
 	def routes(self, models, replicas=(), pods=()):
+		rows = [model_row(name, **lists) for name, lists in models.items()]
+
 		def get_all(doctype, **kwargs):
 			if doctype == "Model":
-				return [frappe._dict(model_row(n, modality=m)) for n, m in models.items()]
+				return [frappe._dict(row) for row in rows]
+			if doctype == "Model Modality Row":
+				return [frappe._dict(row) for row in modality_rows(rows)]
 			if doctype == "Model Replica":
 				return list(replicas)
 			if doctype == "Pod":
@@ -166,28 +172,31 @@ class TestRouteModality(unittest.TestCase):
 		):
 			return routes.gateway_routes("in")
 
-	def test_a_deployment_row_carries_its_models_modality(self):
+	def test_a_deployment_row_carries_what_its_model_takes_and_gives(self):
 		routes = self.routes(
-			{"qwen3-4b": "text"},
+			{"qwen3-4b": {"input_modalities": ["text", "image"]}},
 			replicas=[replica("MD-1", model="qwen3-4b")],
 		)
-		self.assertEqual(routes["qwen3-4b"][0]["modality"], "text")
+		row = routes["qwen3-4b"][0]
+		self.assertEqual((row["input_modalities"], row["output_modalities"]), (["text", "image"], ["text"]))
 
 	def test_a_pod_row_carries_it_too(self):
 		# The ASR container is a Pod, never a Model Replica.
 		routes = self.routes(
-			{"nemotron-asr": "audio"},
+			{"nemotron-asr": {"input_modalities": ["audio"], "output_modalities": ["transcription"]}},
 			pods=[pod("test-nemo-asr", model="nemotron-asr")],
 		)
-		self.assertEqual(routes["nemotron-asr"][0]["modality"], "audio")
+		row = routes["nemotron-asr"][0]
+		self.assertEqual((row["input_modalities"], row["output_modalities"]), (["audio"], ["transcription"]))
 
-	def test_a_model_with_no_modality_sends_blank_not_null(self):
-		# Blank reads as unrestricted; None would serialise as null and read as a value.
+	def test_a_model_that_declares_nothing_sends_empty_lists_not_null(self):
+		# Empty reads as unrestricted; None would serialise as null and read as a value.
 		routes = self.routes(
-			{"qwen3-4b": None},
+			{"qwen3-4b": {"input_modalities": [], "output_modalities": []}},
 			replicas=[replica("MD-1", model="qwen3-4b")],
 		)
-		self.assertEqual(routes["qwen3-4b"][0]["modality"], "")
+		row = routes["qwen3-4b"][0]
+		self.assertEqual((row["input_modalities"], row["output_modalities"]), ([], []))
 
 
 class TestEffectiveGroups(unittest.TestCase):
@@ -240,7 +249,7 @@ class TestEffectiveUsers(unittest.TestCase):
 	"""user:<name> — the record that holds everything belonging to the person rather than to a
 	credential, so a budget flip or an access edit is one push however many keys they hold."""
 
-	def users(self, users=(), rows=(), groups=(), loaded=None):
+	def users(self, users=(), rows=(), groups=(), loaded=None, limits=()):
 		self.calls = {}
 
 		def get_all(doctype, **kwargs):
@@ -251,6 +260,8 @@ class TestEffectiveUsers(unittest.TestCase):
 				return list(rows)
 			if doctype == "Model Group Row":
 				return list(groups)
+			if doctype == "Model Limit":
+				return list(limits)
 			raise AssertionError(f"unexpected get_all({doctype})")
 
 		with (
@@ -261,7 +272,7 @@ class TestEffectiveUsers(unittest.TestCase):
 
 	def test_a_user_carries_their_groups_their_deltas_and_their_budget_flag(self):
 		[user] = self.users(
-			[frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=1)],
+			[frappe._dict(name="GU-1", email="a@x.com", credit_exhausted=1)],
 			[
 				frappe._dict(parent="GU-1", model_key="qwen3-4b", parentfield="allow"),
 				frappe._dict(parent="GU-1", model_key="qwen3-35b", parentfield="deny"),
@@ -339,8 +350,37 @@ class TestEffectiveUsers(unittest.TestCase):
 		)
 		self.assertEqual([u["allow"] for u in users], ["m1", "m2"])
 		self.assertEqual([u["group"] for u in users], ["acme", "beta"])
-		# Three tables, still three queries: membership must not become the N+1 again.
-		self.assertEqual(self.calls, {"Grove User": 1, "Grove Model Row": 1, "Model Group Row": 1})
+		# Four tables, still four queries: membership and limits must not become the N+1 again.
+		self.assertEqual(
+			self.calls, {"Grove User": 1, "Grove Model Row": 1, "Model Group Row": 1, "Model Limit": 1}
+		)
+
+	def test_limits_are_one_sorted_comma_list(self):
+		# pathway, internal/domain/limit.go `ParseLimits`: metric:window:value, comma-joined.
+		[user] = self.users(
+			[frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0)],
+			limits=[
+				frappe._dict(parent="GU-1", metric="total_tokens", window="1h", value=50000),
+				frappe._dict(parent="GU-1", metric="requests", window="1m", value=200),
+			],
+		)
+		self.assertEqual(user["limits"], "requests:1m:200,total_tokens:1h:50000")
+
+	def test_a_user_with_no_limits_is_still_pushed_blank(self):
+		# Blank overwrites Redis; omitting the field would leave a removed limit in force.
+		[user] = self.users([frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0)])
+		self.assertEqual(user["limits"], "")
+
+	def test_a_limit_edit_rehashes_only_that_users_bucket(self):
+		people = [
+			frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0),
+			frappe._dict(name="GU-2", user="b@x.com", credit_exhausted=0),
+		]
+		limit = frappe._dict(parent="GU-1", metric="requests", window="1m", value=5)
+		before = snapshot.bucketed_section(self.users(people), "name")["buckets"]
+		after = snapshot.bucketed_section(self.users(people, limits=[limit]), "name")["buckets"]
+		changed = {label for label in before if before[label]["hash"] != after[label]["hash"]}
+		self.assertEqual(changed, {snapshot.bucket_of("GU-1")})
 
 	def test_a_user_carries_the_amount_they_loaded_in_nano_usd(self):
 		# Σ credits, the same on every store; each box subtracts its own spend.
@@ -545,6 +585,46 @@ class TestSyncTarget(unittest.TestCase):
 		self.assertEqual((row["reachable"], row["success"], row["http_status"]), (1, 0, 404))
 
 
+class TestAPushCarriesOwedAdjustments(unittest.TestCase):
+	"""A store's pending spend adjustments go out after the state, each answer kept under its row."""
+
+	SNAPSHOT = {"groups": {"records": [], "catalog": "", "hash": "h1"}}
+	OWED = [{"user": "GU-1", "delta": -5, "id": "CD-1"}, {"user": "GU-2", "delta": 7, "id": "CD-2"}]
+
+	def push(self, remote, refused=None):
+		posted = []
+
+		def post(path, body):
+			posted.append((path, body))
+			if refused and body.get("id") == refused:
+				raise ConnectionError("box gone")
+			return {"spent": 40}
+
+		with (
+			unittest.mock.patch.object(Target, "post", side_effect=post),
+			unittest.mock.patch.object(Target, "remote_hashes", return_value=remote),
+		):
+			target = Target("Gateway Server", "gw1", "http://x", "t")
+			row = projection.push_target(target, self.SNAPSHOT, False, self.OWED)
+		return row, posted
+
+	def test_state_goes_first_then_each_adjustment(self):
+		row, posted = self.push(remote={})
+		self.assertEqual(posted, [("state", self.SNAPSHOT), ("spend-adjust", self.OWED[0]), ("spend-adjust", self.OWED[1])])
+		self.assertEqual((row["success"], row["adjusted"]), (1, {"CD-1": 40, "CD-2": 40}))
+		self.assertEqual([sent["push"] for sent in row["payload"]], ["state", "spend-adjust", "spend-adjust"])
+
+	def test_a_box_holding_the_state_is_still_sent_what_it_is_owed(self):
+		row, posted = self.push(remote={"groups": "h1"})
+		self.assertEqual([path for path, _body in posted], ["spend-adjust", "spend-adjust"])
+		self.assertEqual((row["success"], row["detail"]), (1, "spend-adjust:2"))
+
+	def test_a_failed_adjustment_fails_the_row_and_keeps_the_answers_before_it(self):
+		row, posted = self.push(remote={}, refused="CD-2")
+		self.assertEqual(posted[0][0], "state")
+		self.assertEqual((row["success"], row["adjusted"]), (0, {"CD-1": 40}))
+
+
 class TestAPushNeedsNoFrappe(unittest.TestCase):
 	"""push_target and in_turn run on a pool thread, where there is no frappe.local."""
 
@@ -649,13 +729,15 @@ class TestSyncProjection(unittest.TestCase):
 	"""The run: one snapshot built for all gateways, one per ingress, and a log doc only when
 	something was actually pushed — a fleet in sync leaves nothing behind."""
 
-	def run_projection(self, results, proxies=("gw1", "gw2"), entry=None, groups=None, **kwargs):
+	def run_projection(self, results, proxies=("gw1", "gw2"), entry=None, groups=None, owed=None, **kwargs):
 		doc = FakeRun()
 		targets = []
 		self.stamps = []
+		self.handed = {}
 
-		def push_target(target, _snapshot, force):
+		def push_target(target, _snapshot, force, adjustments=()):
 			targets.append((target.server_type, target.name, force))
+			self.handed[target.name] = adjustments
 			result = results.get(target.name)
 			return result(target) if callable(result) else result
 
@@ -673,6 +755,8 @@ class TestSyncProjection(unittest.TestCase):
 			unittest.mock.patch.object(snapshot, "gateway_geography", return_value="in"),
 			unittest.mock.patch.object(Target, "resolve", side_effect=resolved),
 			unittest.mock.patch.object(projection, "push_target", side_effect=push_target),
+			unittest.mock.patch.object(projection, "pending_adjustments", return_value=owed or {}),
+			unittest.mock.patch.object(projection, "mark_corrected") as self.mark_corrected,
 			unittest.mock.patch.object(
 				frappe, "db", frappe._dict(commit=lambda: None, set_value=set_value)
 			),
@@ -686,6 +770,16 @@ class TestSyncProjection(unittest.TestCase):
 	def row(self, success=1):
 		return {"reachable": 1, "success": success, "http_status": 0, "error": None,
 		        "duration_ms": 1, "detail": "", "payload": ""}
+
+	def test_a_stores_owed_adjustments_go_with_its_push_and_the_answers_mark_the_rows(self):
+		owed = {"store1": [{"user": "GU-1", "delta": -5, "id": "CD-1"}]}
+		_name, doc, _targets = self.run_projection(
+			{"gw1": {**self.row(), "adjusted": {"CD-1": 40}}}, groups=[("store1", ["gw1"]), (None, ["gw2"])], owed=owed,
+		)
+		self.assertEqual(self.handed, {"gw1": owed["store1"], "gw2": ()})
+		self.mark_corrected.assert_called_once_with({"CD-1": 40})
+		[row] = doc.results
+		self.assertNotIn("adjusted", row)
 
 	def test_a_fleet_in_sync_logs_no_doc(self):
 		name, doc, targets = self.run_projection({})
@@ -797,6 +891,7 @@ class TestSyncProjection(unittest.TestCase):
 				projection, "push_target",
 				side_effect=lambda target, *_: seen.append((target.server_type, target.name)) or None,
 			),
+			unittest.mock.patch.object(projection, "pending_adjustments", return_value={}),
 			unittest.mock.patch.object(
 				frappe, "db",
 				frappe._dict(commit=lambda: None, set_value=lambda *a, **k: None),

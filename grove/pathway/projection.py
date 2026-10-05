@@ -12,10 +12,14 @@ What each plane is given is what keeps them apart: a GATEWAY takes the full snap
 own Geography's routes, an INGRESS takes only the replica table for the boxes it owns.
 
 `sync_projection` is the cron tick and the ONLY automatic path: nothing pushes inline; state moves,
-and the next tick carries it. `full_sync` is the operator buttons: force-push, skipping the gate."""
+and the next tick carries it. `full_sync` is the operator buttons: force-push, skipping the gate.
+
+The tick also carries each store the spend adjustments it is owed (a Credit Discrepancy decided
+against the gateway): not state, so not hashed — sent after it, every tick until the box answers."""
 
 import frappe
 
+from grove.billing.doctype.credit_discrepancy.credit_discrepancy import mark_corrected, pending_adjustments
 from grove.pathway import snapshot
 from grove.pathway.run import InSync, SyncRun, Target, Unit, gateway_units, in_turn, redact
 
@@ -32,6 +36,7 @@ class Projection(SyncRun):
 		self.ingresses = ingresses
 		self.force = force
 		self.snapshots = {}
+		self.adjustments = {}
 
 	def units(self):
 		"""Both kinds default to every Active box. `is None` and not truthiness: an empty list is a
@@ -44,14 +49,18 @@ class Projection(SyncRun):
 			Unit(None, (Target.resolve("Ingress Server", ingress),)) for ingress in ingresses
 		]
 		self.snapshots = snapshots_for([target for unit in units for target in unit.targets])
+		self.adjustments = pending_adjustments()
 		return units
 
 	def work(self, unit):
-		return in_turn(unit, lambda target: push_target(target, self.snapshots[target], self.force))
+		owed = self.adjustments.get(unit.store, ())
+		return in_turn(unit, lambda target: push_target(target, self.snapshots[target], self.force, owed))
 
 	def settle(self, unit, result):
 		outcome, rows = super().settle(unit, result)
 		stamp_synced(unit, outcome)
+		for row in rows:
+			mark_corrected(row.pop("adjusted", {}))
 		return outcome, rows
 
 
@@ -86,19 +95,27 @@ def snapshots_for(targets):
 	return snapshots
 
 
-def push_target(target, desired, force):
-	"""Bring one box to `desired`. None when it already holds it — nothing pushed, nothing to log.
-	Runs on a pool thread: no frappe here, and the payload comes back raw."""
+def push_target(target, desired, force, adjustments=()):
+	"""Bring one box to `desired`, then send the spend adjustments its store is owed. None when it
+	holds the state and is owed nothing — nothing pushed, nothing to log. Runs on a pool thread: no
+	frappe here, and the payload and the answers come back raw."""
 
 	def push(row):
 		delta = desired if force else snapshot.snapshot_delta(desired, target.remote_hashes())
-		if not delta:
+		if not delta and not adjustments:
 			raise InSync
-		# Recorded before the push: what a rejected one tried to send is the whole question.
-		row["payload"] = [{"push": "state", "body": redact(delta)}]
-		row["detail"] = snapshot.describe(delta, target.post("state", delta))
+		if delta:
+			# Recorded before the push: what a rejected one tried to send is the whole question.
+			row["payload"].append({"push": "state", "body": redact(delta)})
+			row["detail"] = snapshot.describe(delta, target.post("state", delta))
+		# After the state, so an adjustment the box refuses never holds it back.
+		for body in adjustments:
+			row["payload"].append({"push": "spend-adjust", "body": body})
+			row["adjusted"][body["id"]] = target.post("spend-adjust", body)["spent"]
+		if adjustments:
+			row["detail"] = f"{row['detail']} spend-adjust:{len(adjustments)}".strip()
 
-	return target.dial(push, payload=[])
+	return target.dial(push, payload=[], adjusted={})
 
 
 def check_state(server_type, name):

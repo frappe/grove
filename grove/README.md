@@ -128,6 +128,19 @@ geography's. A Link (pricing, replica, grant row) names a doc; everything on the
 grants, usage buckets, `available_models` — names the key. A grant is by key, so it reaches the id
 wherever a geography serves it; availability is by geography.
 
+What a model takes and gives is two multi-selects on the Model, **Input Modalities** and **Output
+Modalities**, each a list of `Modality` records (`Text`, `Image`, `Audio`, `Video`, `File`; `Text`,
+`Image`, `Embeddings`, `Transcription` for a speech-to-text model's transcript), each marked as an
+input, an output or both, seeded from the catalog. A record's name starts with a capital, however
+it was typed; the gateway, the engine and `available_models` get it lowercased (`text`). A list
+left blank is `Text`.
+There is no single `modality` word any more: everything that read it reads the lists. Every row of
+`deploy:<key>` carries both as `input_modalities` and `output_modalities`; the gateway reads which
+surfaces the model answers on off the outputs (`text` for chat, `embeddings` for `/v1/embeddings`,
+`transcription` for `/v1/audio`); the inputs it only carries. `available_models` answers
+the two lists per model. An engine we launch is `--language-model-only` when it is text in and
+text out, and a pooling model when it gives `embeddings`.
+
 The provider is not only a prefix. Give a `Model Provider` a Base URL and a key and its published
 models route straight to that vendor — a `kind: "provider"` row naming the provider as the placement,
 with no deployment, no pod and no capacity of ours to divide. The record's **Keys** table rides the
@@ -192,10 +205,10 @@ prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south
 
 | When | Job | Note |
 |---|---|---|
-| `*/1` | `pathway.projection.sync_projection` | hash-gated: pushes each box only what it does not already hold; a fleet in sync logs nothing |
+| `*/1` | `pathway.projection.sync_projection` | hash-gated: pushes each box only what it does not already hold; a fleet in sync logs nothing. Also sends each store the spend adjustments it is owed (pending `Credit Discrepancy` rows) |
 | `*/2` | `cloud_provider.reconcile.sync_all` | the provider owns whether a pod is up; this closes the drift |
 | `*/5` | `gateway_store.backup_all` | one `redis-cli --rdb` snapshot per Active store, over SSH, into the weights bucket under `gateway-store/<store>/<utc stamp>.rdb`, the doc's Last Backup Key pointing at it; usage leaves a store only on the hourly pull, so this is what a lost disk costs: 5 minutes. Off until the bucket and Mirror keys are set; prune with a bucket lifecycle rule |
-| hourly | `pathway.usage.pull_all` | a store is drained once, through its first writer that answers; recorded, billed, then what landed is acked. A failed pull loses nothing: the box re-sends every unacked pair. Also Gateway Server → **Pull Usage**, Stuck Usage → **Pull Now**, and `api.pull_usage(email)` for one user (3 an hour per user, counted in the site cache; the rest are not limited) |
+| hourly | `pathway.usage.pull_all` | a store is drained once, through its first writer that answers; recorded, billed, then what landed is acked. A failed pull loses nothing: the box re-sends every unacked pair. Also Gateway Server → **Pull Usage**, Stuck Usage → **Pull Now**, and `api.pull_usage(user)` for one user (3 an hour per user, counted in the site cache; the rest are not limited) |
 | hourly | `tls.renew_fleet_certificate`, `cloud_provider.schedule.run_due_pods` | |
 
 Nothing else pushes. A doctype hook, a provision and a pod lifecycle all just write state; the

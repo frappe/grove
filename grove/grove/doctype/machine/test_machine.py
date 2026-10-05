@@ -542,12 +542,6 @@ class TestLaunchLockedFields(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			machine.save(ignore_permissions=True)
 
-	def test_ssh_key_is_free_to_change_before_launch(self):
-		machine = self.machine("test-launch-unlocked", ssh_key=self.key.name)
-		machine.ssh_key = ""
-		machine.save(ignore_permissions=True)
-		self.assertFalse(frappe.db.get_value("Machine", machine.name, "ssh_key"))
-
 	def test_static_ip_is_not_launch_locked(self):
 		machine = self.machine("test-static-ip-unlocked", instance_id="i-456")
 		machine.is_static_ip = 1

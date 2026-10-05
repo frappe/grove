@@ -1,6 +1,12 @@
 // Head/layer counts drive the parallelism checks on Pod and Model Replica, so read them
 // off the repo rather than trusting a hand-typed number.
 frappe.ui.form.on('Model', {
+	setup(frm) {
+		// Each list offers only the words that go in it.
+		frm.set_query('input_modalities', () => ({ filters: { is_input: 1 } }));
+		frm.set_query('output_modalities', () => ({ filters: { is_output: 1 } }));
+	},
+
 	onload(frm) {
 		// Blank means ours: show which provider that is, and let the fetch fill the mirror.
 		if (!frm.is_new() || frm.doc.provider) return;

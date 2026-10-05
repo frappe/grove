@@ -232,7 +232,7 @@ def serving_pod(
 	streaming=False,
 	max_model_len=None,
 ):
-	model = {"hf_repo": "Qwen/Qwen3-35B", "modality": "text"}
+	model = {"hf_repo": "Qwen/Qwen3-35B", "input_modalities": ["text"], "output_modalities": ["text"]}
 	if streaming:
 		model["weights_s3_uri"] = "s3://grove-weights/models/Qwen--Qwen3-35B"
 	return SimpleNamespace(

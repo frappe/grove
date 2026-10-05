@@ -13,9 +13,11 @@ from grove.cloud_provider.provisioner import PodProvisioner
 
 
 def sync_all():
-	"""Scheduled entry point: re-read every live Pod and Machine off its provider."""
+	"""Scheduled entry point: re-read every live Pod and Machine off its provider, then bring
+	security-group ingress in line with whatever addresses that moved."""
 	sync_pods()
 	sync_machines()
+	sync_networks()
 
 
 def sync_pods():
@@ -46,3 +48,21 @@ def sync_machines():
 		except Exception:
 			frappe.db.rollback()
 			frappe.log_error(title=f"Scheduled machine sync failed: {name}")
+
+
+def sync_networks():
+	"""Each Network's security groups, to the fleet as it now stands. AWS is read first and written
+	only where it differs, so a quiet tick changes nothing."""
+	for name in frappe.get_all(
+		"Network",
+		or_filters={
+			"inference_security_group_ids": ("is", "set"),
+			"store_security_group_ids": ("is", "set"),
+		},
+		pluck="name",
+	):
+		try:
+			frappe.get_doc("Network", name).sync_inference_ingress()
+		except Exception:
+			frappe.db.rollback()
+			frappe.log_error(title=f"Scheduled ingress sync failed: {name}")

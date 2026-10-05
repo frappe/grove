@@ -112,6 +112,5 @@ class Reconciler:
 			if entry["pricing"] and abs(gateway - grove) > self.book.counters.tolerance(entry["requests"]):
 				record(
 					usage_record=doc.name, grove_user=doc.user, api_key=doc.api_key, pricing=entry["pricing"],
-					model=self.book.pricing(entry["pricing"]).model, gateway_store=self.gateway_store,
-					gateway_value=gateway, grove_value=grove, delta=gateway - grove,
+					gateway_store=self.gateway_store, gateway_value=gateway, grove_value=grove, delta=gateway - grove,
 				)

@@ -137,11 +137,10 @@ class PriceBook:
 		book = cls()
 		book.counters = CounterTable.load()
 		# Keys, not docs: a usage bucket names the key, and a key may be several docs.
-		book.models = {model.model_key for model in frappe.get_all("Model", fields=["model_key"])}
-		pricings = frappe.get_all("Model Pricing", fields=["name", "model", "model_key"])
-		book.pricings = {
-			p.name: frappe._dict(model=p.model, model_key=p.model_key, rates={}) for p in pricings
-		}
+		keys = dict(frappe.get_all("Model", fields=["name", "model_key"], as_list=True))
+		book.models = set(keys.values())
+		pricings = frappe.get_all("Model Pricing", fields=["name", "model"])
+		book.pricings = {p.name: frappe._dict(model_key=keys[p.model], rates={}) for p in pricings}
 		rates = frappe.get_all(
 			"Model Pricing Rate",
 			filters={"parent": ("in", list(book.pricings))},

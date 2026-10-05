@@ -9,7 +9,6 @@ from frappe.model.document import Document
 from grove.cloud_provider.base import build_cloud_client
 from grove.grove.doctype.gateway_store.gateway_store import REDIS_PORT
 from grove.monitoring import BOX_HTTP_PORT, BOX_HTTPS_PORT
-from grove.net import reachable_ip
 
 PROXY_INGRESS_RULES = [
 	{"protocol": "tcp", "from_port": 22, "to_port": 22, "cidr": "0.0.0.0/0"},
@@ -171,7 +170,7 @@ class Network(Document):
 			store_sg_id = self.cloud_client.create_security_group(
 				f"{self.name}-store", "Grove-managed: SSH + redis (6379)", self.vpc_id
 			)
-			# SSH only, like an inference box: 6379's sources are the gateways, reconciled below.
+			# SSH only, like an inference box: 6379 is opened to the VPC below.
 			self.cloud_client.authorize_ingress(store_sg_id, INFERENCE_BASE_INGRESS_RULES)
 			self.db_set("store_security_group_ids", store_sg_id)
 
@@ -181,8 +180,8 @@ class Network(Document):
 
 	@frappe.whitelist()
 	def sync_inference_ingress(self):
-		"""Button + provision step: make the box's front ports reachable from the proxy fleet and
-		the metrics agents, and from nowhere else.
+		"""Button + scheduled tick: make the box's front ports reachable from this VPC, this
+		geography's gateways and the agents that scrape it, and from nowhere else.
 
 		Both 80 and 443, to the same sources — the box's nginx fronts every engine and both
 		exporters either way, so those ports stay on loopback and need no hole of their own.
@@ -191,7 +190,7 @@ class Network(Document):
 		a pre-existing 0.0.0.0/0 is closed here. Port 22 is deliberately untouched — Ansible
 		reaches these boxes from wherever bench runs.
 
-		A store's 6379 is reconciled the same way, to this Network's gateways."""
+		A store's 6379 is reconciled the same way, to this Network's VPC."""
 		if not (self.inference_security_group_ids or self.store_security_group_ids):
 			frappe.msgprint(f"Network {self.name} has no inference or gateway store security group.")
 			return None
@@ -209,17 +208,34 @@ class Network(Document):
 
 	@property
 	def inference_ingress_cidrs(self):
-		"""The addresses that may reach an inference box on this Network's front ports, read live."""
-		proxies = frappe.get_all("Gateway Server", fields=["public_ip", "status"])
-		agents = _with_machine(frappe.get_all("Monitoring Agent", fields=["machine", "public_ip", "status"]))
-		ingresses = _with_machine(frappe.get_all("Ingress Server", fields=["machine", "status"]))
-		return inference_ingress_cidrs(proxies, agents, ingresses, self.name)
+		"""Who may reach an inference box on this Network's front ports, read live: anything in
+		this VPC, and from outside it only this geography's gateways and the agents scraping a box here."""
+		gateways = _with_machine(frappe.get_all(
+			"Gateway Server", filters={"geography": self.geography}, fields=["machine", "public_ip", "status"]
+		))
+		return [self.cidr_block, *inference_ingress_cidrs(gateways, self.scraping_agents, self.name)]
+
+	@property
+	def scraping_agents(self):
+		"""The Monitoring Agents named by an inference box in this Network, membership read off the
+		Machine live."""
+		boxes = frappe.get_all("Machine", filters={"network": self.name}, pluck="name")
+		names = boxes and frappe.get_all(
+			"Inference Server",
+			filters={"machine": ("in", boxes), "monitoring_agent": ("is", "set"), "status": ("!=", GONE_STATUS)},
+			pluck="monitoring_agent",
+		)
+		if not names:
+			return []
+		return _with_machine(frappe.get_all(
+			"Monitoring Agent", filters={"name": ("in", names)}, fields=["machine", "public_ip", "status"]
+		))
 
 	@property
 	def store_ingress_cidrs(self):
-		"""The gateways that may reach this Network's store on 6379, read live."""
-		gateways = _with_machine(frappe.get_all("Gateway Server", fields=["machine", "status"]))
-		return store_ingress_cidrs(gateways, self.name)
+		"""The whole VPC may reach this Network's store on 6379, and nothing outside it: every box
+		in it is Grove's, and redis still wants its password."""
+		return [self.cidr_block]
 
 
 def reconcile_ingress(client, group_ids, ports, cidrs):
@@ -243,61 +259,27 @@ def _with_machine(rows):
 		for machine in frappe.get_all(
 			"Machine",
 			filters={"name": ("in", [row["machine"] for row in rows if row.get("machine")])},
-			fields=["name", "network", "private_ip"],
+			fields=["name", "network", "public_ip", "private_ip"],
 		)
 	} if rows else {}
 	return [{**row, **machines.get(row.get("machine"), {})} for row in rows]
 
 
-def inference_ingress_cidrs(proxies, agents, ingresses, network):
-	"""Every address allowed to reach an inference box in `network` on its front ports, as /32s.
+def inference_ingress_cidrs(gateways, agents, network):
+	"""Every address outside `network`'s VPC allowed to reach an inference box in it on its front
+	ports, as /32s. The control plane is not a caller — it reaches a box over SSH and a server at
+	its own admin URL.
 
-	Three callers and no others: a gateway, an ingress, and the metrics agent. The control plane is
-	not one — it reaches a box over SSH and a server at its own admin URL.
-
-	Each contributes the address the box will actually SEE it arrive from, which is why the two
-	proxies differ. A gateway dials the box's public IP, so same-VPC traffic still leaves through
-	the internet gateway and arrives from the public side; narrowing it to a private /32 while
-	engine_url says https://<public ip> shuts the fleet out. An ingress dials privately or not at
-	all, so a public /32 would open a hole nothing arrives through.
-
-	Only ingresses whose BOX is in this Network: two VPCs can carve the same 10.x range, so one
-	from another might name a different machine entirely. Every agent counts, though — an agent
-	box is Grove's own, and the join that would narrow it is not worth the code.
+	Each contributes the address the box will actually SEE it arrive from. A gateway dials the
+	box's public IP, so even same-VPC traffic leaves through the internet gateway and arrives from
+	the public side: every gateway is listed, by its public address. An agent in this Network dials
+	privately and the VPC range already covers it, so only one outside it is listed.
 
 	A Terminated box is gone, and its address belongs to whoever AWS hands it to next."""
 	live = lambda rows: [row for row in rows if row.get("status") != GONE_STATUS]  # noqa: E731
-	addresses = [proxy.get("public_ip") for proxy in live(proxies)]
-	addresses += [reachable_ip({**agent, "ip": agent.get("public_ip")}, network) for agent in live(agents)]
-	addresses += [
-		ingress.get("private_ip") for ingress in live(ingresses) if ingress.get("network") == network
-	]
+	addresses = [gateway.get("public_ip") for gateway in live(gateways)]
+	addresses += [agent.get("public_ip") for agent in live(agents) if agent.get("network") != network]
 	return sorted({f"{address}/32" for address in addresses if address})
-
-
-def store_ingress_cidrs(gateways, network):
-	"""Every address allowed to reach a store in `network` on 6379, as /32s: its own gateways, by
-	the private address they dial it from. Another VPC's 10.x may name a different box, and a
-	Terminated gateway's address is AWS's to hand out again."""
-	return sorted({
-		f"{gateway['private_ip']}/32"
-		for gateway in gateways
-		if gateway.get("network") == network and gateway.get("private_ip")
-		and gateway.get("status") != GONE_STATUS
-	})
-
-
-def sync_fleet_ingress():
-	networks = frappe.get_all(
-		"Network",
-		or_filters={
-			"inference_security_group_ids": ("is", "set"),
-			"store_security_group_ids": ("is", "set"),
-		},
-		pluck="name",
-	)
-	for name in networks:
-		frappe.enqueue_doc("Network", name, "sync_inference_ingress", queue="short")
 
 
 def parse_security_group_ids(raw):

@@ -1,5 +1,5 @@
-"""What a site starts with: usage counters, geographies, cloud accounts, regions, providers,
-vendor models and model groups, read from `catalog.json`. Not Frappe fixtures: those delete and re-insert on every migrate, secrets included."""
+"""What a site starts with: usage counters, modalities, geographies, cloud accounts, regions,
+providers, vendor models and model groups, read from `catalog.json`. Not Frappe fixtures: those delete and re-insert on every migrate, secrets included."""
 
 import json
 from pathlib import Path
@@ -7,6 +7,8 @@ from pathlib import Path
 import frappe
 
 CATALOG = Path(__file__).with_name("catalog.json")
+# A model entry's two lists, each a Table MultiSelect on the doc.
+MODALITY_FIELDS = ("input_modalities", "output_modalities")
 
 
 def read(path=None):
@@ -19,6 +21,8 @@ def insert_missing(path=None):
 	for counter in catalog.get("counters", []):
 		if not frappe.db.exists("Usage Counter", counter["counter_name"]):
 			frappe.get_doc({"doctype": "Usage Counter", **counter}).insert()
+	for modality in catalog.get("modalities", []):
+		insert_named("Modality", modality)
 	for geography in catalog["geographies"]:
 		insert_geography(geography)
 	# A cloud account ships without its key, for the operator to fill.
@@ -66,6 +70,8 @@ def insert_model(model, geography):
 	doc's name, held or inserted."""
 	provider = provider_record(model["provider"], geography)
 	fields = {key: value for key, value in model.items() if key != "rates"}
+	for fieldname in MODALITY_FIELDS:
+		fields[fieldname] = [{"modality": word} for word in model.get(fieldname, [])]
 	held = frappe.db.exists("Model", {"provider": provider, "model_id": model["model_id"]})
 	return held or frappe.get_doc({"doctype": "Model", **fields, "provider": provider}).insert().name
 

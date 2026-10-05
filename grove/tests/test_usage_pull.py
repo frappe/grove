@@ -13,7 +13,6 @@ from frappe.core.doctype.log_settings.log_settings import _supports_log_clearing
 from frappe.tests import IntegrationTestCase
 
 from grove.grove.doctype.geography.test_geography import make_test_geography
-from grove.grove.doctype.grove_user.grove_user import register_user
 from grove.billing.doctype.stuck_usage.stuck_usage import StuckUsage
 from grove.pathway import run, usage
 from grove.pathway.reconcile import Reconciler
@@ -45,15 +44,12 @@ class PullCase(IntegrationTestCase):
 		cls.user = cls.grove_user(cls.email)
 		model_id = f"{cls.box}-7b"
 		doc = frappe.db.exists("Model", {"model_id": model_id}) or frappe.get_doc(
-			{"doctype": "Model", "model_id": model_id, "modality": "text", "hf_repo": f"org/{model_id}"}
+			{"doctype": "Model", "model_id": model_id, "hf_repo": f"org/{model_id}"}
 		).insert(ignore_permissions=True).name
 		# The key: what a bucket and an entry name. The doc is never looked at here.
 		cls.model = frappe.db.get_value("Model", doc, "model_key")
 		gateway_module = "grove.grove.doctype.gateway_server.gateway_server"
-		with (
-			unittest.mock.patch(f"{gateway_module}.sync_fleet_ingress"),
-			unittest.mock.patch(f"{gateway_module}.GatewayServer.set_admin_url"),
-		):
+		with unittest.mock.patch(f"{gateway_module}.GatewayServer.set_admin_url"):
 			machine = frappe.get_doc({"doctype": "Machine", "name": cls.box, "machine_type": "Gateway"}).insert(ignore_permissions=True)
 			cls.gateway = frappe.get_doc({
 				"doctype": "Gateway Server", "name": machine.name, "machine": machine.name, "gateway_store": cls.store,
@@ -61,7 +57,7 @@ class PullCase(IntegrationTestCase):
 
 	@classmethod
 	def grove_user(cls, email):
-		return frappe.get_doc({"doctype": "Grove User", "user": register_user(email)}).insert(ignore_permissions=True).name
+		return frappe.get_doc({"doctype": "Grove User", "email": email}).insert(ignore_permissions=True).name
 
 	def key(self, user=None):
 		return frappe.get_doc({"doctype": "Grove API Key", "user": user or self.user}).insert(ignore_permissions=True).name

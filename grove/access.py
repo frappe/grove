@@ -39,6 +39,17 @@ def group_rows(parents=None):
 	return {parent: sorted(names) for parent, names in grouped.items()}
 
 
+def limit_rows():
+	"""{Grove User: ["requests:1m:200", ...]}, sorted: each entry as the gateway reads it."""
+	rows = frappe.get_all(
+		"Model Limit", filters={"parenttype": "Grove User"}, fields=["parent", "metric", "window", "value"]
+	)
+	grouped = {}
+	for row in rows:
+		grouped.setdefault(row.parent, []).append(f"{row.metric}:{row.window}:{row.value}")
+	return {parent: sorted(entries) for parent, entries in grouped.items()}
+
+
 def get_reachable_models(grove_user):
 	"""What one user may call, resolved the way the gateway does it: every group's grant and their
 	own Allow, less their Deny. For showing a person their models; the gateway never reads this."""

@@ -20,8 +20,8 @@ class ModelPricing(Document):
 		from grove.billing.doctype.model_pricing_rate.model_pricing_rate import ModelPricingRate
 
 		enabled_on: DF.Date | None
+		geography: DF.Link | None
 		model: DF.Link
-		model_key: DF.Data | None
 		rates: DF.Table[ModelPricingRate]
 		status: DF.Literal["Disabled", "Enabled"]
 	# end: auto-generated types

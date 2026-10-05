@@ -9,11 +9,12 @@
   "provider",
   "geography",
   "model_id",
-  "modality",
   "column_break_bhjw",
   "published",
   "provider_is_self_hosted",
   "upstream_model_id",
+  "input_modalities",
+  "output_modalities",
   "section_launch",
   "hf_repo",
   "weights_s3_uri",
@@ -79,12 +80,18 @@
    "label": "Upstream Model ID"
   },
   {
-   "default": "text",
-   "description": "Which OpenAI surfaces this model answers on. The gateway refuses the rest itself, before dialling anything: an embedding model asked for chat is a local 404, not a round trip. embedding is a pooling model served at /v1/embeddings; text also sets --language-model-only on an engine we run.",
-   "fieldname": "modality",
-   "fieldtype": "Select",
-   "label": "Modality",
-   "options": "text\nmultimodal\nembedding\naudio"
+   "description": "What a request to this model may carry. Blank is text. Shown to callers in the model list; the gateway carries it and does not judge a request by it.",
+   "fieldname": "input_modalities",
+   "fieldtype": "Table MultiSelect",
+   "label": "Input Modalities",
+   "options": "Model Modality Row"
+  },
+  {
+   "description": "What it answers with. Blank is text. Decides which surfaces it answers on: text for chat, embeddings for /v1/embeddings (a pooling model), transcription for /v1/audio \u2014 the gateway refuses the rest itself, before dialling anything. Text in and text out also sets --language-model-only on an engine we run.",
+   "fieldname": "output_modalities",
+   "fieldtype": "Table MultiSelect",
+   "label": "Output Modalities",
+   "options": "Model Modality Row"
   },
   {
    "default": "0",
@@ -235,7 +242,7 @@
    "link_fieldname": "model"
   }
  ],
- "modified": "2026-10-03 16:12:14.293596",
+ "modified": "2026-10-05 02:10:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model",

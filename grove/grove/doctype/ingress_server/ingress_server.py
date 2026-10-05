@@ -6,7 +6,6 @@ from frappe.model.document import Document
 
 from grove import failure
 from grove.fleet import PathwayHost, gateway_agent_release, gateway_agent_version
-from grove.grove.doctype.network.network import sync_fleet_ingress
 
 
 class IngressServer(PathwayHost, Document):
@@ -55,16 +54,10 @@ class IngressServer(PathwayHost, Document):
 	def on_update(self):
 		if self.has_value_changed("status") and self.status == "Terminated":
 			self.remove_dns_records()
-		# This ingress's private address is one of the fleet addresses an inference box opens its
-		# front to, so arriving, moving or dying changes what those groups must allow.
-		if self.has_value_changed("status") or self.has_value_changed("machine"):
-			sync_fleet_ingress()
 
 	def on_trash(self):
 		# While its name still says which records are its own.
 		self.remove_dns_records()
-		# Enqueued, so it recomputes after this delete commits and without this ingress.
-		sync_fleet_ingress()
 
 	@property
 	def archive_blockers(self):
@@ -129,9 +122,6 @@ class IngressServer(PathwayHost, Document):
 			# Its own name has to resolve before the tick pushes to admin_url, which is that name
 			# the moment a zone is set.
 			self.sync_dns_records()
-			# provision writes status through db.set_value, so on_update never fires here — this
-			# is what lets a new ingress be let through to an engine.
-			sync_fleet_ingress()
 		return play_name, rc
 
 	def provision_variables(self, settings):

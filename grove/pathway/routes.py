@@ -13,6 +13,7 @@ from frappe.utils import get_system_timezone
 from grove.naming import short_name
 from grove.net import private_url
 from grove.billing.pricing import PriceBook
+from grove.grove.doctype.model.model import get_modalities
 from grove.serving.base import engine_class
 
 # `model` is the doc; `model_key` is the id the row is keyed under.
@@ -134,10 +135,7 @@ def gateway_routes(geography):
 		return {}  # a gateway outside every geography serves nothing rather than anyone's
 	deps, kinds = active_replicas(geography=geography)
 	models = models_in(geography)
-	# Stamped per row because deploy:<model> is the only thing pushed per model — a record of its
-	# own would be a new namespace for one short string. Blank means unrestricted. Keyed by doc:
-	# a replica or pod links the doc, and the key is read off it.
-	modality = {m.name: m.modality or "" for m in models}
+	# Keyed by doc: a replica or pod links the doc, and the key is read off it.
 	key_of = {m.name: m.model_key for m in models}
 	# Once, not per model: a handful of providers against thousands of models.
 	vendors = vendor_endpoints(geography)
@@ -171,13 +169,11 @@ def gateway_routes(geography):
 			"deployment": d.name,
 			"server": d.inference_server or d.name,  # which box it is on
 			"kind": "direct",
-			"modality": modality.get(d.model, ""),
 			"upstream_model": upstream.get(d.model, ""),
 		})
 	for (model, _ingress), row in folded.items():
 		routes.setdefault(key_of[model], []).append({
 			**row,
-			"modality": modality.get(model, ""),
 			# Here, not on the ingress: the gateway is the last hop that reads a body.
 			"upstream_model": upstream.get(model, ""),
 		})
@@ -206,15 +202,26 @@ def gateway_routes(geography):
 			"server": p.name,
 			# Always direct: a pod has no Network and cannot sit behind an ingress.
 			"kind": "direct",
-			"modality": modality.get(p.model, ""),
 			# The one case a local route carries this: a custom image advertises its own name.
 			"upstream_model": upstream.get(p.model, ""),
 		})
-	add_vendor_routes(routes, models, vendors, modality, upstream)
+	add_vendor_routes(routes, models, vendors, upstream)
+	stamp_modalities(routes, models)
 	routes = published_routes(routes, models)
 	for rows in routes.values():
 		rows.sort(key=lambda r: r["deployment"])  # stable hash whatever the query order
 	return routes
+
+
+def stamp_modalities(routes, models):
+	"""What each model takes and gives, on every row of it — deploy:<model> is the only thing
+	pushed per model, and a record of its own would be a new namespace for two short lists. The
+	gateway reads which surfaces the model answers on off the outputs; the inputs it only carries."""
+	modalities = get_modalities([m.name for m in models])
+	by_key = {m.model_key: modalities[m.name] for m in models}
+	for key, rows in routes.items():
+		for row in rows:
+			row.update(by_key[key])
 
 
 def models_in(geography):
@@ -225,7 +232,7 @@ def models_in(geography):
 		for m in frappe.get_all(
 			"Model",
 			fields=[
-				"name", "model_key", "modality", "model_id", "upstream_model_id", "published",
+				"name", "model_key", "model_id", "upstream_model_id", "published",
 				"provider", "provider.provider_name as provider_name", "provider.geography as geography",
 				"provider.is_self_hosted as is_self_hosted",
 			],
@@ -314,18 +321,19 @@ def get_dialects(models, geography):
 		name: [dialect for _, dialect in vendor["fronts"]]
 		for name, vendor in vendor_endpoints(geography).items()
 	}
+	modalities = get_modalities([model.name for model in models])
 	dialects = {}
 	for model in models:
 		if not model.is_self_hosted:
 			dialects[model.name] = fronts.get(model.provider_name, [])
-		elif (model.modality or "") in ("", "text", "multimodal"):
+		elif "text" in modalities[model.name]["output_modalities"]:
 			dialects[model.name] = ["openai", "anthropic"]
 		else:
 			dialects[model.name] = ["openai"]
 	return dialects
 
 
-def add_vendor_routes(routes, models, vendors, modality, upstream):
+def add_vendor_routes(routes, models, vendors, upstream):
 	"""One row per published Model per front the third party runs — two for a dual-front vendor
 	(DeepSeek's /anthropic), so one provider record serves both surfaces. No capacity of ours to
 	divide — the vendor's own 429 is the only cap — so capacity stays 0 and the provider names
@@ -346,7 +354,6 @@ def add_vendor_routes(routes, models, vendors, modality, upstream):
 				"deployment": model.provider_name,
 				"server": model.provider_name,
 				"kind": "provider",
-				"modality": modality.get(model.name, ""),
 				"upstream_model": upstream.get(model.name, ""),
 				"api_version": vendor["api_version"],
 				"dialect": dialect,

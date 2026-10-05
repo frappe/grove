@@ -234,7 +234,7 @@ def _real_engine(torch_dtype):
 	def engine_for(self, replica=None, gpu_vram_gb=None, compute_capability=None):
 		return VllmEngine(
 			"qwen3-35b",
-			{"hf_repo": "Qwen/Qwen3-35B", "modality": "text", "torch_dtype": torch_dtype},
+			{"hf_repo": "Qwen/Qwen3-35B", "input_modalities": ["text"], "output_modalities": ["text"], "torch_dtype": torch_dtype},
 			port=8080,
 			gpu_count=self.gpus_per_replica,
 			gpu_vram_gb=gpu_vram_gb,

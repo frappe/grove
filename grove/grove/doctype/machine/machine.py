@@ -182,7 +182,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 		Network of their own and to Route53 health checkers whose addresses are AWS's to change.
 		A Monitoring Agent takes the inference list — vmagent and node_exporter both bind
 		127.0.0.1 and everything else is outbound, so the proxy list would open 80/443 for
-		nothing. A Gateway Store takes its own: 6379 to the Network's gateways."""
+		nothing. A Gateway Store takes its own: 6379 to the Network's VPC."""
 		if not network:
 			return []
 		if not self.machine_type:

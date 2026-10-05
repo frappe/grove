@@ -9,12 +9,10 @@
   "grove_user",
   "api_key",
   "pricing",
-  "model",
-  "model_key",
   "column_break_where",
   "gateway_store",
-  "resolved",
   "resolution",
+  "gateway_correction_pending",
   "section_values",
   "gateway_value",
   "grove_value",
@@ -57,38 +55,24 @@
    "read_only": 1
   },
   {
-   "fieldname": "model",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Model",
-   "options": "Model",
-   "read_only": 1
-  },
-  {
-   "fetch_from": "model.model_key",
-   "fieldname": "model_key",
-   "fieldtype": "Data",
-   "label": "Model Key",
-   "read_only": 1,
-   "in_list_view": 1
-  },
-  {
    "fieldname": "column_break_where",
    "fieldtype": "Column Break"
   },
   {
-   "default": "0",
-   "fieldname": "resolved",
-   "fieldtype": "Check",
+   "description": "Blank while open; set by whichever side was corrected.",
+   "fieldname": "resolution",
+   "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Resolved",
+   "label": "Resolution",
+   "options": "\nGrove corrected\nGateway corrected",
    "read_only": 1
   },
   {
-   "fieldname": "resolution",
-   "fieldtype": "Select",
-   "label": "Resolution",
-   "options": "\nGrove corrected\nGateway corrected",
+   "default": "0",
+   "description": "The gateway was chosen and has not answered yet. The projection tick sends the correction until it does.",
+   "fieldname": "gateway_correction_pending",
+   "fieldtype": "Check",
+   "label": "Gateway Correction Pending",
    "read_only": 1
   },
   {
@@ -157,7 +141,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-03 00:00:00.000000",
+ "modified": "2026-10-04 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Credit Discrepancy",

@@ -6,13 +6,19 @@ from frappe.model.document import Document
 
 from grove.access import validate_model_geography
 
+DEFAULT_LIMITS = (
+	{"metric": "requests", "window": "1m", "value": 20},
+	{"metric": "total_tokens", "window": "1m", "value": 20_000},
+)
+
 
 class GroveUser(Document):
 	"""Grove's per-user policy: their groups, which models they may call, and their prepaid
-	balance (every user has one unless marked Free). All of it belongs to the PERSON — their keys
-	are credentials and share this balance.
+	balance (every user has one unless marked Free). All of it belongs to the USER — whatever the
+	control client's `reference` names, a team in Central — and their keys are credentials that
+	share this balance. `email` is where their alerts go, not a login.
 	No doc means no group and no allow, so the user reaches no models at all. A new doc starts in
-	their geography's default Model Group, when one is marked.
+	their geography's default Model Group, when one is marked, and under the default rate limits.
 
 	The gateway holds it the same way: one user:<name> record every key points at, so an access
 	change is a single write however many keys they hold."""
@@ -26,26 +32,32 @@ class GroveUser(Document):
 		from frappe.types import DF
 		from grove.grove.doctype.grove_model_row.grove_model_row import GroveModelRow
 		from grove.grove.doctype.model_group_row.model_group_row import ModelGroupRow
+		from grove.grove.doctype.model_limit.model_limit import ModelLimit
 
 		allow: DF.Table[GroveModelRow]
 		balance: DF.Currency
 		credit_exhausted: DF.Check
 		deny: DF.Table[GroveModelRow]
+		email: DF.Data
 		free: DF.Check
 		geography: DF.Link
+		limits: DF.Table[ModelLimit]
 		log_payloads: DF.Check
 		model_groups: DF.TableMultiSelect[ModelGroupRow]
+		reference: DF.Data | None
 		spent: DF.Currency
-		user: DF.Link
 	# end: auto-generated types
 
 	def before_insert(self):
-		"""A new user starts in their geography's default Model Group, unless the insert names its
-		own groups."""
+		"""A new user starts in their geography's default Model Group and under DEFAULT_LIMITS,
+		unless the insert names its own groups or limits."""
 		self.set_geography()
 		default = frappe.db.get_value("Model Group", {"is_default": 1, "geography": self.geography})
 		if default and not self.model_groups:
 			self.append("model_groups", {"model_group": default})
+		if not self.limits:
+			for limit in DEFAULT_LIMITS:
+				self.append("limits", dict(limit))
 
 
 	def set_geography(self):
@@ -61,6 +73,7 @@ class GroveUser(Document):
 		both = {row.model_key for row in self.allow} & {row.model_key for row in self.deny}
 		if both:
 			frappe.throw(f"{', '.join(sorted(both))} is in both Allow and Deny")
+		self.validate_limits()
 		if not self.is_new():
 			# save() writes every column and the pull writes these two behind the form's back, so a
 			# form left open across a pull would write its old totals back as free credit.
@@ -69,6 +82,16 @@ class GroveUser(Document):
 		# Mirrors pricing.settle, which on_update then runs for real: free is never gated.
 		self.credit_exhausted = int(not self.free and (self.balance or 0) <= 0)
 
+	def validate_limits(self):
+		"""One limit per metric and window; the gateway refuses a push carrying one it cannot read."""
+		seen = set()
+		for row in self.limits:
+			if (row.value or 0) <= 0:
+				frappe.throw(f"Limit row {row.idx}: the value must be above zero.")
+			if (row.metric, row.window) in seen:
+				frappe.throw(f"Two limits on {row.metric} per {row.window}.")
+			seen.add((row.metric, row.window))
+
 	def on_update(self):
 		"""The verdict is re-decided from what was just saved — the same writer the pull uses."""
 		from grove.billing.pricing import settle
@@ -76,38 +99,15 @@ class GroveUser(Document):
 		settle(self.name)
 
 
-GROVE_USER_ROLE = "Grove User"
-
-
-def register_user(email, full_name=None):
-	"""The Website User behind `email`, created if nobody holds it. A policy is provisioned for
-	someone who may never have signed in, and frappe checks the Link before any hook here runs — so
-	the login is registered a step AHEAD, not from before_insert.
-
-	The role is an identity marker with no perms; it grants nothing in Grove."""
-	if not frappe.db.exists("User", email):
-		frappe.get_doc(
-			{
-				"doctype": "User",
-				"email": email,
-				"first_name": full_name or email.split("@")[0],
-				"user_type": "Website User",
-				"send_welcome_email": 0,
-				"roles": [{"role": GROVE_USER_ROLE}],
-			}
-		).insert(ignore_permissions=True)
-	return email
-
-
-def for_email(email):
-	"""Only the outward-facing edges speak email; everything downstream of a key carries this
-	name."""
-	return frappe.db.get_value("Grove User", {"user": email}) if email else None
+def for_reference(reference):
+	"""Only the outward-facing edges speak the control client's reference; everything downstream
+	of a key carries this name."""
+	return frappe.db.get_value("Grove User", {"reference": reference}) if reference else None
 
 
 def set_credit_exhausted(grove_user, exhausted):
 	"""Flip the credit gate for `grove_user`. Held here, not on the keys, because the balance is
-	the person's — storing it per key let a blocked user mint a fresh one and walk past their
+	the user's — storing it per key let a blocked user mint a fresh one and walk past their
 	own cap. The next sync pushes one record, not one per key they hold.
 	Returns True when something actually changed."""
 	current = frappe.db.get_value("Grove User", grove_user, "credit_exhausted")

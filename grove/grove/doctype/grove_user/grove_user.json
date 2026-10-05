@@ -5,7 +5,8 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "user",
+  "email",
+  "reference",
   "geography",
   "model_groups",
   "column_break_head",
@@ -16,18 +17,27 @@
   "log_payloads",
   "section_allow",
   "allow",
-  "section_deny",
-  "deny"
+  "deny",
+  "section_limits",
+  "limits"
  ],
  "fields": [
   {
-   "description": "The login this policy belongs to. One policy per user \u2014 a second one for the same login is what let a budget be doubled by re-provisioning.",
-   "fieldname": "user",
-   "fieldtype": "Link",
+   "description": "Where alerts for this user go. Not a login, and not unique: one person may own several users.",
+   "fieldname": "email",
+   "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "User",
-   "options": "User",
-   "reqd": 1,
+   "label": "Email",
+   "options": "Email",
+   "reqd": 1
+  },
+  {
+   "description": "The control client's own id for this user; Central sends its team id. One user per reference \u2014 a second one is what let a budget be doubled by re-provisioning. Blank on a user made by hand.",
+   "fieldname": "reference",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Reference",
+   "no_copy": 1,
    "unique": 1
   },
   {
@@ -101,16 +111,22 @@
    "options": "Grove Model Row"
   },
   {
-   "depends_on": "eval: doc.model_groups && doc.model_groups.length",
-   "fieldname": "section_deny",
-   "fieldtype": "Section Break"
-  },
-  {
    "description": "Models this user may never call. Deny wins over everything \u2014 a group grant and a Public release both lose to it.",
    "fieldname": "deny",
    "fieldtype": "Table",
    "label": "Deny",
    "options": "Grove Model Row"
+  },
+  {
+   "fieldname": "section_limits",
+   "fieldtype": "Section Break"
+  },
+  {
+   "description": "Counted on the gateway, per Gateway Store. A window resets on the UTC clock: top of the minute, the hour, midnight, the 1st. No rows = uncapped.",
+   "fieldname": "limits",
+   "fieldtype": "Table",
+   "label": "Limits",
+   "options": "Model Limit"
   }
  ],
  "links": [
@@ -135,7 +151,7 @@
    "link_fieldname": "grove_user"
   }
  ],
- "modified": "2026-10-04 03:36:24.294931",
+ "modified": "2026-10-04 18:10:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove User",
@@ -164,6 +180,6 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "title_field": "user",
+ "title_field": "email",
  "track_changes": 1
 }

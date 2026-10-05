@@ -8,7 +8,7 @@ import hmac
 import frappe
 from frappe.utils import flt
 
-from grove.grove.doctype.grove_user.grove_user import for_email, register_user
+from grove.grove.doctype.grove_user.grove_user import for_reference
 from grove.utils import utc_today
 
 CONTROL_ROLE = "Grove Control"
@@ -16,30 +16,35 @@ ALLOWED_ROLES = [CONTROL_ROLE]
 USAGE_FIELDS = ("requests", "cost")
 PULLS_PER_HOUR = 3
 
-# NOTE: user in grove will be the team owner in central (for now)
+# NOTE: a user in grove is a team in central, named by the team id; its email is the team owner's
 # TODO: give machine info (like no of them, their type, etc) to central so they can find the unit economics
 
 
 @frappe.whitelist()
-def provision_user(name: str, email: str, geography: str = None, allowed_models: list[str] = None, free: bool = False):
-	"""Register the user behind `email` — `name` is theirs — and pin them to `geography`, the
-	default one when none is given: every other geography refuses them. A new user starts in the
-	default Model Group; `allowed_models` are theirs on top. `free` ignores pricing for them —
-	otherwise they are prepaid and blocked until credited. Safe to repeat: a known user keeps
-	whatever is not given. → the geography they are pinned to."""
+def provision_user(
+	user: str, email: str, geography: str = None, allowed_models: list[str] = None, free: bool = False,
+	limits: list[dict] = None,
+):
+	"""Register `user` — the caller's own id for them, never a login — and pin them to
+	`geography`, the default one when none is given: every other geography refuses them. `email`
+	is where their alerts go; it is written on every call, and one address may sit on several
+	users. A new user starts in the default Model Group; `allowed_models` are theirs on top.
+	`free` ignores pricing for them — otherwise they are prepaid and blocked until credited.
+	`limits` are their rate limits, rows of `metric` (requests, total_tokens), `window` (1m, 1h,
+	1d, 1M) and `value`. A new user given none starts under the defaults, 20 requests and 20 000
+	tokens a minute; on a known user an empty list lifts them all. Safe to repeat: a known user
+	keeps whatever else is not given. → the geography they are pinned to."""
 	frappe.only_for(ALLOWED_ROLES)
-	grove_user = _set_policy(email, name, allowed_models, geography, free)
+	grove_user = _set_policy(user, email, allowed_models, geography, free, limits)
 	return {"geography": frappe.db.get_value("Grove User", grove_user, "geography")}
 
 
 @frappe.whitelist()
-def provision_key(email: str, title: str = None):
-	"""Mint a key for the user behind `email`, for the endpoint of the geography they are pinned
-	to. `title` labels the key, to tell a user's keys apart."""
+def provision_key(user: str, title: str = None):
+	"""Mint a key for `user`, for the endpoint of the geography they are pinned to. `title` labels
+	the key, to tell a user's keys apart."""
 	frappe.only_for(ALLOWED_ROLES)
-	grove_user = for_email(email)
-	if not grove_user:
-		frappe.throw(f"No Grove User for {email!r}.")
+	grove_user = get_grove_user(user)
 	geography = frappe.db.get_value("Grove User", grove_user, "geography")
 	host = frappe.db.get_value("Geography", geography, "endpoint")
 	if not host:
@@ -59,15 +64,13 @@ def provision_key(email: str, title: str = None):
 
 
 @frappe.whitelist()
-def add_credit(email: str, amount: float, note: str = None, reference: str = None):
-	"""Append one ledger entry for the user behind `email` and settle them. 0 and an unexplained
+def add_credit(user: str, amount: float, note: str = None, reference: str = None):
+	"""Append one ledger entry for `user` and settle them. 0 and an unexplained
 	negative are refused by the ledger itself. `reference` is the caller's own id for the top-up:
 	a call that repeats one adds nothing, so a call that timed out is safe to send again.
 	→ their balance after the entry."""
 	frappe.only_for(ALLOWED_ROLES)
-	grove_user = for_email(email)
-	if not grove_user:
-		frappe.throw(f"No Grove User for {email!r}.")
+	grove_user = get_grove_user(user)
 	repeated = reference and frappe.db.get_value(
 		"Grove Credit", {"reference": reference}, ["grove_user", "amount"], as_dict=True
 	)
@@ -83,16 +86,14 @@ def add_credit(email: str, amount: float, note: str = None, reference: str = Non
 
 
 @frappe.whitelist()
-def balance(email: str):
-	"""What the user behind `email` has left: Σ ledger − usage priced so far, as of the last pull
+def balance(user: str):
+	"""What `user` has left: Σ ledger − usage priced so far, as of the last pull
 	(up to an hour behind the gateways; `pull_usage` first for a fresh figure). A free user is
 	never charged and never gated: their `spent` does not move."""
 	frappe.only_for(ALLOWED_ROLES)
 	from grove.billing.pricing import credit_summary
 
-	grove_user = for_email(email)
-	if not grove_user:
-		frappe.throw(f"No Grove User for {email!r}.")
+	grove_user = get_grove_user(user)
 	summary = credit_summary(grove_user)
 	return {
 		"balance": float(summary["remaining"]),
@@ -102,16 +103,31 @@ def balance(email: str):
 
 
 @frappe.whitelist()
-def pull_usage(email: str):
-	"""Drain the keys of the user behind `email` from every store now, waiting for a pull in
+def limits(user: str):
+	"""The rate limits of `user`, rows of `metric`, `window` and `value`, as the gateway counts
+	them across every key they hold. Nothing for a user Grove does not know."""
+	frappe.only_for(ALLOWED_ROLES)
+	if not (grove_user := for_reference(user)):
+		return []
+	return frappe.get_list(
+		"Model Limit",
+		filters={"parent": grove_user},
+		fields=["metric", "window", "value"],
+		parent_doctype="Grove User",
+		order_by="metric asc, window asc",
+	)
+
+
+@frappe.whitelist()
+def pull_usage(user: str):
+	"""Drain the keys of `user` from every store now, waiting for a pull in
 	flight — for a fresh `balance`. PULLS_PER_HOUR per user. → the Pathway Sync that logged it,
 	or None when there was nothing to drain."""
 	frappe.only_for(ALLOWED_ROLES)
 	from grove.pathway.usage import pull_all
 
 	# TODO: this needs to trigger it but not sync it in the web thread
-	if not (grove_user := for_email(email)):
-		frappe.throw(f"No Grove User for {email!r}.")
+	grove_user = get_grove_user(user)
 	_count_pull(grove_user)
 	return {"sync": pull_all(trigger="Manual", wait=60, user=grove_user)}
 
@@ -170,7 +186,8 @@ def usage(
 ):
 	"""Requests and cost per user and per model over a UTC date range: `from_date`/`to_date`, a
 	`period` (Today, Yesterday, Last 7 Days, Last 30 Days, This Month, Last Month) or a `month`
-	(YYYY-MM); This Month when none is given. Summed by the database in one grouped query. `cost`
+	(YYYY-MM); This Month when none is given. `users` are the caller's references, and each one's
+	totals come back under it. Summed by the database in one grouped query. `cost`
 	is what was charged, so usage while the user was Free adds requests and no cost.
 	`daily_summary` is the per-model summary again, per UTC day, for a chart. `as_of` is when the
 	newest usage in the range was pulled, in UTC. `key_hash` narrows it all to one key of theirs."""
@@ -181,52 +198,55 @@ def usage(
 	if isinstance(users, str):
 		users = [users]
 	from_date, to_date = usage_window(from_date, to_date, period, month)
-	# In and out by email; the records themselves are keyed by Grove User.
-	emails = dict(frappe.get_list("Grove User", {"user": ("in", users)}, ["name", "user"], as_list=True))
-	api_key = _key_of(key_hash, list(emails)) if key_hash else None
+	# In and out by reference; the records themselves are keyed by Grove User.
+	references = dict(
+		frappe.get_list("Grove User", {"reference": ("in", users)}, ["name", "reference"], as_list=True)
+	)
+	api_key = _key_of(key_hash, list(references)) if key_hash else None
 	rows = frappe.db.sql(
 		f"""select r.user, u.model, sum(u.requests) as requests,
 		sum(if(r.billed, u.grove_cost, 0)) as cost, max(r.creation) as as_of
 		from `tabUsage Record` r, {usage_table()}
 		where r.user in %(users)s and r.day between %(from_date)s and %(to_date)s {_key_condition(api_key)}
 		group by r.user, u.model""",
-		{"users": list(emails) or [""], "from_date": from_date, "to_date": to_date, "api_key": api_key},
+		{"users": list(references) or [""], "from_date": from_date, "to_date": to_date, "api_key": api_key},
 		as_dict=True,
-	) if emails else []
+	) if references else []
 	per_model = [
 		{"model": row.model, "user": row.user, "requests": int(row.requests or 0), "cost": float(row.cost or 0)}
 		for row in rows
 	]
-	totals = {email: {"requests": 0, "cost": 0.0} for email in emails.values()}
+	totals = {reference: {"requests": 0, "cost": 0.0} for reference in references.values()}
 	for row in per_model:
 		for field in USAGE_FIELDS:
-			totals[emails[row["user"]]][field] += row[field]
+			totals[references[row["user"]]][field] += row[field]
 	return {
 		"users": users, "from_date": str(from_date), "to_date": str(to_date),
 		"as_of": utc_timestamp(max(row.as_of for row in rows)) if rows else None,
 		"model_summary": _totals_by_model(per_model),
-		"daily_summary": _daily_summary(list(emails), from_date, to_date, api_key) if emails else [],
+		"daily_summary": _daily_summary(list(references), from_date, to_date, api_key) if references else [],
 		**totals,
 	}
 
 
 @frappe.whitelist()
-def available_models(email: str = None):
+def available_models(user: str = None):
 	"""Every published model in the default geography, one row per key, `name` being the key a
 	caller sends. A catalogue, not an entitlement list — the gateway is what enforces which of
-	these a given API key may actually call. With `email`, only the ones the user behind it may
+	these a given API key may actually call. With `user`, only the ones they may
 	call, as their own geography serves them, to show a person what their keys reach: nothing for
 	a user Grove does not know. `dialects` names the surfaces (openai, anthropic) each one answers
 	on there."""
 	frappe.only_for(ALLOWED_ROLES)
+	from grove.grove.doctype.model.model import get_modalities
 	from grove.pathway.routes import get_dialects, models_in
 
 	geography = frappe.db.get_value("Geography", {"is_default": 1})
 	reachable = None
-	if email:
+	if user:
 		from grove.access import get_reachable_models
 
-		grove_user = for_email(email)
+		grove_user = for_reference(user)
 		reachable = set(get_reachable_models(grove_user))
 		if not reachable:
 			return []
@@ -236,13 +256,22 @@ def available_models(email: str = None):
 		if m.published and (reachable is None or m.model_key in reachable)
 	]
 	dialects = get_dialects(models, geography)
+	modalities = get_modalities([m.name for m in models])
 	return [
 		{
-			"name": m.model_key, "model_id": m.model_id, "modality": m.modality,
+			"name": m.model_key, "model_id": m.model_id, **modalities[m.name],
 			"provider": m.provider, "geography": m.geography, "dialects": dialects[m.name],
 		}
 		for m in sorted(models, key=lambda m: m.model_key)
 	]
+
+
+def get_grove_user(user):
+	"""The Grove User the caller's reference `user` names; an unknown one is refused."""
+	grove_user = for_reference(user)
+	if not grove_user:
+		frappe.throw(f"No Grove User for {user!r}.")
+	return grove_user
 
 
 def _count_pull(grove_user):
@@ -295,14 +324,17 @@ def _create_control_user(email):
 	return doc
 
 
-def _set_policy(email, full_name, models, geography=None, free=False):
-	"""Write the user's Grove User policy and return its name — the id every key, usage
-	record and access lookup carries. `models`, when given, replace their own Allow; `geography`,
-	when given, pins them there (else they keep theirs, or get the default); `free`, when given,
-	waives pricing. `full_name` names the login when this is the insert that creates it."""
-	name = for_email(email)
+def _set_policy(reference, email, models, geography=None, free=False, limits=None):
+	"""Write the Grove User policy `reference` names and return its name — the id every key, usage
+	record and access lookup carries. `email` is written every time. `models`, when given, replace
+	their own Allow; `geography`, when given, pins them there (else they keep theirs, or get the
+	default); `free`, when given, waives pricing; `limits`, when given, replace their rate limits."""
+	# A blank reference matches nobody, so every call would insert one more user.
+	if not reference:
+		frappe.throw("A user needs a reference.")
+	name = for_reference(reference)
 	doc = frappe.get_doc("Grove User", name) if name else frappe.new_doc("Grove User")
-	doc.user = register_user(email, full_name)
+	doc.reference, doc.email = reference, email
 	if geography:
 		doc.geography = geography
 	if models:
@@ -313,6 +345,8 @@ def _set_policy(email, full_name, models, geography=None, free=False):
 			doc.append("allow", {"model": model_doc(model, doc.geography)})
 	if free:
 		doc.free = 1
+	if limits is not None:
+		doc.set("limits", limits)
 	doc.save()
 	return doc.name
 

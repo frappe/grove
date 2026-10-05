@@ -81,6 +81,34 @@
    "name": "Main"
   }
  ],
+ "modalities": [
+  {
+   "is_input": 0,
+   "is_output": 1,
+   "name": "Embeddings"
+  },
+  {
+   "description": "A document sent inside the request body: a PDF in an OpenAI file part or an Anthropic document block. Set it only on a model that reads them. Anthropic and OpenAI hand the model each page as an image beside its text, so a model that takes File usually takes Image too. The gateway holds a fallback to this: one without File is passed over for a request that carries a file. The model asked for is not judged.",
+   "is_input": 1,
+   "is_output": 0,
+   "name": "File"
+  },
+  {
+   "is_input": 1,
+   "is_output": 1,
+   "name": "Image"
+  },
+  {
+   "is_input": 1,
+   "is_output": 1,
+   "name": "Text"
+  },
+  {
+   "is_input": 1,
+   "is_output": 0,
+   "name": "Video"
+  }
+ ],
  "model_groups": [
   {
    "description": "Every model the catalog ships",
@@ -95,8 +123,14 @@
  ],
  "models": [
   {
-   "modality": "multimodal",
+   "input_modalities": [
+    "Text",
+    "Image"
+   ],
    "model_id": "gpt-6-luna",
+   "output_modalities": [
+    "Text"
+   ],
    "provider": "openai",
    "rates": [
     {
@@ -134,8 +168,14 @@
    ]
   },
   {
-   "modality": "multimodal",
+   "input_modalities": [
+    "Text",
+    "Image"
+   ],
    "model_id": "gpt-6-sol",
+   "output_modalities": [
+    "Text"
+   ],
    "provider": "openai",
    "rates": [
     {
@@ -173,8 +213,14 @@
    ]
   },
   {
-   "modality": "multimodal",
+   "input_modalities": [
+    "Text",
+    "Image"
+   ],
    "model_id": "claude-sonnet-5-5",
+   "output_modalities": [
+    "Text"
+   ],
    "provider": "anthropic",
    "rates": [
     {
@@ -200,8 +246,14 @@
    ]
   },
   {
-   "modality": "multimodal",
+   "input_modalities": [
+    "Text",
+    "Image"
+   ],
    "model_id": "deepseek-v4.1-flash",
+   "output_modalities": [
+    "Text"
+   ],
    "provider": "baseten",
    "rates": [
     {

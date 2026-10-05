@@ -8,7 +8,7 @@ from grove.serving.vllm import VllmEngine
 
 CHAT_MODEL = {
 	"hf_repo": "Qwen/Qwen3-35B",
-	"modality": "text",
+	"input_modalities": ["text"], "output_modalities": ["text"],
 	"enable_prefix_caching": True,
 	"enable_auto_tool_choice": True,
 	"tool_call_parser": "hermes",
@@ -173,8 +173,8 @@ class TestVllmArgs(unittest.TestCase):
 	def test_the_engine_build_is_not_advertised_to_callers(self):
 		# The default leaks the exact vLLM build on every response and SSE frame. Passed on every
 		# placement, embedding included: the field is on the response shape.
-		for model in (dict(CHAT_MODEL), {"hf_repo": "x", "modality": "embedding"}):
-			with self.subTest(model["modality"]):
+		for model in (dict(CHAT_MODEL), {"hf_repo": "x", "output_modalities": ["embeddings"]}):
+			with self.subTest(model["output_modalities"]):
 				args = serve(model=model).args
 				self.assertEqual(args[args.index("--fingerprint-mode") + 1], "none")
 
@@ -204,7 +204,7 @@ class TestVllmArgs(unittest.TestCase):
 		self.assertIn("--gpu-memory-utilization", args)
 
 	def test_embedding_modality_drops_chat_flags(self):
-		args = serve(dict(CHAT_MODEL, modality="embedding")).args
+		args = serve(dict(CHAT_MODEL, output_modalities=["embeddings"])).args
 		for flag in ("--enable-auto-tool-choice", "--tool-call-parser", "--reasoning-parser"):
 			self.assertNotIn(flag, args)
 		self.assertNotIn("--language-model-only", args)  # text-only flag, not a pooling one
@@ -372,7 +372,7 @@ class TestWarmupRequest(unittest.TestCase):
 		self.assertNotIn("chat", serve().warmup_request["path"])
 
 	def test_an_embedding_model_is_asked_to_embed(self):
-		request = serve(dict(CHAT_MODEL, modality="embedding")).warmup_request
+		request = serve(dict(CHAT_MODEL, output_modalities=["embeddings"])).warmup_request
 		self.assertEqual(request["path"], "/v1/embeddings")
 		self.assertEqual(request["body"]["input"], "ping")
 		self.assertNotIn("max_tokens", request["body"])
@@ -391,7 +391,7 @@ class TestWarmupRequest(unittest.TestCase):
 
 	def test_audio_has_nothing_cheap_to_prove(self):
 		# Transcription wants a base64 audio file; an empty request turns the step off on both paths.
-		self.assertEqual(serve(dict(CHAT_MODEL, modality="audio")).warmup_request, {})
+		self.assertEqual(serve(dict(CHAT_MODEL, input_modalities=["audio"], output_modalities=["transcription"])).warmup_request, {})
 
 
 if __name__ == "__main__":

@@ -12,9 +12,9 @@ from frappe.tests import IntegrationTestCase
 
 from grove import api
 from grove.billing import pricing
+from grove.billing.doctype.credit_discrepancy.credit_discrepancy import mark_corrected, pending_adjustments
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.billing.doctype.grove_credit.grove_credit import GroveCredit
-from grove.grove.doctype.grove_user.grove_user import register_user
 from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing, new_pricing
 from grove.pathway import routes, snapshot, usage
 from grove.pathway.run import Target
@@ -39,10 +39,7 @@ class CreditsCase(IntegrationTestCase):
 		cls.model_key = frappe.db.get_value("Model", cls.model, "model_key")
 		cls.store = a_store("credits-store")
 		gateway_module = "grove.grove.doctype.gateway_server.gateway_server"
-		with (
-			unittest.mock.patch(f"{gateway_module}.sync_fleet_ingress"),
-			unittest.mock.patch(f"{gateway_module}.GatewayServer.set_admin_url"),
-		):
+		with unittest.mock.patch(f"{gateway_module}.GatewayServer.set_admin_url"):
 			machine = frappe.get_doc({"doctype": "Machine", "name": "credits-box", "machine_type": "Gateway"}).insert(ignore_permissions=True)
 			cls.gateway = frappe.get_doc({
 				"doctype": "Gateway Server", "name": machine.name, "machine": machine.name,
@@ -53,14 +50,15 @@ class CreditsCase(IntegrationTestCase):
 	@classmethod
 	def priced_model(cls, model_id, rate):
 		model = frappe.get_doc(
-			{"doctype": "Model", "model_id": model_id, "modality": "text", "hf_repo": f"org/{model_id}"}
+			{"doctype": "Model", "model_id": model_id, "hf_repo": f"org/{model_id}"}
 		).insert(ignore_permissions=True).name
 		return model, enabled_pricing(model, completion_tokens=rate).name
 
 	def user(self, credit=1, free=0):
 		CreditsCase.counter += 1
 		doc = frappe.get_doc({
-			"doctype": "Grove User", "user": register_user(f"credits-{CreditsCase.counter}@grove.test"), "free": free,
+			"doctype": "Grove User", "reference": f"credits-{CreditsCase.counter}",
+			"email": f"credits-{CreditsCase.counter}@grove.test", "free": free,
 		}).insert(ignore_permissions=True)
 		if credit:
 			self.credit(doc.name, credit)
@@ -97,7 +95,7 @@ class CreditsCase(IntegrationTestCase):
 
 	def discrepancies(self, user):
 		return frappe.get_all(
-			"Credit Discrepancy", filters={"grove_user": user, "resolved": 0},
+			"Credit Discrepancy", filters={"grove_user": user, "resolution": ("is", "not set")},
 			fields=["name", "usage_record", "pricing", "gateway_value", "grove_value", "delta"],
 		)
 
@@ -226,9 +224,9 @@ class TestAFreeUserIsNeverCharged(CreditsCase):
 	def test_the_usage_api_counts_their_requests_and_no_cost(self):
 		free, key = self.user(credit=0, free=1)
 		self.pull({key: self.hash(80_000, charged=False)})
-		email = frappe.db.get_value("Grove User", free, "user")
-		result = api.usage([email], period="Today")
-		self.assertEqual(result[email], {"requests": 1, "cost": 0})
+		reference = frappe.db.get_value("Grove User", free, "reference")
+		result = api.usage([reference], period="Today")
+		self.assertEqual(result[reference], {"requests": 1, "cost": 0})
 
 	def test_untagged_usage_of_a_known_model_is_recorded_and_bills_nothing(self):
 		user, key = self.user(credit=1)
@@ -309,34 +307,34 @@ class TestTheUsageApiSumsInTheDatabase(CreditsCase):
 		user, key = self.user(credit=5)
 		self.pull({key: self.hash(50_000)})
 		self.pull({key: self.hash(30_000, requests=2)})
-		email = frappe.db.get_value("Grove User", user, "user")
-		result = api.usage([email], period="Today")
-		self.assertEqual(result[email], {"requests": 3, "cost": 0.8})
+		reference = frappe.db.get_value("Grove User", user, "reference")
+		result = api.usage([reference], period="Today")
+		self.assertEqual(result[reference], {"requests": 3, "cost": 0.8})
 		self.assertEqual(result["model_summary"], [{"model": self.model_key, "requests": 3, "cost": 0.8}])
 		self.assertEqual(result["daily_summary"], [{"day": result["to_date"], "model": self.model_key, "requests": 3, "cost": 0.8}])
 		self.assertTrue(result["as_of"].endswith("Z"))
-		self.assertEqual(api.usage([email], period="Yesterday")[email], {"requests": 0, "cost": 0})
+		self.assertEqual(api.usage([reference], period="Yesterday")[reference], {"requests": 0, "cost": 0})
 
 	def test_a_key_hash_narrows_it_to_that_key(self):
 		user, key = self.user(credit=5)
 		other_key = frappe.get_doc({"doctype": "Grove API Key", "user": user}).insert(ignore_permissions=True).name
 		self.pull({key: self.hash(50_000), other_key: self.hash(30_000, requests=2)})
-		email = frappe.db.get_value("Grove User", user, "user")
+		reference = frappe.db.get_value("Grove User", user, "reference")
 		key_hash = frappe.db.get_value("Grove API Key", key, "key_hash")
 
-		result = api.usage([email], period="Today", key_hash=key_hash)
-		self.assertEqual(result[email], {"requests": 1, "cost": 0.5})
+		result = api.usage([reference], period="Today", key_hash=key_hash)
+		self.assertEqual(result[reference], {"requests": 1, "cost": 0.5})
 		self.assertEqual(result["model_summary"], [{"model": self.model_key, "requests": 1, "cost": 0.5}])
 		self.assertEqual(result["daily_summary"], [{"day": result["to_date"], "model": self.model_key, "requests": 1, "cost": 0.5}])
 
 	def test_another_users_key_is_refused(self):
 		user, _ = self.user(credit=5)
 		_, stranger_key = self.user(credit=5)
-		email = frappe.db.get_value("Grove User", user, "user")
+		reference = frappe.db.get_value("Grove User", user, "reference")
 		key_hash = frappe.db.get_value("Grove API Key", stranger_key, "key_hash")
 
 		with self.assertRaises(frappe.DoesNotExistError):
-			api.usage([email], period="Today", key_hash=key_hash)
+			api.usage([reference], period="Today", key_hash=key_hash)
 
 
 class TestTheGatewaysChargeIsAudited(CreditsCase):
@@ -371,30 +369,53 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		row.correct_grove()
 		row.reload()
 		self.assertEqual((self.state(user)[0], self.balance(user)), (D("0.6"), D("4.4")))
-		self.assertEqual((row.resolved, row.resolution, D(str(row.correction))), (1, "Grove corrected", D("0.1")))
+		self.assertEqual((row.resolution, D(str(row.correction))), ("Grove corrected", D("0.1")))
 		with self.assertRaises(frappe.ValidationError):
 			row.correct_grove()
 
-	def test_gateway_is_wrong_sends_the_adjustment_once_under_the_rows_name(self):
+	def test_gateway_is_wrong_marks_the_row_pending_and_dials_nothing(self):
 		user, row = self.discrepancy()
-		box = unittest.mock.Mock(error=None)
-		box.post.return_value = {"spent": 500_000_000, "applied": True}
-		with unittest.mock.patch.object(Target, "resolve", return_value=box) as resolve:
+		with unittest.mock.patch.object(Target, "post") as post:
 			row.correct_gateway()
-		box.post.assert_called_once_with("spend-adjust", {"user": user, "delta": -100_000_000, "id": row.name})
-		self.assertEqual(resolve.call_args.args, ("Gateway Server", self.gateway))
+		post.assert_not_called()
 		row.reload()
-		self.assertEqual((row.resolved, row.resolution, D(str(row.gateway_spent))), (1, "Gateway corrected", D("0.5")))
+		self.assertEqual((row.gateway_correction_pending, row.resolution or ""), (1, ""))
 		self.assertEqual(self.state(user)[0], D("0.5"), "Grove's own spend is untouched")
 
-	def test_a_failed_gateway_correction_leaves_the_row_open(self):
+	def test_a_pending_row_takes_neither_button(self):
 		_user, row = self.discrepancy()
-		box = unittest.mock.Mock(error=None)
-		box.post.side_effect = ConnectionError("box gone")
-		with unittest.mock.patch.object(Target, "resolve", return_value=box), self.assertRaises(ConnectionError):
+		row.correct_gateway()
+		for press in (row.correct_grove, row.correct_gateway):
+			with self.assertRaises(frappe.ValidationError):
+				press()
+
+	def test_a_row_with_no_store_cannot_be_sent(self):
+		_user, row = self.discrepancy()
+		row.gateway_store = None
+		with self.assertRaises(frappe.ValidationError):
 			row.correct_gateway()
+		self.assertFalse(frappe.db.get_value("Credit Discrepancy", row.name, "gateway_correction_pending"))
+
+	def test_the_tick_is_handed_a_pending_row_under_its_store_and_name(self):
+		user, row = self.discrepancy()
+		self.assertNotIn(row.name, self.owed_ids())
+		row.correct_gateway()
+		self.assertIn({"user": user, "delta": -100_000_000, "id": row.name}, pending_adjustments()[self.store])
+
+	def test_the_boxs_answer_marks_the_row_corrected_and_it_is_owed_no_more(self):
+		user, row = self.discrepancy()
+		row.correct_gateway()
+		mark_corrected({row.name: 500_000_000})
 		row.reload()
-		self.assertEqual(row.resolved, 0)
+		self.assertEqual(
+			(row.resolution, row.gateway_correction_pending, D(str(row.correction)), D(str(row.gateway_spent))),
+			("Gateway corrected", 0, D("-0.1"), D("0.5")),
+		)
+		self.assertNotIn(row.name, self.owed_ids())
+		self.assertEqual(self.state(user)[0], D("0.5"), "Grove's own spend is untouched")
+
+	def owed_ids(self):
+		return [body["id"] for body in pending_adjustments().get(self.store, [])]
 
 	def test_correcting_needs_a_system_manager(self):
 		_user, row = self.discrepancy()

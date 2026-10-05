@@ -14,11 +14,11 @@ from unittest.mock import patch
 
 import frappe
 
-from grove.tests.model_rows import model_row
+from grove.tests.model_rows import modality_rows, model_row
 
 ZONE = "grove.example.com"
 
-MODELS = [model_row("qwen3-35b"), model_row("llama-70b")]
+MODELS = [model_row("qwen3-35b", input_modalities=["text", "image"]), model_row("llama-70b")]
 INGRESSES = [
 	{"name": "aps1-i1", "region": "ap-south-1", "status": "Active"},
 	{"name": "aps1-i2", "region": "ap-south-1", "status": "Active"},
@@ -58,6 +58,7 @@ class FakeQuery:
 		filters = dict(filters or {})
 		rows = {
 			"Model": MODELS,
+			"Model Modality Row": modality_rows(MODELS),
 			"Model Replica": DEPLOYMENTS,
 			"Pod": PODS,
 			"Ingress Server": INGRESSES,
@@ -104,6 +105,15 @@ class TestIngressRows(unittest.TestCase):
 		# per-replica gate lives on the ingress, which is the tier that owns the counters.
 		[row] = [r for r in rows_for("qwen3-35b") if r["engine_url"].startswith(f"https://aps1-i1.")]
 		self.assertEqual(row["capacity"], 12)  # MD-1 8 + MD-2 4
+
+	def test_every_row_says_what_its_model_takes_and_gives(self):
+		# On every kind of row: the gateway gates the surface and checks a caller's fallbacks on it.
+		for row in rows_for("qwen3-35b"):
+			with self.subTest(row["engine_url"]):
+				self.assertEqual((row["input_modalities"], row["output_modalities"]), (["text", "image"], ["text"]))
+		for row in rows_for("llama-70b"):
+			self.assertEqual((row["input_modalities"], row["output_modalities"]), (["text"], ["text"]))
+			self.assertNotIn("modality", row)
 
 	def test_an_ingress_row_names_no_replica(self):
 		# The whole point: replica topology never leaves its VPC.

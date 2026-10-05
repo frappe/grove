@@ -12,7 +12,7 @@ import json
 
 import frappe
 
-from grove.access import group_rows, model_rows
+from grove.access import group_rows, limit_rows, model_rows
 from grove.pathway import routes
 from grove.billing.pricing import allocations, nano
 
@@ -31,24 +31,25 @@ def effective_groups():
 
 
 def effective_users():
-	"""Every Grove User projected for the gateway. One record per person however many keys they
+	"""Every Grove User projected for the gateway. One record per user however many keys they
 	hold — the reason none of this is flattened onto the keys.
 
-	`limited` is Grove's own verdict (`credit_exhausted`). Holding it on the PERSON stops a
+	`limited` is Grove's own verdict (`credit_exhausted`). Holding it on the USER stops a
 	blocked user minting a fresh key. Every user is prepaid unless marked Free, and carries `budget`:
 	the amount they loaded (Σ Grove Credit), the same on every store. The box subtracts its own
 	spend from it and refuses at zero. The wire says `prepaid`, not `free`: a field absent on an
 	old push must read as no gate."""
 	deltas = model_rows("Grove User")
 	memberships = group_rows()
+	limits = limit_rows()
 	loaded = allocations()
 	users = frappe.get_all(
-		"Grove User", fields=["name", "user", "credit_exhausted", "log_payloads", "geography", "free"]
+		"Grove User", fields=["name", "email", "credit_exhausted", "log_payloads", "geography", "free"]
 	)
 	return [
 		{
 			"name": u.name,
-			"email": u.user or "",  # for humans reading Redis; no decision reads it
+			"email": u.email or "",  # for humans reading Redis; no decision reads it
 			# One comma list: the gateway unions the grants per entry. Sorted, so the same
 			# membership always hashes the same.
 			"group": ",".join(memberships.get(u.name, [])),
@@ -61,6 +62,9 @@ def effective_users():
 			"geography": u.get("geography") or "",
 			"prepaid": not u.get("free"),
 			"budget": 0 if u.get("free") else nano(loaded.get(u.name, 0)),
+			# Rate limits, `metric:window:value` each. Blank when none: the box merges fields, so
+			# leaving it out would keep a removed limit in force.
+			"limits": ",".join(limits.get(u.name, [])),
 		}
 		for u in sorted(users, key=lambda u: u.name)
 	]
@@ -68,7 +72,7 @@ def effective_users():
 
 def effective_keys():
 	"""Every LIVE API Key projected for the gateway. A key is a pointer to whoever holds it and
-	nothing else — what they may call belongs to the person.
+	nothing else — what they may call belongs to the user.
 
 	Revoked keys are not projected: absent from their bucket, the push prunes them off every box.
 	The row stays in Grove as the record of a credential that existed."""

@@ -17,12 +17,12 @@ and the drain are in [`../README.md`](../README.md).
 | Doctype | Owns |
 |---|---|
 | `Usage Counter` | One counter usage is counted and priced under, named by its key. A root row has a unit (Mtok or request) and may be a part of a container root; a derived row is a root plus `min_prompt_tokens`, counted instead of its base when the whole prompt exceeds it and billed at the base's rate when a pricing holds none. Never edited after insert; never deleted while a Usage Record names it. Shipped in the catalog; pushed inside every pricing. Grove Control reads. |
-| `Model Pricing` | A model's SELL price: one Enabled doc per model, one rate per counter. Enabling one disables the last; the next push carries it to every gateway, which tags each request with the id it charged. A Disabled draft is editable; once enabled it is never edited, disabled by hand or re-enabled, and its form is read only. Duplicate starts a new Disabled draft with its own window. A counter with no row bills 0, except a derived counter, which then bills at its base counter's row; a derived row needs that base row. A model cannot be published without one, so free on purpose is a pricing with rates 0; enabling one never publishes. The Model form shows a banner while no pricing is enabled. |
+| `Model Pricing` | A model's SELL price: one Enabled doc per model, one rate per counter. Enabling one disables the last; the next push carries it to every gateway, which tags each request with the id it charged. A Disabled draft is editable; once enabled it is never edited, disabled by hand or re-enabled, and its form is read only. Duplicate starts a new Disabled draft with its own window. A counter with no row bills 0, except a derived counter, which then bills at its base counter's row; a derived row needs that base row. A model cannot be published without one, so free on purpose is a pricing with rates 0; enabling one never publishes. The Model form shows a banner while no pricing is enabled. Carries its model's Geography, fetched, so the pricings of one key — a doc per geography — tell apart in the list. |
 | `Model Pricing Rate` | One counter's sell rate (child). |
 | `Grove Credit` | One ledger entry: a top-up, or a negative correction with a note. Append-only — never edited or deleted, a wrong entry is corrected by another; a control client posts one through `/api/resource`. `reference` is the caller's own id for the top-up, unique across the ledger, so a repeated `api.add_credit` adds nothing. Its `on_update` settles the user. |
 | `Usage Record` | One key's usage in one drain of one store, billed and free apart (unique on drain id + key + `billed`), inserted by the pull and never updated: the store (Link), the drain id, requests, `cost` (Grove's price), `gateway_cost`, and `billed` — whether it was charged, which is whether the gateway served it while the user was prepaid (it tags each request `p:` or `f:`, so a drain that spans a flip lands as two records). Only billed records move `spent`, are audited and count as revenue. The per-model detail — pricing, requests, counters and Grove's cost — is one hidden JSON field (`usage`) the form renders as a table, so a record is one row however many models it touched. A name Grove holds as a Model (published or not) gets an entry; the gateway's deployment-keyed metrics do not. |
 | `Stuck Usage` | Usage on one store the pull keeps failing to record. For a user: the gateway holds the usage and re-sends it every pull; this row says which keys, since when, how many attempts, the last error and payload — one open row per (user, store), resolved by the pull that lands it; **Pull Now** pulls just that user. For a dead line (`dead_line` set, user blank when unreadable): the gateway has dropped it and this row is the only copy; **Mark Resolved** closes it. An open row is never deleted; Log Settings clears resolved ones after 90 days. |
-| `Credit Discrepancy` | One Usage Record and pricing where the gateway's cost differs from Grove's price of the same counters. Logged by the pull, never acted on by it: **Grove is wrong** moves Grove's `spent` by the delta; **Gateway is wrong** moves the gateway's `spent` on that store by minus the delta (`/spend-adjust` through the store's writers, once per row). Either way the row keeps the correction and is resolved. System Manager only. |
+| `Credit Discrepancy` | One Usage Record and pricing where the gateway's cost differs from Grove's price of the same counters. Logged by the pull, never acted on by it: **Grove is wrong** moves Grove's `spent` by the delta; **Gateway is wrong** ticks the row's `Gateway Correction Pending`, and the projection tick moves the gateway's `spent` on that store by minus the delta (`/spend-adjust` through the store's writers, once per row). Either way the row keeps the correction and its `resolution`; blank and not pending is open. System Manager only. |
 
 ## Prices and credits
 
@@ -120,11 +120,11 @@ history, and Log Settings clears it after 90 days.
 
 **The balance.** Every `Grove User` is prepaid unless marked **Free**. Top-ups are `Grove Credit`
 entries — an append-only ledger, one doc per top-up or negative correction (with a note), never
-edited or deleted; a control client calls `api.add_credit(email, amount, note, reference)` or posts one
+edited or deleted; a control client calls `api.add_credit(user, amount, note, reference)` or posts one
 through `/api/resource/Grove Credit` (`reference` is the client's own id for the top-up, unique on
 the ledger: `add_credit` repeated with one adds nothing, so a call that timed out is sent again
-safely, and the same id on another user or amount is refused), and reads `api.balance(email)` — balance, spent,
-is_free_user — to show the person what they have left (`api.pull_usage(email)` first
+safely, and the same id on another user or amount is refused), and reads `api.balance(user)` — balance, spent,
+is_free_user — to show the user what they have left (`api.pull_usage(user)` first
 pulls just that user's keys from every store, for a figure less than an hour old; 3 an hour per
 user, then 429). On the user, `spent` is the USD Grove has billed and `balance` =
 Σ ledger − `spent`; both are read-only and both are written by `pricing.settle`, the one writer,
@@ -183,7 +183,7 @@ A System Manager decides which side is wrong:
 | button | does |
 |---|---|
 | Grove is wrong | Grove's `spent` moves by the delta and the user settles; Grove's balance now matches the gateway's |
-| Gateway is wrong | `POST /spend-adjust` through the store's writers in turn moves the gateway's `spent` for that user on that store by minus the delta, applied once under the row's name; a failure leaves the row open and pressing again is safe |
+| Gateway is wrong | The row's `Gateway Correction Pending` is ticked and nothing is sent from the button. The next projection tick sends `POST /spend-adjust` through the store's writers in turn: the gateway's `spent` for that user on that store moves by minus the delta, applied once under the row's name, and the answer marks the row `Gateway corrected` and clears the tick. A tick that fails leaves it pending for the next; a pending row takes neither button |
 
 A refund or a charge the customer is owed is a plain Grove Credit entry, separate from both. A drain
 from a gateway that predates tagging has no drain id: it is priced by the day and audited for
