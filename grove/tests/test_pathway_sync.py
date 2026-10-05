@@ -419,7 +419,18 @@ class TestEffectiveKeys(unittest.TestCase):
 		# The whole split: anything read here would be rewritten on every key the person holds
 		# each time their access moved.
 		[key] = self.keys([frappe._dict(name="KEY-1", key_hash="abc", user="GU-1", status="active")])
-		self.assertEqual(key, {"key_hash": "abc", "prefix": "KEY-1", "user": "GU-1", "status": "active"})
+		self.assertEqual(
+			key,
+			{"key_hash": "abc", "prefix": "KEY-1", "user": "GU-1", "status": "active", "can_read_balance": False},
+		)
+
+	def test_a_key_says_whether_it_may_read_the_balance(self):
+		# A bool on the wire: the gateway refuses a push whose flag is 0 or 1.
+		rows = [
+			frappe._dict(name="KEY-1", key_hash="abc", user="GU-1", status="active", can_read_balance=1),
+			frappe._dict(name="KEY-2", key_hash="abd", user="GU-1", status="active", can_read_balance=0),
+		]
+		self.assertEqual([key["can_read_balance"] for key in self.keys(rows)], [True, False])
 
 	def test_the_pointer_is_the_doc_name_not_the_email(self):
 		# The agent resolves user:<name>, so an email here would resolve against nothing.
