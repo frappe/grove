@@ -71,13 +71,15 @@ def effective_users():
 
 
 def effective_keys():
-	"""Every LIVE API Key projected for the gateway. A key is a pointer to whoever holds it and
-	nothing else — what they may call belongs to the user.
+	"""Every LIVE API Key projected for the gateway. A key is a pointer to whoever holds it, plus
+	whether it may read their balance — what they may call belongs to the user.
 
 	Revoked keys are not projected: absent from their bucket, the push prunes them off every box.
 	The row stays in Grove as the record of a credential that existed."""
 	keys = frappe.get_all(
-		"Grove API Key", filters={"status": "active"}, fields=["name", "key_hash", "user", "status"]
+		"Grove API Key",
+		filters={"status": "active"},
+		fields=["name", "key_hash", "user", "status", "can_read_balance"],
 	)
 	return [
 		{
@@ -85,6 +87,7 @@ def effective_keys():
 			"prefix": k.name,  # doc name (random hash) = usage attribution id
 			"user": k.user,  # Grove User doc name — the pointer to user:<name>
 			"status": k.status or "active",
+			"can_read_balance": bool(k.can_read_balance),  # the gateway decodes a JSON bool
 		}
 		for k in sorted(keys, key=lambda k: k.key_hash or "")
 		if k.key_hash
