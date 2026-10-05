@@ -16,6 +16,7 @@ class Modality(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		description: DF.SmallText | None
 		is_input: DF.Check
 		is_output: DF.Check
 	# end: auto-generated types

@@ -22,7 +22,7 @@ def write(path=None):
 	models = get_models()
 	catalog = {
 		"counters": get_counters(), "geographies": [{"name": MAIN}],
-		"modalities": frappe.get_all("Modality", fields=["name", "is_input", "is_output"], order_by="name"),
+		"modalities": get_modalities(),
 		"cloud_providers": get_cloud_providers(), "regions": get_regions(),
 		"providers": get_providers(), "models": models, "model_groups": get_model_groups(models),
 	}
@@ -41,6 +41,12 @@ def get_counters():
 			entry |= {"unit": row.unit} | ({"part_of": row.part_of} if row.part_of else {})
 		rows.append({k: v for k, v in entry.items() if v})
 	return rows
+
+
+def get_modalities():
+	"""Every modality, with its description when it has one. The two checks are kept at 0."""
+	rows = frappe.get_all("Modality", fields=["name", "description", "is_input", "is_output"], order_by="name")
+	return [{k: v for k, v in row.items() if k != "description" or v} for row in rows]
 
 
 def get_cloud_providers():

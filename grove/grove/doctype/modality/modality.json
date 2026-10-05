@@ -8,7 +8,9 @@
  "field_order": [
   "is_input",
   "column_break_kind",
-  "is_output"
+  "is_output",
+  "section_break_description",
+  "description"
  ],
  "fields": [
   {
@@ -30,10 +32,20 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Is Output"
+  },
+  {
+   "fieldname": "section_break_description",
+   "fieldtype": "Section Break"
+  },
+  {
+   "description": "What it means on a Model: what a request carries, or an answer holds, for this word to apply, and what the gateway does with it.",
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
   }
  ],
  "links": [],
- "modified": "2026-10-05 00:10:00.000000",
+ "modified": "2026-10-05 13:40:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Modality",

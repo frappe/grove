@@ -133,6 +133,16 @@ class TestExport(CatalogCase):
 		[group] = [g for g in catalog["model_groups"] if g["name"] == "catalog-export-group"]
 		self.assertEqual(group["models"], [self.key(self.model)])
 
+	def test_a_modality_exports_its_description_only_when_it_has_one(self):
+		words = [
+			{"name": "Catalog-scan", "is_input": 1, "is_output": 0, "description": "A scanned page."},
+			{"name": "Catalog-plain", "is_input": 1, "is_output": 0},
+		]
+		self.load(modalities=words)
+		exported = {m["name"]: m for m in json.loads(self.exported())["modalities"]}
+		self.assertEqual(exported["Catalog-scan"], words[0])
+		self.assertEqual(exported["Catalog-plain"], words[1])
+
 	def test_the_file_loaded_where_its_entries_are_missing_exports_the_same(self):
 		first = self.exported()
 		key = self.key(self.model)
