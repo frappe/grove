@@ -39,10 +39,7 @@ class CreditsCase(IntegrationTestCase):
 		cls.model_key = frappe.db.get_value("Model", cls.model, "model_key")
 		cls.store = a_store("credits-store")
 		gateway_module = "grove.grove.doctype.gateway_server.gateway_server"
-		with (
-			unittest.mock.patch(f"{gateway_module}.sync_fleet_ingress"),
-			unittest.mock.patch(f"{gateway_module}.GatewayServer.set_admin_url"),
-		):
+		with unittest.mock.patch(f"{gateway_module}.GatewayServer.set_admin_url"):
 			machine = frappe.get_doc({"doctype": "Machine", "name": "credits-box", "machine_type": "Gateway"}).insert(ignore_permissions=True)
 			cls.gateway = frappe.get_doc({
 				"doctype": "Gateway Server", "name": machine.name, "machine": machine.name,

@@ -153,7 +153,7 @@
    "label": "Inference Security Group IDs",
    "read_only": 1,
    "depends_on": "eval:doc.cloud_provider",
-   "description": "For an Inference Server box: 22 open to 0.0.0.0/0, and 443 — the engine proxy, fronting every deployment and both exporters — open only to the proxy fleet and the metrics agents. Filled in by Create Security Groups; the 443 sources are kept current by Sync Ingress Rules."
+   "description": "For an Inference Server box: 22 open to 0.0.0.0/0, and 443 — the engine proxy, fronting every deployment and both exporters — open only to this VPC and, from outside it, this geography's gateways and the metrics agents that scrape a box here. Filled in by Create Security Groups; the 443 sources are re-synced every two minutes, or at once by Sync Ingress Rules."
   },
   {
    "fieldname": "store_security_group_ids",
@@ -161,7 +161,7 @@
    "label": "Gateway Store Security Group IDs",
    "read_only": 1,
    "depends_on": "eval:doc.cloud_provider",
-   "description": "For a Gateway Store box: 22 open to 0.0.0.0/0, and redis (6379) open only to this Network's gateways, by private IP. Filled in by Create Security Groups; the 6379 sources are kept current by Sync Ingress Rules."
+   "description": "For a Gateway Store box: 22 open to 0.0.0.0/0, and redis (6379) open to this VPC and nothing outside it; redis itself needs a password. Filled in by Create Security Groups; the 6379 rule is re-synced every two minutes, or at once by Sync Ingress Rules."
   }
  ],
  "links": [
@@ -171,7 +171,7 @@
    "link_fieldname": "network"
   }
  ],
- "modified": "2026-09-17 16:41:00.000000",
+ "modified": "2026-10-05 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Network",

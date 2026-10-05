@@ -49,10 +49,7 @@ class PullCase(IntegrationTestCase):
 		# The key: what a bucket and an entry name. The doc is never looked at here.
 		cls.model = frappe.db.get_value("Model", doc, "model_key")
 		gateway_module = "grove.grove.doctype.gateway_server.gateway_server"
-		with (
-			unittest.mock.patch(f"{gateway_module}.sync_fleet_ingress"),
-			unittest.mock.patch(f"{gateway_module}.GatewayServer.set_admin_url"),
-		):
+		with unittest.mock.patch(f"{gateway_module}.GatewayServer.set_admin_url"):
 			machine = frappe.get_doc({"doctype": "Machine", "name": cls.box, "machine_type": "Gateway"}).insert(ignore_permissions=True)
 			cls.gateway = frappe.get_doc({
 				"doctype": "Gateway Server", "name": machine.name, "machine": machine.name, "gateway_store": cls.store,

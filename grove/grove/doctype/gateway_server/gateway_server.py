@@ -13,7 +13,6 @@ from grove.fleet import (
 	gateway_agent_version,
 )
 from grove.grove.doctype.gateway_store.gateway_store import store_writers, stores_in
-from grove.grove.doctype.network.network import sync_fleet_ingress
 
 
 class GatewayServer(PathwayHost, Document):
@@ -71,17 +70,11 @@ class GatewayServer(PathwayHost, Document):
 	def on_update(self):
 		if self.has_value_changed("status") and self.status == "Terminated":
 			self.remove_dns_records()
-		# An inference box only answers on 443 to the proxy fleet, and a store on 6379 to its
-		# Network's gateways, so a proxy arriving, moving or dying changes what those groups allow.
-		if any(self.has_value_changed(field) for field in ("public_ip", "private_ip", "status")):
-			sync_fleet_ingress()
 
 	def on_trash(self):
 		# While its name still says which records are its own. A row left behind in the multivalue set
 		# is a black hole for whichever share of customers resolves to it.
 		self.remove_dns_records()
-		# Enqueued, so it recomputes after this delete commits and without this proxy.
-		sync_fleet_ingress()
 
 	@property
 	def archive_blockers(self):
@@ -329,7 +322,4 @@ class GatewayServer(PathwayHost, Document):
 			# Its name has to resolve before the tick pushes to admin_url, which IS that name once
 			# a zone is set.
 			self.sync_dns_records()
-			# provision writes through db.set_value, so on_update never fires — this is the only
-			# thing that lets a new proxy reach an engine.
-			sync_fleet_ingress()
 		return play_name, rc
