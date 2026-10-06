@@ -336,9 +336,9 @@ def get_dialects(models, geography):
 def add_vendor_routes(routes, models, vendors, upstream):
 	"""One row per published Model per front the third party runs — two for a dual-front vendor
 	(DeepSeek's /anthropic), so one provider record serves both surfaces. No capacity of ours to
-	divide — the vendor's own 429 is the only cap — so capacity stays 0 and the provider names
-	itself as the deployment. The keys ride `credentials`, never `internal_key`: that is the
-	single-key spelling every engine row keeps."""
+	divide — the vendor's own 429 is the only cap — so capacity stays 0. A vendor is no placement
+	of ours, so `deployment` and `server` stay blank and `vendor` names it. The keys ride
+	`credentials`, never `internal_key`: that is the single-key spelling every engine row keeps."""
 	for model in models:
 		if not model.published or model.provider_name not in vendors:
 			continue
@@ -351,8 +351,9 @@ def add_vendor_routes(routes, models, vendors, upstream):
 				"key_selection": vendor["key_selection"],
 				"healthy": True,
 				"capacity": 0,
-				"deployment": model.provider_name,
-				"server": model.provider_name,
+				"deployment": "",
+				"server": "",
+				"vendor": model.provider_name,
 				"kind": "provider",
 				"upstream_model": upstream.get(model.name, ""),
 				"api_version": vendor["api_version"],

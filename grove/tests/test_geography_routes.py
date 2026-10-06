@@ -102,8 +102,8 @@ class TestRoutesStayInTheirGeography(unittest.TestCase):
 		self.assertEqual((row["engine_url"], row["credentials"][0]["secret"]), ("https://eu.api.openai.com/v1", "eu-key"))
 		# The eu doc's own upstream id; the in doc's never reaches this table.
 		self.assertEqual(row["upstream_model"], "gpt-5-eu")
-		# Usage is attributed to the vendor, not to a record id.
-		self.assertEqual(row["deployment"], "openai")
+		# The vendor is named by its provider, not by a record id.
+		self.assertEqual(row["vendor"], "openai")
 
 	def test_a_vendor_is_dialled_only_where_it_has_a_record(self):
 		self.assertNotIn("openai/gpt-5", routes("us"))
