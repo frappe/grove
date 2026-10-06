@@ -60,10 +60,33 @@ def provision_key(user: str, title: str = None, can_read_balance: bool = False):
 	key.insert()
 
 	return {
+		"name": key.name,
 		"gateway_url": f"https://{host}",
 		"api_key": key.get_password("api_secret"),
 		"can_read_balance": bool(key.can_read_balance),
 	}
+
+
+@frappe.whitelist()
+def keys(user: str):
+	"""The keys of `user`, newest first, never with their secret: that is shown once, by
+	`provision_key`. `key_hash` narrows `usage` to one of them. Nothing for a user Grove does
+	not know."""
+	frappe.only_for(ALLOWED_ROLES)
+	from frappe.utils.password import get_decrypted_password
+
+	if not (grove_user := for_reference(user)):
+		return []
+	rows = frappe.get_list(
+		"Grove API Key",
+		filters={"user": grove_user},
+		fields=["name", "title", "status", "creation", "key_hash", "can_read_balance"],
+		order_by="creation desc",
+	)
+	for row in rows:
+		secret = get_decrypted_password("Grove API Key", row.name, "api_secret")
+		row["masked"] = f"{secret[:6]}…{secret[-4:]}"
+	return rows
 
 
 @frappe.whitelist()
@@ -136,20 +159,23 @@ def pull_usage(user: str):
 
 
 @frappe.whitelist()
-def revoke_key(api_key: str):
-	"""Revoke by the full key, not the doc name. The row stays as the record it existed; a revoked
-	key is no longer projected, so the next sync prunes it from every proxy."""
+def revoke_key(api_key: str = None, user: str = None, key: str = None):
+	"""Revoke by the full key, or by `user` and the name `keys` lists it under. The row stays as
+	the record it existed; a revoked key is no longer projected, so the next sync prunes it from
+	every proxy."""
 	frappe.only_for(ALLOWED_ROLES)
-	get_api_key(api_key).revoke()
+	get_api_key(api_key, user, key).revoke()
 	return "Revoked. Might take some time to reflect."
 
 
 @frappe.whitelist()
-def set_key_balance_access(api_key: str, can_read_balance: bool):
-	"""Let a key read its user's credit at the gateway's /v1/credits, or stop it. By the full key,
-	like `revoke_key`; the gateways follow at the next sync."""
+def set_key_balance_access(
+	api_key: str = None, can_read_balance: bool = False, user: str = None, key: str = None
+):
+	"""Let a key read its user's credit at the gateway's /v1/credits, or stop it. Addressed like
+	`revoke_key`; the gateways follow at the next sync."""
 	frappe.only_for(ALLOWED_ROLES)
-	key = get_api_key(api_key)
+	key = get_api_key(api_key, user, key)
 	key.set_balance_access(can_read_balance)
 	return {"can_read_balance": bool(key.can_read_balance)}
 
@@ -281,11 +307,16 @@ def get_grove_user(user):
 	return grove_user
 
 
-def get_api_key(api_key):
-	"""The Grove API Key doc behind a full key; an unknown one is refused."""
+def get_api_key(api_key=None, user=None, key=None):
+	"""The Grove API Key doc behind a full key, or behind `key` when `user` holds it: another
+	user's key name must not reach it. An unknown one is refused."""
 	from grove.grove.doctype.grove_api_key.grove_api_key import hash_secret
 
-	name = frappe.db.get_value("Grove API Key", {"key_hash": hash_secret(api_key.strip())})
+	if api_key:
+		filters = {"key_hash": hash_secret(api_key.strip())}
+	else:
+		filters = {"name": key or "", "user": for_reference(user) or ""}
+	name = frappe.db.get_value("Grove API Key", filters)
 	if not name:
 		frappe.throw("no such API key", frappe.DoesNotExistError)
 	return frappe.get_doc("Grove API Key", name)

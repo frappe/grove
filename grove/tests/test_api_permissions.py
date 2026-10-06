@@ -138,6 +138,39 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		with self.assertRaises(frappe.DoesNotExistError):
 			api.set_key_balance_access(KEY_PREFIX + "nobody", True)
 
+	def test_a_users_keys_are_listed_without_their_secret(self):
+		user = "probe-listed"
+		api.provision_user(user, ALERTS, make_test_geography())
+		minted = api.provision_key(user, title="laptop")
+
+		[listed] = api.keys(user)
+		self.assertEqual((listed.name, listed.title, listed.status), (minted["name"], "laptop", "active"))
+		self.assertEqual(listed.key_hash, hash_secret(minted["api_key"]))
+		self.assertTrue(listed.masked.endswith(minted["api_key"][-4:]))
+		self.assertNotIn(minted["api_key"], str(listed))
+		self.assertEqual(api.keys("probe-nobody"), [])
+
+	def test_a_key_is_revoked_by_name_only_for_the_user_holding_it(self):
+		user, other = "probe-revoker", "probe-revoker-other"
+		for each in (user, other):
+			api.provision_user(each, ALERTS, make_test_geography())
+		key = api.provision_key(user, title="ci")["name"]
+
+		with self.assertRaises(frappe.DoesNotExistError):
+			api.revoke_key(user=other, key=key)
+		with self.assertRaises(frappe.DoesNotExistError):
+			api.set_key_balance_access(can_read_balance=False, user=other, key=key)
+
+		api.set_key_balance_access(can_read_balance=False, user=user, key=key)
+		# A key younger than six hours cannot be revoked.
+		frappe.db.set_value(
+			"Grove API Key", key, "creation", frappe.utils.add_to_date(None, hours=-7), update_modified=False
+		)
+		api.revoke_key(user=user, key=key)
+		self.assertEqual(
+			frappe.db.get_value("Grove API Key", key, ["status", "can_read_balance"]), ("revoked", 0)
+		)
+
 	def pull_counter(self, user):
 		"""A user to pull and their counter, cleared now and after: Redis is not rolled back."""
 		grove_user = api._set_policy(user, ALERTS, None)
