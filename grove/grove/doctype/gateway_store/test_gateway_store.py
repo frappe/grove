@@ -242,3 +242,31 @@ class TestRestore(unittest.TestCase):
 
 if __name__ == "__main__":
 	unittest.main()
+
+
+class TestDnsRecord(unittest.TestCase):
+	"""A store's own name is what operators SSH to: written on a good Setup, removed on Terminated."""
+
+	def provision(self, rc):
+		synced = []
+		store = SimpleNamespace(
+			name="store1", doctype="Gateway Store", listen_ip="10.0.0.5", get_password=lambda field: "pw",
+			run_playbook=lambda playbook, **kwargs: ("play-1", rc), sync_dns_records=lambda: synced.append(True),
+		)
+		with patch.object(frappe, "db", SimpleNamespace(set_value=lambda *a: None, commit=lambda: None)):
+			GatewayStore.provision.__wrapped__(store)
+		return bool(synced)
+
+	def test_a_good_setup_writes_the_record_and_a_failed_one_does_not(self):
+		self.assertTrue(self.provision(0))
+		self.assertFalse(self.provision(2))
+
+	def test_terminating_removes_the_record(self):
+		removed = []
+		for status, changed in (("Terminated", True), ("Active", True), ("Terminated", False)):
+			store = SimpleNamespace(
+				status=status, has_value_changed=lambda field, changed=changed: changed,
+				remove_dns_records=lambda: removed.append(status),
+			)
+			GatewayStore.on_update(store)
+		self.assertEqual(removed, ["Terminated"])

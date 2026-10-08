@@ -1,16 +1,48 @@
 ---
-# Push the fleet's wildcard certificate onto one already-provisioned Gateway Server.
+# Push the fleet's wildcard certificate onto one already-provisioned Gateway or Ingress Server.
 #
-# Nothing else — no packages, no binary, no restart, no reload. The gateway watches its certificate
-# file's mtime and picks up a replacement on the next handshake, so a renewal is a file copy and
-# that is the whole play. This is what the nginx it replaced needed a config test and a reload for.
+# A renewal is a file copy and nothing else — no packages, no binary, no restart. pathway watches
+# its certificate file's mtime and picks up a replacement on the next handshake, so nothing here
+# interrupts a request on a box that already serves TLS.
 #
-# Run by grove.tls after a renewal, against every Active gateway at once, so it has to be safe on a
-# live box: nothing here interrupts a request.
-- name: Install the fleet certificate on a Gateway Server
+# The one exception is a box set up before its Geography had a certificate: its agent.env names no
+# certificate, and pathway decides at startup whether to open :443. The TLS lines are written here
+# and pathway restarts once, on that first certificate only; every later run finds them in place.
+#
+# Run by grove.tls after an issuance or a renewal, against every Active box in the Geography at once.
+- name: Install the fleet certificate on a Gateway or Ingress Server
   hosts: all
   become: true
   gather_facts: false
 
   roles:
     - fleet_tls
+
+  tasks:
+    - name: Point pathway at the certificate
+      when: fleet_tls_cert | length > 0 and fleet_tls_key | length > 0
+      block:
+        - name: read agent.env
+          ansible.builtin.stat:
+            path: /etc/pathway/agent.env
+          register: agent_env
+
+        # Only the two TLS lines: the rest of agent.env is Setup's and Deploy Agent's to write.
+        # GROVE_LISTEN_HTTPS is already :443 on every box those plays wrote.
+        - name: agent.env names the certificate
+          when: agent_env.stat.exists
+          ansible.builtin.lineinfile:
+            path: /etc/pathway/agent.env
+            regexp: "^{{ item.key }}="
+            line: "{{ item.key }}={{ item.value }}"
+          loop:
+            - { key: GROVE_TLS_CERT, value: "{{ fleet_tls_cert_path }}" }
+            - { key: GROVE_TLS_KEY, value: "{{ fleet_tls_key_path }}" }
+          notify: restart pathway
+
+  handlers:
+    # A restart, not a SIGHUP: the upgrade child reads its environment from systemd, not the file.
+    - name: restart pathway
+      ansible.builtin.systemd:
+        name: pathway
+        state: restarted

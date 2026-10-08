@@ -8,6 +8,8 @@ import frappe
 from frappe.model.document import Document
 
 KEY_PREFIX = "gr_"
+# Guards a race where a key is created and revoked at the same time.
+REVOKE_AFTER_HOURS = 6
 
 
 def hash_secret(secret: str) -> str:
@@ -47,6 +49,11 @@ class GroveAPIKey(Document):
 		if not frappe.db.exists("Grove API Key", {"user": self.user, "status": "active"}):
 			self.can_read_balance = 1
 
+	@property
+	def revocable_at(self):
+		"""When `revoke` stops refusing this key, in site time."""
+		return frappe.utils.add_to_date(self.creation, hours=REVOKE_AFTER_HOURS)
+
 	def set_balance_access(self, allowed: bool):
 		"""Let this key read its user's credit at the gateway's /v1/credits, or stop it."""
 		self.can_read_balance = 1 if allowed else 0
@@ -56,9 +63,15 @@ class GroveAPIKey(Document):
 	def revoke(self):
 		"""Retire the credential. The row stays as the record that it existed and when it stopped;
 		the gateways' copy goes when the next sync prunes the unprojected key."""
-		# Guards a race where a key is created and revoked at the same time.
-		if frappe.utils.time_diff_in_hours(frappe.utils.now_datetime(), self.creation) < 6:
-			frappe.throw("API key cannot be revoked less than 6 hours of it's creation")
+		if frappe.utils.now_datetime() < self.revocable_at:
+			frappe.throw(f"API key cannot be revoked less than {REVOKE_AFTER_HOURS} hours of it's creation")
 
 		self.status = "revoked"
 		self.save(ignore_permissions=True)
+
+
+def on_doctype_update():
+	"""The hash is what the gateways key on and what every lookup here uses: unique, so a
+	collision, however unlikely at 192 random bits, refuses the insert rather than merging two
+	keys into one, and indexed, so a lookup by hash does not scan the table."""
+	frappe.db.add_unique("Grove API Key", ["key_hash"], constraint_name="unique_key_hash")

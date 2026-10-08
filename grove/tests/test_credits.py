@@ -226,7 +226,7 @@ class TestAFreeUserIsNeverCharged(CreditsCase):
 		self.pull({key: self.hash(80_000, charged=False)})
 		reference = frappe.db.get_value("Grove User", free, "reference")
 		result = api.usage([reference], period="Today")
-		self.assertEqual(result[reference], {"requests": 1, "cost": 0})
+		self.assertEqual(result[reference], {"requests": 1, "tokens": 80_000, "cost": 0})
 
 	def test_untagged_usage_of_a_known_model_is_recorded_and_bills_nothing(self):
 		user, key = self.user(credit=1)
@@ -309,11 +309,19 @@ class TestTheUsageApiSumsInTheDatabase(CreditsCase):
 		self.pull({key: self.hash(30_000, requests=2)})
 		reference = frappe.db.get_value("Grove User", user, "reference")
 		result = api.usage([reference], period="Today")
-		self.assertEqual(result[reference], {"requests": 3, "cost": 0.8})
-		self.assertEqual(result["model_summary"], [{"model": self.model_key, "requests": 3, "cost": 0.8}])
-		self.assertEqual(result["daily_summary"], [{"day": result["to_date"], "model": self.model_key, "requests": 3, "cost": 0.8}])
+		# Tokens are the whole counters: the hashes carry completion tokens only.
+		self.assertEqual(result[reference], {"requests": 3, "tokens": 80_000, "cost": 0.8})
+		self.assertEqual(
+			result["model_summary"], [{"model": self.model_key, "requests": 3, "tokens": 80_000, "cost": 0.8}]
+		)
+		self.assertEqual(
+			result["daily_summary"],
+			[{"day": result["to_date"], "model": self.model_key, "requests": 3, "tokens": 80_000, "cost": 0.8}],
+		)
 		self.assertTrue(result["as_of"].endswith("Z"))
-		self.assertEqual(api.usage([reference], period="Yesterday")[reference], {"requests": 0, "cost": 0})
+		self.assertEqual(
+			api.usage([reference], period="Yesterday")[reference], {"requests": 0, "tokens": 0, "cost": 0}
+		)
 
 	def test_a_key_hash_narrows_it_to_that_key(self):
 		user, key = self.user(credit=5)
@@ -323,9 +331,14 @@ class TestTheUsageApiSumsInTheDatabase(CreditsCase):
 		key_hash = frappe.db.get_value("Grove API Key", key, "key_hash")
 
 		result = api.usage([reference], period="Today", key_hash=key_hash)
-		self.assertEqual(result[reference], {"requests": 1, "cost": 0.5})
-		self.assertEqual(result["model_summary"], [{"model": self.model_key, "requests": 1, "cost": 0.5}])
-		self.assertEqual(result["daily_summary"], [{"day": result["to_date"], "model": self.model_key, "requests": 1, "cost": 0.5}])
+		self.assertEqual(result[reference], {"requests": 1, "tokens": 50_000, "cost": 0.5})
+		self.assertEqual(
+			result["model_summary"], [{"model": self.model_key, "requests": 1, "tokens": 50_000, "cost": 0.5}]
+		)
+		self.assertEqual(
+			result["daily_summary"],
+			[{"day": result["to_date"], "model": self.model_key, "requests": 1, "tokens": 50_000, "cost": 0.5}],
+		)
 
 	def test_another_users_key_is_refused(self):
 		user, _ = self.user(credit=5)

@@ -45,6 +45,19 @@ def on_doctype_update():
 	frappe.db.add_index("Usage Record", ["api_key", "day"])
 
 
+def tokens_expression(alias="u"):
+	"""The SQL for a row's whole tokens: the root token counters that are not a part of another,
+	so prompt and completion once each and never their cached or audio parts again."""
+	from grove.billing.pricing import CounterTable
+
+	whole = [
+		row.name
+		for row in CounterTable.load().rows
+		if row.unit == "Mtok" and not row.base_counter and not row.part_of
+	]
+	return " + ".join(f"{alias}.{counter}" for counter in whole) or "0"
+
+
 def usage_table(record="r"):
 	"""The JSON_TABLE that unnests a record's per-model `usage` into rows, one column per counter —
 	read off the Usage Counter table, so a new counter needs no SQL edit. Alias the result `u`."""

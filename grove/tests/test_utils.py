@@ -8,7 +8,6 @@ from grove.utils import (
 	is_env_key,
 	is_env_value,
 	is_label,
-	is_label_under,
 	slugify,
 	validate_label_name,
 )
@@ -66,25 +65,6 @@ class TestValidateLabelName(unittest.TestCase):
 		# Frappe raises "Name is required" straight after, and says it better than this would.
 		for blank in ("", None):
 			validate_label_name("Inference Server", blank)
-
-
-class TestIsLabelUnder(unittest.TestCase):
-	"""A wildcard covers one label and no more, which is the whole constraint on Gateway Host:
-	*.grove.example.com is presented by every proxy, and a name it does not match reaches a
-	customer's SDK as a certificate error days after someone typed it."""
-
-	def test_one_label_below_the_zone(self):
-		self.assertTrue(is_label_under("api.grove.example.com", "grove.example.com"))
-
-	def test_the_zone_itself_is_not_covered(self):
-		self.assertFalse(is_label_under("grove.example.com", "grove.example.com"))
-
-	def test_two_labels_below_are_not_covered(self):
-		self.assertFalse(is_label_under("api.eu.grove.example.com", "grove.example.com"))
-
-	def test_a_name_in_another_zone_is_not_covered(self):
-		# ...including one that merely ends the same way.
-		self.assertFalse(is_label_under("api.notgrove.example.com", "grove.example.com"))
 
 
 class TestIsEnvKey(unittest.TestCase):

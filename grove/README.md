@@ -153,9 +153,9 @@ vendor answers 429 for the next (each tried once, then once more round), skips o
 form reads those counts live off one gateway per store in the geography; nothing is stored here.
 **Fetch Models** asks the vendor's `/v1/models` on one front — the OpenAI one with a Bearer when set
 (a dual vendor's Anthropic shim, DeepSeek's, has no list), else Anthropic's with `x-api-key` and the
-version header, paged with `after_id` — hides what the record already holds, and adds the ticked ids
-as unpublished Models, the vendor's spelling kept as `Upstream Model ID` where ours differs
-(`org/Model` → `org-model`).
+version header, paged with `after_id` — hides what the record already holds, then asks for our id
+for each ticked one (prefilled with the vendor's) and adds them as unpublished Models, the vendor's
+spelling kept as `Upstream Model ID` where ours differs (`org/Model` → `org-model`).
 What the vendor is *asked* for is the route's `upstream_model`, which the control plane computes in
 one place (`_upstream_model`):
 

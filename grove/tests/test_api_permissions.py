@@ -13,6 +13,7 @@ from frappe.tests import IntegrationTestCase
 from grove import api
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_api_key.grove_api_key import KEY_PREFIX, hash_secret
+from grove.pathway.routes import utc_timestamp
 
 PROBE = "control-probe@example.com"
 ALERTS = "owner@example.com"
@@ -86,12 +87,16 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 
 	def test_provisioning_again_keeps_the_user_and_moves_its_email(self):
 		user, geography = "TEAM-PROBE", make_test_geography()
-		self.assertEqual(api.provision_user(user, "first-owner@example.com", geography), {"geography": geography})
+		pinned = {
+			"geography": geography,
+			"gateway_url": f"https://{frappe.db.get_value('Geography', geography, 'endpoint')}",
+		}
+		self.assertEqual(api.provision_user(user, "first-owner@example.com", geography), pinned)
 		grove_user = frappe.db.get_value("Grove User", {"reference": user})
 		self.assertEqual(frappe.db.count("Grove API Key", {"user": grove_user}), 0)
 		key = api.provision_key(user)["api_key"]
 		# Safe to repeat, and how an owner change arrives: the same user and keys, a new address.
-		self.assertEqual(api.provision_user(user, "next-owner@example.com"), {"geography": geography})
+		self.assertEqual(api.provision_user(user, "next-owner@example.com"), pinned)
 		self.assertEqual(
 			frappe.db.get_value("Grove User", {"reference": user}, ["name", "email"]),
 			(grove_user, "next-owner@example.com"),
@@ -137,6 +142,55 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertEqual(stored, [0, 1])
 		with self.assertRaises(frappe.DoesNotExistError):
 			api.set_key_balance_access(KEY_PREFIX + "nobody", True)
+
+	def test_a_minted_key_is_unique_by_its_hash(self):
+		user = "probe-unique"
+		api.provision_user(user, ALERTS, make_test_geography())
+		# 192 random bits never repeat in practice; the index is what makes sure of it.
+		same_bits = unittest.mock.patch(
+			"grove.grove.doctype.grove_api_key.grove_api_key.secrets.token_hex", return_value="0" * 48
+		)
+		with same_bits:
+			api.provision_key(user, title="one")
+			with self.assertRaises(frappe.UniqueValidationError):
+				api.provision_key(user, title="twin")
+
+	def test_a_users_keys_are_listed_without_their_secret(self):
+		user = "probe-listed"
+		api.provision_user(user, ALERTS, make_test_geography())
+		minted = api.provision_key(user, title="laptop")
+
+		[listed] = api.keys(user)
+		self.assertEqual((listed.name, listed.title, listed.status), (minted["name"], "laptop", "active"))
+		self.assertEqual(listed.key_hash, hash_secret(minted["api_key"]))
+		# When revoke stops refusing it: six hours on, as UTC, so a caller can wait instead of asking.
+		self.assertEqual(
+			listed.revocable_at, utc_timestamp(frappe.utils.add_to_date(listed.creation, hours=6))
+		)
+		self.assertTrue(listed.masked.endswith(minted["api_key"][-4:]))
+		self.assertNotIn(minted["api_key"], str(listed))
+		self.assertEqual(api.keys("probe-nobody"), [])
+
+	def test_a_key_is_revoked_by_name_only_for_the_user_holding_it(self):
+		user, other = "probe-revoker", "probe-revoker-other"
+		for each in (user, other):
+			api.provision_user(each, ALERTS, make_test_geography())
+		key = api.provision_key(user, title="ci")["name"]
+
+		with self.assertRaises(frappe.DoesNotExistError):
+			api.revoke_key(user=other, key=key)
+		with self.assertRaises(frappe.DoesNotExistError):
+			api.set_key_balance_access(can_read_balance=False, user=other, key=key)
+
+		api.set_key_balance_access(can_read_balance=False, user=user, key=key)
+		# A key younger than six hours cannot be revoked.
+		frappe.db.set_value(
+			"Grove API Key", key, "creation", frappe.utils.add_to_date(None, hours=-7), update_modified=False
+		)
+		api.revoke_key(user=user, key=key)
+		self.assertEqual(
+			frappe.db.get_value("Grove API Key", key, ["status", "can_read_balance"]), ("revoked", 0)
+		)
 
 	def pull_counter(self, user):
 		"""A user to pull and their counter, cleared now and after: Redis is not rolled back."""

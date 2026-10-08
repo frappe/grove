@@ -5,7 +5,7 @@ import frappe
 from frappe.model.document import Document
 
 from grove import failure, tls
-from grove.utils import is_hostname, is_label_under
+from grove.utils import is_hostname
 
 
 class Geography(Document):
@@ -47,12 +47,6 @@ class Geography(Document):
 			self.set(field, value)
 			if value and not is_hostname(value):
 				frappe.throw(f"{field} '{value}' is not a hostname: labels joined by dots, no scheme, path or port.")
-
-		if self.fleet_zone and not is_label_under(self.endpoint, self.fleet_zone):
-			frappe.throw(
-				f"Endpoint '{self.endpoint}' must be exactly one label under '{self.fleet_zone}' — "
-				f"*.{self.fleet_zone} covers neither the zone itself nor anything deeper."
-			)
 
 	def validate_fixed_names(self):
 		"""The gateways' DNS rows and names sit in the old values. Setting a zone for the first time is

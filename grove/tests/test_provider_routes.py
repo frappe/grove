@@ -144,7 +144,7 @@ class TestAVendorModelIsRoutable(unittest.TestCase):
 		for row in rows:
 			self.assertEqual(row["credentials"], [{"id": "k-kimi-1", "secret": "kimi-key"}])
 			self.assertEqual(row["upstream_model"], "k2")
-			self.assertEqual(row["deployment"], "kimi")
+			self.assertEqual(row["vendor"], "kimi")
 
 	def test_another_geographys_doc_of_the_same_key_is_not_routed_here(self):
 		# kimi/k2 is two docs, one per provider record; this geography's table carries only its
@@ -160,11 +160,11 @@ class TestAVendorModelIsRoutable(unittest.TestCase):
 				if row["kind"] != "provider":
 					self.assertNotIn("dialect", row)
 
-	def test_the_provider_is_the_placement(self):
-		# There is no deployment doc to name, and usage has to be attributable to something.
+	def test_the_provider_is_the_vendor_not_a_placement(self):
+		# A vendor runs on no deployment or box of ours; the gateway reads its quirks by `vendor`.
 		[row] = routes()["anthropic/claude-4-5"]
-		self.assertEqual(row["deployment"], "anthropic")
-		self.assertEqual(row["server"], "anthropic")
+		self.assertEqual(row["vendor"], "anthropic")
+		self.assertEqual((row["deployment"], row["server"]), ("", ""))
 
 	def test_it_claims_no_capacity(self):
 		# We divide GPUs we own. A vendor's own 429 is the only cap there is.

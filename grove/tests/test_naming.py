@@ -15,7 +15,7 @@ import frappe
 
 from grove.grove.doctype.machine.machine import NAME_PREFIX, Machine
 from grove.naming import next_machine_name, next_replica_name, short_name
-from grove.utils import is_label, is_label_under, slugify
+from grove.utils import is_label, slugify
 
 ZONE = "grove.example.com"
 
@@ -88,8 +88,6 @@ class TestServerNaming(unittest.TestCase):
 				self.assertTrue(generated.startswith(prefix))
 				# It has to be a DNS label...
 				self.assertTrue(is_label(generated), generated)
-				# ...and the fleet wildcard only covers ONE label below the zone.
-				self.assertTrue(is_label_under(f"{generated}.{ZONE}", ZONE), generated)
 
 	def test_a_region_that_is_not_a_label_is_slugged_into_one(self):
 		# Region doc names are AWS codes today, but nothing forces that.

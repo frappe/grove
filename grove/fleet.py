@@ -48,9 +48,9 @@ def gateway_agent_release():
 	return {"agent_version": gateway_agent_version(), "agent_repo": pathway_repo()}
 
 
-class FleetHost(Server):
-	"""Everything a named fleet box does the same way: its name, admin URL, DNS client, certificate
-	and exporters."""
+class NamedHost(Server):
+	"""A box with its own A record at <short name>.<fleet zone>, and nothing else from the fleet.
+	A Gateway Store stops here: operators SSH to it by name, but nothing dials it over HTTP."""
 
 	# The doc fields this box's DNS records are built from. Named rather than branched on: a gateway's
 	# records also need its Geography's endpoint, an ingress's do not.
@@ -69,55 +69,10 @@ class FleetHost(Server):
 		return f"{self.short_name}.{zone}" if zone else ""
 
 	@property
-	def tls_variables(self):
-		"""The zone and wildcard this box fronts itself with, off its Geography. Carries the key, so
-		resolve it inside the job."""
-		if not self.geography:
-			return {"fleet_zone": "", "fleet_tls_cert": "", "fleet_tls_key": ""}
-		return frappe.get_doc("Geography", self.geography).tls_variables
-
-	@property
 	def has_fleet_name(self):
 		"""Whether this box is published in DNS: its geography has a zone, and the fleet a DNS
 		Provider to write it with."""
 		return bool(self.fleet_zone and frappe.db.get_single_value("Grove Settings", "dns_provider"))
-
-	def set_admin_url(self):
-		"""Where the control plane reaches this box's agent. Derived, never typed: it has to name
-		ONE box, and the shared names deliberately name several at once. Once it is https on a
-		name the fleet certificate covers, `requests` verifies it by default."""
-		if self.hostname:
-			self.admin_url = f"https://{self.hostname}/grove-admin"
-		elif self.public_ip:
-			self.admin_url = f"http://{self.public_ip}/grove-admin"
-
-	@property
-	def health_url(self):
-		"""pathway's /healthz, on the same host and scheme as its admin API."""
-		return (self.admin_url or "").removesuffix("/grove-admin") + "/healthz"
-
-	@frappe.whitelist()
-	def ping(self):
-		"""Button: GET /healthz from the control plane. A 503 is still reachable; its body says why."""
-		if not self.admin_url:
-			frappe.throw(f"{self.doctype} {self.name} has no Admin URL yet — nothing to ping.")
-		response = requests.get(self.health_url, timeout=5)
-		milliseconds = round(response.elapsed.total_seconds() * 1000)
-		frappe.msgprint(
-			f"{self.health_url} answered {response.status_code} in {milliseconds} ms: "
-			f"{escape_html(response.text.strip()[:200])}",
-			indicator="green" if response.ok else "orange",
-		)
-		return response.status_code
-
-	def record_agent_version(self, rc):
-		"""Remember which agent release this box actually took, on the runs that installed one.
-
-		One repo made skew impossible; two makes it the thing to watch, and a finished play is the
-		only moment that knows the answer. Written with db.set_value, like the statuses around it,
-		so recording a version never fires on_update and re-syncs the fleet."""
-		if rc == 0:
-			frappe.db.set_value(self.doctype, self.name, "agent_version", gateway_agent_version())
 
 	@property
 	def has_dns_records(self):
@@ -164,6 +119,57 @@ class FleetHost(Server):
 			if e.code != "InvalidChangeBatch":
 				raise
 			return None
+
+
+class FleetHost(NamedHost):
+	"""Everything a named fleet box does the same way past its name: admin URL, certificate and
+	exporters."""
+
+	@property
+	def tls_variables(self):
+		"""The zone and wildcard this box fronts itself with, off its Geography. Carries the key, so
+		resolve it inside the job."""
+		if not self.geography:
+			return {"fleet_zone": "", "fleet_tls_cert": "", "fleet_tls_key": ""}
+		return frappe.get_doc("Geography", self.geography).tls_variables
+
+	def set_admin_url(self):
+		"""Where the control plane reaches this box's agent. Derived, never typed: it has to name
+		ONE box, and the shared names deliberately name several at once. Once it is https on a
+		name the fleet certificate covers, `requests` verifies it by default."""
+		if self.hostname:
+			self.admin_url = f"https://{self.hostname}/grove-admin"
+		elif self.public_ip:
+			self.admin_url = f"http://{self.public_ip}/grove-admin"
+
+	@property
+	def health_url(self):
+		"""pathway's /healthz, on the same host and scheme as its admin API."""
+		return (self.admin_url or "").removesuffix("/grove-admin") + "/healthz"
+
+	@frappe.whitelist()
+	def ping(self):
+		"""Button: GET /healthz from the control plane. A 503 is still reachable; its body says why."""
+		if not self.admin_url:
+			frappe.throw(f"{self.doctype} {self.name} has no Admin URL yet — nothing to ping.")
+		response = requests.get(self.health_url, timeout=5)
+		milliseconds = round(response.elapsed.total_seconds() * 1000)
+		frappe.msgprint(
+			f"{self.health_url} answered {response.status_code} in {milliseconds} ms: "
+			f"{escape_html(response.text.strip()[:200])}",
+			indicator="green" if response.ok else "orange",
+		)
+		return response.status_code
+
+	def record_agent_version(self, rc):
+		"""Remember which agent release this box actually took, on the runs that installed one.
+
+		One repo made skew impossible; two makes it the thing to watch, and a finished play is the
+		only moment that knows the answer. Written with db.set_value, like the statuses around it,
+		so recording a version never fires on_update and re-syncs the fleet."""
+		if rc == 0:
+			frappe.db.set_value(self.doctype, self.name, "agent_version", gateway_agent_version())
+
 
 	@frappe.whitelist()
 	def deploy_tls(self):

@@ -20,6 +20,9 @@ Deliberately NOT a CloudClient: that contract is one account in one REGION, and 
 from grove.cloud_provider.base import CloudClientError
 
 TTL = 60
+# A box's own name is dialled by the control plane, not failed over, so it can be cached longer.
+# A DELETE repeats the TTL, so a change here needs Sync DNS on every live box before any delete.
+NAME_TTL = 300
 
 # The failover knob. 30 x 3 + TTL is ~150s of stale answers before a dead gateway leaves the set —
 # Route53's defaults, and the base price. 10 with 2 failures is ~50s at +$1/mo per check. Turning
@@ -65,11 +68,11 @@ class Route53Client:
 	def upsert_gateway_records(self, zone, hostname, gateway_host, public_ip, identifier, health_check_id):
 		"""Both records a gateway needs, in one change batch so a box is never half in DNS."""
 		row = gateway_row(gateway_host, public_ip, identifier, health_check_id)
-		self._replace_other_policy_row(zone, gateway_host, identifier, row)
 		return self._submit(
 			zone,
 			f"Grove UPSERT {identifier}",
 			[
+				*self.get_other_policy_deletes(zone, gateway_host, identifier, row),
 				{"Action": "UPSERT", "ResourceRecordSet": a_record(hostname, public_ip)},
 				{"Action": "UPSERT", "ResourceRecordSet": row},
 			],
@@ -91,15 +94,18 @@ class Route53Client:
 			],
 		)
 
-	def _replace_other_policy_row(self, zone, gateway_host, identifier, row):
+	def get_other_policy_deletes(self, zone, gateway_host, identifier, row):
 		"""This box's row at the shared name under another routing policy — a latency row from before
-		the multivalue set — is deleted on its own first, because Route53 will not UPSERT one policy
-		into another. Deleted verbatim as listed; the caller's write recreates it a moment later."""
-		for record in self.find_record_sets(zone, gateway_host):
-			if record.get("SetIdentifier") != identifier or record.get("Type") != "A":
-				continue
-			if not same_routing_policy(record, row):
-				self._submit(zone, f"Grove REPLACE {identifier}", [{"Action": "DELETE", "ResourceRecordSet": record}])
+		the multivalue set — as DELETEs, because Route53 will not UPSERT one policy into another.
+		Verbatim as listed, and in the write's own batch: a batch of their own would leave the name
+		empty in between, and resolvers cache that NXDOMAIN for the zone's negative TTL."""
+		return [
+			{"Action": "DELETE", "ResourceRecordSet": record}
+			for record in self.find_record_sets(zone, gateway_host)
+			if record.get("SetIdentifier") == identifier
+			and record.get("Type") == "A"
+			and not same_routing_policy(record, row)
+		]
 
 	def upsert_ingress_records(self, zone, hostname, public_ip, identifier):
 		"""The one record an ingress needs: the name that reaches this box. UPSERT, so a box that
@@ -212,7 +218,7 @@ def same_routing_policy(record, row):
 
 def a_record(name, public_ip):
 	"""A plain address record — one box's own name, and the base of every row below."""
-	return {"Name": name, "Type": "A", "TTL": TTL, "ResourceRecords": [{"Value": public_ip}]}
+	return {"Name": name, "Type": "A", "TTL": NAME_TTL, "ResourceRecords": [{"Value": public_ip}]}
 
 
 def gateway_row(gateway_host, public_ip, identifier, health_check_id):
@@ -220,6 +226,7 @@ def gateway_row(gateway_host, public_ip, identifier, health_check_id):
 	Route53 drop this box alone out of the answer."""
 	row = {
 		**a_record(gateway_host, public_ip),
+		"TTL": TTL,
 		"SetIdentifier": identifier,
 		"MultiValueAnswer": True,
 	}
