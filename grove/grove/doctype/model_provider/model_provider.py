@@ -172,13 +172,13 @@ class ModelProvider(Document):
 			params["after_id"] = body["last_id"]
 
 	@frappe.whitelist()
-	def add_models(self, model_ids: list[str]):
-		"""Button: the picked upstream ids as unpublished Models under this record. The id is
-		slugified into ours; the vendor's own spelling rides `upstream_model_id` when it differs."""
+	def add_models(self, model_ids: dict[str, str]):
+		"""Button: {upstream id: our id} as unpublished Models under this record. Our id is
+		slugified; the vendor's own spelling rides `upstream_model_id` when it differs."""
 		frappe.only_for("System Manager")
 		keys = []
-		for upstream_id in model_ids:
-			model_id = slugify(upstream_id.replace("/", "-"))
+		for upstream_id, model_id in model_ids.items():
+			model_id = slugify(model_id.replace("/", "-"))
 			model = {
 				"doctype": "Model",
 				"provider": self.name,

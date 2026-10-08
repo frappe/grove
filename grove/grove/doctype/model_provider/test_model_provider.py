@@ -302,8 +302,12 @@ class TestFetchModels(IntegrationTestCase):
 
 	def test_picked_ids_become_unpublished_models_under_the_record(self):
 		vendor = provider("probe-adder", base_url="https://api.adder.test", api_key="k").insert()
-		keys = vendor.add_models(["gpt-4o", "GPT 4o Mini", "org/Model"])
-		self.assertEqual(keys, ["probe-adder/gpt-4o", "probe-adder/gpt-4o-mini", "probe-adder/org-model"])
+		# The last id is renamed in the dialog: ours is no longer derived from the vendor's.
+		picked = {"gpt-4o": "gpt-4o", "GPT 4o Mini": "GPT 4o Mini", "org/Model": "org/Model", "x-2025": "x"}
+		keys = vendor.add_models(picked)
+		self.assertEqual(
+			keys, ["probe-adder/gpt-4o", "probe-adder/gpt-4o-mini", "probe-adder/org-model", "probe-adder/x"]
+		)
 		rows = frappe.get_all(
 			"Model",
 			filters={"provider": vendor.name},
@@ -317,5 +321,6 @@ class TestFetchModels(IntegrationTestCase):
 				("probe-adder/gpt-4o", None, 0),
 				("probe-adder/gpt-4o-mini", "GPT 4o Mini", 0),
 				("probe-adder/org-model", "org/Model", 0),
+				("probe-adder/x", "x-2025", 0),
 			],
 		)
