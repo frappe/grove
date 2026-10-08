@@ -140,6 +140,9 @@
     - name: agent.env
       ansible.builtin.copy:
         dest: /etc/pathway/agent.env
+        # pathway's own user, like the unit's User=: it already holds every value here in its environment.
+        owner: frappe
+        group: frappe
         content: |
           GROVE_ADMIN_TOKEN={{ admin_token }}
           GROVE_GATEWAY_ID={{ gateway_id | default('') }}
