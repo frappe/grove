@@ -72,14 +72,6 @@ def is_hostname(name):
 	return bool(name) and all(is_label(label) for label in name.split("."))
 
 
-def is_label_under(name, zone):
-	"""True when `name` is exactly one label below `zone`. A wildcard certificate matches one
-	label and no more: `*.grove.example.com` covers `api.grove.example.com`, but neither the
-	apex nor `api.eu.grove.example.com`."""
-	suffix = f".{zone}"
-	return name.endswith(suffix) and "." not in name[: -len(suffix)]
-
-
 def utc_today():
 	"""The billing day off OUR clock: usage days, price windows and top-ups all read it."""
 	return datetime.now(timezone.utc).date()
