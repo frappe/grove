@@ -5,18 +5,18 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "grove_user",
+  "team",
   "amount",
   "note",
   "reference"
  ],
  "fields": [
   {
-   "fieldname": "grove_user",
+   "fieldname": "team",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Grove User",
-   "options": "Grove User",
+   "label": "Team",
+   "options": "Central Team",
    "reqd": 1,
    "search_index": 1
   },

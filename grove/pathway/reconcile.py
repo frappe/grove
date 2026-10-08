@@ -1,8 +1,9 @@
-"""One user's share of a drain, landed: the records, the bill, and the audit of the box's charge.
+"""One team's share of a drain, landed: the records, the bill, and the audit of the box's charge.
 
 Grove bills its own price: each pricing the gateway tagged a request with is priced here at that
-pricing's rates, and `spent` moves by the sum. The gateway's own cost sits beside it; where the two
-differ beyond the gateway's truncation, a Credit Discrepancy says so.
+pricing's rates, and the key's `spent` moves by the sum, then the team settles. The gateway's own
+cost sits beside it; where the two differ beyond the gateway's truncation, a Credit Discrepancy
+says so.
 
 What the gateway served free (tagged `f:`, not `p:`) is recorded and priced the same, in a record
 of its own, but not billed: `spent` does not move and nothing is audited, since no money changed
@@ -31,41 +32,42 @@ class Reconciler:
 		self.gateway_store = gateway_store
 		self.drain_id = drain_id
 
-	def user(self, user, drains):
-		"""`drains`: {API key: parsed hash} for `user`'s keys in this drain. A key this drain already
+	def team(self, team, drains):
+		"""`drains`: {API key: parsed hash} for `team`'s keys in this drain. A key this drain already
 		landed is skipped, so a re-sent drain bills nothing twice."""
 		records = [
 			doc for prefix, drain in drains.items() if not self.landed(prefix)
-			for doc in self.records(user, prefix, drain)
+			for doc in self.records(team, prefix, drain)
 		]
-		if billed := [doc for doc in records if doc.billed]:
-			self.bill(user, billed)
-		settle(user)
+		for doc in records:
+			if doc.billed:
+				self.bill(doc)
+		settle(team)
 
-	def records(self, user, prefix, drain):
+	def records(self, team, prefix, drain):
 		"""One key's share as up to two records: what the gateway charged, and what it served free
 		or unpriced. Their request counts sum to the key's."""
 		charged, free = self.priced(drain.pricings), self.priced(drain.free) + self.unpriced(drain)
 		if not charged:
-			return [self.insert(user, prefix, 0, free, drain.requests)]
+			return [self.insert(team, prefix, 0, free, drain.requests)]
 		requests = sum(entry["requests"] for entry in charged) if free else drain.requests
-		records = [self.insert(user, prefix, 1, charged, requests)]
+		records = [self.insert(team, prefix, 1, charged, requests)]
 		if free:
-			records.append(self.insert(user, prefix, 0, free, drain.requests - requests))
+			records.append(self.insert(team, prefix, 0, free, drain.requests - requests))
 		return records
 
-	def bill(self, user, records):
-		charged = sum((entry["grove_cost"] for doc in records for entry in doc.entries), Decimal(0))
-		frappe.db.sql("update `tabGrove User` set spent = spent + %s where name = %s", [charged, user])
-		for doc in records:
-			self.audit(doc)
+	def bill(self, doc):
+		"""The key's spend moves by Grove's price of what the gateway charged it."""
+		charged = sum((entry["grove_cost"] for entry in doc.entries), Decimal(0))
+		frappe.db.sql("update `tabGrove API Key` set spent = spent + %s where name = %s", [charged, doc.api_key])
+		self.audit(doc)
 
 	def landed(self, prefix):
 		return frappe.db.exists("Usage Record", {"drain_id": self.drain_id, "api_key": prefix})
 
-	def insert(self, user, prefix, billed, entries, requests):
+	def insert(self, team, prefix, billed, entries, requests):
 		doc = frappe.get_doc({
-			"doctype": "Usage Record", "api_key": prefix, "user": user, "day": self.day,
+			"doctype": "Usage Record", "api_key": prefix, "team": team, "day": self.day,
 			"gateway_store": self.gateway_store, "drain_id": self.drain_id,
 			"billed": billed, "request_count": requests,
 			"cost": sum((e["grove_cost"] for e in entries), Decimal(0)),
@@ -111,6 +113,6 @@ class Reconciler:
 			gateway, grove = entry["gateway_cost"], entry["grove_cost"]
 			if entry["pricing"] and abs(gateway - grove) > self.book.counters.tolerance(entry["requests"]):
 				record(
-					usage_record=doc.name, grove_user=doc.user, api_key=doc.api_key, pricing=entry["pricing"],
+					usage_record=doc.name, team=doc.team, api_key=doc.api_key, pricing=entry["pricing"],
 					gateway_store=self.gateway_store, gateway_value=gateway, grove_value=grove, delta=gateway - grove,
 				)

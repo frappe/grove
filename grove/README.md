@@ -19,7 +19,7 @@ read back out of a box to decide what is true.
 
 | | takes | holds tenant state |
 |---|---|---|
-| **Gateway Server** | groups, users, keys, the global route table | yes |
+| **Gateway Server** | groups, keys, the global route table | yes |
 | **Ingress Server** | one thing: the replica table for the boxes in its own Network | no |
 
 A gateway's Redis is its Network's **Gateway Store**: Setup puts a new gateway on the Network's
@@ -61,10 +61,10 @@ topology stays inside its VPC and several deployments behind one ingress fold in
 
 The agent's admin API is token-gated (`X-Grove-Admin-Token`) at
 `<box>/grove-admin/{state,state-hash,usage}`. The push is **desired state, whole, and absence
-prunes**: `POST state` carries any subset of the four sections (groups, users, keys, routes),
+prunes**: `POST state` carries any subset of the three sections (groups, keys, routes),
 each stamped with a hash the agent stores in `grove:state_hash` and returns from `GET state-hash`.
 The tick pushes only sections whose hash the box does not already hold; a wiped Redis holds no
-hashes, so the next tick re-pushes everything — that IS the repair path. `users` and `keys` are
+hashes, so the next tick re-pushes everything — that IS the repair path. `keys` is
 split into 256 buckets (`pathway.snapshot.bucket_of`) hashed independently, so one key minted re-pushes
 one bucket, not the population. The full contract lives in `plan_agent_state_sync.md` at the
 repo root.
@@ -90,7 +90,7 @@ The compare is per fingerprint, so wire cost tracks what changed, not fleet size
         groups   aa11…          groups   aa11…     same → skip
         routes   bb22…          routes   bb22…     same → skip
         keys:3f  7d90…          keys:3f  9f3a…     DIFFERS → ship bucket 3f only
-        users:ef dd44…          users:ef dd44…     same → skip
+        keys:ef  dd44…          keys:ef  dd44…     same → skip
 
   minted key hashes into ONE bucket → one ~25 KB push, not the population.
   wiped Redis → held column empty → every row differs → full re-push next tick.
@@ -102,8 +102,7 @@ fleet gets re-pushed over row order. Order means nothing on the wire; it exists 
 
 | Redis key | Written by | Holds |
 |---|---|---|
-| `key:<sha256(secret)>` | state push (keys) | whose the key is, and `can_read_balance`: whether it may read their credit at `/v1/credits` |
-| `user:<name>` | state push (users) + the agent | groups (comma list), own allow/deny, `limited`, `budget` (the amount loaded); the agent's own lifetime `spent` |
+| `key:<sha256(secret)>` | state push (keys) + the agent | the whole policy: `team`, `group` (comma list), own `allow`/`deny`, `geography`, `limits`, `prepaid`, `budget` (the key's cap), `limited`, `log_payloads`; the agent's own lifetime `spent` |
 | `model_group:<name>` | state push (groups) | the model grant for everyone in it |
 | `deploy:<model>` | state push (routes) | every placement of one model |
 | `grove:state_hash` | state push | per-section/bucket hashes of what the box holds |
@@ -113,10 +112,11 @@ fleet gets re-pushed over row order. Order means nothing on the wire; it exists 
 | `inflight:<engine>` | the agent | what is running right now |
 | `health:<target>` | the agent | consecutive failures behind passive ejection (60s TTL) |
 
-Access is pushed as **three** records, one per thing that can change on its own: a group edit is one
-record however many members, a budget flip is one record however many keys, and the agent resolves
-all three at request time — unioning every group the user names before applying their own
-allow/deny.
+Access is pushed as **two** records: a group edit is one record however many members, and the key
+carries everything else — the agent resolves the two at request time, unioning every group the key
+names before applying its own allow/deny. The team is not a record on the box: what is the team's
+(Free, payload logging, the credit verdict) is stamped on each of its keys, so the team running out
+is one field per key.
 
 A model id is always `<provider>/<name>` (`frappe/qwen3.5-4b`) — the Model's **key**, not its doc
 name, which is a hash. One key, one route key, one grant — the bare form was deliberately broken,

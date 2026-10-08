@@ -24,29 +24,29 @@ class CreditDiscrepancy(Document):
 		gateway_spent: DF.Currency
 		gateway_store: DF.Link | None
 		gateway_value: DF.Currency
-		grove_user: DF.Link | None
 		grove_value: DF.Currency
 		note: DF.SmallText | None
 		pricing: DF.Link | None
 		resolution: DF.Literal['', 'Grove corrected', 'Gateway corrected']
+		team: DF.Link | None
 		usage_record: DF.Link | None
 	# end: auto-generated types
 
 	@frappe.whitelist()
 	def correct_grove(self):
-		"""Grove priced it wrong: `spent` moves by the delta and the user is settled, so Grove's
-		balance meets the gateway's."""
+		"""Grove priced it wrong: the key's `spent` moves by the delta and the team is settled, so
+		Grove's balance meets the gateway's."""
 		from grove.billing.pricing import settle
 
 		self.check_open()
 		delta = Decimal(str(self.delta))
-		frappe.db.sql("update `tabGrove User` set spent = spent + %s where name = %s", [delta, self.grove_user])
-		settle(self.grove_user)
+		frappe.db.sql("update `tabGrove API Key` set spent = spent + %s where name = %s", [delta, self.api_key])
+		settle(self.team)
 		self.db_set({"correction": delta, "resolution": "Grove corrected"})
 
 	@frappe.whitelist()
 	def correct_gateway(self):
-		"""The gateway charged it wrong: its spend counter for the user on that store is owed minus
+		"""The gateway charged it wrong: its spend counter for the key on that store is owed minus
 		the delta. Only recorded here — the next projection tick sends it, and every tick after until
 		the box answers. Grove's side can no longer be corrected."""
 		self.check_open()
@@ -69,17 +69,21 @@ def pending_adjustments():
 	# Keep ids forever in pathway if one ever does.
 	rows = frappe.get_all(
 		"Credit Discrepancy", filters={"gateway_correction_pending": 1},
-		fields=["name", "grove_user", "gateway_store", "delta"], order_by="creation asc",
+		fields=["name", "api_key", "gateway_store", "delta"], order_by="creation asc",
+	)
+	hashes = dict(
+		frappe.get_all("Grove API Key", {"name": ("in", [r.api_key for r in rows] or [""])}, ["name", "key_hash"], as_list=True)
 	)
 	owed = {}
 	for row in rows:
-		body = {"user": row.grove_user, "delta": -nano(row.delta), "id": row.name}
+		# The box keys its records on the hash, not the doc name the usage is attributed under.
+		body = {"key": hashes.get(row.api_key, ""), "delta": -nano(row.delta), "id": row.name}
 		owed.setdefault(row.gateway_store, []).append(body)
 	return owed
 
 
 def mark_corrected(spent_by_row):
-	"""What a box answered: {row name: its spend counter for the user after, in nano-USD}."""
+	"""What a box answered: {row name: its spend counter for the key after, in nano-USD}."""
 	from grove.billing.pricing import NANO
 
 	for name, spent in spent_by_row.items():

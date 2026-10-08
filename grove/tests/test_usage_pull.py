@@ -1,7 +1,7 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
 """The usage pull inserts one Usage Record per key per drain and acknowledges each key once it is
-committed. A pair re-sent after a failure records nothing twice; a user whose share cannot be
+committed. A pair re-sent after a failure records nothing twice; a team whose share cannot be
 recorded stays unacknowledged, is logged as Stuck Usage, and holds nobody else back."""
 
 import json
@@ -29,7 +29,7 @@ def a_store(name):
 
 
 class PullCase(IntegrationTestCase):
-	"""One user, one model, one gateway box on one store — the fleet hooks reach for DNS, which no
+	"""One team, one model, one gateway box on one store — the fleet hooks reach for DNS, which no
 	test wants."""
 
 	email = "usage-pull@grove.test"
@@ -41,7 +41,7 @@ class PullCase(IntegrationTestCase):
 		make_test_geography()
 		cls.day = utc_today()
 		cls.store = a_store(f"{cls.box}-store")
-		cls.user = cls.grove_user(cls.email)
+		cls.team = cls.central_team(cls.email)
 		model_id = f"{cls.box}-7b"
 		doc = frappe.db.exists("Model", {"model_id": model_id}) or frappe.get_doc(
 			{"doctype": "Model", "model_id": model_id, "hf_repo": f"org/{model_id}"}
@@ -56,11 +56,11 @@ class PullCase(IntegrationTestCase):
 			}).insert(ignore_permissions=True, ignore_mandatory=True).name
 
 	@classmethod
-	def grove_user(cls, email):
-		return frappe.get_doc({"doctype": "Grove User", "email": email}).insert(ignore_permissions=True).name
+	def central_team(cls, email):
+		return frappe.get_doc({"doctype": "Central Team", "__newname": email, "email": email, "free": 1}).insert(ignore_permissions=True).name
 
-	def key(self, user=None):
-		return frappe.get_doc({"doctype": "Grove API Key", "user": user or self.user}).insert(ignore_permissions=True).name
+	def key(self, team=None):
+		return frappe.get_doc({"doctype": "Grove API Key", "team": team or self.team}).insert(ignore_permissions=True).name
 
 	def pull(self, usages, drain_id="d1", store=None, dead=()):
 		with unittest.mock.patch.object(frappe.db, "commit"):
@@ -80,16 +80,16 @@ class TestADrainIsOneRecordPerKey(PullCase):
 		self.assertEqual(self.pull({key: drained}), (1, {"d1": [key]}, [], 0))
 		[doc] = self.records(key)
 		self.assertEqual(
-			(doc.user, doc.day, doc.drain_id, doc.gateway_store, doc.request_count, doc.cost, doc.gateway_cost),
-			(self.user, self.day, "d1", self.store, 2, 0, 0),
+			(doc.team, doc.day, doc.drain_id, doc.gateway_store, doc.request_count, doc.cost, doc.gateway_cost),
+			(self.team, self.day, "d1", self.store, 2, 0, 0),
 		)
 		[entry] = self.detail(doc)
 		self.assertEqual((entry["model"], entry["pricing"], entry["requests"], entry["completion_tokens"]), (self.model, None, 2, 10))
 
-	def test_the_gateways_own_view_of_the_user_is_ignored(self):
+	def test_the_gateways_own_view_of_the_key_is_ignored(self):
 		# The box still writes these two; Grove bills from the pricing-tagged counters alone.
 		key = self.key()
-		self.pull({key: {"request_count": "1", "user_spent": "300000000", "user_balance": "700000000"}})
+		self.pull({key: {"request_count": "1", "key_spent": "300000000", "key_balance": "700000000"}})
 		[doc] = self.records(key)
 		self.assertEqual((doc.request_count, doc.cost), (1, 0))
 
@@ -119,13 +119,13 @@ class TestADrainIsOneRecordPerKey(PullCase):
 		with unittest.mock.patch.object(usage.snapshot, "gateway_store", return_value=None), self.assertRaises(frappe.ValidationError):
 			usage.record_drains(self.gateway, {"d-none": {key: {"request_count": "1"}}})
 
-	def test_each_touched_user_is_landed_once_per_drain_not_per_key(self):
+	def test_each_touched_team_is_landed_once_per_drain_not_per_key(self):
 		keys = [self.key() for _ in range(3)]
-		with unittest.mock.patch.object(Reconciler, "user") as land:
+		with unittest.mock.patch.object(Reconciler, "team") as land:
 			self.pull({k: {"request_count": "1"} for k in keys})
 		land.assert_called_once()
-		user, drains = land.call_args.args
-		self.assertEqual((user, sorted(drains)), (self.user, sorted(keys)))
+		team, drains = land.call_args.args
+		self.assertEqual((team, sorted(drains)), (self.team, sorted(keys)))
 
 	def test_a_key_grove_does_not_hold_is_acknowledged_so_it_stops_coming(self):
 		self.assertEqual(self.pull({"no-such-key": {"request_count": "1"}}, drain_id="d9"), (1, {"d9": ["no-such-key"]}, [], 0))
@@ -150,8 +150,8 @@ class TestDeadLines(PullCase):
 	def test_an_unreadable_line_or_an_unknown_key_is_kept_as_stuck_usage_and_dropped_on_the_box(self):
 		dead = [self.line("r2"), self.line("r3", prefix="no-such-key", fields={"request_count": 1})]
 		self.assertEqual(self.pull({}, dead=dead), (2, {}, ["r2", "r3"], 0))
-		rows = frappe.get_all("Stuck Usage", filters={"dead_line": ("in", ["r2", "r3"])}, fields=["grove_user", "gateway_store", "resolved"])
-		self.assertEqual(sorted((r.grove_user, r.gateway_store, r.resolved) for r in rows), [(None, self.store, 0)] * 2)
+		rows = frappe.get_all("Stuck Usage", filters={"dead_line": ("in", ["r2", "r3"])}, fields=["team", "gateway_store", "resolved"])
+		self.assertEqual(sorted((r.team, r.gateway_store, r.resolved) for r in rows), [(None, self.store, 0)] * 2)
 
 	def test_a_dead_line_row_is_resolved_by_hand(self):
 		self.pull({}, dead=[self.line("r4")])
@@ -160,16 +160,16 @@ class TestDeadLines(PullCase):
 		self.assertEqual(frappe.db.get_value("Stuck Usage", row.name, "resolved"), 1)
 
 
-class TestAStuckUserHoldsOnlyThemselvesBack(PullCase):
+class TestAStuckTeamHoldsOnlyItselfBack(PullCase):
 	email = "usage-stuck@grove.test"
 	box = "usage-stuck-box"
 
 	def failing(self, bad_key):
 		real = Reconciler.insert
 
-		def insert(reconciler, user, prefix, *share):
+		def insert(reconciler, team, prefix, *share):
 			# The record is written first, so the failure lands after a write the savepoint must undo.
-			doc = real(reconciler, user, prefix, *share)
+			doc = real(reconciler, team, prefix, *share)
 			if prefix == bad_key:
 				raise RuntimeError("disk on fire")
 			return doc
@@ -177,10 +177,10 @@ class TestAStuckUserHoldsOnlyThemselvesBack(PullCase):
 		return unittest.mock.patch.object(Reconciler, "insert", insert)
 
 	def stuck(self, store=None):
-		return frappe.get_doc("Stuck Usage", {"grove_user": self.user, "gateway_store": store or self.store})
+		return frappe.get_doc("Stuck Usage", {"team": self.team, "gateway_store": store or self.store})
 
-	def test_the_failed_user_is_rolled_back_logged_and_left_unacknowledged(self):
-		other = self.grove_user("usage-stuck-2@grove.test")
+	def test_the_failed_team_is_rolled_back_logged_and_left_unacknowledged(self):
+		other = self.central_team("usage-stuck-2@grove.test")
 		bad, good = self.key(), self.key(other)
 		drained = {"request_count": "1", f"m:completion_tokens:{self.model}": "9"}
 		with self.failing(bad):
@@ -192,7 +192,7 @@ class TestAStuckUserHoldsOnlyThemselvesBack(PullCase):
 		self.assertEqual(frappe.parse_json(row.last_payload), {"d7": {bad: drained}})
 		self.assertIn("disk on fire", row.last_error)
 
-	def test_a_counter_grove_does_not_price_leaves_the_user_stuck_not_underbilled(self):
+	def test_a_counter_grove_does_not_price_leaves_the_team_stuck_not_underbilled(self):
 		key, store = self.key(), a_store("usage-stuck-drift-store")
 		drained = {"request_count": "1", "p:abc:prompt_tokens_v2": "9", "p:abc:cost": "1"}
 		self.assertEqual(self.pull({key: drained}, drain_id="d9", store=store), (1, {}, [], 1))
@@ -209,40 +209,40 @@ class TestAStuckUserHoldsOnlyThemselvesBack(PullCase):
 		self.assertEqual((self.stuck(store).resolved, bool(self.stuck(store).resolved_on)), (1, True))
 		self.assertEqual([r.drain_id for r in self.records(key)], ["d8"])
 
-	def test_pull_now_pulls_just_that_user(self):
+	def test_pull_now_pulls_just_that_team(self):
 		key, store = self.key(), a_store("usage-stuck-pull-now-store")
 		with self.failing(key):
 			self.pull({key: {"request_count": "1"}}, drain_id="d10", store=store)
 		with unittest.mock.patch.object(frappe, "enqueue") as enqueue:
 			self.stuck(store).pull_now()
-		self.assertEqual(enqueue.call_args.kwargs["user"], self.user)
+		self.assertEqual(enqueue.call_args.kwargs["team"], self.team)
 
 	def test_log_settings_clears_old_resolved_rows_and_keeps_open_ones(self):
 		self.assertTrue(_supports_log_clearing("Stuck Usage"))
 		long_ago = frappe.utils.add_days(frappe.utils.now_datetime(), -100)
-		old = frappe.get_doc({"doctype": "Stuck Usage", "grove_user": self.user, "gateway_store": self.store, "resolved": 1, "resolved_on": long_ago}).insert(ignore_permissions=True)
-		open_row = frappe.get_doc({"doctype": "Stuck Usage", "grove_user": self.user, "gateway_store": a_store("usage-stuck-open-store")}).insert(ignore_permissions=True)
+		old = frappe.get_doc({"doctype": "Stuck Usage", "team": self.team, "gateway_store": self.store, "resolved": 1, "resolved_on": long_ago}).insert(ignore_permissions=True)
+		open_row = frappe.get_doc({"doctype": "Stuck Usage", "team": self.team, "gateway_store": a_store("usage-stuck-open-store")}).insert(ignore_permissions=True)
 		open_row.db_set("creation", long_ago)
 		StuckUsage.clear_old_logs(days=90)
 		self.assertFalse(frappe.db.exists("Stuck Usage", old.name))
 		self.assertTrue(frappe.db.exists("Stuck Usage", open_row.name))
 
 
-class TestAPullForOneUser(PullCase):
+class TestAPullForOneTeam(PullCase):
 	email = "usage-one@grove.test"
 	box = "usage-one-box"
 
-	def test_every_key_they_hold_is_asked_for_from_every_store(self):
+	def test_every_key_it_holds_is_asked_for_from_every_store(self):
 		keys = sorted([self.key(), self.key()])
 		frappe.db.set_value("Grove API Key", keys[0], "status", "revoked")
-		pull = usage.Usage(user=self.user)
+		pull = usage.Usage(team=self.team)
 		with unittest.mock.patch.object(usage, "gateway_units", return_value=["unit"]) as units:
 			self.assertEqual(pull.units(), ["unit"])
 		units.assert_called_once_with(None)
 		self.assertEqual(sorted(pull.keys), keys)
 
-	def test_a_user_with_no_keys_pulls_nothing(self):
-		self.assertEqual(usage.Usage(user=self.grove_user("usage-one-nokeys@grove.test")).units(), [])
+	def test_a_team_with_no_keys_pulls_nothing(self):
+		self.assertEqual(usage.Usage(team=self.central_team("usage-one-nokeys@grove.test")).units(), [])
 
 
 class TestADrainIsAcknowledgedOnceRecorded(unittest.TestCase):
@@ -285,7 +285,7 @@ class TestADrainIsAcknowledgedOnceRecorded(unittest.TestCase):
 		self.assertEqual((outcome, row["success"]), (True, 1))
 		self.assertIn("ack failed", row["detail"])
 
-	def test_the_sync_row_says_how_many_users_are_stuck(self):
+	def test_the_sync_row_says_how_many_teams_are_stuck(self):
 		_outcome, row, _post = self.land({"d1": {"k": {}}}, record=(3, {"d1": ["a"]}, [], 1))
 		self.assertEqual(row["detail"], "pulled:3 stuck:1")
 
@@ -388,7 +388,7 @@ class TestFetchUsageNeedsNoFrappe(unittest.TestCase):
 		row, url = self.fetch({"drains": {"d1": {"k": {"request_count": "2"}}}})
 		self.assertEqual((row["success"], row["drains"], url), (1, {"d1": {"k": {"request_count": "2"}}}, "http://x/usage"))
 
-	def test_a_pull_for_one_user_names_their_keys(self):
+	def test_a_pull_for_one_team_names_its_keys(self):
 		_row, url = self.fetch({"drains": {}}, keys=["k1", "k2"])
 		self.assertEqual(url, "http://x/usage?keys=k1,k2")
 

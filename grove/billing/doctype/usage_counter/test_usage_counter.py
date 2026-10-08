@@ -57,7 +57,7 @@ class TestUsageCounter(IntegrationTestCase):
 	def test_a_counter_a_record_names_stays(self):
 		doc = counter("web_search_requests", unit="request")
 		record = frappe.get_doc({
-			"doctype": "Usage Record", "api_key": "k", "user": "u", "day": "2026-10-02", "drain_id": "d",
+			"doctype": "Usage Record", "api_key": "k", "team": "t", "day": "2026-10-02", "drain_id": "d",
 			"billed": 1, "request_count": 1, "cost": 0, "gateway_cost": 0,
 			"usage": '[{"model": "m", "web_search_requests": 2}]',
 		})

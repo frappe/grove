@@ -4,31 +4,32 @@
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
- "istable": 1,
  "field_order": [
   "model",
   "model_key"
  ],
  "fields": [
   {
+   "columns": 4,
    "fieldname": "model",
    "fieldtype": "Link",
-   "options": "Model",
-   "label": "Model",
-   "reqd": 1,
    "in_list_view": 1,
-   "columns": 4
+   "label": "Model",
+   "options": "Model",
+   "reqd": 1
   },
   {
+   "columns": 6,
+   "description": "The id a caller sends (provider/model), fetched from the doc: what the gateway matches, and what the grant means across geographies.",
    "fetch_from": "model.model_key",
    "fieldname": "model_key",
    "fieldtype": "Data",
+   "in_list_view": 0,
    "label": "Model Key",
-   "read_only": 1,
-   "in_list_view": 1,
-   "columns": 6
+   "read_only": 1
   }
  ],
+ "istable": 1,
  "links": [],
  "modified": "2026-10-03 00:00:00.000000",
  "modified_by": "Administrator",

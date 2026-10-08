@@ -6,12 +6,21 @@
  "engine": "InnoDB",
  "field_order": [
   "title",
-  "user",
-  "can_read_balance",
+  "team",
+  "geography",
   "status",
-  "key_hash",
   "column_break_pcmc",
-  "api_secret"
+  "cap",
+  "spent",
+  "key_hash",
+  "api_secret",
+  "section_access",
+  "model_groups",
+  "column_break_iewo",
+  "allow",
+  "deny",
+  "section_limits",
+  "limits"
  ],
  "fields": [
   {
@@ -21,19 +30,24 @@
    "label": "Title"
   },
   {
-   "fieldname": "user",
+   "description": "The team this key spends for. Its Free flag, payload-log opt-in and credit verdict ride on the key to the gateway.",
+   "fieldname": "team",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "User",
-   "options": "Grove User",
-   "reqd": 1
+   "label": "Team",
+   "options": "Central Team",
+   "reqd": 1,
+   "search_index": 1
   },
   {
-   "default": "0",
-   "description": "Lets this key read its user's credit at the gateway's /v1/credits. A user's only live key starts with it.",
-   "fieldname": "can_read_balance",
-   "fieldtype": "Check",
-   "label": "Can Read Balance"
+   "description": "The one geography this key works in; every gateway elsewhere answers 403. Left blank, it is the default Geography. Set once: its spend and rate counters live on that geography's store.",
+   "fieldname": "geography",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Geography",
+   "options": "Geography",
+   "reqd": 1,
+   "set_only_once": 1
   },
   {
    "default": "active",
@@ -43,6 +57,28 @@
    "in_list_view": 1,
    "label": "Status",
    "options": "active\nrevoked",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_pcmc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "What this key may spend, cut out of the team's balance: the gateway refuses it at 402 once its spend reaches this. Required above zero on a prepaid team; across the team's live keys, \u03a3 (cap \u2212 spent) never exceeds the balance. Ignored while the team is Free.",
+   "fieldname": "cap",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Cap (USD)",
+   "precision": "9",
+   "reqd": 1
+  },
+  {
+   "description": "What this key has been charged: priced by the pull from each billed drain, plus any correction from a resolved Credit Discrepancy.",
+   "fieldname": "spent",
+   "fieldtype": "Currency",
+   "label": "Spent (USD)",
+   "precision": "9",
    "read_only": 1
   },
   {
@@ -59,12 +95,61 @@
    "read_only": 1
   },
   {
-   "fieldname": "column_break_pcmc",
+   "fieldname": "section_access",
+   "fieldtype": "Section Break",
+   "label": "Access"
+  },
+  {
+   "description": "Groups of this key's geography. A new key starts in the one marked default there.",
+   "fieldname": "model_groups",
+   "fieldtype": "Table MultiSelect",
+   "label": "Model Groups",
+   "options": "Model Group Row"
+  },
+  {
+   "description": "Models this key may call on top of its groups'. A vendor model is its geography's doc.",
+   "fieldname": "allow",
+   "fieldtype": "Table MultiSelect",
+   "label": "Allow",
+   "options": "Grove Model Row"
+  },
+  {
+   "description": "Models this key may never call. Deny wins over everything \u2014 a group grant and a Public release both lose to it.",
+   "fieldname": "deny",
+   "fieldtype": "Table MultiSelect",
+   "label": "Deny",
+   "options": "Grove Model Row"
+  },
+  {
+   "fieldname": "section_limits",
+   "fieldtype": "Section Break",
+   "label": "Rate limits"
+  },
+  {
+   "description": "Counted on the gateway, per Gateway Store, for this key alone. A window resets on the UTC clock: top of the minute, the hour, midnight, the 1st. No rows = uncapped.",
+   "fieldname": "limits",
+   "fieldtype": "Table",
+   "label": "Limits",
+   "options": "Model Limit"
+  },
+  {
+   "fieldname": "column_break_iewo",
    "fieldtype": "Column Break"
   }
  ],
- "links": [],
- "modified": "2026-10-05 20:00:00.000000",
+ "links": [
+  {
+   "group": "Usage",
+   "link_doctype": "Usage Record",
+   "link_fieldname": "api_key"
+  },
+  {
+   "group": "Usage",
+   "link_doctype": "Credit Discrepancy",
+   "link_fieldname": "api_key"
+  }
+ ],
+ "modified": "2026-10-08 23:40:08.699864",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove API Key",
@@ -84,7 +169,8 @@
   {
    "create": 1,
    "read": 1,
-   "role": "Grove Control"
+   "role": "Grove Control",
+   "write": 1
   }
  ],
  "row_format": "Dynamic",
@@ -92,5 +178,6 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "title_field": "title"
+ "title_field": "title",
+ "track_changes": 1
 }

@@ -4,14 +4,14 @@ One rate table, joined at evaluation and never snapshotted onto usage: SELL on `
 A drain is priced by the pricing id the gateway tagged each request with, so both sides price the
 same counters at the same rates.
 
-`Grove User.spent` is the running USD total the pull increments; `settle` is the one writer of
-`balance` and the `credit_exhausted` verdict."""
+`Grove API Key.spent` is the running USD total the pull increments per key; `settle` is the one
+writer of the team's `spent`, `balance` and `credit_exhausted` verdict."""
 
 from decimal import Decimal
 
 import frappe
 
-from grove.grove.doctype.grove_user.grove_user import set_credit_exhausted
+from grove.grove.doctype.central_team.central_team import set_credit_exhausted
 
 NANO = 10**9
 
@@ -166,37 +166,42 @@ class PriceBook:
 		return cost(counts, self.pricing(pricing_id).rates, self.counters)
 
 
-def allocated(user, lock=False):
-	"""Σ the user's Grove Credit ledger. Locked while a verdict is being decided."""
+def allocated(team, lock=False):
+	"""Σ the team's Grove Credit ledger. Locked while a verdict is being decided."""
 	suffix = " for update" if lock else ""
 	total = frappe.db.sql(
-		f"select coalesce(sum(amount), 0) from `tabGrove Credit` where grove_user = %s{suffix}", [user]
+		f"select coalesce(sum(amount), 0) from `tabGrove Credit` where team = %s{suffix}", [team]
 	)[0][0]
 	return Decimal(str(total))
 
 
-def allocations():
-	"""{user: Σ Grove Credit} for every user with a ledger entry — the push's budget, one query."""
-	rows = frappe.db.sql("select grove_user, sum(amount) from `tabGrove Credit` group by grove_user")
-	return {user: Decimal(str(total)) for user, total in rows}
+def spent_by_keys(team):
+	"""Σ what the team's keys have been charged, revoked ones included: a revoked key's spend is
+	still the team's."""
+	total = frappe.db.sql("select coalesce(sum(spent), 0) from `tabGrove API Key` where team = %s", [team])[0][0]
+	return Decimal(str(total))
 
 
-def settle(user):
-	"""The one writer of `balance` and the verdict: allocated − spent, written to the user, and
-	`credit_exhausted` = not free and nothing left, both directions. A negative balance stays on
-	the user until a top-up covers it. → actual balance."""
-	doc = frappe.db.get_value("Grove User", user, ["free", "spent"], as_dict=True, for_update=True)
-	actual = allocated(user, lock=True) - Decimal(str(doc.spent or 0))
-	frappe.db.set_value("Grove User", user, "balance", float(actual), update_modified=False)
-	set_credit_exhausted(user, int(not doc.free and actual <= 0))
+def settle(team):
+	"""The one writer of the team's `spent`, `balance` and the verdict: Σ credits less Σ the keys'
+	spent, and `credit_exhausted` = not free and nothing left, both directions. A negative balance
+	stays on the team until a top-up covers it. → actual balance."""
+	free = frappe.db.get_value("Central Team", team, "free", for_update=True)
+	spent = spent_by_keys(team)
+	actual = allocated(team, lock=True) - spent
+	frappe.db.set_value("Central Team", team, {"spent": float(spent), "balance": float(actual)}, update_modified=False)
+	set_credit_exhausted(team, int(not free and actual <= 0))
 	return actual
 
 
-def credit_summary(user):
-	"""{allocated, spent, remaining}, summed live rather than read off `balance`."""
-	spent = Decimal(str(frappe.db.get_value("Grove User", user, "spent") or 0))
-	total = allocated(user)
-	return {"allocated": total, "spent": spent, "remaining": total - spent}
+def credit_summary(team):
+	"""{allocated, spent, remaining, unallocated}, summed live rather than read off `balance`.
+	`unallocated` is what no live key's cap has claimed yet — what a new cap may be cut from."""
+	from grove.grove.doctype.grove_api_key.grove_api_key import allotted
+
+	spent = spent_by_keys(team)
+	total = allocated(team)
+	return {"allocated": total, "spent": spent, "remaining": total - spent, "unallocated": total - spent - allotted(team)}
 
 
 def validate_price_rows(rows, key):
