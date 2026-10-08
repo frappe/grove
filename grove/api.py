@@ -13,8 +13,8 @@ from grove.utils import utc_today
 
 CONTROL_ROLE = "Grove Control"
 ALLOWED_ROLES = [CONTROL_ROLE]
-USAGE_FIELDS = ("requests", "cost")
-PULLS_PER_HOUR = 3
+USAGE_FIELDS = ("requests", "tokens", "cost")
+PULLS_PER_HOUR = 2
 
 # NOTE: a user in grove is a team in central, named by the team id; its email is the team owner's
 # TODO: give machine info (like no of them, their type, etc) to central so they can find the unit economics
@@ -33,10 +33,14 @@ def provision_user(
 	`limits` are their rate limits, rows of `metric` (requests, total_tokens), `window` (1m, 1h,
 	1d, 1M) and `value`. A new user given none starts under the defaults, 20 requests and 20 000
 	tokens a minute; on a known user an empty list lifts them all. Safe to repeat: a known user
-	keeps whatever else is not given. → the geography they are pinned to."""
+	keeps whatever else is not given. → the geography they are pinned to and its endpoint, the
+	one every key of theirs calls."""
 	frappe.only_for(ALLOWED_ROLES)
 	grove_user = _set_policy(user, email, allowed_models, geography, free, limits)
-	return {"geography": frappe.db.get_value("Grove User", grove_user, "geography")}
+	return {
+		"geography": frappe.db.get_value("Grove User", grove_user, "geography"),
+		"gateway_url": get_gateway_url(grove_user),
+	}
 
 
 @frappe.whitelist()
@@ -46,10 +50,9 @@ def provision_key(user: str, title: str = None, can_read_balance: bool = False):
 	gateway's /v1/credits; a user's only live key gets that whatever is asked."""
 	frappe.only_for(ALLOWED_ROLES)
 	grove_user = get_grove_user(user)
-	geography = frappe.db.get_value("Grove User", grove_user, "geography")
-	host = frappe.db.get_value("Geography", geography, "endpoint")
-	if not host:
-		frappe.throw(f"Geography {geography!r} has no endpoint.")
+	gateway_url = get_gateway_url(grove_user)
+	if not gateway_url:
+		frappe.throw(f"{user!r}'s geography has no endpoint.")
 
 	# The controller generates the secret and hash, and pushes to the gateways.
 	key = frappe.new_doc("Grove API Key")
@@ -61,7 +64,7 @@ def provision_key(user: str, title: str = None, can_read_balance: bool = False):
 
 	return {
 		"name": key.name,
-		"gateway_url": f"https://{host}",
+		"gateway_url": gateway_url,
 		"api_key": key.get_password("api_secret"),
 		"can_read_balance": bool(key.can_read_balance),
 	}
@@ -70,10 +73,14 @@ def provision_key(user: str, title: str = None, can_read_balance: bool = False):
 @frappe.whitelist()
 def keys(user: str):
 	"""The keys of `user`, newest first, never with their secret: that is shown once, by
-	`provision_key`. `key_hash` narrows `usage` to one of them. Nothing for a user Grove does
-	not know."""
+	`provision_key`. `key_hash` narrows `usage` to one of them; `revocable_at` (UTC) is when
+	`revoke_key` stops refusing a new key, so a caller need not ask before then. Nothing for a
+	user Grove does not know."""
 	frappe.only_for(ALLOWED_ROLES)
 	from frappe.utils.password import get_decrypted_password
+
+	from grove.grove.doctype.grove_api_key.grove_api_key import REVOKE_AFTER_HOURS
+	from grove.pathway.routes import utc_timestamp
 
 	if not (grove_user := for_reference(user)):
 		return []
@@ -86,6 +93,8 @@ def keys(user: str):
 	for row in rows:
 		secret = get_decrypted_password("Grove API Key", row.name, "api_secret")
 		row["masked"] = f"{secret[:6]}…{secret[-4:]}"
+		revocable_at = frappe.utils.add_to_date(row.creation, hours=REVOKE_AFTER_HOURS)
+		row["revocable_at"] = utc_timestamp(revocable_at)
 	return rows
 
 
@@ -220,12 +229,13 @@ def usage(
 	"""Requests and cost per user and per model over a UTC date range: `from_date`/`to_date`, a
 	`period` (Today, Yesterday, Last 7 Days, Last 30 Days, This Month, Last Month) or a `month`
 	(YYYY-MM); This Month when none is given. `users` are the caller's references, and each one's
-	totals come back under it. Summed by the database in one grouped query. `cost`
-	is what was charged, so usage while the user was Free adds requests and no cost.
+	totals come back under it. Summed by the database in one grouped query. `tokens` are the
+	whole prompt and completion tokens; `cost` is what was charged, so usage while the user was
+	Free adds requests and tokens and no cost.
 	`daily_summary` is the per-model summary again, per UTC day, for a chart. `as_of` is when the
 	newest usage in the range was pulled, in UTC. `key_hash` narrows it all to one key of theirs."""
 	frappe.only_for(ALLOWED_ROLES)
-	from grove.billing.doctype.usage_record.usage_record import usage_table
+	from grove.billing.doctype.usage_record.usage_record import tokens_expression, usage_table
 	from grove.pathway.routes import utc_timestamp
 
 	if isinstance(users, str):
@@ -237,7 +247,7 @@ def usage(
 	)
 	api_key = _key_of(key_hash, list(references)) if key_hash else None
 	rows = frappe.db.sql(
-		f"""select r.user, u.model, sum(u.requests) as requests,
+		f"""select r.user, u.model, sum(u.requests) as requests, sum({tokens_expression()}) as tokens,
 		sum(if(r.billed, u.grove_cost, 0)) as cost, max(r.creation) as as_of
 		from `tabUsage Record` r, {usage_table()}
 		where r.user in %(users)s and r.day between %(from_date)s and %(to_date)s {_key_condition(api_key)}
@@ -246,10 +256,13 @@ def usage(
 		as_dict=True,
 	) if references else []
 	per_model = [
-		{"model": row.model, "user": row.user, "requests": int(row.requests or 0), "cost": float(row.cost or 0)}
+		{
+			"model": row.model, "user": row.user, "requests": int(row.requests or 0),
+			"tokens": int(row.tokens or 0), "cost": float(row.cost or 0),
+		}
 		for row in rows
 	]
-	totals = {reference: {"requests": 0, "cost": 0.0} for reference in references.values()}
+	totals = {reference: {"requests": 0, "tokens": 0, "cost": 0.0} for reference in references.values()}
 	for row in per_model:
 		for field in USAGE_FIELDS:
 			totals[references[row["user"]]][field] += row[field]
@@ -305,6 +318,13 @@ def get_grove_user(user):
 	if not grove_user:
 		frappe.throw(f"No Grove User for {user!r}.")
 	return grove_user
+
+
+def get_gateway_url(grove_user):
+	"""Where the user's keys work: their geography's endpoint, None while it has none."""
+	geography = frappe.db.get_value("Grove User", grove_user, "geography")
+	host = frappe.db.get_value("Geography", geography, "endpoint")
+	return f"https://{host}" if host else None
 
 
 def get_api_key(api_key=None, user=None, key=None):
@@ -429,12 +449,13 @@ def _key_condition(api_key):
 
 
 def _daily_summary(grove_users, from_date, to_date, api_key=None):
-	"""Requests and cost per UTC day and model across these users, and one key of theirs when
-	given, summed by the database, oldest day first. A day with no usage has no entry."""
-	from grove.billing.doctype.usage_record.usage_record import usage_table
+	"""Requests, tokens and cost per UTC day and model across these users, and one key of theirs
+	when given, summed by the database, oldest day first. A day with no usage has no entry."""
+	from grove.billing.doctype.usage_record.usage_record import tokens_expression, usage_table
 
 	rows = frappe.db.sql(
-		f"""select r.day, u.model, sum(u.requests) as requests, sum(if(r.billed, u.grove_cost, 0)) as cost
+		f"""select r.day, u.model, sum(u.requests) as requests, sum({tokens_expression()}) as tokens,
+		sum(if(r.billed, u.grove_cost, 0)) as cost
 		from `tabUsage Record` r, {usage_table()}
 		where r.user in %(users)s and r.day between %(from_date)s and %(to_date)s {_key_condition(api_key)}
 		group by r.day, u.model order by r.day, u.model""",
@@ -442,6 +463,9 @@ def _daily_summary(grove_users, from_date, to_date, api_key=None):
 		as_dict=True,
 	)
 	return [
-		{"day": str(row.day), "model": row.model, "requests": int(row.requests or 0), "cost": float(row.cost or 0)}
+		{
+			"day": str(row.day), "model": row.model, "requests": int(row.requests or 0),
+			"tokens": int(row.tokens or 0), "cost": float(row.cost or 0),
+		}
 		for row in rows
 	]

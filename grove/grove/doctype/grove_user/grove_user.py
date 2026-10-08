@@ -8,7 +8,7 @@ from grove.access import validate_model_geography
 
 DEFAULT_LIMITS = (
 	{"metric": "requests", "window": "1m", "value": 20},
-	{"metric": "total_tokens", "window": "1m", "value": 20_000},
+	{"metric": "total_tokens", "window": "1m", "value": 100_000},
 )
 
 
