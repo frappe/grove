@@ -27,11 +27,12 @@
   },
   {
    "default": "0",
-   "description": "Never charged and never gated: usage is still recorded, with what it would have cost, but Spent and Balance do not move and no key's cap applies. Off means prepaid \u2014 every key spends against its own cap, cut out of this balance. Turning it off later starts the team at what it loads.",
+   "description": "Never charged and never gated: usage is still recorded, with what it would have cost, but Spent and Balance do not move and no key's spend limit applies. Off means prepaid \u2014 every key spends against its own limit, cut out of this balance. Flip it with Mark Prepaid / Mark Free, which also sets the keys' limits.",
    "fieldname": "free",
    "fieldtype": "Check",
    "in_list_view": 1,
-   "label": "Free"
+   "label": "Free",
+   "read_only": 1
   },
   {
    "default": "1",

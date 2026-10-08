@@ -3,3 +3,4 @@
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
+grove.patches.v1_0.move_grove_users_to_central_teams

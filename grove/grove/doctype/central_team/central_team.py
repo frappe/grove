@@ -3,6 +3,7 @@
 
 import frappe
 from frappe.model.document import Document
+from frappe.utils import flt
 
 
 class CentralTeam(Document):
@@ -55,11 +56,45 @@ class CentralTeam(Document):
 	def reset_caps(self):
 		"""Caps are not checked while a team is Free, so turning Free off starts every live key at
 		0: each is capped again out of what the team loads, never out of a number nobody vetted."""
-		live = frappe.get_all("Grove API Key", filters={"team": self.name, "status": "active"}, pluck="name")
-		for key in live:
+		for key in self.live_keys:
 			frappe.db.set_value("Grove API Key", key, "cap", 0, update_modified=False)
-		if live:
-			frappe.msgprint(f"{len(live)} live keys reset to a cap of 0. Set their caps out of what the team loads.")
+
+	@property
+	def live_keys(self):
+		return frappe.get_all("Grove API Key", filters={"team": self.name, "status": "active"}, pluck="name")
+
+	@frappe.whitelist()
+	def set_free(self, free: bool | int | str, caps: list[dict] | None = None):
+		"""Button. Free: the team stops being charged. Prepaid: every live key gets the spend limit
+		`caps` names for it ({key, cap}), checked against the balance before anything is written, so
+		a refusal leaves the team as it was."""
+		frappe.only_for("System Manager")
+		self.free = int(bool(frappe.utils.sbool(free)))
+		if self.free:
+			self.save()
+			return
+		caps = {row["key"]: flt(row.get("cap")) for row in (caps or [])}
+		self.check_caps(caps)
+		self.save()
+		for key in self.live_keys:
+			doc = frappe.get_doc("Grove API Key", key)
+			doc.cap = caps[key]
+			doc.save()
+
+	def check_caps(self, caps):
+		"""Every live key named with a limit above zero, and the limits together within the
+		balance — what each key's own validate will insist on, said once up front."""
+		spent = dict(
+			frappe.get_all("Grove API Key", filters={"team": self.name, "status": "active"}, fields=["name", "spent"], as_list=True)
+		)
+		missing = [key for key in spent if caps.get(key, 0) <= 0]
+		if missing:
+			frappe.throw(f"Every live key needs a spend limit above zero: {', '.join(missing)}.")
+		handed_out = sum(max(caps[key] - flt(spent[key]), 0) for key in spent)
+		# Read live: the form's copy may predate a top-up or a pull.
+		balance = flt(frappe.db.get_value("Central Team", self.name, "balance"))
+		if handed_out > balance:
+			frappe.throw(f"These limits hand out {handed_out:.2f} of a balance of {balance:.2f}. Top up first.")
 
 	@property
 	def active_keys(self):
