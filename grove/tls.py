@@ -35,7 +35,8 @@ def issue_fleet_certificate(geography):
 	button; the daily job calls renew_fleet_certificate instead."""
 	settings = frappe.get_single("Grove Settings")
 	zone = require_zone(frappe.get_doc("Geography", geography))
-	arguments = ["certonly", "--dns-route53", "--cert-name", zone, "-d", f"*.{zone}"]
+	# The zone itself too: a wildcard does not cover its own apex, and customers call the apex.
+	arguments = ["certonly", "--dns-route53", "--cert-name", zone, "-d", zone, "-d", f"*.{zone}"]
 	# --force-renewal counts against the duplicate-certificate limit (5 a week for one name).
 	arguments += ["--force-renewal"] if is_lineage_stale(zone) else ["--keep-until-expiring"]
 	run_certbot(settings, arguments, geography)
