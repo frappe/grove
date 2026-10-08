@@ -20,6 +20,7 @@ import frappe
 from grove.cloud_provider.dns import (
 	HEALTH_CHECK_FAILURES,
 	HEALTH_CHECK_INTERVAL,
+	NAME_TTL,
 	TTL,
 	Route53Client,
 	Route53Error,
@@ -146,6 +147,8 @@ class TestGatewayRecords(unittest.TestCase):
 		self.client.upsert_gateway_records(*self.arguments)
 		own = rows(self.fake.batches[0])[(f"gw1-ap-south-1.{ZONE}", None)]["ResourceRecordSet"]
 		self.assertEqual(own["ResourceRecords"], [{"Value": "203.0.113.7"}])
+		# Cached longer than the shared row: nothing fails over on this name.
+		self.assertEqual(own["TTL"], NAME_TTL)
 		self.assertNotIn("SetIdentifier", own)
 		self.assertNotIn("Region", own)
 		self.assertNotIn("HealthCheckId", own)
@@ -196,7 +199,7 @@ class TestGatewayRecords(unittest.TestCase):
 class TestARowUnderAnotherPolicy(unittest.TestCase):
 	"""What the shared name holds for a box that was written as a latency row: the same record set —
 	name, type and identifier all match — under another routing policy. Route53 will not UPSERT one
-	policy into another, so it is deleted in its own change first and written again after."""
+	policy into another, so it is deleted and written again in one change: never an empty name."""
 
 	def latency_row(self, set_identifier="gw1-ap-south-1"):
 		return {
@@ -213,12 +216,14 @@ class TestARowUnderAnotherPolicy(unittest.TestCase):
 		client(fake).upsert_gateway_records(*gateway_arguments())
 		return fake
 
-	def test_it_is_replaced_rather_than_upserted(self):
-		replace, write = self.upsert([self.latency_row()]).batches
+	def test_it_is_replaced_in_the_same_batch(self):
+		[batch] = self.upsert([self.latency_row()]).batches
+		changes = batch["ChangeBatch"]["Changes"]
 		# Deleted verbatim: its TTL and Region are whatever it was written with, and a DELETE that
 		# does not match leaves it in place.
-		self.assertEqual([{"Action": "DELETE", "ResourceRecordSet": self.latency_row()}], replace["ChangeBatch"]["Changes"])
-		self.assertEqual("UPSERT", rows(write)[(GATEWAY_HOST, "gw1-ap-south-1")]["Action"])
+		self.assertEqual({"Action": "DELETE", "ResourceRecordSet": self.latency_row()}, changes[0])
+		self.assertEqual("UPSERT", changes[-1]["Action"])
+		self.assertTrue(changes[-1]["ResourceRecordSet"]["MultiValueAnswer"])
 
 	def test_a_row_already_in_the_right_policy_is_left_to_the_upsert(self):
 		# Otherwise every sync would delete and recreate the row, leaving the shared name briefly

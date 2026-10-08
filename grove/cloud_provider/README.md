@@ -46,14 +46,17 @@ on :80. An ingress gets only its own name record.
   of customers resolve to a box that is gone. Rows whose old shape cannot be reconstructed are listed
   and deleted **verbatim**.
 - **A routing policy cannot be UPSERTed into another one.** A box whose row at the shared name was
-  written as a latency record finds the *same* record set under a different policy: it is deleted on
-  its own and written again, not updated (`_replace_other_policy_row`).
+  written as a latency record finds the *same* record set under a different policy: it is deleted and
+  written again in one change batch, not updated (`get_other_policy_deletes`). Two batches would leave
+  the name empty in between, and resolvers cache that NXDOMAIN for the zone's negative TTL (900s).
 - **A health check cannot be deleted while a record still names it.** Rows come off first, always.
   Getting this backwards leaks a billed check on every terminate and nothing surfaces it.
 - **`CallerReference` is the idempotency token for a health check.** A crash between the create and
   the `db_set` that remembers the id would orphan a billed check answering to nobody *and* block its
   own retry forever, so `HealthCheckAlreadyExists` is recovered by scanning for the reference.
 
-`HEALTH_CHECK_INTERVAL` / `HEALTH_CHECK_FAILURES` beside `TTL` are the whole failover knob: 30×3 + 60s
+`HEALTH_CHECK_INTERVAL` / `HEALTH_CHECK_FAILURES` beside `TTL` (the shared row's) are the whole failover knob: 30×3 + 60s
 TTL is ~150s of stale answers at base price; 10×2 is ~50s at +$1/mo per check. Changing them also
 needs `update_health_check` on the checks that already exist — nothing reconciles that.
+`NAME_TTL` (300s) is a box's own name: dialled by the control plane, never failed over. Since a DELETE
+repeats it, changing it needs **Sync DNS** on every live box first, or their deletes miss.
