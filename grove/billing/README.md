@@ -104,7 +104,7 @@ is a doc plus the one parser line in pathway that fills its bucket from the resp
 
 **Revenue and usage reads.** The `Revenue` report (Desk) sums what each billed drain was charged —
 Grove's cost in each record's per-model detail, records of Free teams left out — grouped by model, API key, team or day over a date range,
-with a total row; export from the report toolbar. Revenue only, no margin. `api.usage(teams, from_date, to_date | period | month, key_hash)` gives a control client requests and cost (what was charged: usage while Free adds requests, no cost)
+with a total row; export from the report toolbar. Revenue only, no margin. `api.usage(teams, from_date, to_date | period | month, key_hash)` (read-only: on the replica when the site sets `read_from_replica`) gives a control client requests and cost (what was charged: usage while Free adds requests, no cost)
 per team and model (periods: Today, Yesterday, Last 7 Days, Last 30 Days, This Month, Last Month),
 and the per-model summary again per UTC day (`daily_summary`, for a chart; a day with no usage has no entry),
 with `as_of` = when the newest usage in the range was pulled. Each is one grouped SQL statement

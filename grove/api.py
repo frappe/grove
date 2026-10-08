@@ -16,7 +16,7 @@ USAGE_FIELDS = ("requests", "tokens", "cost")
 PULLS_PER_HOUR = 2
 KEY_FIELDS = ["name", "title", "status", "creation", "key_hash", "geography", "cap", "spent"]
 
-# NOTE: a Central Team is named by its id in Central (its doc name); its email is the team owner's.
+# NOTE: a Central Team is named by its id in Central (its doc name); its email is the team owner's (TODO: this should be notif email).
 # TODO: give machine info (like no of them, their type, etc) to central so they can find the unit economics
 
 
@@ -212,6 +212,7 @@ def create_control_client_key():
 
 
 @frappe.whitelist()
+@frappe.read_only()
 def usage(
 	teams: list[str] | str, from_date: str | None = None, to_date: str | None = None,
 	period: str | None = None, month: str | None = None, key_hash: str | None = None,
@@ -223,7 +224,9 @@ def usage(
 	whole prompt and completion tokens; `cost` is what was charged, so usage while the team was
 	Free adds requests and tokens and no cost.
 	`daily_summary` is the per-model summary again, per UTC day, for a chart. `as_of` is when the
-	newest usage in the range was pulled, in UTC. `key_hash` narrows it all to one key of theirs."""
+	newest usage in the range was pulled, in UTC. `key_hash` narrows it all to one key of theirs.
+	Read-only: on a site with `read_from_replica` it runs against the replica, which the hourly
+	pull makes safe — nothing here is read back right after a write."""
 	frappe.only_for(ALLOWED_ROLES)
 	from grove.billing.doctype.usage_record.usage_record import tokens_expression, usage_table
 	from grove.pathway.routes import utc_timestamp

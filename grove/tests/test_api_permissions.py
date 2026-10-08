@@ -91,6 +91,18 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		)
 		self.assertEqual(api.available_models(geography=make_test_geography("probe-reach-away")), [])
 
+	def test_usage_is_read_off_the_replica_when_the_site_has_one(self):
+		# frappe.read_only: the connection is swapped only when the site config says so.
+		with (
+			unittest.mock.patch.dict(frappe.local.conf, {"read_from_replica": 1}),
+			unittest.mock.patch("frappe.connect_replica", return_value=False) as replica,
+		):
+			api.usage(["nobody"])
+		replica.assert_called_once()
+		with unittest.mock.patch("frappe.connect_replica") as replica:
+			api.usage(["nobody"])
+		replica.assert_not_called()
+
 	def test_a_keys_rate_limits_are_readable(self):
 		team = "probe-limits"
 		api.provision_team(team, ALERTS, free=True)
