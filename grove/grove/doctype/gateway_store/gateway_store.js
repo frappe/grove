@@ -8,6 +8,11 @@ frappe.ui.form.on('Gateway Store', {
 				__('Run the store play on {0}? It installs Redis behind its password on the private address.', [frm.doc.name]),
 				'setup'));
 		}
+		if (frm.doc.status === 'Active') {
+			frm.add_custom_button(__('Sync DNS Records'), () => grove.confirm_call(frm,
+				__("Rewrite {0}'s DNS record to its current address?", [frm.doc.name]),
+				'sync_dns_records'));
+		}
 		if (frm.doc.status !== 'Terminated') {
 			frm.add_custom_button(__('Archive'), () => {
 				frappe.confirm(

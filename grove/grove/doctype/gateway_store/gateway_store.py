@@ -10,7 +10,7 @@ import frappe
 from frappe.model.document import Document
 
 from grove import failure
-from grove.server import Server
+from grove.fleet import NamedHost
 
 REDIS_PORT = 6379
 RDB_MAGIC = b"REDIS"
@@ -22,7 +22,7 @@ DUMP = (
 )
 
 
-class GatewayStore(Server, Document):
+class GatewayStore(NamedHost, Document):
 	"""The one Redis a Network's gateways share. One in-flight counter per replica is what caps a
 	standalone box across those gateways; everything else they hold lives here with it."""
 
@@ -50,6 +50,14 @@ class GatewayStore(Server, Document):
 	def validate(self):
 		self.validate_one_per_network()
 		self.set_redis_password()
+
+	def on_update(self):
+		if self.has_value_changed("status") and self.status == "Terminated":
+			self.remove_dns_records()
+
+	def on_trash(self):
+		# While its name still says which record is its own.
+		self.remove_dns_records()
 
 	def validate_one_per_network(self):
 		"""Two stores would split a Network's gateways onto two counters — the over-admission a
@@ -114,6 +122,10 @@ class GatewayStore(Server, Document):
 			},
 		)
 		frappe.db.set_value(self.doctype, self.name, "status", "Active" if rc == 0 else "Broken")
+		if rc == 0:
+			# Redis is up whatever Route53 says next: a DNS failure must not roll that back.
+			frappe.db.commit()
+			self.sync_dns_records()
 		return play_name, rc
 
 	def backup(self):
