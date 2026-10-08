@@ -264,29 +264,26 @@ def usage(
 
 @frappe.whitelist()
 def available_models(team: str | None = None, key: str | None = None, geography: str | None = None):
-	"""Every published model in `geography` (the default one when none is given), one row per
-	key, `name` being the key a caller sends. A catalogue, not an entitlement list — the gateway
-	is what enforces which of these a given API key may actually call. With `team` and `key`,
-	only the ones that key may call, as its own geography serves them, to show a person what the
-	key reaches. `dialects` names the surfaces (openai, anthropic) each one answers on there."""
+	"""What a new key in `geography` (the default one when none is given) starts with: the
+	published models of that geography's default Model Group, one row per key, `name` being
+	the key a caller sends. With `team` and `key`, what that one key may call, as its own
+	geography serves it. `dialects` names the surfaces (openai, anthropic) each one answers on
+	there. The gateway is what enforces access; this is for showing a person."""
 	frappe.only_for(ALLOWED_ROLES)
+	from grove.access import get_reachable_models, model_rows
 	from grove.grove.doctype.model.model import get_modalities
 	from grove.pathway.routes import get_dialects, models_in
 
 	geography = geography or frappe.db.get_value("Geography", {"is_default": 1})
-	reachable = None
-	if team or key:
-		from grove.access import get_reachable_models
-
+	if key:
 		api_key = get_api_key(team, key)
-		reachable = set(get_reachable_models(api_key.name))
-		if not reachable:
-			return []
-		geography = api_key.geography
-	models = [
-		m for m in models_in(geography)
-		if m.published and (reachable is None or m.model_key in reachable)
-	]
+		geography, reachable = api_key.geography, set(get_reachable_models(api_key.name))
+	else:
+		default = frappe.db.get_value("Model Group", {"is_default": 1, "geography": geography})
+		reachable = set(model_rows("Model Group", [default]).get(default, {}).get("models", [])) if default else set()
+	if not reachable:
+		return []
+	models = [m for m in models_in(geography) if m.published and m.model_key in reachable]
 	dialects = get_dialects(models, geography)
 	modalities = get_modalities([m.name for m in models])
 	return [

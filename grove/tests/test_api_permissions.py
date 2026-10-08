@@ -78,8 +78,18 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		key.save()
 		# `name` on the wire is the key: what a caller sends, not a doc id.
 		model_key = lambda doc: frappe.db.get_value("Model", doc, "model_key")  # noqa: E731
-		self.assertEqual(sorted(row["name"] for row in api.available_models(team, key.name)), sorted([model_key(grouped), model_key(allowed)]))
-		self.assertIn(model_key(other), [row["name"] for row in api.available_models()])
+		reach = sorted([model_key(grouped), model_key(allowed)])
+		self.assertEqual(sorted(row["name"] for row in api.available_models(team, key.name)), reach)
+		# Without a key: what a new key in the geography starts with, its default group's models.
+		here = make_test_geography()
+		frappe.get_doc({
+			"doctype": "Model Group", "__newname": "probe-reach-default", "geography": here, "is_default": 1,
+			"models": [{"model": other}, {"model": grouped}],
+		}).insert(ignore_permissions=True)
+		self.assertEqual(
+			sorted(row["name"] for row in api.available_models(geography=here)), sorted([model_key(grouped), model_key(other)])
+		)
+		self.assertEqual(api.available_models(geography=make_test_geography("probe-reach-away")), [])
 
 	def test_a_keys_rate_limits_are_readable(self):
 		team = "probe-limits"
