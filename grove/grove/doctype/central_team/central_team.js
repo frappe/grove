@@ -19,7 +19,7 @@ frappe.ui.form.on('Central Team', {
 });
 
 // The flip to prepaid is where every live key gets its spend limit: the balance is handed
-// out here, not left at 0 for each key to be found blocked later.
+// out here; a key left at 0 stays refused until it gets one.
 async function markPrepaid(frm) {
 	const keys = await frappe.db.get_list('Grove API Key', {
 		filters: { team: frm.doc.name, status: 'active' },
@@ -32,7 +32,7 @@ async function markPrepaid(frm) {
 			{
 				fieldtype: 'HTML',
 				options: `<p class="text-muted">${__(
-					'Balance {0}. Each live key needs a spend limit above zero; together they may not exceed the balance.',
+					'Balance {0}. Give each live key what it may spend; together they may not exceed the balance. A key left at 0 is refused until it gets a limit.',
 					[format_currency(frm.doc.balance, null, 2)],
 				)}</p>`,
 			},
@@ -49,7 +49,7 @@ async function markPrepaid(frm) {
 					{ fieldtype: 'Data', fieldname: 'title', label: __('Title'), read_only: 1, in_list_view: 1 },
 					{ fieldtype: 'Data', fieldname: 'geography', label: __('Geography'), read_only: 1, in_list_view: 1 },
 					{ fieldtype: 'Currency', fieldname: 'spent', label: __('Spent'), read_only: 1, in_list_view: 1 },
-					{ fieldtype: 'Currency', fieldname: 'cap', label: __('Spend limit (USD)'), reqd: 1, in_list_view: 1 },
+					{ fieldtype: 'Currency', fieldname: 'cap', label: __('Spend limit (USD)'), in_list_view: 1 },
 				],
 			},
 		],

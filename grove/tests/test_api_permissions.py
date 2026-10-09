@@ -152,9 +152,10 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 	def test_a_cap_is_cut_from_the_balance_and_handed_back_by_a_revoke(self):
 		team = "probe-cap"
 		api.provision_team(team, ALERTS)
-		with self.assertRaisesRegex(frappe.ValidationError, "cap above zero"):
-			api.provision_key(team, title="uncapped")
+		# Minted with nothing to spend, and a top-up passes it by: it waits for a limit.
+		api.provision_key(team, title="uncapped")
 		api.add_credit(team, 10)
+		self.assertEqual((api.keys(team)[0]["cap"], api.balance(team)["unallocated"]), (0, 10.0))
 		first = api.provision_key(team, title="first", cap=6)["name"]
 		with self.assertRaises(frappe.ValidationError):
 			api.provision_key(team, title="too much", cap=6)
@@ -283,6 +284,19 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		for _ in range(2):
 			api.add_credit(team, 1)
 		self.assertEqual(api.balance(team)["balance"], 12.0)
+
+	def test_add_credit_hands_the_top_up_to_the_keys_and_says_so_once(self):
+		team = "probe-spread"
+		api.provision_team(team, ALERTS)
+		api.add_credit(team, 4)
+		key = api.provision_key(team, title="spread", cap=4)["name"]
+		handed = {"balance": 6.0, "allocations": [{"key": key, "amount": 2.0}]}
+		self.assertEqual(api.add_credit(team, 2, reference="spread-1"), handed)
+		# The repeat answers with the same split and raises nothing again.
+		self.assertEqual(api.add_credit(team, 2, reference="spread-1"), handed)
+		self.assertEqual(api.keys(team)[0]["cap"], 6)
+		self.assertEqual(api.add_credit(team, 1, allocations={key: 0.25})["allocations"], [{"key": key, "amount": 0.25}])
+		self.assertEqual(api.balance(team)["unallocated"], 0.75)
 
 	def test_a_reference_is_unique_on_the_ledger_itself(self):
 		api.provision_team("probe-unique-ledger", ALERTS)

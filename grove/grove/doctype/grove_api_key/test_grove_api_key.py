@@ -286,11 +286,12 @@ class IntegrationTestCapsAreCutFromTheBalance(IntegrationTestCase):
 		second.cap = 5
 		second.save()
 
-	def test_a_prepaid_key_needs_a_cap_above_zero_and_a_free_teams_caps_are_not_checked(self):
+	def test_a_prepaid_key_without_a_cap_is_minted_at_0_and_a_free_teams_caps_are_not_checked(self):
 		name = self.funded("key-cap-needed", 5)
 		for cap in (0, None):
-			with self.assertRaisesRegex(frappe.ValidationError, "cap above zero|mandatory|Mandatory"):
-				frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": cap}).insert()
+			doc = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": cap}).insert()
+			# Pushed prepaid with nothing to spend: the gateway refuses it until a limit is set.
+			self.assertEqual((projected(doc.name)["prepaid"], projected(doc.name)["budget"]), (True, 0))
 		free = team("key-cap-free")
 		frappe.get_doc({"doctype": "Grove API Key", "team": free, "cap": 1000}).insert()
 		frappe.get_doc({"doctype": "Grove API Key", "team": free, "cap": 0}).insert()

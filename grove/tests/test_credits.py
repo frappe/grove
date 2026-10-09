@@ -70,10 +70,14 @@ class CreditsCase(IntegrationTestCase):
 	def key(self, team, cap=0):
 		return frappe.get_doc({"doctype": "Grove API Key", "team": team, "cap": cap}).insert(ignore_permissions=True).name
 
-	def credit(self, team, amount, note=None):
+	def credit(self, team, amount, note=None, allocations=None):
+		rows = [{"api_key": key, "amount": value} for key, value in (allocations or {}).items()]
 		return frappe.get_doc(
-			{"doctype": "Grove Credit", "team": team, "amount": amount, "note": note}
+			{"doctype": "Grove Credit", "team": team, "amount": amount, "note": note, "allocations": rows}
 		).insert(ignore_permissions=True)
+
+	def caps(self, *keys):
+		return [D(str(frappe.db.get_value("Grove API Key", key, "cap"))) for key in keys]
 
 	def balance(self, team):
 		return D(str(frappe.db.get_value("Central Team", team, "balance")))
@@ -195,6 +199,74 @@ class TestADrainIsBilledAtGrovesPrice(CreditsCase):
 		self.assertEqual((frappe.db.get_value("Central Team", blocked, "credit_exhausted"), key), (1, None))
 		with self.assertRaises(frappe.ValidationError):
 			self.key(blocked, 1)
+
+
+class TestATopUpIsHandedToTheKeys(CreditsCase):
+	"""A top-up raises the live keys' caps by itself, so a key out of cap works again without
+	anyone touching its limit; the entry's rows record the split."""
+
+	def test_in_proportion_to_their_caps_to_the_nano_with_the_remainder_on_the_largest(self):
+		team, big = self.team(credit=3, cap=2)
+		small = self.key(team, 1)
+		entry = self.credit(team, 1)
+		self.assertEqual(
+			[(row.api_key, D(str(row.amount))) for row in entry.allocations],
+			[(big, D("0.666666667")), (small, D("0.333333333"))],
+		)
+		self.assertEqual(self.caps(big, small), [D("2.666666667"), D("1.333333333")])
+		self.assertEqual(api.balance(team)["unallocated"], 0)
+
+	def test_a_key_past_its_cap_is_raised_from_what_it_spent_once_the_debt_is_covered(self):
+		team, key = self.team(credit=1)
+		self.pull({key: self.hash(150_000)})
+		# 0.25 against a debt of 0.5: nothing to hand out, the cap stays.
+		self.assertEqual(self.credit(team, 0.25).allocations, [])
+		self.assertEqual(self.caps(key), [D("1")])
+		# 1 more leaves 0.75 free: the cap is 1.5 spent + 0.75, so the key may spend 0.75.
+		entry = self.credit(team, 1)
+		self.assertEqual(D(str(entry.allocations[0].amount)), D("0.75"))
+		self.assertEqual((self.caps(key), api.balance(team)["unallocated"]), ([D("2.25")], 0))
+
+	def test_rows_say_where_it_goes_and_the_rest_stays_unallocated(self):
+		team, first = self.team(credit=2, cap=1)
+		second = self.key(team, 1)
+		_other, foreign = self.team(credit=1)
+		for bad in ({foreign: 1}, {first: 0}, {first: 2, second: 1}):
+			with self.assertRaises(frappe.ValidationError):
+				self.credit(team, 2, allocations=bad)
+		self.credit(team, 2, allocations={second: 1.5})
+		self.assertEqual((self.caps(first, second), api.balance(team)["unallocated"]), ([D("1"), D("2.5")], 0.5))
+
+	def test_a_free_team_a_refund_and_a_team_with_no_key_hand_out_nothing(self):
+		free, free_key = self.team(credit=0, free=1, cap=0)
+		self.assertEqual(self.credit(free, 1).allocations, [])
+		with self.assertRaisesRegex(frappe.ValidationError, "prepaid"):
+			self.credit(free, 1, allocations={free_key: 1})
+		team, _key = self.team(credit=1, cap=0.5)
+		self.assertEqual(self.credit(team, -0.5, note="refund").allocations, [])
+		empty, _none = self.team(credit=0)
+		self.assertEqual((self.credit(empty, 1).allocations, api.balance(empty)["unallocated"]), ([], 1.0))
+
+	def test_a_key_with_no_cap_yet_takes_no_share(self):
+		team, capped = self.team(credit=1)
+		waiting = self.key(team, 0)
+		self.assertEqual([row.api_key for row in self.credit(team, 1).allocations], [capped])
+		self.assertEqual((self.caps(capped, waiting), api.balance(team)["unallocated"]), ([D("2"), D("0")], 0))
+		# Left at 0 by a flip, every key waits and the top-up stays unallocated.
+		team, first = self.team(credit=0, free=1, cap=0)
+		doc = frappe.get_doc("Central Team", team)
+		doc.free = 0
+		doc.save()
+		self.assertEqual((self.credit(team, 1).allocations, self.caps(first)), ([], [D("0")]))
+
+	def test_the_rows_are_part_of_the_entry_that_is_never_edited(self):
+		team, key = self.team(credit=1)
+		entry = self.credit(team, 1)
+		entry.allocations[0].amount = 0.5
+		with self.assertRaisesRegex(frappe.ValidationError, "never edited"):
+			entry.save()
+		entry.reload()
+		self.assertEqual(self.caps(key), [D("2")])
 
 
 class TestAFreeTeamIsNeverCharged(CreditsCase):

@@ -64,9 +64,7 @@ class IntegrationTestCentralTeam(IntegrationTestCase):
 		doc = team("team-probe-flip", free=1)
 		keys = [frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert().name for _ in range(2)]
 		frappe.get_doc({"doctype": "Grove Credit", "team": doc.name, "amount": 10}).insert()
-		# Refused up front: a key without a limit, then limits past the balance. Nothing moves.
-		with self.assertRaisesRegex(frappe.ValidationError, "needs a spend limit"):
-			doc.set_free(0, caps=[{"key": keys[0], "cap": 4}])
+		# Refused up front: limits past the balance. Nothing moves.
 		with self.assertRaisesRegex(frappe.ValidationError, "Top up first"):
 			doc.set_free(0, caps=[{"key": keys[0], "cap": 6}, {"key": keys[1], "cap": 6}])
 		self.assertEqual(frappe.db.get_value("Central Team", doc.name, "free"), 1)
@@ -76,3 +74,7 @@ class IntegrationTestCentralTeam(IntegrationTestCase):
 		doc.reload()
 		doc.set_free(1)
 		self.assertEqual(frappe.db.get_value("Central Team", doc.name, ["free", "credit_exhausted"]), (1, 0))
+		# A key left out of the table starts at 0: refused until it gets a limit.
+		doc.reload()
+		doc.set_free(0, caps=[{"key": keys[0], "cap": 4}])
+		self.assertEqual([frappe.db.get_value("Grove API Key", k, "cap") for k in keys], [4, 0])

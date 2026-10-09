@@ -66,8 +66,8 @@ class CentralTeam(Document):
 	@frappe.whitelist()
 	def set_free(self, free: bool | int | str, caps: list[dict] | None = None):
 		"""Button. Free: the team stops being charged. Prepaid: every live key gets the spend limit
-		`caps` names for it ({key, cap}), checked against the balance before anything is written, so
-		a refusal leaves the team as it was."""
+		`caps` names for it ({key, cap}), 0 when left out — refused until it gets one — checked
+		against the balance before anything is written, so a refusal leaves the team as it was."""
 		frappe.only_for("System Manager")
 		self.free = int(bool(frappe.utils.sbool(free)))
 		if self.free:
@@ -78,19 +78,16 @@ class CentralTeam(Document):
 		self.save()
 		for key in self.live_keys:
 			doc = frappe.get_doc("Grove API Key", key)
-			doc.cap = caps[key]
+			doc.cap = caps.get(key, 0)
 			doc.save()
 
 	def check_caps(self, caps):
-		"""Every live key named with a limit above zero, and the limits together within the
-		balance — what each key's own validate will insist on, said once up front."""
+		"""The limits together within the balance — what each key's own validate will insist
+		on, said once up front."""
 		spent = dict(
 			frappe.get_all("Grove API Key", filters={"team": self.name, "status": "active"}, fields=["name", "spent"], as_list=True)
 		)
-		missing = [key for key in spent if caps.get(key, 0) <= 0]
-		if missing:
-			frappe.throw(f"Every live key needs a spend limit above zero: {', '.join(missing)}.")
-		handed_out = sum(max(caps[key] - flt(spent[key]), 0) for key in spent)
+		handed_out = sum(max(caps.get(key, 0) - flt(spent[key]), 0) for key in spent)
 		# Read live: the form's copy may predate a top-up or a pull.
 		balance = flt(frappe.db.get_value("Central Team", self.name, "balance"))
 		if handed_out > balance:

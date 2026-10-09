@@ -120,16 +120,15 @@ class GroveAPIKey(Document):
 			seen.add((row.metric, row.window))
 
 	def validate_cap(self):
-		"""A prepaid team's key spends only through its cap, so it needs one above zero, and
-		Σ (cap - spent) over the team's live keys never exceeds the team's balance: every store
-		then gates its key exactly, and the keys together can never outspend the team."""
+		"""A prepaid team's key spends only through its cap, and Σ (cap - spent) over the team's
+		live keys never exceeds the team's balance: every store then gates its key exactly, and
+		the keys together can never outspend the team. At 0 the gateway refuses the key until a
+		limit is set."""
 		if flt(self.cap) < 0:
 			frappe.throw("A cap cannot be negative.")
 		team = frappe.db.get_value("Central Team", self.team, ["free", "balance"], as_dict=True, for_update=True)
 		if team.free or self.status != "active":
 			return
-		if flt(self.cap) <= 0:
-			frappe.throw("A key of a prepaid team needs a cap above zero: that is all it may spend.")
 		free_of_this = allotted(self.team, except_key=self.name) + max(Decimal(0), Decimal(str(self.cap or 0)) - Decimal(str(self.spent or 0)))
 		if free_of_this > Decimal(str(team.balance or 0)):
 			frappe.throw(

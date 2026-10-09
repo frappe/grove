@@ -8,7 +8,8 @@
   "team",
   "amount",
   "note",
-  "reference"
+  "reference",
+  "allocations"
  ],
  "fields": [
   {
@@ -41,10 +42,17 @@
    "label": "Reference",
    "no_copy": 1,
    "unique": 1
+  },
+  {
+   "description": "Where a top-up goes: each row raises that key's cap by its amount. Left empty on a prepaid team, the top-up is spread over the live keys in proportion to their caps.",
+   "fieldname": "allocations",
+   "fieldtype": "Table",
+   "label": "Handed to keys",
+   "options": "Grove Credit Allocation"
   }
  ],
  "links": [],
- "modified": "2026-09-30 19:00:00.000000",
+ "modified": "2026-10-09 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Grove Credit",

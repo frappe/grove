@@ -65,13 +65,12 @@
   },
   {
    "default": "0",
-   "description": "What this key may spend, cut out of the team's balance: the gateway refuses it at 402 once its spend reaches this. Required above zero on a prepaid team; across the team's live keys, \u03a3 (cap \u2212 spent) never exceeds the balance. Ignored while the team is Free.",
+   "description": "What this key may spend, cut out of the team's balance: the gateway refuses it at 402 once its spend reaches this. 0 until a limit is set, and the key is refused until then. Across the team's live keys, \u03a3 (cap \u2212 spent) never exceeds the balance. Ignored while the team is Free.",
    "fieldname": "cap",
    "fieldtype": "Currency",
    "in_list_view": 1,
    "label": "Cap (USD)",
-   "precision": "9",
-   "reqd": 1
+   "precision": "9"
   },
   {
    "description": "What this key has been charged: priced by the pull from each billed drain, plus any correction from a resolved Credit Discrepancy.",
@@ -149,7 +148,7 @@
    "link_fieldname": "api_key"
   }
  ],
- "modified": "2026-10-08 23:40:08.699864",
+ "modified": "2026-10-09 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove API Key",

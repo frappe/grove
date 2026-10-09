@@ -48,8 +48,9 @@ def provision_key(
 ):
 	"""Mint a key for `team` in `geography` — the default one when none is given; every other
 	geography's gateway refuses it. `title` labels the key, to tell a team's keys apart. `cap` is
-	what it may spend out of the team's balance: required above zero on a prepaid team, and
-	refused past what no other key's cap has claimed; a Free team's keys have none. The key
+	what it may spend out of the team's balance, refused past what no other key's cap has
+	claimed; left out on a prepaid team, the key is minted at 0 and its gateway refuses it until
+	`update_key(cap=)` or a top-up's allocation gives it one. A Free team's keys have none. The key
 	starts in its geography's default Model Group; `models` are its own on
 	top. `limits` are its rate limits, rows of `metric` (requests, total_tokens), `window` (1m,
 	1h, 1d, 1M) and `value`; given none it starts under the defaults, 20 requests and 100 000
@@ -97,25 +98,36 @@ def keys(team: str):
 
 
 @frappe.whitelist()
-def add_credit(team: str, amount: float, note: str | None = None, reference: str | None = None):
+def add_credit(
+	team: str, amount: float, note: str | None = None, reference: str | None = None,
+	allocations: dict[str, float] | None = None,
+):
 	"""Append one ledger entry for `team` and settle it. 0 and an unexplained negative are
 	refused by the ledger itself. `reference` is the caller's own id for the top-up: a call that
-	repeats one adds nothing, so a call that timed out is safe to send again. → the team's
-	balance after the entry; hand it to keys by raising their caps."""
+	repeats one adds nothing, so a call that timed out is safe to send again. `allocations`,
+	{key: USD}, says how much of it each key may spend; none spreads a prepaid team's top-up over
+	its live keys in proportion to their caps. → the balance after, and the `allocations` made."""
 	frappe.only_for(ALLOWED_ROLES)
 	get_team(team)
 	repeated = reference and frappe.db.get_value(
-		"Grove Credit", {"reference": reference}, ["team", "amount"], as_dict=True
+		"Grove Credit", {"reference": reference}, ["name", "team", "amount"], as_dict=True
 	)
 	if not repeated:
-		frappe.get_doc(
-			{"doctype": "Grove Credit", "team": team, "amount": amount, "note": note, "reference": reference}
-		).insert()
+		rows = [{"api_key": key, "amount": value} for key, value in (allocations or {}).items()]
+		entry = frappe.get_doc({
+			"doctype": "Grove Credit", "team": team, "amount": amount, "note": note, "reference": reference,
+			"allocations": rows,
+		}).insert()
 	# A repeat has to be the same top-up: one id on another team or amount is a caller bug.
 	elif (repeated.team, flt(repeated.amount, 9)) != (team, flt(amount, 9)):
 		frappe.throw(f"Reference {reference!r} already names another top-up.")
+	else:
+		entry = frappe.get_doc("Grove Credit", repeated.name)
 	# TODO: we should send a message like it might take some time to reflect
-	return {"balance": frappe.db.get_value("Central Team", team, "balance")}
+	return {
+		"balance": frappe.db.get_value("Central Team", team, "balance"),
+		"allocations": [{"key": row.api_key, "amount": row.amount} for row in entry.allocations],
+	}
 
 
 @frappe.whitelist()
