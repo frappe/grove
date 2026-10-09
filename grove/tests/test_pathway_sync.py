@@ -65,7 +65,7 @@ class TestGatewayRoutes(unittest.TestCase):
 				return list(pods)
 			if doctype == "Model Deployment":
 				return list(deployments)
-			if doctype in ("Ingress Server", "Inference Server", "Model Provider"):
+			if doctype in ("Ingress Server", "Inference Server", "Model Provider", "Denied Tool"):
 				# No third party in this suite: every model here is one we run ourselves.
 				return []
 			if doctype == "Engine Image":

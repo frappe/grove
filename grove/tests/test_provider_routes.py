@@ -64,6 +64,12 @@ DEPLOYMENTS = [
 	          status="Active", inference_server="INF-direct", max_num_seqs=4),
 ]
 PODS = [placement("frappe/nemo-asr", name="POD-1", engine_url="http://1.2.3.4:8081", max_num_seqs=2)]
+# What a vendor would run on its own side, as the operator listed it; out of order on purpose.
+DENIED_TOOLS = [
+	{"provider_name": "anthropic", "tool": "web_search_20250305"},
+	{"provider_name": "anthropic", "tool": "mcp_servers"},
+	{"provider_name": "nobody", "tool": "web_search_options"},
+]
 
 
 class FakeQuery:
@@ -75,6 +81,7 @@ class FakeQuery:
 			"Pod": PODS,
 			"Model Provider": [{"name": name} for name in PROVIDERS],
 			"Inference Server": [{"name": "INF-direct", "ingress": None}],
+			"Denied Tool": DENIED_TOOLS,
 		}.get(doctype, [])
 		if pluck:
 			return [r[pluck] for r in rows]
@@ -119,6 +126,13 @@ class TestAVendorModelIsRoutable(unittest.TestCase):
 		self.assertEqual(row["key_selection"], "round_robin")
 		self.assertEqual(row["api_version"], "2023-06-01")
 		self.assertEqual(row["dialect"], "anthropic")
+
+	def test_it_carries_the_vendors_denied_tools_sorted_and_a_blank_list_when_none(self):
+		table = routes()
+		[row] = table["anthropic/claude-4-5"]
+		self.assertEqual(row["denied_tools"], ["mcp_servers", "web_search_20250305"])
+		[row] = table["deepseek/deepseek-chat"]
+		self.assertEqual(row["denied_tools"], [])
 
 	def test_each_url_field_names_its_own_dialect(self):
 		[row] = routes()["deepseek/deepseek-chat"]

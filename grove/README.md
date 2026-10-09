@@ -146,7 +146,14 @@ models route straight to that vendor — a `kind: "provider"` row naming the pro
 with no deployment, no pod and no capacity of ours to divide. The record's **Keys** table rides the
 row as `credentials` (`[{id, secret}]`, the id being the key row's name, in table order) with the
 record's **Key Selection** (`round_robin`); `internal_key` stays blank on a provider row and is the
-single-key spelling only an engine row uses. The gateway takes the keys in turn — one cursor per
+single-key spelling only an engine row uses. The row also carries `denied_tools`: every `Denied Tool`
+row under the vendor's Provider Name, sorted — a `tools[].type` or a top-level request field the
+vendor would run on its own side and bill outside the token counts, which nothing meters. The gateway
+answers a request that names one with a 400 before the dial (`route`, from the client's own bytes),
+so a search or a code run never reaches the vendor. One doctype for all geographies, keyed by the
+name and not by a Model Provider link, because the list is the vendor's. Always written, so a row
+deleted here is a change the next tick pushes; delete the row once a tool is priced, and drop it from
+the catalog too or the next migrate puts it back. The gateway takes the keys in turn — one cursor per
 vendor across all its models, so the limits the keys share are drawn on evenly — swaps a key the
 vendor answers 429 for the next (each tried once, then once more round), skips one answering
 401/402/403 for the rest of that request, and counts what every key answered. **Key Stats** on the
@@ -184,8 +191,16 @@ prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south
 
 - `seed.insert_missing()` runs after install and after every migrate. It inserts a geography,
   cloud account (keyless, for the operator to fill), region or model the site has no doc
-  named for, and a provider the site has no record named for in any geography. It never updates
-  and never deletes.
+  named for, a provider the site has no record named for in any geography, and a `Denied Tool`
+  pair the site lacks. It never updates and never deletes.
+- `denied_tools` is what a vendor bills outside the token counts, and only that: Anthropic's web
+  search ($10 per 1,000 searches) and code execution (container hours), OpenAI's `web_search_options`
+  and the Responses API's priced hosted tools (web search, file search, code interpreter, image
+  generation). A server tool priced in tokens alone — Anthropic's web fetch, tool search and MCP
+  connector, OpenAI's `mcp` — is not listed and goes through; so does a client-run tool. DeepSeek's
+  Anthropic front runs web search (probed 2026-10-09: `server_tool_use` blocks came back) and its
+  price list names no rate for it, and Baseten charges for its tools, so both carry the two web
+  search types.
 - A geography lands with `endpoint` and `fleet_zone` blank, for the operator to fill, and is the
   default only when the site has none. Until then a box in it serves :80 in the clear and
   `api.provision_key` refuses it.
@@ -197,7 +212,7 @@ prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south
   inserts the catalog's rates as a Disabled `Model Pricing`. Shown while the catalog prices the
   model and no pricing names it. Enabling and publishing stay the operator's call.
 - `bench --site <site> execute grove.catalog.export.write` rewrites the file from the site: every
-  provider once (no API key, a vendor's geography set to `Main`), vendor models only,
+  provider once (no API key, a vendor's geography set to `Main`), every denied tool, vendor models only,
   each with the rows of its Enabled pricing, the one geography `Main`, every cloud account's type
   (no key), every region, and every model group with the exported models it grants (no `is_default`, no geography).
 
