@@ -1,0 +1,44 @@
+{
+ "actions": [],
+ "creation": "2026-10-09 00:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "api_key",
+  "amount"
+ ],
+ "fields": [
+  {
+   "columns": 6,
+   "fieldname": "api_key",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "API Key",
+   "options": "Grove API Key",
+   "reqd": 1
+  },
+  {
+   "columns": 4,
+   "description": "How much more this key may spend: its cap rises by this, measured from what it has spent when it overshot.",
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount (USD)",
+   "precision": "9",
+   "reqd": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-09 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Grove Credit Allocation",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

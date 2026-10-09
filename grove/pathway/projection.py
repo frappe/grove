@@ -82,7 +82,7 @@ def full_sync(proxies=None, trigger="Manual", ingresses=None, wait=60):
 
 def snapshots_for(targets):
 	"""{target: what it is pushed}, read on the main thread — a gateway snapshot once per
-	geography with the user records built once, an ingress its own replica table."""
+	geography with the key records built once, an ingress its own replica table."""
 	per_geography, snapshots, shared = {}, {}, {}
 	for target in targets:
 		if target.server_type == "Ingress Server":

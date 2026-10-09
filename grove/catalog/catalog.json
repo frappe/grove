@@ -76,6 +76,72 @@
    "min_prompt_tokens": 272000
   }
  ],
+ "denied_tools": [
+  {
+   "provider_name": "anthropic",
+   "tool": "code_execution_20250522"
+  },
+  {
+   "provider_name": "anthropic",
+   "tool": "code_execution_20250825"
+  },
+  {
+   "provider_name": "anthropic",
+   "tool": "code_execution_20260120"
+  },
+  {
+   "provider_name": "anthropic",
+   "tool": "code_execution_20260521"
+  },
+  {
+   "provider_name": "anthropic",
+   "tool": "web_search_20250305"
+  },
+  {
+   "provider_name": "anthropic",
+   "tool": "web_search_20260209"
+  },
+  {
+   "provider_name": "baseten",
+   "tool": "web_search_20250305"
+  },
+  {
+   "provider_name": "baseten",
+   "tool": "web_search_20260209"
+  },
+  {
+   "provider_name": "deepseek",
+   "tool": "web_search_20250305"
+  },
+  {
+   "provider_name": "deepseek",
+   "tool": "web_search_20260209"
+  },
+  {
+   "provider_name": "openai",
+   "tool": "code_interpreter"
+  },
+  {
+   "provider_name": "openai",
+   "tool": "file_search"
+  },
+  {
+   "provider_name": "openai",
+   "tool": "image_generation"
+  },
+  {
+   "provider_name": "openai",
+   "tool": "web_search"
+  },
+  {
+   "provider_name": "openai",
+   "tool": "web_search_options"
+  },
+  {
+   "provider_name": "openai",
+   "tool": "web_search_preview"
+  }
+ ],
  "geographies": [
   {
    "name": "Main"

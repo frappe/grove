@@ -33,6 +33,11 @@ def insert_missing(path=None):
 	for provider in catalog["providers"]:
 		if not frappe.db.exists("Model Provider", {"provider_name": provider["provider_name"]}):
 			frappe.get_doc({"doctype": "Model Provider", **provider}).insert()
+	# Like a provider, a shipped row comes back on the next migrate: a tool priced later is dropped
+	# from the catalog, not only from the site.
+	for denied in catalog.get("denied_tools", []):
+		if not frappe.db.exists("Denied Tool", denied):
+			frappe.get_doc({"doctype": "Denied Tool", **denied}).insert()
 	# A model lands under the record the catalog's own provider entry describes.
 	geographies = {p["provider_name"]: p.get("geography") for p in catalog["providers"]}
 	docs = {

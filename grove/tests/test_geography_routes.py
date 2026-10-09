@@ -113,27 +113,31 @@ class TestRoutesStayInTheirGeography(unittest.TestCase):
 		self.assertEqual(routes(""), {})
 
 
-class TestEveryUserCarriesTheirPin(unittest.TestCase):
-	def users(self, rows):
+class TestEveryKeyCarriesItsPin(unittest.TestCase):
+	def keys(self, rows):
 		def get_all(doctype, **kwargs):
-			return [frappe._dict(row) for row in rows] if doctype == "Grove User" else []
+			if doctype == "Grove API Key":
+				return [frappe._dict(row) for row in rows]
+			if doctype == "Central Team":
+				return [frappe._dict(name="T-1", free=0, log_payloads=0, credit_exhausted=0)]
+			return []
 
 		with (
 			patch.object(snapshot, "model_rows", return_value={}),
 			patch.object(snapshot, "group_rows", return_value={}),
+			patch.object(snapshot, "limit_rows", return_value={}),
 			patch.object(frappe, "get_all", side_effect=get_all),
-			patch.object(snapshot, "allocations", return_value={}),
 		):
-			return {user["name"]: user for user in snapshot.effective_users()}
+			return {key["prefix"]: key for key in snapshot.effective_keys()}
 
-	def test_pinned_and_unpinned_users_both_reach_every_gateway(self):
-		users = self.users([
-			{"name": "u1", "user": "a@x.test", "credit_exhausted": 0, "log_payloads": 0, "geography": "eu"},
-			{"name": "u2", "user": "b@x.test", "credit_exhausted": 0, "log_payloads": 0, "geography": None},
+	def test_pinned_and_unpinned_keys_both_reach_every_gateway(self):
+		keys = self.keys([
+			{"name": "k1", "key_hash": "aa", "team": "T-1", "status": "active", "cap": 0, "geography": "eu"},
+			{"name": "k2", "key_hash": "bb", "team": "T-1", "status": "active", "cap": 0, "geography": None},
 		])
-		self.assertEqual(users["u1"]["geography"], "eu")
+		self.assertEqual(keys["k1"]["geography"], "eu")
 		# Blank, never null: the gateway reads absent and "" as unpinned.
-		self.assertEqual(users["u2"]["geography"], "")
+		self.assertEqual(keys["k2"]["geography"], "")
 
 
 class TestOneSnapshotPerGeography(unittest.TestCase):

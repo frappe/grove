@@ -7,8 +7,8 @@ from frappe.model.document import Document
 
 class UsageRecord(Document):
 	"""One API key's usage in one drain of one store, billed and free apart. Inserted by the pull and
-	never updated: `cost` is Grove's price of it, charged to the user when `billed` (the gateway
-	served it while they were prepaid); `usage` holds the per-model detail as JSON, one entry per
+	never updated: `cost` is Grove's price of it, charged to the key when `billed` (the gateway
+	served it while its team was prepaid); `usage` holds the per-model detail as JSON, one entry per
 	model, so a record is one row however many models it touched."""
 
 	# begin: auto-generated types
@@ -27,8 +27,8 @@ class UsageRecord(Document):
 		gateway_cost: DF.Currency
 		gateway_store: DF.Link | None
 		request_count: DF.Int
+		team: DF.Link | None
 		usage: DF.JSON | None
-		user: DF.Link | None
 	# end: auto-generated types
 
 	pass
@@ -36,12 +36,12 @@ class UsageRecord(Document):
 
 def on_doctype_update():
 	"""A drain is re-sent until acknowledged: the unique triple makes landing it twice impossible.
-	Every read filters a user or a key over a day range."""
+	Every read filters a team or a key over a day range."""
 	# The pair it replaces: a key's billed and free usage in one drain are two records.
 	if frappe.db.has_index("tabUsage Record", "unique_drain_key"):
 		frappe.db.sql_ddl("alter table `tabUsage Record` drop index unique_drain_key")
 	frappe.db.add_unique("Usage Record", ["drain_id", "api_key", "billed"], constraint_name="unique_drain_key_billed")
-	frappe.db.add_index("Usage Record", ["user", "day"])
+	frappe.db.add_index("Usage Record", ["team", "day"])
 	frappe.db.add_index("Usage Record", ["api_key", "day"])
 
 

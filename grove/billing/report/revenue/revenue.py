@@ -1,6 +1,6 @@
-"""Revenue per model, API key, user or day: what each billed drain was charged — Grove's price at
+"""Revenue per model, API key, team or day: what each billed drain was charged — Grove's price at
 the pricing the gateway charged — summed in one grouped query over the records' per-model detail.
-A Free user's usage is not billed, so it is not revenue."""
+A Free team's usage is not billed, so it is not revenue."""
 
 import frappe
 
@@ -10,10 +10,10 @@ GROUP_BY = {
 	# The key the usage names, not a doc: one key may be a doc per geography.
 	"Model": ("u.model", "Data", None),
 	"API Key": ("r.api_key", "Link", "Grove API Key"),
-	"Grove User": ("r.user", "Link", "Grove User"),
+	"Team": ("r.team", "Link", "Central Team"),
 	"Day": ("r.day", "Date", None),
 }
-FILTERS = {"model": "u.model", "api_key": "r.api_key", "grove_user": "r.user"}
+FILTERS = {"model": "u.model", "api_key": "r.api_key", "team": "r.team"}
 
 
 def execute(filters=None):

@@ -6,7 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "api_key",
-  "user",
+  "team",
   "day",
   "column_break_drain",
   "gateway_store",
@@ -32,11 +32,11 @@
    "reqd": 1
   },
   {
-   "fieldname": "user",
+   "fieldname": "team",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "User",
-   "options": "Grove User",
+   "label": "Team",
+   "options": "Central Team",
    "read_only": 1
   },
   {

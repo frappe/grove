@@ -6,7 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "usage_record",
-  "grove_user",
+  "team",
   "api_key",
   "pricing",
   "column_break_where",
@@ -33,11 +33,11 @@
    "read_only": 1
   },
   {
-   "fieldname": "grove_user",
+   "fieldname": "team",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Grove User",
-   "options": "Grove User",
+   "label": "Team",
+   "options": "Central Team",
    "read_only": 1
   },
   {

@@ -65,7 +65,7 @@ class TestGatewayRoutes(unittest.TestCase):
 				return list(pods)
 			if doctype == "Model Deployment":
 				return list(deployments)
-			if doctype in ("Ingress Server", "Inference Server", "Model Provider"):
+			if doctype in ("Ingress Server", "Inference Server", "Model Provider", "Denied Tool"):
 				# No third party in this suite: every model here is one we run ourselves.
 				return []
 			if doctype == "Engine Image":
@@ -245,17 +245,21 @@ class TestEffectiveGroups(unittest.TestCase):
 		self.assertEqual([g["name"] for g in groups], ["a", "b"])
 
 
-class TestEffectiveUsers(unittest.TestCase):
-	"""user:<name> — the record that holds everything belonging to the person rather than to a
-	credential, so a budget flip or an access edit is one push however many keys they hold."""
+class TestEffectiveKeys(unittest.TestCase):
+	"""key:<hash> — the one record the gateway reads: the credential and the whole policy behind
+	it, with what is the team's (free, payload logging, the credit verdict) riding on each key."""
 
-	def users(self, users=(), rows=(), groups=(), loaded=None, limits=()):
-		self.calls = {}
+	def keys(self, keys=(), rows=(), groups=(), limits=(), teams=None):
+		self.calls, seen = {}, {}
+		teams = [frappe._dict(name="T-1", free=0, log_payloads=0, credit_exhausted=0)] if teams is None else teams
 
-		def get_all(doctype, **kwargs):
+		def get_all(doctype, filters=None, **kwargs):
 			self.calls[doctype] = self.calls.get(doctype, 0) + 1
-			if doctype == "Grove User":
-				return list(users)
+			if doctype == "Grove API Key":
+				seen["filters"] = filters
+				return list(keys)
+			if doctype == "Central Team":
+				return list(teams)
 			if doctype == "Grove Model Row":
 				return list(rows)
 			if doctype == "Model Group Row":
@@ -264,187 +268,133 @@ class TestEffectiveUsers(unittest.TestCase):
 				return list(limits)
 			raise AssertionError(f"unexpected get_all({doctype})")
 
-		with (
-			unittest.mock.patch.object(frappe, "get_all", side_effect=get_all),
-			unittest.mock.patch.object(snapshot, "allocations", return_value=loaded or {}),
-		):
-			return snapshot.effective_users()
-
-	def test_a_user_carries_their_groups_their_deltas_and_their_budget_flag(self):
-		[user] = self.users(
-			[frappe._dict(name="GU-1", email="a@x.com", credit_exhausted=1)],
-			[
-				frappe._dict(parent="GU-1", model_key="qwen3-4b", parentfield="allow"),
-				frappe._dict(parent="GU-1", model_key="qwen3-35b", parentfield="deny"),
-			],
-			[frappe._dict(parent="GU-1", model_group="acme")],
-		)
-		self.assertEqual(user["name"], "GU-1")
-		self.assertEqual(user["email"], "a@x.com")
-		self.assertEqual(user["group"], "acme")
-		self.assertEqual(user["allow"], "qwen3-4b")
-		self.assertEqual(user["deny"], "qwen3-35b")
-		self.assertIs(user["limited"], True)
-
-	def test_the_lists_are_sorted_comma_joins(self):
-		# The agent splits on commas (pathway, internal/domain/access.go `ModelSet`), so the
-		# join is the wire format, not a display choice.
-		[user] = self.users(
-			[frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0)],
-			[
-				frappe._dict(parent="GU-1", model_key="b", parentfield="allow"),
-				frappe._dict(parent="GU-1", model_key="a", parentfield="allow"),
-			],
-			[
-				frappe._dict(parent="GU-1", model_group="zeta"),
-				frappe._dict(parent="GU-1", model_group="acme"),
-			],
-		)
-		self.assertEqual(user["allow"], "a,b")
-		self.assertEqual(user["group"], "acme,zeta")
-
-	def test_the_same_group_twice_is_one_membership(self):
-		# Two rows naming one group are one grant, so the hash cannot move on a duplicate.
-		[user] = self.users(
-			[frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0)],
-			[],
-			[
-				frappe._dict(parent="GU-1", model_group="acme"),
-				frappe._dict(parent="GU-1", model_group="acme"),
-			],
-		)
-		self.assertEqual(user["group"], "acme")
-
-	def test_a_user_who_grants_nothing_is_still_pushed_as_blank(self):
-		# Blank overwrites Redis; omitting the fields would leave a removed allow in force.
-		[user] = self.users([frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0)])
-		self.assertEqual((user["group"], user["allow"], user["deny"]), ("", "", ""))
-		self.assertIs(user["limited"], False)
-
-	def test_payload_logging_is_off_unless_the_doc_opts_in(self):
-		# Customer content: a doc from before the field existed (no attribute at all) stays off.
-		[user] = self.users([frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0)])
-		self.assertIs(user["log_payloads"], False)
-
-	def test_payload_logging_opt_in_reaches_the_record(self):
-		[user] = self.users(
-			[frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0, log_payloads=1)]
-		)
-		self.assertIs(user["log_payloads"], True)
-
-	def test_one_row_query_covers_every_user(self):
-		# The N+1 this projection removes: one query for the users, one for their rows.
-		users = self.users(
-			[
-				frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0),
-				frappe._dict(name="GU-2", user="b@x.com", credit_exhausted=0),
-			],
-			[
-				frappe._dict(parent="GU-1", model_key="m1", parentfield="allow"),
-				frappe._dict(parent="GU-2", model_key="m2", parentfield="allow"),
-			],
-			[
-				frappe._dict(parent="GU-1", model_group="acme"),
-				frappe._dict(parent="GU-2", model_group="beta"),
-			],
-		)
-		self.assertEqual([u["allow"] for u in users], ["m1", "m2"])
-		self.assertEqual([u["group"] for u in users], ["acme", "beta"])
-		# Four tables, still four queries: membership and limits must not become the N+1 again.
-		self.assertEqual(
-			self.calls, {"Grove User": 1, "Grove Model Row": 1, "Model Group Row": 1, "Model Limit": 1}
-		)
-
-	def test_limits_are_one_sorted_comma_list(self):
-		# pathway, internal/domain/limit.go `ParseLimits`: metric:window:value, comma-joined.
-		[user] = self.users(
-			[frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0)],
-			limits=[
-				frappe._dict(parent="GU-1", metric="total_tokens", window="1h", value=50000),
-				frappe._dict(parent="GU-1", metric="requests", window="1m", value=200),
-			],
-		)
-		self.assertEqual(user["limits"], "requests:1m:200,total_tokens:1h:50000")
-
-	def test_a_user_with_no_limits_is_still_pushed_blank(self):
-		# Blank overwrites Redis; omitting the field would leave a removed limit in force.
-		[user] = self.users([frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0)])
-		self.assertEqual(user["limits"], "")
-
-	def test_a_limit_edit_rehashes_only_that_users_bucket(self):
-		people = [
-			frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0),
-			frappe._dict(name="GU-2", user="b@x.com", credit_exhausted=0),
-		]
-		limit = frappe._dict(parent="GU-1", metric="requests", window="1m", value=5)
-		before = snapshot.bucketed_section(self.users(people), "name")["buckets"]
-		after = snapshot.bucketed_section(self.users(people, limits=[limit]), "name")["buckets"]
-		changed = {label for label in before if before[label]["hash"] != after[label]["hash"]}
-		self.assertEqual(changed, {snapshot.bucket_of("GU-1")})
-
-	def test_a_user_carries_the_amount_they_loaded_in_nano_usd(self):
-		# Σ credits, the same on every store; each box subtracts its own spend.
-		[user] = self.users([frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0, free=0)], loaded={"GU-1": Decimal("7.5")})
-		self.assertEqual((user["prepaid"], user["budget"]), (True, 7_500_000_000))
-
-	def test_a_prepaid_user_with_no_credit_carries_a_zero_budget(self):
-		[user] = self.users([frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=1, free=0)])
-		self.assertEqual((user["prepaid"], user["budget"], user["limited"]), (True, 0, True))
-
-	def test_a_free_user_carries_no_ceiling(self):
-		# The wire still says `prepaid`: absent on an old push has to read as no gate.
-		[user] = self.users([frappe._dict(name="GU-1", user="a@x.com", credit_exhausted=0, free=1)], loaded={"GU-1": Decimal("2.5")})
-		self.assertEqual((user["prepaid"], user["budget"]), (False, 0))
-
-
-class TestEffectiveKeys(unittest.TestCase):
-	"""key:<hash> — the index from a presented secret to its holder, plus the one fact that is
-	genuinely the credential's own."""
-
-	def keys(self, keys=()):
-		seen = {}
-
-		def get_all(doctype, filters=None, **kwargs):
-			if doctype == "Grove API Key":
-				seen["filters"] = filters
-				return list(keys)
-			raise AssertionError(f"unexpected get_all({doctype})")
-
 		with unittest.mock.patch.object(frappe, "get_all", side_effect=get_all):
 			projected = snapshot.effective_keys()
 		self.filters = seen.get("filters")
 		return projected
 
-	def test_a_key_points_at_its_holder_and_says_nothing_about_access(self):
-		# The whole split: anything read here would be rewritten on every key the person holds
-		# each time their access moved.
-		[key] = self.keys([frappe._dict(name="KEY-1", key_hash="abc", user="GU-1", status="active")])
+	def key(self, name="KEY-1", key_hash="abc", team="T-1", **fields):
+		return frappe._dict({"name": name, "key_hash": key_hash, "team": team, "status": "active", "geography": "in", "cap": 0, **fields})
+
+	def test_a_key_carries_its_groups_its_deltas_and_its_teams_verdict(self):
+		[key] = self.keys(
+			[self.key()],
+			[
+				frappe._dict(parent="KEY-1", model_key="qwen3-4b", parentfield="allow"),
+				frappe._dict(parent="KEY-1", model_key="qwen3-35b", parentfield="deny"),
+			],
+			[frappe._dict(parent="KEY-1", model_group="acme")],
+			teams=[frappe._dict(name="T-1", free=0, log_payloads=1, credit_exhausted=1)],
+		)
 		self.assertEqual(
 			key,
-			{"key_hash": "abc", "prefix": "KEY-1", "user": "GU-1", "status": "active", "can_read_balance": False},
+			{
+				"key_hash": "abc", "prefix": "KEY-1", "team": "T-1", "status": "active", "group": "acme",
+				"allow": "qwen3-4b", "deny": "qwen3-35b", "limited": True, "log_payloads": True,
+				"geography": "in", "prepaid": True, "budget": 0, "limits": "",
+			},
 		)
 
-	def test_a_key_says_whether_it_may_read_the_balance(self):
-		# A bool on the wire: the gateway refuses a push whose flag is 0 or 1.
-		rows = [
-			frappe._dict(name="KEY-1", key_hash="abc", user="GU-1", status="active", can_read_balance=1),
-			frappe._dict(name="KEY-2", key_hash="abd", user="GU-1", status="active", can_read_balance=0),
-		]
-		self.assertEqual([key["can_read_balance"] for key in self.keys(rows)], [True, False])
+	def test_the_lists_are_sorted_comma_joins(self):
+		# The agent splits on commas (pathway, internal/domain/access.go `ModelSet`), so the
+		# join is the wire format, not a display choice.
+		[key] = self.keys(
+			[self.key()],
+			[
+				frappe._dict(parent="KEY-1", model_key="b", parentfield="allow"),
+				frappe._dict(parent="KEY-1", model_key="a", parentfield="allow"),
+			],
+			[
+				frappe._dict(parent="KEY-1", model_group="zeta"),
+				frappe._dict(parent="KEY-1", model_group="acme"),
+			],
+		)
+		self.assertEqual(key["allow"], "a,b")
+		self.assertEqual(key["group"], "acme,zeta")
 
-	def test_the_pointer_is_the_doc_name_not_the_email(self):
-		# The agent resolves user:<name>, so an email here would resolve against nothing.
-		[key] = self.keys([frappe._dict(name="KEY-1", key_hash="abc", user="GU-1", status="active")])
-		self.assertEqual(key["user"], "GU-1")
+	def test_the_same_group_twice_is_one_membership(self):
+		# Two rows naming one group are one grant, so the hash cannot move on a duplicate.
+		[key] = self.keys(
+			[self.key()],
+			[],
+			[
+				frappe._dict(parent="KEY-1", model_group="acme"),
+				frappe._dict(parent="KEY-1", model_group="acme"),
+			],
+		)
+		self.assertEqual(key["group"], "acme")
 
-	def test_a_key_with_no_hash_is_dropped(self):
-		# Nothing can present it, and the agent would key the record on an empty string.
-		self.assertEqual(self.keys([frappe._dict(name="KEY-1", key_hash=None, user="GU-1", status="active")]), [])
+	def test_a_key_that_grants_nothing_is_still_pushed_as_blank(self):
+		# Blank overwrites Redis; omitting the fields would leave a removed allow in force.
+		[key] = self.keys([self.key()])
+		self.assertEqual((key["group"], key["allow"], key["deny"], key["limits"]), ("", "", "", ""))
+		self.assertIs(key["limited"], False)
+		self.assertIs(key["log_payloads"], False)
+
+	def test_one_row_query_covers_every_key(self):
+		# The N+1 this projection removes: one query for the keys, one for their rows.
+		keys = self.keys(
+			[self.key("KEY-1", "abc"), self.key("KEY-2", "abd")],
+			[
+				frappe._dict(parent="KEY-1", model_key="m1", parentfield="allow"),
+				frappe._dict(parent="KEY-2", model_key="m2", parentfield="allow"),
+			],
+			[
+				frappe._dict(parent="KEY-1", model_group="acme"),
+				frappe._dict(parent="KEY-2", model_group="beta"),
+			],
+		)
+		self.assertEqual([k["allow"] for k in keys], ["m1", "m2"])
+		self.assertEqual([k["group"] for k in keys], ["acme", "beta"])
+		# Five tables, still five queries: membership and limits must not become the N+1 again.
+		self.assertEqual(
+			self.calls, {"Grove API Key": 1, "Central Team": 1, "Grove Model Row": 1, "Model Group Row": 1, "Model Limit": 1}
+		)
+
+	def test_limits_are_one_sorted_comma_list(self):
+		# pathway, internal/domain/limit.go `ParseLimits`: metric:window:value, comma-joined.
+		[key] = self.keys(
+			[self.key()],
+			limits=[
+				frappe._dict(parent="KEY-1", metric="total_tokens", window="1h", value=50000),
+				frappe._dict(parent="KEY-1", metric="requests", window="1m", value=200),
+			],
+		)
+		self.assertEqual(key["limits"], "requests:1m:200,total_tokens:1h:50000")
+
+	def test_a_limit_edit_rehashes_only_that_keys_bucket(self):
+		keys = [self.key("KEY-1", "abc"), self.key("KEY-2", "abd")]
+		limit = frappe._dict(parent="KEY-1", metric="requests", window="1m", value=5)
+		before = snapshot.bucketed_section(self.keys(keys), "key_hash")["buckets"]
+		after = snapshot.bucketed_section(self.keys(keys, limits=[limit]), "key_hash")["buckets"]
+		changed = {label for label in before if before[label]["hash"] != after[label]["hash"]}
+		self.assertEqual(changed, {snapshot.bucket_of("abc")})
+
+	def test_a_key_carries_its_cap_in_nano_usd(self):
+		# The slice of the team's balance cut for it; each box subtracts its own spend.
+		[key] = self.keys([self.key(cap=Decimal("7.5"))])
+		self.assertEqual((key["prepaid"], key["budget"]), (True, 7_500_000_000))
+
+	def test_a_free_teams_key_carries_no_ceiling(self):
+		# The wire still says `prepaid`: absent on an old push has to read as no gate.
+		[key] = self.keys([self.key(cap=Decimal("2.5"))], teams=[frappe._dict(name="T-1", free=1, log_payloads=0, credit_exhausted=0)])
+		self.assertEqual((key["prepaid"], key["budget"]), (False, 0))
+
+	def test_every_key_carries_its_pin(self):
+		keys = self.keys([self.key("KEY-1", "abc", geography="eu"), self.key("KEY-2", "abd", geography=None)])
+		self.assertEqual(keys[0]["geography"], "eu")
+		# Blank, never null: the gateway reads absent and "" as unpinned.
+		self.assertEqual(keys[1]["geography"], "")
+
+	def test_a_key_with_no_hash_or_no_team_is_dropped(self):
+		# Nothing can present the first, and the agent would key the record on an empty string;
+		# the second has nobody to bill.
+		self.assertEqual(self.keys([self.key(key_hash=None), self.key("KEY-2", "abd", team="T-gone")]), [])
 
 	def test_only_live_keys_are_asked_for(self):
 		# A revoked key is not projected at all, so its bucket's hash moves and the push prunes it.
 		# Asserted on the FILTER, because leaving it out keeps every dead credential alive.
-		self.keys([frappe._dict(name="KEY-1", key_hash="abc", user="GU-1", status="active")])
+		self.keys([self.key()])
 		self.assertEqual(self.filters, {"status": "active"})
 
 
@@ -453,8 +403,8 @@ class TestSnapshotHashes(unittest.TestCase):
 	fleet), and one record's change → exactly its own bucket moves (or one key minted re-ships
 	the population)."""
 
-	def key(self, key_hash, user="GU-1"):
-		return {"key_hash": key_hash, "prefix": "K-" + key_hash, "user": user, "status": "active"}
+	def key(self, key_hash, team="T-1"):
+		return {"key_hash": key_hash, "prefix": "K-" + key_hash, "team": team, "status": "active"}
 
 	def test_bucket_of_is_a_two_hex_label(self):
 		label = snapshot.bucket_of("anything")
@@ -470,7 +420,7 @@ class TestSnapshotHashes(unittest.TestCase):
 	def test_a_changed_record_moves_only_its_own_bucket(self):
 		keys = [self.key(f"k{i}") for i in range(32)]
 		before = snapshot.bucketed_section(keys, "key_hash")["buckets"]
-		keys[0] = {**keys[0], "user": "GU-2"}
+		keys[0] = {**keys[0], "team": "T-2"}
 		after = snapshot.bucketed_section(keys, "key_hash")["buckets"]
 		moved = [b for b in before if before[b]["hash"] != after[b]["hash"]]
 		self.assertEqual(moved, [snapshot.bucket_of("k0")])
@@ -501,8 +451,8 @@ class TestDelta(unittest.TestCase):
 				out[section] = content["hash"]
 		return out
 
-	def key(self, key_hash, user="GU-1"):
-		return {"key_hash": key_hash, "prefix": "K", "user": user, "status": "active"}
+	def key(self, key_hash, team="T-1"):
+		return {"key_hash": key_hash, "prefix": "K", "team": team, "status": "active"}
 
 	def test_a_box_holding_everything_gets_nothing(self):
 		desired = self.snapshot([self.key("aa")])
@@ -515,7 +465,7 @@ class TestDelta(unittest.TestCase):
 
 	def test_only_the_changed_bucket_is_sent(self):
 		old = self.snapshot([self.key("aa"), self.key("bb")])
-		new = self.snapshot([self.key("aa", user="GU-2"), self.key("bb")])
+		new = self.snapshot([self.key("aa", team="T-2"), self.key("bb")])
 		delta = snapshot.snapshot_delta(new, self.hashes(old))
 		self.assertEqual(list(delta), ["keys"])
 		self.assertEqual(list(delta["keys"]["buckets"]), [snapshot.bucket_of("aa")])

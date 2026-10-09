@@ -9,12 +9,13 @@ the (drain id, key) pairs it recorded; the box re-sends every other pair next pu
 fails before the commit gets the same pairs again, and a pair landed twice records nothing twice
 (unique drain id + key).
 
-Each touched user is landed in one step: their records, the move in `spent` by Grove's price of
-what the gateway charged, a Credit Discrepancy per pricing the gateway charged differently, and
-the verdict. A user whose step fails is rolled back alone, left unacknowledged, and logged as Stuck
-Usage until a later pull lands it. One bad user never holds anyone else's usage back.
+Each touched team is landed in one step: its records, the move in each key's `spent` by Grove's
+price of what the gateway charged, a Credit Discrepancy per pricing the gateway charged
+differently, and the verdict. A team whose step fails is rolled back alone, left unacknowledged,
+and logged as Stuck Usage until a later pull lands it. One bad team never holds anyone else's
+usage back.
 
-A pull for one user sends only their keys: the box sets aside and returns just those.
+A pull for one team sends only its keys: the box sets aside and returns just those.
 
 The box also hands over its dead lines: usage it spooled while its store was down and then could
 not replay. Grove lands each like any other usage, under the drain id `dead:<request id>`; one it
@@ -31,10 +32,10 @@ import time
 import frappe
 
 from grove.billing.doctype.stuck_usage.stuck_usage import record_stuck, resolve_stuck
+from grove.billing.pricing import PriceBook
 from grove.pathway import snapshot
 from grove.pathway.reconcile import Reconciler
 from grove.pathway.run import SyncRun, Target, error_text, gateway_units, in_turn
-from grove.billing.pricing import PriceBook
 from grove.utils import utc_today
 
 DEAD = "dead:"
@@ -42,20 +43,20 @@ DEAD = "dead:"
 
 class Usage(SyncRun):
 	"""Every gateway Redis drained once — a store through its first writer that answers — into
-	Usage Records. With `user`, only that user's keys, from every store."""
+	Usage Records. With `team`, only that team's keys, from every store."""
 
 	sync_type = "Usage"
 
-	def __init__(self, gateways=None, trigger="Scheduled", wait=0, user=None):
+	def __init__(self, gateways=None, trigger="Scheduled", wait=0, team=None):
 		super().__init__(trigger, wait)
 		self.gateways = gateways
-		self.user = user
+		self.team = team
 		self.keys = None
 
 	def units(self):
-		if self.user:
-			# Every key they ever held: a revoked key's last usage may still be on a box.
-			self.keys = frappe.get_all("Grove API Key", filters={"user": self.user}, pluck="name")
+		if self.team:
+			# Every key it ever held: a revoked key's last usage may still be on a box.
+			self.keys = frappe.get_all("Grove API Key", filters={"team": self.team}, pluck="name")
 			if not self.keys:
 				return []
 		return gateway_units(self.gateways)
@@ -68,10 +69,10 @@ class Usage(SyncRun):
 		return record_drain(*super().settle(unit, result), gateway_store=unit.store)
 
 
-def pull_all(gateways=None, trigger="Scheduled", wait=0, user=None):
-	"""Scheduled: pull + drain every gateway Redis. Named `gateways` are pulled themselves; a `user`
+def pull_all(gateways=None, trigger="Scheduled", wait=0, team=None):
+	"""Scheduled: pull + drain every gateway Redis. Named `gateways` are pulled themselves; a `team`
 	is pulled alone. Skips if another pull is in flight, unless told to wait for it."""
-	return Usage(gateways, trigger, wait, user).run()
+	return Usage(gateways, trigger, wait, team).run()
 
 
 def fetch_usage(target, keys=None):
@@ -133,38 +134,38 @@ def store_of(gateway):
 def record_drains(proxy_name, drains, dead=(), gateway_store=None, day=None):
 	"""Record one gateway's answer under `day` (today unless told otherwise) and commit. Everything
 	lands under the store drained: the boxes on a store share one set of counters. → (keys pulled,
-	{drain id: keys to acknowledge}, dead line ids to acknowledge, users stuck)."""
+	{drain id: keys to acknowledge}, dead line ids to acknowledge, teams stuck)."""
 	day = day or utc_today()
 	gateway_store = gateway_store or store_of(proxy_name)
-	acks, dead_acks, by_user, pulled = {}, [], {}, 0
+	acks, dead_acks, by_team, pulled = {}, [], {}, 0
 	for drain_id, usages in drains.items():
 		for prefix, h in usages.items():
 			pulled += 1
-			if user := frappe.db.get_value("Grove API Key", prefix, "user"):
-				by_user.setdefault(user, {}).setdefault(drain_id, {})[prefix] = h
+			if team := frappe.db.get_value("Grove API Key", prefix, "team"):
+				by_team.setdefault(team, {}).setdefault(drain_id, {})[prefix] = h
 			else:
 				# Nothing in Grove can be billed for it: acknowledged so the box stops re-sending it.
 				acks.setdefault(drain_id, []).append(prefix)
 	for line in dead:
 		pulled += 1
 		if landing := read_dead_line(line, gateway_store):
-			user, prefix, fields = landing
-			by_user.setdefault(user, {}).setdefault(DEAD + line["id"], {})[prefix] = fields
+			team, prefix, fields = landing
+			by_team.setdefault(team, {}).setdefault(DEAD + line["id"], {})[prefix] = fields
 		elif line["id"] not in dead_acks:
 			dead_acks.append(line["id"])
 
 	book, stuck = PriceBook.load(), 0
-	for user, shares in by_user.items():
-		frappe.db.savepoint("usage_user")
+	for team, shares in by_team.items():
+		frappe.db.savepoint("usage_team")
 		try:
 			for drain_id, hashes in shares.items():
-				Reconciler(book, day, gateway_store, drain_id).user(
-					user, {k: parse_drain(h, book.counters) for k, h in hashes.items()}
+				Reconciler(book, day, gateway_store, drain_id).team(
+					team, {k: parse_drain(h, book.counters) for k, h in hashes.items()}
 				)
-			resolve_stuck(user, gateway_store)
+			resolve_stuck(team, gateway_store)
 		except Exception:
-			frappe.db.rollback(save_point="usage_user")
-			record_stuck(user, gateway_store, shares)
+			frappe.db.rollback(save_point="usage_team")
+			record_stuck(team, gateway_store, shares)
 			stuck += 1
 			continue
 		for drain_id, hashes in shares.items():
@@ -178,15 +179,15 @@ def record_drains(proxy_name, drains, dead=(), gateway_store=None, day=None):
 
 
 def read_dead_line(line, gateway_store):
-	"""(user, key, fields) for a dead line Grove can land, else None after keeping it as Stuck
+	"""(team, key, fields) for a dead line Grove can land, else None after keeping it as Stuck
 	Usage: the box drops it once acknowledged, so this row is the only copy left."""
 	try:
 		accrual = json.loads(line["line"])
 		prefix, fields = accrual["prefix"], accrual["fields"]
-		user = frappe.db.get_value("Grove API Key", prefix, "user")
-		if not user:
+		team = frappe.db.get_value("Grove API Key", prefix, "team")
+		if not team:
 			raise ValueError(f"No Grove API Key {prefix!r}")
-		return user, prefix, fields
+		return team, prefix, fields
 	except Exception:
 		# An unreadable line comes with a blank id; its text names it instead.
 		name = line["id"] or "sha1:" + hashlib.sha1(line["line"].encode()).hexdigest()
@@ -198,7 +199,7 @@ def parse_drain(h, table):
 	"""One drained hash split four ways: the key's request count, the per-(model, counter)
 	quantities the reports read, and the counters and cost per pricing — `p:` what the gateway
 	charged, `f:` what it served free. A priced counter not in `table` is refused, not dropped:
-	this Grove is behind the gateway, and the user waits as Stuck Usage until it is not."""
+	this Grove is behind the gateway, and the team waits as Stuck Usage until it is not."""
 	requests = int(h.get("request_count", 0) or 0)
 	counters, pricings, free = {}, {}, {}
 	for k, v in h.items():

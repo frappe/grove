@@ -42,11 +42,16 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		frappe.set_user(PROBE)
 		self.addCleanup(frappe.set_user, "Administrator")
 
+	def endpoint(self, geography):
+		return f"https://{frappe.db.get_value('Geography', geography, 'endpoint')}"
+
 	def test_the_catalogue_and_the_usage_report_are_readable(self):
 		self.assertIsInstance(api.available_models(), list)
 		self.assertEqual(api.usage(["nobody"])["model_summary"], [])
+		[geography] = [g for g in api.geographies() if g["name"] == make_test_geography()]
+		self.assertEqual(geography["endpoint"], self.endpoint(geography["name"]))
 
-	def test_a_user_is_shown_only_the_models_they_may_call(self):
+	def test_a_key_is_shown_only_the_models_it_may_call(self):
 		def published_model(model_id):
 			model = frappe.get_doc(
 				{"doctype": "Model", "model_id": model_id, "hf_repo": f"org/{model_id}"}
@@ -58,111 +63,132 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		frappe.get_doc(
 			{"doctype": "Model Group", "__newname": "probe-reach", "models": [{"model": grouped}, {"model": denied}]}
 		).insert(ignore_permissions=True)
-		user = "probe-reach"
-		grove_user = frappe.get_doc("Grove User", api._set_policy(user, ALERTS, None))
-		grove_user.model_groups = []
-		grove_user.save()
-		self.assertEqual(api.available_models(user), [])
-		self.assertEqual(api.available_models("nobody-reach"), [])
+		team = "probe-reach"
+		api.provision_team(team, ALERTS, free=True)
+		key = frappe.get_doc("Grove API Key", api.provision_key(team)["name"])
+		key.model_groups = []
+		key.save()
+		self.assertEqual(api.available_models(team, key.name), [])
+		with self.assertRaises(frappe.DoesNotExistError):
+			api.available_models("nobody-reach", key.name)
 
-		grove_user.update(
+		key.update(
 			{"model_groups": [{"model_group": "probe-reach"}], "allow": [{"model": allowed}], "deny": [{"model": denied}]}
 		)
-		grove_user.save()
+		key.save()
 		# `name` on the wire is the key: what a caller sends, not a doc id.
-		key = lambda doc: frappe.db.get_value("Model", doc, "model_key")  # noqa: E731
-		self.assertEqual(sorted(row["name"] for row in api.available_models(user)), sorted([key(grouped), key(allowed)]))
-		self.assertIn(key(other), [row["name"] for row in api.available_models()])
+		model_key = lambda doc: frappe.db.get_value("Model", doc, "model_key")  # noqa: E731
+		reach = sorted([model_key(grouped), model_key(allowed)])
+		self.assertEqual(sorted(row["name"] for row in api.available_models(team, key.name)), reach)
+		# Without a key: what a new key in the geography starts with, its default group's models.
+		here = make_test_geography()
+		frappe.get_doc({
+			"doctype": "Model Group", "__newname": "probe-reach-default", "geography": here, "is_default": 1,
+			"models": [{"model": other}, {"model": grouped}],
+		}).insert(ignore_permissions=True)
+		self.assertEqual(
+			sorted(row["name"] for row in api.available_models(geography=here)), sorted([model_key(grouped), model_key(other)])
+		)
+		self.assertEqual(api.available_models(geography=make_test_geography("probe-reach-away")), [])
 
-	def test_a_users_rate_limits_are_readable(self):
-		user = "probe-limits"
-		api._set_policy(user, ALERTS, None, limits=[{"metric": "requests", "window": "1m", "value": 200}])
-		self.assertEqual(api.limits(user), [{"metric": "requests", "window": "1m", "value": 200}])
-		self.assertEqual(api.limits("nobody-limits"), [])
+	def test_usage_is_read_off_the_replica_when_the_site_has_one(self):
+		# frappe.read_only: the connection is swapped only when the site config says so.
+		with (
+			unittest.mock.patch.dict(frappe.local.conf, {"read_from_replica": 1}),
+			unittest.mock.patch("frappe.connect_replica", return_value=False) as replica,
+		):
+			api.usage(["nobody"])
+		replica.assert_called_once()
+		with unittest.mock.patch("frappe.connect_replica") as replica:
+			api.usage(["nobody"])
+		replica.assert_not_called()
+
+	def test_a_keys_rate_limits_are_readable(self):
+		team = "probe-limits"
+		api.provision_team(team, ALERTS, free=True)
+		name = api.provision_key(team, limits=[{"metric": "requests", "window": "1m", "value": 200}])["name"]
+		self.assertEqual(api.limits(team, name), [{"metric": "requests", "window": "1m", "value": 200}])
+		with self.assertRaises(frappe.DoesNotExistError):
+			api.limits("nobody-limits", name)
 
 	def test_the_fleet_stays_out_of_reach(self):
 		for doctype in WITHHELD:
 			with self.assertRaises(frappe.PermissionError, msg=doctype):
 				frappe.get_list(doctype, limit=1)
 
-	def test_provisioning_again_keeps_the_user_and_moves_its_email(self):
-		user, geography = "TEAM-PROBE", make_test_geography()
-		pinned = {
-			"geography": geography,
-			"gateway_url": f"https://{frappe.db.get_value('Geography', geography, 'endpoint')}",
-		}
-		self.assertEqual(api.provision_user(user, "first-owner@example.com", geography), pinned)
-		grove_user = frappe.db.get_value("Grove User", {"reference": user})
-		self.assertEqual(frappe.db.count("Grove API Key", {"user": grove_user}), 0)
-		key = api.provision_key(user)["api_key"]
-		# Safe to repeat, and how an owner change arrives: the same user and keys, a new address.
-		self.assertEqual(api.provision_user(user, "next-owner@example.com"), pinned)
-		self.assertEqual(
-			frappe.db.get_value("Grove User", {"reference": user}, ["name", "email"]),
-			(grove_user, "next-owner@example.com"),
-		)
-		self.assertEqual(frappe.db.get_value("Grove API Key", {"key_hash": hash_secret(key)}, "user"), grove_user)
+	def test_provisioning_again_keeps_the_team_and_moves_its_email(self):
+		team = "TEAM-PROBE"
+		self.assertEqual(api.provision_team(team, "first-owner@example.com", free=True), {"team": team, "max_keys": 10})
+		self.assertEqual(frappe.db.count("Grove API Key", {"team": team}), 0)
+		key = api.provision_key(team)["api_key"]
+		# Safe to repeat, and how an owner change arrives: the same team and keys, a new address.
+		self.assertEqual(api.provision_team(team, "next-owner@example.com"), {"team": team, "max_keys": 10})
+		self.assertEqual(frappe.db.get_value("Central Team", team, "email"), "next-owner@example.com")
+		self.assertEqual(frappe.db.get_value("Grove API Key", {"key_hash": hash_secret(key)}, "team"), team)
 		self.assertFalse(frappe.db.exists("User", "first-owner@example.com"), "an address is not a login")
 
-	def test_one_address_may_sit_on_two_users_and_a_blank_reference_names_nobody(self):
-		for user in ("TEAM-SHARED-1", "TEAM-SHARED-2"):
-			api.provision_user(user, "shared-owner@example.com")
-		self.assertEqual(frappe.db.count("Grove User", {"email": "shared-owner@example.com"}), 2)
+	def test_one_address_may_sit_on_two_teams_and_a_blank_id_names_nobody(self):
+		for team in ("TEAM-SHARED-1", "TEAM-SHARED-2"):
+			api.provision_team(team, "shared-owner@example.com")
+		self.assertEqual(frappe.db.count("Central Team", {"email": "shared-owner@example.com"}), 2)
 		with self.assertRaises(frappe.ValidationError):
-			api.provision_user("", "shared-owner@example.com")
+			api.provision_team("", "shared-owner@example.com")
 
-	def test_a_key_is_minted_for_a_known_user_at_their_geography(self):
-		user = "probe-keyed"
-		with self.assertRaises(frappe.ValidationError, msg="a key does not create its user"):
-			api.provision_key(user, title="laptop")
+	def test_a_key_is_minted_for_a_known_team_in_a_geography(self):
+		team = "probe-keyed"
+		with self.assertRaises(frappe.ValidationError, msg="a key does not create its team"):
+			api.provision_key(team, title="laptop")
 
-		geography = api.provision_user(user, ALERTS, make_test_geography())["geography"]
-		result = api.provision_key(user, title="laptop")
-
+		api.provision_team(team, ALERTS, free=True)
+		here, away = make_test_geography(), make_test_geography("probe-away")
+		result = api.provision_key(team, title="laptop", geography=here)
 		self.assertTrue(result["api_key"].startswith(KEY_PREFIX))
 		self.assertEqual(frappe.db.get_value("Grove API Key", {"key_hash": hash_secret(result["api_key"])}, "title"), "laptop")
-		self.assertEqual(result["gateway_url"], f"https://{frappe.db.get_value('Geography', geography, 'endpoint')}")
+		self.assertEqual((result["geography"], result["gateway_url"]), (here, self.endpoint(here)))
+		# A second key of the same team may live elsewhere: that is how a team spans geographies.
+		abroad = api.provision_key(team, title="eu", geography=away)
+		self.assertEqual((abroad["geography"], abroad["gateway_url"]), (away, self.endpoint(away)))
 
-	def test_a_users_only_key_reads_the_balance_and_a_later_one_when_asked(self):
-		user = "probe-balance"
-		api.provision_user(user, ALERTS, make_test_geography())
-		only, later, asked = (
-			api.provision_key(user, title="only"),
-			api.provision_key(user, title="later"),
-			api.provision_key(user, title="asked", can_read_balance=True),
-		)
-		self.assertEqual([key["can_read_balance"] for key in (only, later, asked)], [True, False, True])
-
-		self.assertEqual(api.set_key_balance_access(later["api_key"], True), {"can_read_balance": True})
-		self.assertEqual(api.set_key_balance_access(only["api_key"], False), {"can_read_balance": False})
-		stored = [
-			frappe.db.get_value("Grove API Key", {"key_hash": hash_secret(key["api_key"])}, "can_read_balance")
-			for key in (only, later)
-		]
-		self.assertEqual(stored, [0, 1])
-		with self.assertRaises(frappe.DoesNotExistError):
-			api.set_key_balance_access(KEY_PREFIX + "nobody", True)
+	def test_a_cap_is_cut_from_the_balance_and_handed_back_by_a_revoke(self):
+		team = "probe-cap"
+		api.provision_team(team, ALERTS)
+		# Minted with nothing to spend, and a top-up passes it by: it waits for a limit.
+		api.provision_key(team, title="uncapped")
+		api.add_credit(team, 10)
+		self.assertEqual((api.keys(team)[0]["cap"], api.balance(team)["unallocated"]), (0, 10.0))
+		first = api.provision_key(team, title="first", cap=6)["name"]
+		with self.assertRaises(frappe.ValidationError):
+			api.provision_key(team, title="too much", cap=6)
+		second = api.provision_key(team, title="second", cap=4)["name"]
+		self.assertEqual(api.balance(team), {"balance": 10.0, "spent": 0.0, "unallocated": 0.0, "is_free_user": False})
+		self.assertEqual(api.update_key(team, second, cap=2)["cap"], 2)
+		self.assertEqual(api.balance(team)["unallocated"], 2.0)
+		frappe.db.set_value("Grove API Key", first, "creation", frappe.utils.add_to_date(None, hours=-7), update_modified=False)
+		api.revoke_key(team, first)
+		self.assertEqual(api.balance(team)["unallocated"], 8.0)
 
 	def test_a_minted_key_is_unique_by_its_hash(self):
-		user = "probe-unique"
-		api.provision_user(user, ALERTS, make_test_geography())
+		team = "probe-unique"
+		api.provision_team(team, ALERTS, free=True)
 		# 192 random bits never repeat in practice; the index is what makes sure of it.
 		same_bits = unittest.mock.patch(
 			"grove.grove.doctype.grove_api_key.grove_api_key.secrets.token_hex", return_value="0" * 48
 		)
 		with same_bits:
-			api.provision_key(user, title="one")
+			api.provision_key(team, title="one")
 			with self.assertRaises(frappe.UniqueValidationError):
-				api.provision_key(user, title="twin")
+				api.provision_key(team, title="twin")
 
-	def test_a_users_keys_are_listed_without_their_secret(self):
-		user = "probe-listed"
-		api.provision_user(user, ALERTS, make_test_geography())
-		minted = api.provision_key(user, title="laptop")
+	def test_a_teams_keys_are_listed_without_their_secret(self):
+		team = "probe-listed"
+		api.provision_team(team, ALERTS, free=True)
+		minted = api.provision_key(team, title="laptop", cap=0)
 
-		[listed] = api.keys(user)
+		[listed] = api.keys(team)
 		self.assertEqual((listed.name, listed.title, listed.status), (minted["name"], "laptop", "active"))
 		self.assertEqual(listed.key_hash, hash_secret(minted["api_key"]))
+		self.assertEqual((listed.geography, listed.gateway_url, listed.cap, listed.spent), (minted["geography"], minted["gateway_url"], 0, 0))
+		self.assertEqual([row["metric"] for row in listed.limits], ["requests", "total_tokens"])
 		# When revoke stops refusing it: six hours on, as UTC, so a caller can wait instead of asking.
 		self.assertEqual(
 			listed.revocable_at, utc_timestamp(frappe.utils.add_to_date(listed.creation, hours=6))
@@ -171,102 +197,113 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertNotIn(minted["api_key"], str(listed))
 		self.assertEqual(api.keys("probe-nobody"), [])
 
-	def test_a_key_is_revoked_by_name_only_for_the_user_holding_it(self):
-		user, other = "probe-revoker", "probe-revoker-other"
-		for each in (user, other):
-			api.provision_user(each, ALERTS, make_test_geography())
-		key = api.provision_key(user, title="ci")["name"]
+	def test_a_key_is_revoked_by_name_only_for_the_team_holding_it(self):
+		team, other = "probe-revoker", "probe-revoker-other"
+		for each in (team, other):
+			api.provision_team(each, ALERTS, free=True)
+		key = api.provision_key(team, title="ci")["name"]
 
 		with self.assertRaises(frappe.DoesNotExistError):
-			api.revoke_key(user=other, key=key)
+			api.revoke_key(other, key)
 		with self.assertRaises(frappe.DoesNotExistError):
-			api.set_key_balance_access(can_read_balance=False, user=other, key=key)
+			api.update_key(other, key, cap=0)
 
-		api.set_key_balance_access(can_read_balance=False, user=user, key=key)
 		# A key younger than six hours cannot be revoked.
+		with self.assertRaises(frappe.ValidationError):
+			api.revoke_key(team, key)
 		frappe.db.set_value(
 			"Grove API Key", key, "creation", frappe.utils.add_to_date(None, hours=-7), update_modified=False
 		)
-		api.revoke_key(user=user, key=key)
-		self.assertEqual(
-			frappe.db.get_value("Grove API Key", key, ["status", "can_read_balance"]), ("revoked", 0)
-		)
+		api.revoke_key(team, key)
+		self.assertEqual(frappe.db.get_value("Grove API Key", key, "status"), "revoked")
 
-	def pull_counter(self, user):
-		"""A user to pull and their counter, cleared now and after: Redis is not rolled back."""
-		grove_user = api._set_policy(user, ALERTS, None)
-		key = frappe.cache.make_key(f"usage_pull:{grove_user}")
+	def pull_counter(self, team):
+		"""A team to pull and its counter, cleared now and after: Redis is not rolled back."""
+		api.provision_team(team, ALERTS)
+		key = frappe.cache.make_key(f"usage_pull:{team}")
 		frappe.cache.delete(key)
 		self.addCleanup(frappe.cache.delete, key)
-		return grove_user, key
+		return team, key
 
-	def test_the_control_role_pulls_a_user_on_demand_a_few_times_an_hour(self):
-		user, other = "probe-pull", "probe-pull-other"
-		grove_user, key = self.pull_counter(user)
-		other_user, _ = self.pull_counter(other)
+	def test_the_control_role_pulls_a_team_on_demand_a_few_times_an_hour(self):
+		team, other = "probe-pull", "probe-pull-other"
+		name, key = self.pull_counter(team)
+		other_name, _ = self.pull_counter(other)
 
 		with unittest.mock.patch("grove.pathway.usage.pull_all", return_value="PS-1") as pull_all:
 			for _ in range(api.PULLS_PER_HOUR):
-				self.assertEqual(api.pull_usage(user), {"sync": "PS-1"})
-			pull_all.assert_called_with(trigger="Manual", wait=60, user=grove_user)
+				self.assertEqual(api.pull_usage(team), {"sync": "PS-1"})
+			pull_all.assert_called_with(trigger="Manual", wait=60, team=name)
 			with self.assertRaises(frappe.RateLimitExceededError):
-				api.pull_usage(user)
+				api.pull_usage(team)
 			self.assertEqual(pull_all.call_count, api.PULLS_PER_HOUR)
 
-			self.assertEqual(api.pull_usage(other), {"sync": "PS-1"}, "the count is per user")
-			pull_all.assert_called_with(trigger="Manual", wait=60, user=other_user)
+			self.assertEqual(api.pull_usage(other), {"sync": "PS-1"}, "the count is per team")
+			pull_all.assert_called_with(trigger="Manual", wait=60, team=other_name)
 		self.assertGreater(frappe.cache.ttl(key), 0, "the counter expires")
 
 		frappe.set_user("Guest")
 		counted = int(frappe.cache.get(key))
 		with self.assertRaises(frappe.PermissionError):
-			api.pull_usage(user)
+			api.pull_usage(team)
 		self.assertEqual(int(frappe.cache.get(key)), counted, "a refused caller spends nothing")
 
 	def test_the_control_role_can_post_a_credit(self):
-		grove_user = api._set_policy("probe-credit", ALERTS, None)
-		frappe.get_doc({"doctype": "Grove Credit", "grove_user": grove_user, "amount": 5}).insert()
-		self.assertEqual(frappe.db.get_value("Grove User", grove_user, "balance"), 5)
+		api.provision_team("probe-credit", ALERTS)
+		frappe.get_doc({"doctype": "Grove Credit", "team": "probe-credit", "amount": 5}).insert()
+		self.assertEqual(frappe.db.get_value("Central Team", "probe-credit", "balance"), 5)
 
 	def test_add_credit_posts_to_the_ledger_and_returns_the_balance(self):
-		user = "probe-topup"
-		grove_user = api._set_policy(user, ALERTS, None)
-		self.assertTrue(frappe.db.get_value("Grove User", grove_user, "credit_exhausted"))
-		self.assertEqual(api.add_credit(user, 7)["balance"], 7)
-		self.assertFalse(frappe.db.get_value("Grove User", grove_user, "credit_exhausted"))
-		self.assertEqual(api.balance(user), {"balance": 7.0, "spent": 0.0, "is_free_user": False})
+		team = "probe-topup"
+		api.provision_team(team, ALERTS)
+		self.assertTrue(frappe.db.get_value("Central Team", team, "credit_exhausted"))
+		self.assertEqual(api.add_credit(team, 7)["balance"], 7)
+		self.assertFalse(frappe.db.get_value("Central Team", team, "credit_exhausted"))
+		self.assertEqual(api.balance(team), {"balance": 7.0, "spent": 0.0, "unallocated": 7.0, "is_free_user": False})
 		with self.assertRaises(frappe.ValidationError):
-			api.add_credit(user, 0)
+			api.add_credit(team, 0)
 		with self.assertRaises(frappe.ValidationError):
 			api.add_credit("nobody-topup", 1)
 		with self.assertRaises(frappe.ValidationError):
 			api.balance("nobody-topup")
 
 	def test_add_credit_repeated_with_a_reference_adds_nothing(self):
-		user = "probe-retry"
-		grove_user = api._set_policy(user, ALERTS, None)
+		team = "probe-retry"
+		api.provision_team(team, ALERTS)
 		for _ in range(2):
-			self.assertEqual(api.add_credit(user, 7, reference="ledger-1")["balance"], 7)
-		self.assertEqual(frappe.db.count("Grove Credit", {"grove_user": grove_user}), 1)
-		self.assertEqual(api.add_credit(user, 3, reference="ledger-2")["balance"], 10)
-		# The id names one top-up: another amount, or another user, under it is refused.
+			self.assertEqual(api.add_credit(team, 7, reference="ledger-1")["balance"], 7)
+		self.assertEqual(frappe.db.count("Grove Credit", {"team": team}), 1)
+		self.assertEqual(api.add_credit(team, 3, reference="ledger-2")["balance"], 10)
+		# The id names one top-up: another amount, or another team, under it is refused.
 		with self.assertRaises(frappe.ValidationError):
-			api.add_credit(user, 8, reference="ledger-1")
-		api._set_policy("probe-retry-other", ALERTS, None)
+			api.add_credit(team, 8, reference="ledger-1")
+		api.provision_team("probe-retry-other", ALERTS)
 		with self.assertRaises(frappe.ValidationError):
 			api.add_credit("probe-retry-other", 7, reference="ledger-1")
 		# No reference, no dedupe: two calls are two top-ups.
 		for _ in range(2):
-			api.add_credit(user, 1)
-		self.assertEqual(api.balance(user)["balance"], 12.0)
+			api.add_credit(team, 1)
+		self.assertEqual(api.balance(team)["balance"], 12.0)
+
+	def test_add_credit_hands_the_top_up_to_the_keys_and_says_so_once(self):
+		team = "probe-spread"
+		api.provision_team(team, ALERTS)
+		api.add_credit(team, 4)
+		key = api.provision_key(team, title="spread", cap=4)["name"]
+		handed = {"balance": 6.0, "allocations": [{"key": key, "amount": 2.0}]}
+		self.assertEqual(api.add_credit(team, 2, reference="spread-1"), handed)
+		# The repeat answers with the same split and raises nothing again.
+		self.assertEqual(api.add_credit(team, 2, reference="spread-1"), handed)
+		self.assertEqual(api.keys(team)[0]["cap"], 6)
+		self.assertEqual(api.add_credit(team, 1, allocations={key: 0.25})["allocations"], [{"key": key, "amount": 0.25}])
+		self.assertEqual(api.balance(team)["unallocated"], 0.75)
 
 	def test_a_reference_is_unique_on_the_ledger_itself(self):
-		grove_user = api._set_policy("probe-unique", ALERTS, None)
-		entry = {"doctype": "Grove Credit", "grove_user": grove_user, "amount": 5, "reference": "ledger-9"}
+		api.provision_team("probe-unique-ledger", ALERTS)
+		entry = {"doctype": "Grove Credit", "team": "probe-unique-ledger", "amount": 5, "reference": "ledger-9"}
 		credit = frappe.get_doc(entry).insert()
 		with self.assertRaises(frappe.UniqueValidationError):
 			frappe.get_doc(entry).insert()
 		credit.reference = "ledger-10"
 		with self.assertRaisesRegex(frappe.ValidationError, "never edited"):
 			credit.save(ignore_permissions=True)
-

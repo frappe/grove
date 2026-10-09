@@ -1,11 +1,11 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Who may call which Model. Every group a user belongs to grants, their own Allow adds, their Deny
+"""Who may call which Model. Every group a key belongs to grants, its own Allow adds, its Deny
 removes, and nothing else is reachable.
 
-The precedence is NOT applied here: Grove pushes each group, each user and each key as separate
-Redis records, and the GATEWAY resolves the three at request time. That is what stops a one-row edit
-on a group from invalidating every key beneath it."""
+The precedence is NOT applied here: Grove pushes each group and each key as separate Redis
+records, and the GATEWAY resolves the two at request time. That is what stops a one-row edit on a
+group from invalidating every key beneath it."""
 
 import frappe
 
@@ -29,7 +29,8 @@ def model_rows(parenttype, parents=None):
 
 
 def group_rows(parents=None):
-	filters = {"parenttype": "Grove User"}
+	"""{Grove API Key: [group, ...]}, sorted."""
+	filters = {"parenttype": "Grove API Key"}
 	if parents is not None:
 		filters["parent"] = ("in", list(parents))
 	rows = frappe.get_all("Model Group Row", filters=filters, fields=["parent", "model_group"])
@@ -40,9 +41,9 @@ def group_rows(parents=None):
 
 
 def limit_rows():
-	"""{Grove User: ["requests:1m:200", ...]}, sorted: each entry as the gateway reads it."""
+	"""{Grove API Key: ["requests:1m:200", ...]}, sorted: each entry as the gateway reads it."""
 	rows = frappe.get_all(
-		"Model Limit", filters={"parenttype": "Grove User"}, fields=["parent", "metric", "window", "value"]
+		"Model Limit", filters={"parenttype": "Grove API Key"}, fields=["parent", "metric", "window", "value"]
 	)
 	grouped = {}
 	for row in rows:
@@ -50,11 +51,11 @@ def limit_rows():
 	return {parent: sorted(entries) for parent, entries in grouped.items()}
 
 
-def get_reachable_models(grove_user):
-	"""What one user may call, resolved the way the gateway does it: every group's grant and their
-	own Allow, less their Deny. For showing a person their models; the gateway never reads this."""
-	own = model_rows("Grove User", [grove_user]).get(grove_user, {})
-	groups = group_rows([grove_user]).get(grove_user, [])
+def get_reachable_models(api_key):
+	"""What one key may call, resolved the way the gateway does it: every group's grant and its
+	own Allow, less its Deny. For showing a person their models; the gateway never reads this."""
+	own = model_rows("Grove API Key", [api_key]).get(api_key, {})
+	groups = group_rows([api_key]).get(api_key, [])
 	granted = set(own.get("allow", []))
 	for group in model_rows("Model Group", groups).values() if groups else ():
 		granted.update(group.get("models", []))

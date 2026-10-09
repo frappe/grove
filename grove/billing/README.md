@@ -9,8 +9,8 @@ and the drain are in [`../README.md`](../README.md).
 
 | File | Owns |
 |---|---|
-| `pricing.py` | The counter table (`CounterTable`: the Usage Counter rows, their units, parts and bases, validated before a push), prices per counter (`PriceBook`: by the pricing id the gateway charged), the prepaid balance, `settle` (the one writer of `balance` and `credit_exhausted`). |
-| `report/revenue/` | Revenue report: what each drain was billed, cut by model, API key, user or day. |
+| `pricing.py` | The counter table (`CounterTable`: the Usage Counter rows, their units, parts and bases, validated before a push), prices per counter (`PriceBook`: by the pricing id the gateway charged), the prepaid balance, `settle` (the one writer of a team's `spent`, `balance` and `credit_exhausted`). |
+| `report/revenue/` | Revenue report: what each drain was billed, cut by model, API key, team or day. |
 
 ## Doctypes
 
@@ -19,15 +19,16 @@ and the drain are in [`../README.md`](../README.md).
 | `Usage Counter` | One counter usage is counted and priced under, named by its key. A root row has a unit (Mtok or request) and may be a part of a container root; a derived row is a root plus `min_prompt_tokens`, counted instead of its base when the whole prompt exceeds it and billed at the base's rate when a pricing holds none. Never edited after insert; never deleted while a Usage Record names it. Shipped in the catalog; pushed inside every pricing. Grove Control reads. |
 | `Model Pricing` | A model's SELL price: one Enabled doc per model, one rate per counter. Enabling one disables the last; the next push carries it to every gateway, which tags each request with the id it charged. A Disabled draft is editable; once enabled it is never edited, disabled by hand or re-enabled, and its form is read only. Duplicate starts a new Disabled draft with its own window. A counter with no row bills 0, except a derived counter, which then bills at its base counter's row; a derived row needs that base row. A model cannot be published without one, so free on purpose is a pricing with rates 0; enabling one never publishes. The Model form shows a banner while no pricing is enabled. Carries its model's Geography, fetched, so the pricings of one key — a doc per geography — tell apart in the list. |
 | `Model Pricing Rate` | One counter's sell rate (child). |
-| `Grove Credit` | One ledger entry: a top-up, or a negative correction with a note. Append-only — never edited or deleted, a wrong entry is corrected by another; a control client posts one through `/api/resource`. `reference` is the caller's own id for the top-up, unique across the ledger, so a repeated `api.add_credit` adds nothing. Its `on_update` settles the user. |
-| `Usage Record` | One key's usage in one drain of one store, billed and free apart (unique on drain id + key + `billed`), inserted by the pull and never updated: the store (Link), the drain id, requests, `cost` (Grove's price), `gateway_cost`, and `billed` — whether it was charged, which is whether the gateway served it while the user was prepaid (it tags each request `p:` or `f:`, so a drain that spans a flip lands as two records). Only billed records move `spent`, are audited and count as revenue. The per-model detail — pricing, requests, counters and Grove's cost — is one hidden JSON field (`usage`) the form renders as a table, so a record is one row however many models it touched. A name Grove holds as a Model (published or not) gets an entry; the gateway's deployment-keyed metrics do not. |
-| `Stuck Usage` | Usage on one store the pull keeps failing to record. For a user: the gateway holds the usage and re-sends it every pull; this row says which keys, since when, how many attempts, the last error and payload — one open row per (user, store), resolved by the pull that lands it; **Pull Now** pulls just that user. For a dead line (`dead_line` set, user blank when unreadable): the gateway has dropped it and this row is the only copy; **Mark Resolved** closes it. An open row is never deleted; Log Settings clears resolved ones after 90 days. |
-| `Credit Discrepancy` | One Usage Record and pricing where the gateway's cost differs from Grove's price of the same counters. Logged by the pull, never acted on by it: **Grove is wrong** moves Grove's `spent` by the delta; **Gateway is wrong** ticks the row's `Gateway Correction Pending`, and the projection tick moves the gateway's `spent` on that store by minus the delta (`/spend-adjust` through the store's writers, once per row). Either way the row keeps the correction and its `resolution`; blank and not pending is open. System Manager only. |
+| `Grove Credit` | One ledger entry on a team: a top-up, or a negative correction with a note. Append-only — never edited or deleted, a wrong entry is corrected by another; a control client posts one through `/api/resource`. `reference` is the caller's own id for the top-up, unique across the ledger, so a repeated `api.add_credit` adds nothing. Its `after_insert` settles the team and hands a top-up to the live keys: its `allocations` rows say which key's cap rises by how much; left empty on a prepaid team, the top-up is spread in proportion to the caps. |
+| `Grove Credit Allocation` | A row of a Grove Credit: one live key and what its cap rose by when the entry landed. |
+| `Usage Record` | One key's usage in one drain of one store, billed and free apart (unique on drain id + key + `billed`), inserted by the pull and never updated: the key and its team, the store (Link), the drain id, requests, `cost` (Grove's price), `gateway_cost`, and `billed` — whether it was charged, which is whether the gateway served it while the team was prepaid (it tags each request `p:` or `f:`, so a drain that spans a flip lands as two records). Only billed records move the key's `spent`, are audited and count as revenue. The per-model detail — pricing, requests, counters and Grove's cost — is one hidden JSON field (`usage`) the form renders as a table, so a record is one row however many models it touched. A name Grove holds as a Model (published or not) gets an entry; the gateway's deployment-keyed metrics do not. |
+| `Stuck Usage` | Usage on one store the pull keeps failing to record. For a team: the gateway holds the usage and re-sends it every pull; this row says which keys, since when, how many attempts, the last error and payload — one open row per (team, store), resolved by the pull that lands it; **Pull Now** pulls just that team. For a dead line (`dead_line` set, team blank when unreadable): the gateway has dropped it and this row is the only copy; **Mark Resolved** closes it. An open row is never deleted; Log Settings clears resolved ones after 90 days. |
+| `Credit Discrepancy` | One Usage Record and pricing where the gateway's cost differs from Grove's price of the same counters. Logged by the pull, never acted on by it: **Grove is wrong** moves the key's `spent` by the delta and settles the team; **Gateway is wrong** ticks the row's `Gateway Correction Pending`, and the projection tick moves the gateway's `spent` for that key on that store by minus the delta (`/spend-adjust` through the store's writers, once per row). Either way the row keeps the correction and its `resolution`; blank and not pending is open. System Manager only. |
 
 ## Prices and credits
 
 Money is decided in the control plane. The gateway holds its own copy — rates per pricing on its
-routes, the amount each user loaded on their record, its own spend counter — and gates on it. Grove
+routes, each key's cap on its record, its own spend counter per key — and gates on it. Grove
 keeps its own balance, and every pull compares the two charges. One rate table, joined at
 evaluation and never snapshotted onto usage:
 
@@ -103,67 +104,89 @@ A new bracket or a new vendor fee is rows, not a release: a derived counter is a
 is a doc plus the one parser line in pathway that fills its bucket from the response.
 
 **Revenue and usage reads.** The `Revenue` report (Desk) sums what each billed drain was charged —
-Grove's cost in each record's per-model detail, records of Free users left out — grouped by model, API key, user or day over a date range,
-with a total row; export from the report toolbar. Revenue only, no margin. `api.usage(users, from_date, to_date | period | month, key_hash)` gives a control client requests and cost (what was charged: usage while Free adds requests, no cost)
-per user and model (periods: Today, Yesterday, Last 7 Days, Last 30 Days, This Month, Last Month),
+Grove's cost in each record's per-model detail, records of Free teams left out — grouped by model, API key, team or day over a date range,
+with a total row; export from the report toolbar. Revenue only, no margin. `api.usage(teams, from_date, to_date | period | month, key_hash)` (read-only: on the replica when the site sets `read_from_replica`) gives a control client requests and cost (what was charged: usage while Free adds requests, no cost)
+per team and model (periods: Today, Yesterday, Last 7 Days, Last 30 Days, This Month, Last Month),
 and the per-model summary again per UTC day (`daily_summary`, for a chart; a day with no usage has no entry),
 with `as_of` = when the newest usage in the range was pulled. Each is one grouped SQL statement
 over `JSON_TABLE` of the records (`usage_record.usage_table`, one column per Usage Counter), on
-the (user, day) and (api_key, day) indexes: nothing is summed in Python.
+the (team, day) and (api_key, day) indexes: nothing is summed in Python.
 
-**Nothing here is deleted.** No role holds `delete` on Grove User, Grove API Key, Grove Credit,
+**Nothing here is deleted.** No role holds `delete` on Central Team, Grove API Key, Grove Credit,
 Usage Record, Stuck Usage, Credit Discrepancy, Model Pricing, Model or Model Provider
 (`tests/test_delete_permissions.py` pins the list). A key is revoked, a pricing is superseded, a
 credit is corrected by another entry. DocPerm does not bind Administrator or `ignore_permissions`;
 Grove Credit's `on_trash` refuses those too. Stuck Usage is the one exception: a resolved row is
 history, and Log Settings clears it after 90 days.
 
-**The balance.** Every `Grove User` is prepaid unless marked **Free**. Top-ups are `Grove Credit`
+**The balance.** Every `Central Team` is prepaid unless marked **Free**. Top-ups are `Grove Credit`
 entries — an append-only ledger, one doc per top-up or negative correction (with a note), never
-edited or deleted; a control client calls `api.add_credit(user, amount, note, reference)` or posts one
+edited or deleted; a control client calls `api.add_credit(team, amount, note, reference)` or posts one
 through `/api/resource/Grove Credit` (`reference` is the client's own id for the top-up, unique on
 the ledger: `add_credit` repeated with one adds nothing, so a call that timed out is sent again
-safely, and the same id on another user or amount is refused), and reads `api.balance(user)` — balance, spent,
-is_free_user — to show the user what they have left (`api.pull_usage(user)` first
-pulls just that user's keys from every store, for a figure less than an hour old; 3 an hour per
-user, then 429). On the user, `spent` is the USD Grove has billed and `balance` =
+safely, and the same id on another team or amount is refused), and reads `api.balance(team)` — balance, spent,
+unallocated, is_free_user — to show the team what it has left (`api.pull_usage(team)` first
+pulls just that team's keys from every store, for a figure less than an hour old; 2 an hour per
+team, then 429). On the team, `spent` is Σ what its keys were billed and `balance` =
 Σ ledger − `spent`; both are read-only and both are written by `pricing.settle`, the one writer,
 which also decides `credit_exhausted = not free and balance <= 0` in both directions. It runs after
 every pull, every ledger entry, every save of the form and every correction, so a top-up unblocks
-the moment it is posted. A **Free** user is never charged and never gated: their usage lands as Usage Records with what it
+the moment it is posted. A **Free** team is never charged and never gated: its usage lands as Usage Records with what it
 would have cost, marked not `billed`, and `spent` and `balance` do not move on Grove or on the
-gateway. Turning Free off later starts them at what they load. The gateway decides per request:
+gateway. Turning Free off later starts it at what it loads. The gateway decides per request:
 Free takes effect when the push reaches it (the next sync), and the pull bills what it tagged
-`p:`, never the user's flag at the time of the pull. A
-negative balance stays on the user until a top-up covers it.
+`p:`, never the team's flag at the time of the pull. A
+negative balance stays on the team until a top-up covers it.
 
-**Two balances, one input.** The push carries each user `prepaid` (= not free; absent on an old
-push reads as no gate), `limited` (= `credit_exhausted`) and `budget` = Σ Grove Credit in nano-USD
-— the amount loaded, the same on every store. The gateway keeps its own never-reset `spent` per
-user and store and refuses at `spent >= budget` (402, like `limited`). So:
+**Caps: the balance handed out per key.** A team spends only through its keys, and each key may
+spend only its `cap` — the slice of the balance cut for it (OpenRouter's per-key credit limit, with
+the balance pooled on the team). Grove keeps Σ (cap − spent) over the team's live keys within the
+balance: a cap that would hand out more is refused, a revoke hands the key's share back, and
+`api.balance(team).unallocated` is what no cap has claimed yet. A prepaid team's key minted
+without a cap (`api.provision_key(cap=)`) starts at 0, and its gateway refuses it until
+`api.update_key(cap=)` or a top-up's allocation gives it one — no money has to be free to mint.
+A top-up is handed to the keys by itself, so a key out of cap works again without anyone
+touching its limit: Grove Credit's `allocations` rows say how much each live key's cap rises
+(`api.add_credit(allocations={key: USD})`), and an entry posted with none on a prepaid team is
+spread over the live keys in proportion to their caps, to the nano with the remainder on the
+largest, and the rows record the split; a key with no cap yet takes no share. What is handed out is the top-up
+less what a debt or caps already past the balance swallow first, so a key short of the balance
+after an overshoot is raised from what it spent, and a top-up smaller than the debt raises nothing.
+A refund, a Free team's entry and a team with no live key hand out nothing.
+The other two writes that could take the balance under the caps are guarded too: a negative Grove
+Credit that would leave less than the caps hand out is refused (lower the caps first), and turning
+Free off resets every live key's cap to 0, since a Free team's caps are never checked. What is
+left is a box overshooting a cap by what was in flight, bounded by concurrent requests × their
+size; the team's `limited` catches it at the next pull.
 
-- gateway balance = budget − its `spent`, priced by the gateway;
-- Grove balance = Σ credits − Grove's `spent`, priced by Grove at the same pricing id.
+**Two balances, one input.** The push carries each key `prepaid` (= its team is not free; absent
+on an old push reads as no gate), `limited` (= the team's `credit_exhausted`) and `budget` = its cap
+in nano-USD. The gateway keeps its own never-reset `spent` per key and store and refuses at
+`spent >= budget` (402, like `limited`). So:
 
-Neither side writes the other's spend. Every user is pinned to exactly one geography (the default
-one when none is picked), so all their spend lands on one store and its gateway gates them exactly
-at zero; every other geography answers 403. A user on a flushed Redis is gated by Grove's `limited`
-after the next pull and push. Spending one balance across geographies needs per-store slices of it
-— the research and options are in the "Multi-region prepaid balance: research" doc. Nothing detects a flushed Redis or a drain lost inside the gateway: the per-drain
-compare below cannot see either.
+- gateway balance for a key = cap − its `spent`, priced by the gateway;
+- Grove balance for the team = Σ credits − Σ its keys' `spent`, priced by Grove at the same pricing id.
+
+Neither side writes the other's spend. Every key is pinned to exactly one geography (the default
+one when none is picked), so all its spend lands on one store and its gateway gates the cap exactly
+at zero; every other geography answers 403. A team spans geographies by minting a key in each, each
+with its own cap, and the caps together never exceed the balance — no slice of one balance is ever
+shared between stores. A key on a flushed Redis is gated by Grove's `limited` after the next pull
+and push; so is every key of a team whose balance a refund took under its caps. Nothing detects a
+flushed Redis or a drain lost inside the gateway: the per-drain compare below cannot see either.
 
 **The drain.** A pull GETs `/usage`: the gateway sets every live `usage:<prefix>` aside under a new
 drain id and returns it with every earlier pair Grove has not acknowledged, grouped by drain id
-(`?keys=` narrows both to one user's keys, with no scan). Grove inserts one Usage Record per key
+(`?keys=` narrows both to one team's keys, with no scan). Grove inserts one Usage Record per key
 — two when the drain holds both charged (`p:`) and free (`f:`) usage of it; unique on drain id +
-key + `billed` — bills the charged one, commits, then POSTs `/usage/ack` with the (drain id, key)
-pairs of every user that landed. Every other pair comes back next pull; a re-sent pair records
+key + `billed` — bills the charged one to the key, commits, then POSTs `/usage/ack` with the (drain
+id, key) pairs of every team that landed. Every other pair comes back next pull; a re-sent pair records
 nothing twice. The acked keys are kept for Grove Settings' **Usage Retention** (rendered into each
 gateway's `config.json`, default `168h`). A record is one row: the key, the store (a Link — a key
 used in several geographies gets a record per store per drain), the drain id, and the totals
 `cost` (what Grove billed) and `gateway_cost`; the per-model detail — pricing, requests, the
 counters, Grove's cost — is one hidden JSON field the form renders as a table. The gateway's own view
-of the user (`user_spent`, `user_balance`) rides the same hash and is not recorded.
+of the key (`key_spent`, `key_balance`) rides the same hash and is not recorded.
 
 **When the store goes down.** New requests fail closed (503). A request already running when it
 went down still finishes, and its usage goes to a local spool file on the gateway (`usage_spool`)
@@ -182,8 +205,8 @@ A System Manager decides which side is wrong:
 
 | button | does |
 |---|---|
-| Grove is wrong | Grove's `spent` moves by the delta and the user settles; Grove's balance now matches the gateway's |
-| Gateway is wrong | The row's `Gateway Correction Pending` is ticked and nothing is sent from the button. The next projection tick sends `POST /spend-adjust` through the store's writers in turn: the gateway's `spent` for that user on that store moves by minus the delta, applied once under the row's name, and the answer marks the row `Gateway corrected` and clears the tick. A tick that fails leaves it pending for the next; a pending row takes neither button |
+| Grove is wrong | The key's `spent` moves by the delta and the team settles; Grove's balance now matches the gateway's |
+| Gateway is wrong | The row's `Gateway Correction Pending` is ticked and nothing is sent from the button. The next projection tick sends `POST /spend-adjust` through the store's writers in turn: the gateway's `spent` for that key on that store moves by minus the delta, applied once under the row's name, and the answer marks the row `Gateway corrected` and clears the tick. A tick that fails leaves it pending for the next; a pending row takes neither button |
 
 A refund or a charge the customer is owed is a plain Grove Credit entry, separate from both. A drain
 from a gateway that predates tagging has no drain id: it is priced by the day and audited for

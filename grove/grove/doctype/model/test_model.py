@@ -70,9 +70,10 @@ class TestGranted(IntegrationTestCase):
 			{"doctype": "Model", "model_id": "probe-granted", "hf_repo": "org/probe-granted"}
 		).insert(ignore_permissions=True).name
 		cls.group = frappe.get_doc({"doctype": "Model Group", "__newname": "probe-granted-group"}).insert().name
-		cls.user = frappe.get_doc(
-			{"doctype": "Grove User", "email": "probe-granted@example.com"}
+		team = frappe.get_doc(
+			{"doctype": "Central Team", "__newname": "probe-granted", "email": "probe-granted@example.com", "free": 1}
 		).insert(ignore_permissions=True).name
+		cls.key = frappe.get_doc({"doctype": "Grove API Key", "team": team}).insert(ignore_permissions=True).name
 
 	def is_granted(self):
 		return frappe.get_doc("Model", self.model).is_granted
@@ -80,20 +81,21 @@ class TestGranted(IntegrationTestCase):
 	def test_a_grant_is_an_allow_or_a_group_with_someone_in_it(self):
 		# One walk: the class shares its state between tests.
 		self.assertFalse(self.is_granted())
-		user = frappe.get_doc("Grove User", self.user)
-		user.append("deny", {"model": self.model})
-		user.save()
+		key = frappe.get_doc("Grove API Key", self.key)
+		key.model_groups = []
+		key.append("deny", {"model": self.model})
+		key.save()
 		self.assertFalse(self.is_granted(), "a deny is not a grant")
 		group = frappe.get_doc("Model Group", self.group)
 		group.append("models", {"model": self.model})
 		group.save()
 		self.assertFalse(self.is_granted(), "a group nobody is in grants nothing")
-		user.append("model_groups", {"model_group": self.group})
-		user.save()
+		key.append("model_groups", {"model_group": self.group})
+		key.save()
 		self.assertTrue(self.is_granted())
-		user.model_groups, user.deny = [], []
-		user.append("allow", {"model": self.model})
-		user.save()
+		key.model_groups, key.deny = [], []
+		key.append("allow", {"model": self.model})
+		key.save()
 		self.assertTrue(self.is_granted(), "the user's own allow")
 
 

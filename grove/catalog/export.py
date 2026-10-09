@@ -24,7 +24,8 @@ def write(path=None):
 		"counters": get_counters(), "geographies": [{"name": MAIN}],
 		"modalities": get_modalities(),
 		"cloud_providers": get_cloud_providers(), "regions": get_regions(),
-		"providers": get_providers(), "models": models, "model_groups": get_model_groups(models),
+		"providers": get_providers(), "denied_tools": get_denied_tools(),
+		"models": models, "model_groups": get_model_groups(models),
 	}
 	Path(path or CATALOG).write_text(json.dumps(catalog, indent=1, sort_keys=True) + "\n")
 
@@ -69,6 +70,11 @@ def get_providers():
 			entry["geography"] = MAIN
 		providers.setdefault(row.provider_name, entry)
 	return [providers[name] for name in sorted(providers)]
+
+
+def get_denied_tools():
+	"""Every tool a vendor would run on its own side, by vendor then tool."""
+	return frappe.get_all("Denied Tool", fields=["provider_name", "tool"], order_by="provider_name, tool")
 
 
 def get_models():

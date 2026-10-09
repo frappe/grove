@@ -2,8 +2,8 @@
 # For license information, please see license.txt
 """The desired state a box is pushed, and the hash gate that decides which sections travel.
 
-`groups` and `routes` travel whole. `users` and `keys` scale with customer count, so they split
-into 256 buckets (`bucket_of`) hashed independently — one key minted re-pushes one bucket, not the
+`groups` and `routes` travel whole. `keys` scale with customer count, so they split into 256
+buckets (`bucket_of`) hashed independently — one key minted re-pushes one bucket, not the
 population. Absence prunes: a deleted group or revoked key stops being named and the agent
 removes it."""
 
@@ -13,8 +13,8 @@ import json
 import frappe
 
 from grove.access import group_rows, limit_rows, model_rows
+from grove.billing.pricing import nano
 from grove.pathway import routes
-from grove.billing.pricing import allocations, nano
 
 
 def effective_groups():
@@ -30,68 +30,54 @@ def effective_groups():
 	]
 
 
-def effective_users():
-	"""Every Grove User projected for the gateway. One record per user however many keys they
-	hold — the reason none of this is flattened onto the keys.
-
-	`limited` is Grove's own verdict (`credit_exhausted`). Holding it on the USER stops a
-	blocked user minting a fresh key. Every user is prepaid unless marked Free, and carries `budget`:
-	the amount they loaded (Σ Grove Credit), the same on every store. The box subtracts its own
-	spend from it and refuses at zero. The wire says `prepaid`, not `free`: a field absent on an
-	old push must read as no gate."""
-	deltas = model_rows("Grove User")
-	memberships = group_rows()
-	limits = limit_rows()
-	loaded = allocations()
-	users = frappe.get_all(
-		"Grove User", fields=["name", "email", "credit_exhausted", "log_payloads", "geography", "free"]
-	)
-	return [
-		{
-			"name": u.name,
-			"email": u.email or "",  # for humans reading Redis; no decision reads it
-			# One comma list: the gateway unions the grants per entry. Sorted, so the same
-			# membership always hashes the same.
-			"group": ",".join(memberships.get(u.name, [])),
-			"allow": ",".join(deltas.get(u.name, {}).get("allow", [])),
-			"deny": ",".join(deltas.get(u.name, {}).get("deny", [])),
-			"limited": bool(u.credit_exhausted),
-			# Opt-in to prompt/output logging. Customer content: absent or falsy stays off.
-			"log_payloads": bool(u.get("log_payloads")),
-			# Every gateway gets every user; one outside their geography answers 403.
-			"geography": u.get("geography") or "",
-			"prepaid": not u.get("free"),
-			"budget": 0 if u.get("free") else nano(loaded.get(u.name, 0)),
-			# Rate limits, `metric:window:value` each. Blank when none: the box merges fields, so
-			# leaving it out would keep a removed limit in force.
-			"limits": ",".join(limits.get(u.name, [])),
-		}
-		for u in sorted(users, key=lambda u: u.name)
-	]
-
-
 def effective_keys():
-	"""Every LIVE API Key projected for the gateway. A key is a pointer to whoever holds it, plus
-	whether it may read their balance — what they may call belongs to the user.
+	"""Every LIVE API Key projected for the gateway, with the whole policy the gates read: its
+	groups and own allow/deny, its geography, its rate limits and its cap as `budget` — the box
+	subtracts its own spend from it and refuses at zero. What is the team's rides on each key:
+	`prepaid` (not Free; the wire says `prepaid`, not `free`, so a field absent reads as no gate),
+	`log_payloads`, and `limited` — Grove's verdict that the team's balance is gone, which refuses
+	every key whatever its own cap says.
 
 	Revoked keys are not projected: absent from their bucket, the push prunes them off every box.
 	The row stays in Grove as the record of a credential that existed."""
+	deltas = model_rows("Grove API Key")
+	memberships = group_rows()
+	limits = limit_rows()
+	teams = {
+		t.name: t for t in frappe.get_all("Central Team", fields=["name", "free", "log_payloads", "credit_exhausted"])
+	}
 	keys = frappe.get_all(
 		"Grove API Key",
 		filters={"status": "active"},
-		fields=["name", "key_hash", "user", "status", "can_read_balance"],
+		fields=["name", "key_hash", "team", "status", "geography", "cap"],
 	)
-	return [
-		{
+	records = []
+	for k in sorted(keys, key=lambda k: k.key_hash or ""):
+		team = teams.get(k.team)
+		if not k.key_hash or team is None:
+			continue
+		records.append({
 			"key_hash": k.key_hash,
 			"prefix": k.name,  # doc name (random hash) = usage attribution id
-			"user": k.user,  # Grove User doc name — the pointer to user:<name>
+			"team": k.team,  # the tenant boundary: cache salt, payload log
 			"status": k.status or "active",
-			"can_read_balance": bool(k.can_read_balance),  # the gateway decodes a JSON bool
-		}
-		for k in sorted(keys, key=lambda k: k.key_hash or "")
-		if k.key_hash
-	]
+			# One comma list: the gateway unions the grants per entry. Sorted, so the same
+			# membership always hashes the same.
+			"group": ",".join(memberships.get(k.name, [])),
+			"allow": ",".join(deltas.get(k.name, {}).get("allow", [])),
+			"deny": ",".join(deltas.get(k.name, {}).get("deny", [])),
+			"limited": bool(team.credit_exhausted),
+			# Opt-in to prompt/output logging. Customer content: absent or falsy stays off.
+			"log_payloads": bool(team.log_payloads),
+			# Every gateway gets every key; one outside its geography answers 403.
+			"geography": k.geography or "",
+			"prepaid": not team.free,
+			"budget": 0 if team.free else nano(k.cap or 0),
+			# Rate limits, `metric:window:value` each. Blank when none: the box merges fields, so
+			# leaving it out would keep a removed limit in force.
+			"limits": ",".join(limits.get(k.name, [])),
+		})
+	return records
 
 
 def bucket_of(record_id):
@@ -124,15 +110,14 @@ def bucketed_section(records, id_field):
 
 def gateway_snapshot(geography, shared=None):
 	"""The same for every gateway in `geography`, so a run builds it once per geography: only the
-	routes differ between them. A run hands every call the same `shared` dict, so the user records
+	routes differ between them. A run hands every call the same `shared` dict, so the key records
 	are built once."""
 	shared = {} if shared is None else shared
-	if "users" not in shared:
-		shared["users"] = effective_users()
+	if "keys" not in shared:
+		shared["keys"] = effective_keys()
 	return {
 		"groups": flat_section({"records": effective_groups()}),
-		"users": bucketed_section(shared["users"], "name"),
-		"keys": bucketed_section(effective_keys(), "key_hash"),
+		"keys": bucketed_section(shared["keys"], "key_hash"),
 		"routes": flat_section({"table": routes.gateway_routes(geography)}),
 	}
 
@@ -148,7 +133,7 @@ def gateway_store(gateway):
 
 
 def ingress_snapshot(ingress):
-	"""Its replica table and nothing else — that plane has no keys, users or groups section."""
+	"""Its replica table and nothing else — that plane has no keys or groups section."""
 	return {"routes": flat_section({"table": routes.replicas_for_ingress(ingress)})}
 
 
@@ -184,7 +169,7 @@ def describe(delta, response):
 	"""Which sections went (bucket counts in brackets) and how many records the agent wrote."""
 	counts = (response or {}).get("counts") or {}
 	parts = []
-	for section in ("groups", "users", "keys", "routes"):
+	for section in ("groups", "keys", "routes"):
 		if section not in delta:
 			continue
 		label = section_label(section, delta[section])

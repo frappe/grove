@@ -1,0 +1,140 @@
+{
+ "actions": [],
+ "autoname": "Prompt",
+ "creation": "2026-10-08 00:00:00",
+ "description": "Named by Central's id for the team (TEAM-00520). One team per id: the ledger is the team's, and a second doc under one id would be a second allowance.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "email",
+  "free",
+  "log_payloads",
+  "max_keys",
+  "column_break_head",
+  "balance",
+  "spent",
+  "credit_exhausted"
+ ],
+ "fields": [
+  {
+   "description": "Where alerts for this team go. Not a login, and not unique.",
+   "fieldname": "email",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Email",
+   "options": "Email",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "Never charged and never gated: usage is still recorded, with what it would have cost, but Spent and Balance do not move and no key's spend limit applies. Off means prepaid \u2014 every key spends against its own limit, cut out of this balance. Flip it with Mark Prepaid / Mark Free, which also sets the keys' limits.",
+   "fieldname": "free",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Free",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "description": "Store the prompts and model outputs of this team's keys in the gateway's payload log (short retention, support queries).",
+   "fieldname": "log_payloads",
+   "fieldtype": "Check",
+   "label": "Log Prompts & Outputs"
+  },
+  {
+   "default": "10",
+   "description": "How many live keys the team may hold. Rate limits are per key, so this is what bounds a team's throughput.",
+   "fieldname": "max_keys",
+   "fieldtype": "Int",
+   "label": "Max Keys",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_head",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "\u03a3 Grove Credit entries \u2212 Spent, written by pricing.settle on every pull, top-up and save. Top up by adding a Grove Credit; hand it out by raising keys' caps.",
+   "fieldname": "balance",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Balance (USD)",
+   "precision": "9",
+   "read_only": 1
+  },
+  {
+   "description": "\u03a3 what the team's keys have been charged: priced by the pull from each billed drain, plus any correction from a resolved Credit Discrepancy. Does not move while the team is Free.",
+   "fieldname": "spent",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Spent (USD)",
+   "precision": "9",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Set by settle when the balance is at or below zero and the team is not Free. Pushed on every key of the team, which the gateways then refuse whatever its own cap says.",
+   "fieldname": "credit_exhausted",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Credit Exhausted",
+   "read_only": 1
+  }
+ ],
+ "links": [
+  {
+   "group": "Access",
+   "link_doctype": "Grove API Key",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Usage",
+   "link_doctype": "Usage Record",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Usage",
+   "link_doctype": "Credit Discrepancy",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Usage",
+   "link_doctype": "Grove Credit",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Usage",
+   "link_doctype": "Stuck Usage",
+   "link_fieldname": "team"
+  }
+ ],
+ "modified": "2026-10-08 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Grove",
+ "name": "Central Team",
+ "naming_rule": "Set by user",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Grove Control",
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

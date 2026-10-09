@@ -41,7 +41,7 @@ class TestRedaction(unittest.TestCase):
 
 	def test_every_credential_shaped_key_goes(self):
 		payload = {
-			"keys": [{"key_hash": "abc", "prefix": "k1", "user": "u1"}],
+			"keys": [{"key_hash": "abc", "prefix": "k1", "team": "t1"}],
 			"admin_token": "t", "data_token": "t", "api_secret": "s",
 		}
 		text = json.dumps(redact(payload))

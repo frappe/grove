@@ -17,7 +17,10 @@ from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing
 from grove.grove.doctype.model_provider.test_model_provider import our_model, provider, vendor_model
 
-COUNTED = ("Usage Counter", "Geography", "Cloud Provider", "Region", "Model Provider", "Model", "Model Pricing", "Model Group")
+COUNTED = (
+	"Usage Counter", "Geography", "Cloud Provider", "Region", "Model Provider", "Denied Tool", "Model",
+	"Model Pricing", "Model Group",
+)
 
 
 class CatalogCase(IntegrationTestCase):
@@ -38,6 +41,7 @@ class TestInsertMissing(CatalogCase):
 		"cloud_providers": [{"name": "catalog-cloud", "provider_type": "aws"}],
 		"regions": [{"name": "catalog-south-1", "label": "Catalog South", "geography": "Catalog", "cloud_provider": "aws"}],
 		"providers": [{"provider_name": "catalog-vendor", "geography": "Catalog", "base_url": "https://api.vendor.test/v1"}],
+		"denied_tools": [{"provider_name": "catalog-vendor", "tool": "web_search_20250305"}],
 		"models": [{
 			"provider": "catalog-vendor", "model_id": "big-1", "upstream_model_id": "big-1-2026",
 			"rates": [{"counter": "prompt_tokens", "rate": 2.5}],
@@ -56,6 +60,7 @@ class TestInsertMissing(CatalogCase):
 		self.assertEqual((model.upstream_model_id, model.published, model.provider_is_self_hosted), ("big-1-2026", 0, 0))
 		self.assertFalse(frappe.db.exists("Model Pricing", {"model": model.name}))
 		self.assertEqual(frappe.db.get_value("Usage Counter", "web_search_requests", "unit"), "request")
+		self.assertTrue(frappe.db.exists("Denied Tool", "catalog-vendor:web_search_20250305"))
 		cloud = frappe.get_doc("Cloud Provider", "catalog-cloud")
 		self.assertEqual((cloud.resource_type, cloud.get_password("api_key", raise_exception=False)), ("Machine", None))
 		self.assertEqual(frappe.db.get_value("Region", "catalog-south-1", "geography"), "Catalog")
@@ -176,6 +181,9 @@ class TestTheShippedFile(unittest.TestCase):
 		self.assertEqual([r for r in self.catalog["regions"] if r["geography"] not in geographies], [])
 		keys = [seed.get_model_key(m) for m in self.catalog["models"]]
 		self.assertEqual(len(keys), len(set(keys)), "a model key is listed twice")
+		pairs = [(d["provider_name"], d["tool"]) for d in self.catalog["denied_tools"]]
+		self.assertEqual(len(pairs), len(set(pairs)), "a denied tool is listed twice")
+		self.assertEqual([pair for pair in pairs if not all(pair)], [])
 		for group in self.catalog["model_groups"]:
 			self.assertEqual([key for key in group["models"] if key not in keys], [], group["name"])
 		for model in self.catalog["models"]:
