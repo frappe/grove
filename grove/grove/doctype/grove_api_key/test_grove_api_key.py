@@ -66,6 +66,14 @@ class IntegrationTestGroveAPIKey(IntegrationTestCase):
 		frappe.db.set_value("Grove API Key", doc.name, "status", "revoked")
 		self.assertEqual([k for k in effective_keys() if k["prefix"] == doc.name], [])
 
+	def test_the_desk_button_revokes_off_the_doc_it_sent_back(self):
+		"""The form posts the doc as JSON, so `creation` arrives as a string, not a datetime."""
+		doc = key("key-probe-desk-revoke")
+		sent_back = frappe.get_doc(frappe.parse_json(frappe.as_json(doc)))
+		self.assertIsInstance(sent_back.creation, str)
+		with self.assertRaises(frappe.ValidationError):
+			sent_back.revoke()
+
 
 class IntegrationTestNewKeysStartInTheDefaultGroup(IntegrationTestCase):
 	"""What a key may call is decided here, by group, not sent by whoever provisions it."""

@@ -139,8 +139,9 @@ class GroveAPIKey(Document):
 
 	@property
 	def revocable_at(self):
-		"""When `revoke` stops refusing this key, in site time."""
-		return frappe.utils.add_to_date(self.creation, hours=REVOKE_AFTER_HOURS)
+		"""When `revoke` stops refusing this key, in site time. Parsed first: a doc the desk sends
+		back carries `creation` as a string, and `add_to_date` hands a string back for one."""
+		return frappe.utils.add_to_date(frappe.utils.get_datetime(self.creation), hours=REVOKE_AFTER_HOURS)
 
 	@frappe.whitelist()
 	def revoke(self):
