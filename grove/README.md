@@ -156,8 +156,16 @@ deleted here is a change the next tick pushes; delete the row once a tool is pri
 the catalog too or the next migrate puts it back. The gateway takes the keys in turn — one cursor per
 vendor across all its models, so the limits the keys share are drawn on evenly — swaps a key the
 vendor answers 429 for the next (each tried once, then once more round), skips one answering
-401/402/403 for the rest of that request, and counts what every key answered. **Key Stats** on the
-form reads those counts live off one gateway per store in the geography; nothing is stored here.
+401/402/403 for the rest of that request — an exhausted account reported under a 400 or 429
+(Anthropic's "credit balance", OpenAI's `insufficient_quota`) counts as the 402 it is — and answers
+such a refusal with its own 502 (`upstream credential rejected` / `upstream account
+unpaid` / `upstream credential lacks permission`), never the vendor's words, which go to its error
+log. It counts what every key answered: `requests`, `ok`, `rate_limited`, `unauthorized`, `unpaid`,
+`forbidden` (`rejected` is those three together), `failed`, `last_used`, `last_rate_limited`. Every 6
+hours `grove.pathway.key_stats.pull_all` reads them off every store into **Provider Key Stats**, one row
+per key per store with what it answered since the pull before, in one `stats` JSON field (the
+`last_*` seconds as site time; a key the store did not dial leaves no row). The gateway clears the
+counters as it answers, so a pull that does not land loses those 6 hours. Kept 90 days.
 **Fetch Models** asks the vendor's `/v1/models` on one front — the OpenAI one with a Bearer when set
 (a dual vendor's Anthropic shim, DeepSeek's, has no list), else Anthropic's with `x-api-key` and the
 version header, paged with `after_id` — hides what the record already holds, then asks for our id
@@ -222,6 +230,7 @@ prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south
 |---|---|---|
 | `*/1` | `pathway.projection.sync_projection` | hash-gated: pushes each box only what it does not already hold; a fleet in sync logs nothing. Also sends each store the spend adjustments it is owed (pending `Credit Discrepancy` rows) |
 | `*/2` | `cloud_provider.reconcile.sync_all` | the provider owns whether a pod is up; this closes the drift |
+| `0 */6` | `pathway.key_stats.pull_all` | one Provider Key Stats row per key per store: what it answered since the last pull, cleared on the gateway as it is read |
 | `*/5` | `gateway_store.backup_all` | one `redis-cli --rdb` snapshot per Active store, over SSH, into the weights bucket under `gateway-store/<store>/<utc stamp>.rdb`, the doc's Last Backup Key pointing at it; usage leaves a store only on the hourly pull, so this is what a lost disk costs: 5 minutes. Off until the bucket and Mirror keys are set; prune with a bucket lifecycle rule |
 | hourly | `pathway.usage.pull_all` | a store is drained once, through its first writer that answers; recorded, billed, then what landed is acked. A failed pull loses nothing: the box re-sends every unacked pair. Also Gateway Server → **Pull Usage**, Stuck Usage → **Pull Now**, and `api.pull_usage(user)` for one user (3 an hour per user, counted in the site cache; the rest are not limited) |
 | hourly | `tls.renew_fleet_certificate`, `cloud_provider.schedule.run_due_pods` | |

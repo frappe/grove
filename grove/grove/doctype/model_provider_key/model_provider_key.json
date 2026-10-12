@@ -11,11 +11,12 @@
  "fields": [
   {
    "columns": 4,
-   "description": "Which vendor account or console key this is, for the operator; the gateway never sees it.",
+   "description": "Names this key for the operator and in Provider Key Stats, one per provider; the gateway never sees it.",
    "fieldname": "title",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Title"
+   "label": "Title",
+   "reqd": 1
   },
   {
    "columns": 6,

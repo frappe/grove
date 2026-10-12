@@ -14,9 +14,7 @@
   "api_version",
   "section_keys",
   "key_selection",
-  "api_keys",
-  "section_break_qykf",
-  "key_stats_html"
+  "api_keys"
  ],
  "fields": [
   {
@@ -94,19 +92,10 @@
    "fieldtype": "Table",
    "label": "Keys",
    "options": "Model Provider Key"
-  },
-  {
-   "fieldname": "key_stats_html",
-   "fieldtype": "HTML",
-   "label": "Key Stats"
-  },
-  {
-   "fieldname": "section_break_qykf",
-   "fieldtype": "Section Break"
   }
  ],
  "links": [],
- "modified": "2026-10-03 03:46:57.064963",
+ "modified": "2026-10-12 21:27:58.041792",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model Provider",
