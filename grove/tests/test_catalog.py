@@ -176,6 +176,7 @@ class TestTheShippedFile(unittest.TestCase):
 		counters = {c["counter_name"] for c in self.catalog["counters"]}
 		geographies = {g["name"] for g in self.catalog["geographies"]}
 		regions = {r["name"] for r in self.catalog["regions"]}
+		self.assertIn(self.catalog["default_tier"], {t["name"] for t in self.catalog["tiers"]})
 		inputs = {m["name"] for m in self.catalog["modalities"] if m["is_input"]}
 		outputs = {m["name"] for m in self.catalog["modalities"] if m["is_output"]}
 		self.assertEqual([r for r in self.catalog["regions"] if r["geography"] not in geographies], [])

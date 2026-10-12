@@ -2,19 +2,17 @@
 
 A user becomes a team named by its Central id (its old doc name when it had none). Every key of
 the user gets the team, the user's geography, groups, allow/deny and limits, and its spend as the
-billed Usage Records say; the user's old balance becomes the cap of its oldest live key, the rest
-start at 0 and must be capped by hand. Records, credits, stuck rows and discrepancies move to the
-team. Runs once: a site with no Grove User doctype left (moved by hand) is left alone."""
+billed Usage Records say; every key starts at a cap of 0 and is capped by hand. Records, stuck rows and discrepancies move to the team. Runs once: a site with no Grove User doctype left (moved by hand) is left alone."""
 
 import frappe
 
 from grove.billing.pricing import settle
-from grove.grove.doctype.grove_api_key.grove_api_key import DEFAULT_LIMITS
+from grove.access import DEFAULT_LIMITS
 
 CHILDREN = ("Model Group Row", "Grove Model Row", "Model Limit")
 SKIP = ("name", "parent", "parenttype", "creation", "modified", "owner", "modified_by", "docstatus", "idx")
 RELINK = (
-	("Grove Credit", "grove_user"), ("Usage Record", "user"), ("Stuck Usage", "grove_user"), ("Credit Discrepancy", "grove_user"),
+	("Usage Record", "user"), ("Stuck Usage", "grove_user"), ("Credit Discrepancy", "grove_user"),
 )
 
 
@@ -36,8 +34,8 @@ def execute():
 		"""update `tabCredit Discrepancy` d join `tabGrove API Key` k on k.name = d.api_key
 		set d.team = k.team where ifnull(d.team, '') = ''"""
 	)
-	for u in users:
-		cap_oldest_key(u, teams[u.name])
+	for team in teams.values():
+		settle(team)
 	for child in CHILDREN:
 		frappe.db.sql(f"delete from `tab{child}` where parenttype = 'Grove User'")
 	frappe.delete_doc("DocType", "Grove User", force=True, ignore_permissions=True)
@@ -48,7 +46,7 @@ def make_team(user):
 	if frappe.db.exists("Central Team", name):
 		return name
 	return frappe.get_doc({
-		"doctype": "Central Team", "__newname": name, "email": user.email,
+		"doctype": "Central Team", "__newname": name,
 		"free": user.free, "log_payloads": user.log_payloads,
 	}).insert(ignore_permissions=True).name
 
@@ -77,16 +75,3 @@ def move_key(key, user, team):
 			frappe.get_doc({
 				"doctype": "Model Limit", "parent": key.name, "parenttype": "Grove API Key", "parentfield": "limits", **limit,
 			}).insert(ignore_permissions=True)
-
-
-def cap_oldest_key(user, team):
-	"""What the user had left goes whole to its oldest live key: caps are new, and one key that
-	keeps working beats several that each stop at 0."""
-	balance = settle(team)
-	if user.free or balance <= 0:
-		return
-	live = frappe.get_all("Grove API Key", filters={"team": team, "status": "active"}, order_by="creation asc", pluck="name")
-	if not live:
-		return
-	spent = frappe.db.get_value("Grove API Key", live[0], "spent") or 0
-	frappe.db.set_value("Grove API Key", live[0], "cap", float(balance) + float(spent), update_modified=False)

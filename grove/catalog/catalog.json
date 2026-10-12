@@ -76,6 +76,7 @@
    "min_prompt_tokens": 272000
   }
  ],
+ "default_tier": "Beginner",
  "denied_tools": [
   {
    "provider_name": "anthropic",
@@ -366,6 +367,110 @@
    "geography": "Main",
    "label": "Mumbai",
    "name": "ap-south-1"
+  }
+ ],
+ "tiers": [
+  {
+   "limits": [
+    {
+     "metric": "requests",
+     "value": 20,
+     "window": "1m"
+    },
+    {
+     "metric": "total_tokens",
+     "value": 100000,
+     "window": "1m"
+    }
+   ],
+   "max_keys": 2,
+   "name": "Beginner",
+   "spend_limit": 20
+  },
+  {
+   "limits": [
+    {
+     "metric": "requests",
+     "value": 60,
+     "window": "1m"
+    },
+    {
+     "metric": "total_tokens",
+     "value": 300000,
+     "window": "1m"
+    }
+   ],
+   "max_keys": 5,
+   "name": "Growth",
+   "spend_limit": 100
+  },
+  {
+   "limits": [
+    {
+     "metric": "requests",
+     "value": 120,
+     "window": "1m"
+    },
+    {
+     "metric": "total_tokens",
+     "value": 600000,
+     "window": "1m"
+    }
+   ],
+   "max_keys": 10,
+   "name": "Intermediate",
+   "spend_limit": 300
+  },
+  {
+   "limits": [
+    {
+     "metric": "requests",
+     "value": 300,
+     "window": "1m"
+    },
+    {
+     "metric": "total_tokens",
+     "value": 1500000,
+     "window": "1m"
+    }
+   ],
+   "max_keys": 20,
+   "name": "Advance",
+   "spend_limit": 1000
+  },
+  {
+   "limits": [
+    {
+     "metric": "requests",
+     "value": 600,
+     "window": "1m"
+    },
+    {
+     "metric": "total_tokens",
+     "value": 3000000,
+     "window": "1m"
+    }
+   ],
+   "max_keys": 50,
+   "name": "Power",
+   "spend_limit": 3000
+  },
+  {
+   "limits": [
+    {
+     "metric": "requests",
+     "value": 1200,
+     "window": "1m"
+    },
+    {
+     "metric": "total_tokens",
+     "value": 6000000,
+     "window": "1m"
+    }
+   ],
+   "max_keys": 0,
+   "name": "Elite",
+   "spend_limit": 10000
   }
  ]
 }

@@ -119,13 +119,13 @@ class TestEveryKeyCarriesItsPin(unittest.TestCase):
 			if doctype == "Grove API Key":
 				return [frappe._dict(row) for row in rows]
 			if doctype == "Central Team":
-				return [frappe._dict(name="T-1", free=0, log_payloads=0, credit_exhausted=0)]
+				return [frappe._dict(name="T-1", free=0, log_payloads=0, suspended=0)]
 			return []
 
 		with (
 			patch.object(snapshot, "model_rows", return_value={}),
 			patch.object(snapshot, "group_rows", return_value={}),
-			patch.object(snapshot, "limit_rows", return_value={}),
+			patch.object(snapshot, "effective_limits", return_value={}),
 			patch.object(frappe, "get_all", side_effect=get_all),
 		):
 			return {key["prefix"]: key for key in snapshot.effective_keys()}

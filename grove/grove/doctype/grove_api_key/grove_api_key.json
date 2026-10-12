@@ -65,11 +65,11 @@
   },
   {
    "default": "0",
-   "description": "What this key may spend, cut out of the team's balance: the gateway refuses it at 402 once its spend reaches this. 0 until a limit is set, and the key is refused until then. Across the team's live keys, \u03a3 (cap \u2212 spent) never exceeds the balance. Ignored while the team is Free.",
+   "description": "What this key may spend a month: the gateway counts its spend per month and refuses it at 402 once this month's reaches it. 0 until a cap is set, and the key is refused until then. Across the team's live keys the caps add up to no more than the team's Spend Limit. Ignored while the team is Free.",
    "fieldname": "cap",
    "fieldtype": "Currency",
    "in_list_view": 1,
-   "label": "Cap (USD)",
+   "label": "Cap (USD / month)",
    "precision": "9"
   },
   {
@@ -113,7 +113,7 @@
    "options": "Grove Model Row"
   },
   {
-   "description": "Models this key may never call. Deny wins over everything \u2014 a group grant and a Public release both lose to it.",
+   "description": "Models this key may never call. Deny wins over everything — a group grant and a Public release both lose to it.",
    "fieldname": "deny",
    "fieldtype": "Table MultiSelect",
    "label": "Deny",
@@ -125,7 +125,7 @@
    "label": "Rate limits"
   },
   {
-   "description": "Counted on the gateway, per Gateway Store, for this key alone. A window resets on the UTC clock: top of the minute, the hour, midnight, the 1st. No rows = uncapped.",
+   "description": "Counted on the gateway, per Gateway Store, for this key alone. A window resets on the UTC clock: top of the minute, the hour, midnight, the 1st. No rows: the key runs under its team's Tier, else the default tier, else 20 requests and 100 000 tokens a minute.",
    "fieldname": "limits",
    "fieldtype": "Table",
    "label": "Limits",
@@ -148,7 +148,7 @@
    "link_fieldname": "api_key"
   }
  ],
- "modified": "2026-10-09 00:00:00.000000",
+ "modified": "2026-10-12 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove API Key",

@@ -9,18 +9,21 @@ tests, so anything registered here is still there for the next one."""
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from grove.access import limit_rows
+from grove.access import limit_entries
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.model_provider.test_model_provider import our_model, provider, vendor_model
 from grove.pathway.snapshot import effective_keys
 
 
 def team(name, free=1, **fields):
-	"""Free unless said otherwise: a prepaid team's key needs a cap cut from a funded balance."""
+	"""Free unless said otherwise: a paying team's caps have to fit its spend limit. Numbers given
+	here are the team's own, not a tier's."""
 	if frappe.db.exists("Central Team", name):
 		return name
+	if "max_keys" in fields or "spend_limit" in fields:
+		fields.setdefault("override_limits", 1)
 	return frappe.get_doc({
-		"doctype": "Central Team", "__newname": name, "email": f"{name}@example.com", "free": free, **fields,
+		"doctype": "Central Team", "__newname": name, "free": free, **fields,
 	}).insert(ignore_permissions=True).name
 
 
@@ -38,6 +41,7 @@ class IntegrationTestGroveAPIKey(IntegrationTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		make_test_geography()
+		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 
 	def test_membership_reaches_the_wire_as_one_sorted_comma_list(self):
 		# The unit tests mock the query away, so this is the only thing standing between a wrong
@@ -49,8 +53,7 @@ class IntegrationTestGroveAPIKey(IntegrationTestCase):
 		self.assertEqual(projected(doc.name)["group"], "key-probe-acme,key-probe-zeta")
 
 	def test_the_teams_flags_ride_on_the_key(self):
-		name = team("key-probe-flags", free=0)
-		frappe.get_doc({"doctype": "Grove Credit", "team": name, "amount": 1}).insert(ignore_permissions=True)
+		name = team("key-probe-flags", free=0, spend_limit=1)
 		doc = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 1}).insert()
 		record = projected(doc.name)
 		self.assertEqual(
@@ -82,6 +85,7 @@ class IntegrationTestNewKeysStartInTheDefaultGroup(IntegrationTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		make_test_geography()
+		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 		frappe.db.set_value("Model Group", {"is_default": 1}, "is_default", 0)
 		cls.default = cls.group("key-default-one", is_default=1)
 
@@ -111,7 +115,7 @@ class IntegrationTestNewKeysStartInTheDefaultGroup(IntegrationTestCase):
 	def test_provisioning_a_key_puts_it_in_the_default_group(self):
 		from grove import api
 
-		api.provision_team("key-group-provisioned", "provisioned@example.com", free=True)
+		api.provision_team("key-group-provisioned", free=True)
 		minted = api.provision_key("key-group-provisioned")
 		self.assertEqual(self.groups_of(frappe.get_doc("Grove API Key", minted["name"])), [self.default])
 
@@ -151,7 +155,7 @@ class IntegrationTestOwnGrantsAreTheKeysGeographys(IntegrationTestCase):
 	def test_provisioning_by_key_allows_the_keys_geographys_doc(self):
 		from grove import api
 
-		api.provision_team("key-allow-keyed", "keyed@example.com", free=True)
+		api.provision_team("key-allow-keyed", free=True)
 		minted = api.provision_key("key-allow-keyed", geography=self.away, models=[self.KEY])
 		allowed = frappe.get_all("Grove Model Row", filters={"parent": minted["name"], "parentfield": "allow"}, pluck="model")
 		self.assertEqual(allowed, [self.docs[self.away]])
@@ -164,6 +168,7 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		make_test_geography()
+		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 
 	def test_a_new_key_starts_under_the_default_limits(self):
 		doc = key("key-limit-default")
@@ -195,14 +200,41 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 		from grove import api
 
 		team_id = "key-limit-provisioned"
-		api.provision_team(team_id, "limited@example.com", free=True)
+		api.provision_team(team_id, free=True)
 		name = api.provision_key(team_id, limits=[{"metric": "requests", "window": "1m", "value": 5}])["name"]
 		api.update_key(team_id, name)
-		self.assertEqual(limit_rows()[name], ["requests:1m:5"])
+		self.assertEqual(limit_entries("Grove API Key")[name], [{"metric": "requests", "window": "1m", "value": 5}])
 		api.update_key(team_id, name, limits=[{"metric": "requests", "window": "1h", "value": 9}])
-		self.assertEqual(limit_rows()[name], ["requests:1h:9"])
+		self.assertEqual(limit_entries("Grove API Key")[name], [{"metric": "requests", "window": "1h", "value": 9}])
+		# Back under the team's tier: no rows of its own, so the defaults reach the wire.
 		api.update_key(team_id, name, limits=[])
-		self.assertNotIn(name, limit_rows())
+		self.assertNotIn(name, limit_entries("Grove API Key"))
+		self.assertEqual(projected(name)["limits"], "requests:1m:20,total_tokens:1m:100000")
+
+	def test_a_key_with_no_rows_runs_under_its_teams_tier(self):
+		tier = frappe.get_doc({
+			"doctype": "Tier", "__newname": "key-tier-growth",
+			"limits": [{"metric": "requests", "window": "1m", "value": 60}],
+		}).insert()
+		name = team("key-limit-tiered", tier=tier.name)
+		inherits = frappe.get_doc({"doctype": "Grove API Key", "team": name}).insert()
+		pinned = frappe.get_doc({
+			"doctype": "Grove API Key", "team": name, "limits": [{"metric": "requests", "window": "1h", "value": 9}]
+		}).insert()
+		self.assertEqual((projected(inherits.name)["limits"], projected(pinned.name)["limits"]), ("requests:1m:60", "requests:1h:9"))
+		# A tier edit reaches every unpinned key on it; a tier with no rows leaves them uncapped.
+		tier.limits = []
+		tier.save()
+		self.assertEqual((projected(inherits.name)["limits"], projected(pinned.name)["limits"]), ("", "requests:1h:9"))
+		with self.assertRaises(frappe.LinkExistsError):
+			tier.delete()
+
+	def test_a_tier_refuses_two_limits_on_one_metric_and_window(self):
+		with self.assertRaises(frappe.ValidationError):
+			frappe.get_doc({
+				"doctype": "Tier", "__newname": "key-tier-twice",
+				"limits": [{"metric": "requests", "window": "1m", "value": 1}, {"metric": "requests", "window": "1m", "value": 2}],
+			}).insert()
 
 
 class IntegrationTestOneGeographyPerKey(IntegrationTestCase):
@@ -213,6 +245,7 @@ class IntegrationTestOneGeographyPerKey(IntegrationTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		make_test_geography()
+		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 		cls.default = frappe.db.get_value("Geography", {"is_default": 1})
 
 	def other_geography(self, name):
@@ -250,47 +283,38 @@ class IntegrationTestOneGeographyPerKey(IntegrationTestCase):
 		self.assertEqual(frappe.get_all("Geography", filters={"is_default": 1}, pluck="name"), [other.name])
 
 
-class IntegrationTestCapsAreCutFromTheBalance(IntegrationTestCase):
-	"""Across a team's live keys, Σ (cap - spent) never exceeds the balance: that is what lets
-	every store gate its key exactly without the keys together outspending the team."""
+class IntegrationTestCapsFitTheSpendLimit(IntegrationTestCase):
+	"""Across a team's live keys, Σ monthly caps never exceeds its spend limit: every store gates
+	its key exactly, so the keys together never outspend the team's tier."""
 
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
 		make_test_geography()
+		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 
-	def funded(self, team_id, amount):
-		name = team(team_id, free=0)
-		frappe.get_doc({"doctype": "Grove Credit", "team": name, "amount": amount}).insert(ignore_permissions=True)
-		return name
-
-	def test_caps_beyond_the_balance_are_refused_and_a_revoke_frees_its_share(self):
-		from grove.billing.pricing import settle
-
-		name = self.funded("key-cap-team", 10)
+	def test_caps_past_the_limit_are_refused_and_a_revoke_frees_its_share(self):
+		name = team("key-cap-team", free=0, spend_limit=10)
 		first = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 6}).insert()
-		with self.assertRaisesRegex(frappe.ValidationError, "would hand out"):
+		with self.assertRaisesRegex(frappe.ValidationError, "Lower another key's cap"):
 			frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 6}).insert()
 		second = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 4}).insert()
 		self.assertEqual((projected(first.name)["budget"], projected(second.name)["budget"]), (6_000_000_000, 4_000_000_000))
-		# Spend moves the balance and narrows what the key still claims alike: 6 cap with 5 spent
-		# claims 1 of the 5 left, so the other key may claim 4 and no more.
+		# What a key spent does not free its cap: the cap is a month's worth, spent or not.
 		frappe.db.set_value("Grove API Key", first.name, "spent", 5)
-		settle(name)
 		second.cap = 5
 		with self.assertRaises(frappe.ValidationError):
 			second.save()
-		# A revoked key hands its share back.
 		frappe.db.set_value("Grove API Key", first.name, "status", "revoked")
 		second.reload()
 		second.cap = 5
 		second.save()
 
-	def test_a_prepaid_key_without_a_cap_is_minted_at_0_and_a_free_teams_caps_are_not_checked(self):
-		name = self.funded("key-cap-needed", 5)
+	def test_a_key_is_minted_at_0_whatever_the_limit_and_a_free_teams_caps_are_not_checked(self):
+		name = team("key-cap-needed", free=0)
 		for cap in (0, None):
 			doc = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": cap}).insert()
-			# Pushed prepaid with nothing to spend: the gateway refuses it until a limit is set.
+			# Pushed paying with nothing to spend: the gateway refuses it until a cap is set.
 			self.assertEqual((projected(doc.name)["prepaid"], projected(doc.name)["budget"]), (True, 0))
 		free = team("key-cap-free")
 		frappe.get_doc({"doctype": "Grove API Key", "team": free, "cap": 1000}).insert()
@@ -298,30 +322,24 @@ class IntegrationTestCapsAreCutFromTheBalance(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			frappe.get_doc({"doctype": "Grove API Key", "team": free, "cap": -1}).insert()
 
-	def test_a_save_that_leaves_the_cap_alone_is_not_checked(self):
-		# A box can overshoot a cap by what was in flight, which takes the balance under the caps
-		# handed out; only a cap change has to fit what is left.
-		from grove.billing.pricing import settle
-
-		name = self.funded("key-cap-still", 5)
-		doc = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 5}).insert()
-		frappe.db.set_value("Grove API Key", doc.name, "spent", 6)
-		settle(name)
-		doc.reload()
+	def test_a_lowered_limit_stops_no_key_and_refuses_only_a_raise(self):
+		name = team("key-cap-demoted", free=0, spend_limit=10)
+		doc = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 8}).insert()
+		team_doc = frappe.get_doc("Central Team", name)
+		team_doc.spend_limit = 5
+		team_doc.save()
+		self.assertEqual(projected(doc.name)["budget"], 8_000_000_000)
 		doc.title = "renamed"
 		doc.save()
-		doc.cap = 7
+		doc.cap = 9
 		with self.assertRaises(frappe.ValidationError):
 			doc.save()
-
-	def test_a_refund_past_the_caps_is_refused_and_turning_free_off_resets_them(self):
-		name = self.funded("key-cap-refund", 5)
-		doc = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 5}).insert()
-		with self.assertRaisesRegex(frappe.ValidationError, "Lower the keys' caps first"):
-			frappe.get_doc({"doctype": "Grove Credit", "team": name, "amount": -3, "note": "refund"}).insert(ignore_permissions=True)
-		doc.cap = 2
+		doc.reload()
+		doc.cap = 6
 		doc.save()
-		frappe.get_doc({"doctype": "Grove Credit", "team": name, "amount": -3, "note": "refund"}).insert(ignore_permissions=True)
+		frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 0}).insert()
+
+	def test_turning_free_off_resets_the_caps(self):
 		# A Free team's caps were never checked: they do not become budgets by flipping the flag.
 		free = team("key-cap-flip")
 		capped = frappe.get_doc({"doctype": "Grove API Key", "team": free, "cap": 1000}).insert()

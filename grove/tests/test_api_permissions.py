@@ -14,9 +14,9 @@ from grove import api
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_api_key.grove_api_key import KEY_PREFIX, hash_secret
 from grove.pathway.routes import utc_timestamp
+from grove.utils import utc_today
 
 PROBE = "control-probe@example.com"
-ALERTS = "owner@example.com"
 WITHHELD = ("Machine", "Inference Server", "Model Replica", "Monitoring Agent")
 
 
@@ -27,6 +27,8 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		per test, so a per-test insert would collide with itself."""
 		super().setUpClass()
 		make_test_geography()
+		# The site's default tier would gate every team minted here.
+		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 		frappe.get_doc(
 			{
 				"doctype": "User",
@@ -64,7 +66,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			{"doctype": "Model Group", "__newname": "probe-reach", "models": [{"model": grouped}, {"model": denied}]}
 		).insert(ignore_permissions=True)
 		team = "probe-reach"
-		api.provision_team(team, ALERTS, free=True)
+		api.provision_team(team, free=True)
 		key = frappe.get_doc("Grove API Key", api.provision_key(team)["name"])
 		key.model_groups = []
 		key.save()
@@ -79,7 +81,10 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		# `name` on the wire is the key: what a caller sends, not a doc id.
 		model_key = lambda doc: frappe.db.get_value("Model", doc, "model_key")  # noqa: E731
 		reach = sorted([model_key(grouped), model_key(allowed)])
-		self.assertEqual(sorted(row["name"] for row in api.available_models(team, key.name)), reach)
+		rows = api.available_models(team, key.name)
+		self.assertEqual(sorted(row["name"] for row in rows), reach)
+		# The provider by its name, not its doc id: the key is that name and the model id.
+		self.assertEqual({row["name"] for row in rows}, {f"{row['provider']}/{row['model_id']}" for row in rows})
 		# Without a key: what a new key in the geography starts with, its default group's models.
 		here = make_test_geography()
 		frappe.get_doc({
@@ -105,7 +110,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 
 	def test_a_keys_rate_limits_are_readable(self):
 		team = "probe-limits"
-		api.provision_team(team, ALERTS, free=True)
+		api.provision_team(team, free=True)
 		name = api.provision_key(team, limits=[{"metric": "requests", "window": "1m", "value": 200}])["name"]
 		self.assertEqual(api.limits(team, name), [{"metric": "requests", "window": "1m", "value": 200}])
 		with self.assertRaises(frappe.DoesNotExistError):
@@ -116,30 +121,23 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			with self.assertRaises(frappe.PermissionError, msg=doctype):
 				frappe.get_list(doctype, limit=1)
 
-	def test_provisioning_again_keeps_the_team_and_moves_its_email(self):
+	def test_provisioning_again_keeps_the_team_and_its_keys(self):
 		team = "TEAM-PROBE"
-		self.assertEqual(api.provision_team(team, "first-owner@example.com", free=True), {"team": team, "max_keys": 10})
-		self.assertEqual(frappe.db.count("Grove API Key", {"team": team}), 0)
+		self.assertEqual(api.provision_team(team, free=True), {"team": team, "max_keys": 0})
 		key = api.provision_key(team)["api_key"]
-		# Safe to repeat, and how an owner change arrives: the same team and keys, a new address.
-		self.assertEqual(api.provision_team(team, "next-owner@example.com"), {"team": team, "max_keys": 10})
-		self.assertEqual(frappe.db.get_value("Central Team", team, "email"), "next-owner@example.com")
+		# Safe to repeat: the same team, the same keys, and Free kept when not given.
+		self.assertEqual(api.provision_team(team), {"team": team, "max_keys": 0})
 		self.assertEqual(frappe.db.get_value("Grove API Key", {"key_hash": hash_secret(key)}, "team"), team)
-		self.assertFalse(frappe.db.exists("User", "first-owner@example.com"), "an address is not a login")
-
-	def test_one_address_may_sit_on_two_teams_and_a_blank_id_names_nobody(self):
-		for team in ("TEAM-SHARED-1", "TEAM-SHARED-2"):
-			api.provision_team(team, "shared-owner@example.com")
-		self.assertEqual(frappe.db.count("Central Team", {"email": "shared-owner@example.com"}), 2)
+		self.assertEqual(frappe.db.get_value("Central Team", team, "free"), 1)
 		with self.assertRaises(frappe.ValidationError):
-			api.provision_team("", "shared-owner@example.com")
+			api.provision_team("")
 
 	def test_a_key_is_minted_for_a_known_team_in_a_geography(self):
 		team = "probe-keyed"
 		with self.assertRaises(frappe.ValidationError, msg="a key does not create its team"):
 			api.provision_key(team, title="laptop")
 
-		api.provision_team(team, ALERTS, free=True)
+		api.provision_team(team, free=True)
 		here, away = make_test_geography(), make_test_geography("probe-away")
 		result = api.provision_key(team, title="laptop", geography=here)
 		self.assertTrue(result["api_key"].startswith(KEY_PREFIX))
@@ -149,27 +147,112 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		abroad = api.provision_key(team, title="eu", geography=away)
 		self.assertEqual((abroad["geography"], abroad["gateway_url"]), (away, self.endpoint(away)))
 
-	def test_a_cap_is_cut_from_the_balance_and_handed_back_by_a_revoke(self):
+	def test_caps_fit_the_spend_limit_and_a_revoke_frees_its_share(self):
 		team = "probe-cap"
-		api.provision_team(team, ALERTS)
-		# Minted with nothing to spend, and a top-up passes it by: it waits for a limit.
+		api.provision_team(team)
+		# Minted at 0 whatever the limit: it waits for a cap.
 		api.provision_key(team, title="uncapped")
-		api.add_credit(team, 10)
-		self.assertEqual((api.keys(team)[0]["cap"], api.balance(team)["unallocated"]), (0, 10.0))
+		self.assertEqual(api.keys(team)[0]["cap"], 0)
+		frappe.db.set_value("Central Team", team, {"override_limits": 1, "max_keys": 5, "spend_limit": 10})
+		self.assertEqual(
+			api.update_team(team),
+			{"team": team, "free": 0, "suspended": 0, "tier": None, "override_limits": 1, "max_keys": 5, "spend_limit": 10},
+		)
 		first = api.provision_key(team, title="first", cap=6)["name"]
 		with self.assertRaises(frappe.ValidationError):
 			api.provision_key(team, title="too much", cap=6)
 		second = api.provision_key(team, title="second", cap=4)["name"]
-		self.assertEqual(api.balance(team), {"balance": 10.0, "spent": 0.0, "unallocated": 0.0, "is_free_user": False})
+		self.assertEqual(api.spend(team), {
+			"spent": 0.0, "month_spent": 0.0, "capped": 10.0, "spend_limit": 10.0,
+			"max_keys": 5, "suspended": False,
+		})
 		self.assertEqual(api.update_key(team, second, cap=2)["cap"], 2)
-		self.assertEqual(api.balance(team)["unallocated"], 2.0)
+		self.assertEqual(api.spend(team)["capped"], 8.0)
 		frappe.db.set_value("Grove API Key", first, "creation", frappe.utils.add_to_date(None, hours=-7), update_modified=False)
 		api.revoke_key(team, first)
-		self.assertEqual(api.balance(team)["unallocated"], 8.0)
+		self.assertEqual(api.spend(team)["capped"], 2.0)
+
+	def test_caps_move_between_keys_in_one_call_or_not_at_all(self):
+		team = "probe-caps"
+		api.provision_team(team)
+		frappe.db.set_value("Central Team", team, {"override_limits": 1, "spend_limit": 10})
+		first = api.provision_key(team, title="first", cap=6)["name"]
+		second = api.provision_key(team, title="second", cap=4)["name"]
+		# 6/4 to 2/8: saved one by one in the order given, the raise would pass the limit first.
+		rows = api.update_caps(team, {second: 8, first: 2})
+		self.assertEqual({row.name: row.cap for row in rows}, {first: 2, second: 8})
+		# A lower beside a raise past the limit: refused before either is saved.
+		with self.assertRaisesRegex(frappe.ValidationError, "spend limit of 10"):
+			api.update_caps(team, {second: 3, first: 9})
+		self.assertEqual({row.name: row.cap for row in api.keys(team)}, {first: 2, second: 8})
+		api.provision_team("probe-caps-other")
+		stranger = api.provision_key("probe-caps-other", title="theirs")["name"]
+		with self.assertRaises(frappe.DoesNotExistError):
+			api.update_caps(team, {stranger: 1})
+
+	def test_a_keys_month_spent_is_its_billed_records_this_month_revoked_or_not(self):
+		team = "probe-month"
+		api.provision_team(team)
+		key = api.provision_key(team, title="monthly")["name"]
+		frappe.db.set_value("Grove API Key", key, "spent", 5)
+		today = utc_today()
+		for day, cost in ((today, 2), (frappe.utils.add_months(today, -1), 3)):
+			frappe.get_doc({
+				"doctype": "Usage Record", "api_key": key, "team": team, "day": day, "drain_id": f"probe-month-{day}",
+				"billed": 1, "request_count": 1, "cost": cost, "usage": "[]",
+			}).insert(ignore_permissions=True)
+		[listed] = api.keys(team)
+		self.assertEqual((listed["spent"], listed["month_spent"]), (5, 2))
+		self.assertEqual(api.spend(team)["month_spent"], 2)
+		# Revoked, the key still spent it this month: Central invoices it.
+		frappe.db.set_value("Grove API Key", key, "status", "revoked")
+		self.assertEqual(api.spend(team)["month_spent"], 2)
+		self.assertTrue(api.update_team(team, suspended=True)["suspended"])
+
+	def test_central_sets_free_and_turning_it_off_resets_the_caps(self):
+		team = "probe-free"
+		api.provision_team(team, free=True)
+		frappe.db.set_value("Central Team", team, {"override_limits": 1, "spend_limit": 5})
+		# A Free team's caps are not checked, so this one passes the limit.
+		key = api.provision_key(team, title="generous", cap=7)["name"]
+		self.assertTrue(frappe.db.get_value("Central Team", team, "free"))
+		self.assertEqual(api.update_team(team, free=False)["free"], 0)
+		self.assertEqual(frappe.db.get_value("Grove API Key", key, "cap"), 0)
+		self.assertEqual(api.update_team(team, free=True)["free"], 1)
+
+	def test_a_teams_tier_sets_the_limits_of_its_unpinned_keys(self):
+		team = "probe-tier"
+		api.provision_team(team)
+		unpinned = api.provision_key(team, title="inherits")["name"]
+		pinned = api.provision_key(team, title="pinned", limits=[{"metric": "requests", "window": "1m", "value": 5}])["name"]
+		defaults = [
+			{"metric": "requests", "window": "1m", "value": 20}, {"metric": "total_tokens", "window": "1m", "value": 100_000},
+		]
+		self.assertEqual(api.limits(team, unpinned), defaults)
+		growth = [{"metric": "requests", "window": "1m", "value": 60}]
+		frappe.get_doc({
+			"doctype": "Tier", "__newname": "probe-growth", "max_keys": 3, "spend_limit": 50, "limits": [dict(r) for r in growth],
+		}).insert()
+		limits = api.update_team(team, tier="probe-growth")
+		self.assertEqual((limits["tier"], limits["max_keys"], limits["spend_limit"]), ("probe-growth", 3, 50))
+		listed = {row.name: row.limits for row in api.keys(team)}
+		self.assertEqual((listed[unpinned], listed[pinned]), (growth, [{"metric": "requests", "window": "1m", "value": 5}]))
+		# A tier Central names before Grove has one: a copy of the default tier, never refused.
+		frappe.db.set_single_value("Grove Settings", "default_tier", "probe-growth")
+		self.addCleanup(frappe.db.set_single_value, "Grove Settings", "default_tier", "")
+		self.assertEqual(api.update_team(team, tier="probe-unseen")["max_keys"], 3)
+		self.assertEqual([row.value for row in frappe.get_doc("Tier", "probe-unseen").limits], [60])
+		# No tier: the default tier's. No default either: the hard-coded limits, and no cap allowed.
+		self.assertEqual((api.update_team(team, tier="")["spend_limit"], api.limits(team, unpinned)), (50, growth))
+		frappe.db.set_single_value("Grove Settings", "default_tier", "")
+		self.assertEqual((api.spend(team)["spend_limit"], api.limits(team, unpinned)), (0, defaults))
+		# Override Limits pins the team's own numbers, whatever its tier says.
+		frappe.db.set_value("Central Team", team, {"override_limits": 1, "max_keys": 1, "spend_limit": 7})
+		self.assertEqual((api.spend(team)["max_keys"], api.spend(team)["spend_limit"]), (1, 7))
 
 	def test_a_minted_key_is_unique_by_its_hash(self):
 		team = "probe-unique"
-		api.provision_team(team, ALERTS, free=True)
+		api.provision_team(team, free=True)
 		# 192 random bits never repeat in practice; the index is what makes sure of it.
 		same_bits = unittest.mock.patch(
 			"grove.grove.doctype.grove_api_key.grove_api_key.secrets.token_hex", return_value="0" * 48
@@ -181,7 +264,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 
 	def test_a_teams_keys_are_listed_without_their_secret(self):
 		team = "probe-listed"
-		api.provision_team(team, ALERTS, free=True)
+		api.provision_team(team, free=True)
 		minted = api.provision_key(team, title="laptop", cap=0)
 
 		[listed] = api.keys(team)
@@ -193,14 +276,14 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertEqual(
 			listed.revocable_at, utc_timestamp(frappe.utils.add_to_date(listed.creation, hours=6))
 		)
-		self.assertTrue(listed.masked.endswith(minted["api_key"][-4:]))
+		self.assertEqual(listed.masked, minted["api_key"][:7] + "…")
 		self.assertNotIn(minted["api_key"], str(listed))
 		self.assertEqual(api.keys("probe-nobody"), [])
 
 	def test_a_key_is_revoked_by_name_only_for_the_team_holding_it(self):
 		team, other = "probe-revoker", "probe-revoker-other"
 		for each in (team, other):
-			api.provision_team(each, ALERTS, free=True)
+			api.provision_team(each, free=True)
 		key = api.provision_key(team, title="ci")["name"]
 
 		with self.assertRaises(frappe.DoesNotExistError):
@@ -219,7 +302,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 
 	def pull_counter(self, team):
 		"""A team to pull and its counter, cleared now and after: Redis is not rolled back."""
-		api.provision_team(team, ALERTS)
+		api.provision_team(team)
 		key = frappe.cache.make_key(f"usage_pull:{team}")
 		frappe.cache.delete(key)
 		self.addCleanup(frappe.cache.delete, key)
@@ -247,63 +330,3 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			api.pull_usage(team)
 		self.assertEqual(int(frappe.cache.get(key)), counted, "a refused caller spends nothing")
-
-	def test_the_control_role_can_post_a_credit(self):
-		api.provision_team("probe-credit", ALERTS)
-		frappe.get_doc({"doctype": "Grove Credit", "team": "probe-credit", "amount": 5}).insert()
-		self.assertEqual(frappe.db.get_value("Central Team", "probe-credit", "balance"), 5)
-
-	def test_add_credit_posts_to_the_ledger_and_returns_the_balance(self):
-		team = "probe-topup"
-		api.provision_team(team, ALERTS)
-		self.assertTrue(frappe.db.get_value("Central Team", team, "credit_exhausted"))
-		self.assertEqual(api.add_credit(team, 7)["balance"], 7)
-		self.assertFalse(frappe.db.get_value("Central Team", team, "credit_exhausted"))
-		self.assertEqual(api.balance(team), {"balance": 7.0, "spent": 0.0, "unallocated": 7.0, "is_free_user": False})
-		with self.assertRaises(frappe.ValidationError):
-			api.add_credit(team, 0)
-		with self.assertRaises(frappe.ValidationError):
-			api.add_credit("nobody-topup", 1)
-		with self.assertRaises(frappe.ValidationError):
-			api.balance("nobody-topup")
-
-	def test_add_credit_repeated_with_a_reference_adds_nothing(self):
-		team = "probe-retry"
-		api.provision_team(team, ALERTS)
-		for _ in range(2):
-			self.assertEqual(api.add_credit(team, 7, reference="ledger-1")["balance"], 7)
-		self.assertEqual(frappe.db.count("Grove Credit", {"team": team}), 1)
-		self.assertEqual(api.add_credit(team, 3, reference="ledger-2")["balance"], 10)
-		# The id names one top-up: another amount, or another team, under it is refused.
-		with self.assertRaises(frappe.ValidationError):
-			api.add_credit(team, 8, reference="ledger-1")
-		api.provision_team("probe-retry-other", ALERTS)
-		with self.assertRaises(frappe.ValidationError):
-			api.add_credit("probe-retry-other", 7, reference="ledger-1")
-		# No reference, no dedupe: two calls are two top-ups.
-		for _ in range(2):
-			api.add_credit(team, 1)
-		self.assertEqual(api.balance(team)["balance"], 12.0)
-
-	def test_add_credit_hands_the_top_up_to_the_keys_and_says_so_once(self):
-		team = "probe-spread"
-		api.provision_team(team, ALERTS)
-		api.add_credit(team, 4)
-		key = api.provision_key(team, title="spread", cap=4)["name"]
-		handed = {"balance": 6.0, "allocations": [{"key": key, "amount": 2.0}]}
-		self.assertEqual(api.add_credit(team, 2, reference="spread-1"), handed)
-		# The repeat answers with the same split and raises nothing again.
-		self.assertEqual(api.add_credit(team, 2, reference="spread-1"), handed)
-		self.assertEqual(api.keys(team)[0]["cap"], 6)
-		self.assertEqual(api.add_credit(team, 1, allocations={key: 0.25})["allocations"], [{"key": key, "amount": 0.25}])
-		self.assertEqual(api.balance(team)["unallocated"], 0.75)
-
-	def test_a_reference_is_unique_on_the_ledger_itself(self):
-		api.provision_team("probe-unique-ledger", ALERTS)
-		entry = {"doctype": "Grove Credit", "team": "probe-unique-ledger", "amount": 5, "reference": "ledger-9"}
-		credit = frappe.get_doc(entry).insert()
-		with self.assertRaises(frappe.UniqueValidationError):
-			frappe.get_doc(entry).insert()
-		credit.reference = "ledger-10"
-		with self.assertRaisesRegex(frappe.ValidationError, "never edited"):
-			credit.save(ignore_permissions=True)

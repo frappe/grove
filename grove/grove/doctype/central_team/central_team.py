@@ -5,16 +5,18 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import flt
 
+from grove.access import team_limits
+
 
 class CentralTeam(Document):
-	"""A team in Central, named by its id there (`TEAM-00520`): the ledger every key of the team
-	spends out of.
-	Policy — models, geography, rate limits, the cap — sits on each Grove API Key; what is the
-	team's is the money (Σ Grove Credit less what its keys spent), whether it is Free, how many
-	keys it may hold, and the address its alerts go to.
+	"""A team in Central, named by its id there (`TEAM-00520`).
+	Policy — models, geography, rate limits, the monthly cap — sits on each Grove API Key; what is
+	the team's is what its `tier` allows (`max_keys`, `spend_limit`, the rate limits its unpinned
+	keys run under; its own two under Override Limits), whether it is Free or suspended, and what
+	its keys spent. Who the team is, its contacts, credit and invoices are Central's.
 
-	The gateway holds no team record: `free`, `log_payloads` and `credit_exhausted` ride on every
-	key of the team, so the team running out refuses every key with one field each."""
+	The gateway holds no team record: `free`, `log_payloads` and `suspended` ride on every key of
+	the team, so suspending it refuses every key with one field each."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -24,38 +26,33 @@ class CentralTeam(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		balance: DF.Currency
-		credit_exhausted: DF.Check
-		email: DF.Data
 		free: DF.Check
 		log_payloads: DF.Check
 		max_keys: DF.Int
+		override_limits: DF.Check
+		spend_limit: DF.Currency
 		spent: DF.Currency
+		suspended: DF.Check
+		tier: DF.Link | None
 	# end: auto-generated types
 
 	def validate(self):
-		if (self.max_keys or 0) <= 0:
-			frappe.throw("Max Keys must be above zero.")
+		if (self.max_keys or 0) < 0:
+			frappe.throw("Max Keys cannot be negative; 0 is no limit.")
+		if flt(self.spend_limit) < 0:
+			frappe.throw("A spend limit cannot be negative.")
 		if not self.is_new():
-			# save() writes every column and the pull writes these two behind the form's back, so a
-			# form left open across a pull would write its old totals back as free credit.
-			live = frappe.db.get_value("Central Team", self.name, ["spent", "balance"], as_dict=True, for_update=True)
-			self.spent, self.balance = live.spent, live.balance
-		# Mirrors pricing.settle, which on_update then runs for real: free is never gated.
-		self.credit_exhausted = int(not self.free and (self.balance or 0) <= 0)
+			# save() writes every column and the pull writes this one behind the form's back.
+			self.spent = frappe.db.get_value("Central Team", self.name, "spent", for_update=True)
 
 	def on_update(self):
-		"""The verdict is re-decided from what was just saved — the same writer the pull uses."""
-		from grove.billing.pricing import settle
-
 		before = self.get_doc_before_save()
 		if before and before.free and not self.free:
 			self.reset_caps()
-		settle(self.name)
 
 	def reset_caps(self):
 		"""Caps are not checked while a team is Free, so turning Free off starts every live key at
-		0: each is capped again out of what the team loads, never out of a number nobody vetted."""
+		0: each is capped again within the spend limit, never at a number nobody vetted."""
 		for key in self.live_keys:
 			frappe.db.set_value("Grove API Key", key, "cap", 0, update_modified=False)
 
@@ -65,9 +62,9 @@ class CentralTeam(Document):
 
 	@frappe.whitelist()
 	def set_free(self, free: bool | int | str, caps: list[dict] | None = None):
-		"""Button. Free: the team stops being charged. Prepaid: every live key gets the spend limit
+		"""Button. Free: the team stops being charged. Paid: every live key gets the monthly cap
 		`caps` names for it ({key, cap}), 0 when left out — refused until it gets one — checked
-		against the balance before anything is written, so a refusal leaves the team as it was."""
+		against the spend limit before anything is written, so a refusal leaves the team as it was."""
 		frappe.only_for("System Manager")
 		self.free = int(bool(frappe.utils.sbool(free)))
 		if self.free:
@@ -82,29 +79,13 @@ class CentralTeam(Document):
 			doc.save()
 
 	def check_caps(self, caps):
-		"""The limits together within the balance — what each key's own validate will insist
-		on, said once up front."""
-		spent = dict(
-			frappe.get_all("Grove API Key", filters={"team": self.name, "status": "active"}, fields=["name", "spent"], as_list=True)
-		)
-		handed_out = sum(max(caps.get(key, 0) - flt(spent[key]), 0) for key in spent)
-		# Read live: the form's copy may predate a top-up or a pull.
-		balance = flt(frappe.db.get_value("Central Team", self.name, "balance"))
-		if handed_out > balance:
-			frappe.throw(f"These limits hand out {handed_out:.2f} of a balance of {balance:.2f}. Top up first.")
+		"""The caps together within the spend limit — what each key's own validate will insist on,
+		said once up front."""
+		spend_limit = flt(team_limits(self.name).spend_limit, 9)
+		total = flt(sum(caps.get(key, 0) for key in self.live_keys), 9)
+		if total > spend_limit:
+			frappe.throw(f"These caps add up to {total:.2f} a month of a spend limit of {spend_limit:.2f}.")
 
 	@property
 	def active_keys(self):
 		return frappe.db.count("Grove API Key", {"team": self.name, "status": "active"})
-
-
-def set_credit_exhausted(team, exhausted):
-	"""Flip the credit gate for `team`. Held here, not on the keys, because the balance is the
-	team's; the next sync pushes it as `limited` on each key the team holds. Returns True when
-	something actually changed."""
-	current = frappe.db.get_value("Central Team", team, "credit_exhausted")
-	if current is None or current == int(exhausted):
-		return False
-	# update_modified=False: a system flag flip is not a user edit and must not read as one.
-	frappe.db.set_value("Central Team", team, "credit_exhausted", int(exhausted), update_modified=False)
-	return True

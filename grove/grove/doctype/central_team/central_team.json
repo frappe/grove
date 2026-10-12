@@ -2,32 +2,24 @@
  "actions": [],
  "autoname": "Prompt",
  "creation": "2026-10-08 00:00:00",
- "description": "Named by Central's id for the team (TEAM-00520). One team per id: the ledger is the team's, and a second doc under one id would be a second allowance.",
+ "description": "Named by Central's id for the team (TEAM-00520). One team per id: the tier limits are the team's.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "email",
   "free",
   "log_payloads",
-  "max_keys",
+  "tier",
+  "override_limits",
   "column_break_head",
-  "balance",
-  "spent",
-  "credit_exhausted"
+  "max_keys",
+  "spend_limit",
+  "suspended",
+  "spent"
  ],
  "fields": [
   {
-   "description": "Where alerts for this team go. Not a login, and not unique.",
-   "fieldname": "email",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Email",
-   "options": "Email",
-   "reqd": 1
-  },
-  {
    "default": "0",
-   "description": "Never charged and never gated: usage is still recorded, with what it would have cost, but Spent and Balance do not move and no key's spend limit applies. Off means prepaid \u2014 every key spends against its own limit, cut out of this balance. Flip it with Mark Prepaid / Mark Free, which also sets the keys' limits.",
+   "description": "Never charged and never gated: usage is still recorded, with what it would have cost, but Spent does not move and no key's cap applies. Flip it with Mark Paid / Mark Free.",
    "fieldname": "free",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -42,24 +34,51 @@
    "label": "Log Prompts & Outputs"
   },
   {
-   "default": "10",
-   "description": "How many live keys the team may hold. Rate limits are per key, so this is what bounds a team's throughput.",
-   "fieldname": "max_keys",
-   "fieldtype": "Int",
-   "label": "Max Keys",
-   "reqd": 1
+   "description": "The Tier the team runs under: its key count, monthly spend limit and, for keys with no limits of their own, rate limits. Named by Central from the team's trust tier; blank is the default tier in Grove Settings. Tick Override Limits to pin this team's own numbers instead.",
+   "fieldname": "tier",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Tier",
+   "options": "Tier",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Pin this team's own Max Keys and Spend Limit below; unticked, its tier's apply.",
+   "fieldname": "override_limits",
+   "fieldtype": "Check",
+   "label": "Override Limits"
   },
   {
    "fieldname": "column_break_head",
    "fieldtype": "Column Break"
   },
   {
-   "description": "\u03a3 Grove Credit entries \u2212 Spent, written by pricing.settle on every pull, top-up and save. Top up by adding a Grove Credit; hand it out by raising keys' caps.",
-   "fieldname": "balance",
+   "default": "0",
+   "depends_on": "override_limits",
+   "description": "How many live keys the team may hold; 0 is no limit.",
+   "fieldname": "max_keys",
+   "fieldtype": "Int",
+   "label": "Max Keys"
+  },
+  {
+   "default": "0",
+   "depends_on": "override_limits",
+   "description": "What the team's live keys may spend in a month together: \u03a3 the keys' caps stays within it. Lowering it stops no key; it only refuses a raise or a new cap until the caps fit again.",
+   "fieldname": "spend_limit",
    "fieldtype": "Currency",
    "in_list_view": 1,
-   "label": "Balance (USD)",
-   "precision": "9",
+   "label": "Spend Limit (USD / month)",
+   "precision": "9"
+  },
+  {
+   "default": "0",
+   "description": "Set by Central when the team's invoice goes unpaid; an edit here would be overwritten on the next sync. Pushed as limited on every key of the team, which the gateways then refuse whatever its own cap says.",
+   "fieldname": "suspended",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Suspended",
    "read_only": 1
   },
   {
@@ -69,15 +88,6 @@
    "in_list_view": 1,
    "label": "Spent (USD)",
    "precision": "9",
-   "read_only": 1
-  },
-  {
-   "default": "0",
-   "description": "Set by settle when the balance is at or below zero and the team is not Free. Pushed on every key of the team, which the gateways then refuse whatever its own cap says.",
-   "fieldname": "credit_exhausted",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Credit Exhausted",
    "read_only": 1
   }
  ],
@@ -99,16 +109,11 @@
   },
   {
    "group": "Usage",
-   "link_doctype": "Grove Credit",
-   "link_fieldname": "team"
-  },
-  {
-   "group": "Usage",
    "link_doctype": "Stuck Usage",
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-10-08 00:00:00.000000",
+ "modified": "2026-10-13 13:30:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Central Team",

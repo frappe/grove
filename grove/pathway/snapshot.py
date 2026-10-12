@@ -12,7 +12,7 @@ import json
 
 import frappe
 
-from grove.access import group_rows, limit_rows, model_rows
+from grove.access import effective_limits, group_rows, limit_entries, model_rows
 from grove.billing.pricing import nano
 from grove.pathway import routes
 
@@ -32,25 +32,27 @@ def effective_groups():
 
 def effective_keys():
 	"""Every LIVE API Key projected for the gateway, with the whole policy the gates read: its
-	groups and own allow/deny, its geography, its rate limits and its cap as `budget` — the box
-	subtracts its own spend from it and refuses at zero. What is the team's rides on each key:
-	`prepaid` (not Free; the wire says `prepaid`, not `free`, so a field absent reads as no gate),
-	`log_payloads`, and `limited` — Grove's verdict that the team's balance is gone, which refuses
-	every key whatever its own cap says.
+	groups and own allow/deny, its geography, its rate limits (its own, else its team's tier's,
+	else the defaults) and `budget` — its monthly cap; the box counts its spend per month and
+	refuses it once this month's reaches that. What is the team's rides on each key: `prepaid`
+	(not Free; the wire says `prepaid`, not `free`, so a field absent reads as no gate),
+	`log_payloads`, and `limited` — the team is suspended, which refuses every key whatever its
+	own cap says.
 
 	Revoked keys are not projected: absent from their bucket, the push prunes them off every box.
 	The row stays in Grove as the record of a credential that existed."""
 	deltas = model_rows("Grove API Key")
 	memberships = group_rows()
-	limits = limit_rows()
 	teams = {
-		t.name: t for t in frappe.get_all("Central Team", fields=["name", "free", "log_payloads", "credit_exhausted"])
+		t.name: t
+		for t in frappe.get_all("Central Team", fields=["name", "free", "log_payloads", "suspended", "tier"])
 	}
 	keys = frappe.get_all(
 		"Grove API Key",
 		filters={"status": "active"},
 		fields=["name", "key_hash", "team", "status", "geography", "cap"],
 	)
+	limits = effective_limits(keys, limit_entries("Grove API Key"), {name: t.tier for name, t in teams.items()})
 	records = []
 	for k in sorted(keys, key=lambda k: k.key_hash or ""):
 		team = teams.get(k.team)
@@ -66,7 +68,7 @@ def effective_keys():
 			"group": ",".join(memberships.get(k.name, [])),
 			"allow": ",".join(deltas.get(k.name, {}).get("allow", [])),
 			"deny": ",".join(deltas.get(k.name, {}).get("deny", [])),
-			"limited": bool(team.credit_exhausted),
+			"limited": bool(team.suspended),
 			# Opt-in to prompt/output logging. Customer content: absent or falsy stays off.
 			"log_payloads": bool(team.log_payloads),
 			# Every gateway gets every key; one outside its geography answers 403.
@@ -75,7 +77,7 @@ def effective_keys():
 			"budget": 0 if team.free else nano(k.cap or 0),
 			# Rate limits, `metric:window:value` each. Blank when none: the box merges fields, so
 			# leaving it out would keep a removed limit in force.
-			"limits": ",".join(limits.get(k.name, [])),
+			"limits": ",".join(f"{r['metric']}:{r['window']}:{r['value']}" for r in limits.get(k.name, [])),
 		})
 	return records
 

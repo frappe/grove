@@ -71,7 +71,7 @@ class TestGranted(IntegrationTestCase):
 		).insert(ignore_permissions=True).name
 		cls.group = frappe.get_doc({"doctype": "Model Group", "__newname": "probe-granted-group"}).insert().name
 		team = frappe.get_doc(
-			{"doctype": "Central Team", "__newname": "probe-granted", "email": "probe-granted@example.com", "free": 1}
+			{"doctype": "Central Team", "__newname": "probe-granted", "free": 1}
 		).insert(ignore_permissions=True).name
 		cls.key = frappe.get_doc({"doctype": "Grove API Key", "team": team}).insert(ignore_permissions=True).name
 

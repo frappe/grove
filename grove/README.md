@@ -41,8 +41,8 @@ topology stays inside its VPC and several deployments behind one ingress fold in
 |---|---|
 | `pathway/run.py` | What every run shares: `Target` (one box's admin API), `SyncRun` (lock, parallel dial, rows in the order asked). Every path that reaches a box goes through it. |
 | `pathway/projection.py` | `Projection`: every push to every box. A push that left no Pathway Sync row did not happen. |
-| `pathway/usage.py` | `Usage`: each store's drain (or one user's keys) into one Usage Record per key (two when it holds both billed and free usage), then the ack of what landed. `reconcile.py` lands each touched user: records, `spent` moved by Grove's price, the gateway's charge audited, the verdict settled. |
-| `billing/` | Usage counters, sell prices, the credit ledger, usage records and the Revenue report — its own Frappe module, [`billing/README.md`](billing/README.md). |
+| `pathway/usage.py` | `Usage`: each store's drain (or one team's keys) into one Usage Record per key (two when it holds both billed and free usage), then the ack of what landed. `reconcile.py` lands each touched team: records, `spent` moved by Grove's price, the gateway's charge audited, the team settled. |
+| `billing/` | Usage counters, sell prices, monthly caps, usage records and the Revenue report — its own Frappe module, [`billing/README.md`](billing/README.md). |
 | `catalog/` | What a site starts with: `catalog.json` (geographies, providers, vendor models and their rates, model groups; no secret, no `published`), `seed.insert_missing` (after install and after every migrate), `export.write` (by hand). |
 | `pathway/snapshot.py` | The desired state a box is pushed, and the hash gate that decides which sections travel. |
 | `pathway/routes.py` | `deploy:<model>` tables — a gateway's for its Geography, an ingress's for the boxes it owns. |
@@ -102,7 +102,7 @@ fleet gets re-pushed over row order. Order means nothing on the wire; it exists 
 
 | Redis key | Written by | Holds |
 |---|---|---|
-| `key:<sha256(secret)>` | state push (keys) + the agent | the whole policy: `team`, `group` (comma list), own `allow`/`deny`, `geography`, `limits`, `prepaid`, `budget` (the key's cap), `limited`, `log_payloads`; the agent's own lifetime `spent` |
+| `key:<sha256(secret)>` | state push (keys) + the agent | the whole policy: `team`, `group` (comma list), own `allow`/`deny`, `geography`, `limits` (the key's own, else its team's Tier's, else the default tier's, else the defaults), `prepaid`, `budget` (its monthly cap), `limited`, `log_payloads`; the agent's own `spent:<YYYY-MM>`, this month's spend |
 | `model_group:<name>` | state push (groups) | the model grant for everyone in it |
 | `deploy:<model>` | state push (routes) | every placement of one model |
 | `grove:state_hash` | state push | per-section/bucket hashes of what the box holds |
@@ -115,8 +115,8 @@ fleet gets re-pushed over row order. Order means nothing on the wire; it exists 
 Access is pushed as **two** records: a group edit is one record however many members, and the key
 carries everything else — the agent resolves the two at request time, unioning every group the key
 names before applying its own allow/deny. The team is not a record on the box: what is the team's
-(Free, payload logging, the credit verdict) is stamped on each of its keys, so the team running out
-is one field per key.
+(Free, payload logging, suspension) is stamped on each of its keys, so suspending the team is one
+field per key.
 
 A model id is always `<provider>/<name>` (`frappe/qwen3.5-4b`) — the Model's **key**, not its doc
 name, which is a hash. One key, one route key, one grant — the bare form was deliberately broken,
@@ -183,9 +183,9 @@ one place (`_upstream_model`):
 Access, routing, metering and `/v1/models` all key on the id the caller sent, so the rewrite never
 desyncs a grant from a route, and usage lands against the Grove model whatever the vendor calls it.
 
-## Prices and credits
+## Prices and caps
 
-Live in [`billing/`](billing/README.md): the counter table, sell prices, the prepaid balance, what a
+Live in [`billing/`](billing/README.md): the counter table, sell prices, the monthly caps, what a
 drain is audited for, and the Revenue report.
 
 ## The catalog (`catalog/`)

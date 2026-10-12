@@ -19,6 +19,7 @@ from pathlib import Path
 import frappe
 
 import grove
+from grove import access
 from grove.pathway import projection, routes, run, snapshot
 from grove.pathway.run import Target, Unit
 from grove.tests.model_rows import modality_rows, model_row
@@ -247,11 +248,11 @@ class TestEffectiveGroups(unittest.TestCase):
 
 class TestEffectiveKeys(unittest.TestCase):
 	"""key:<hash> — the one record the gateway reads: the credential and the whole policy behind
-	it, with what is the team's (free, payload logging, the credit verdict) riding on each key."""
+	it, with what is the team's (free, payload logging, suspension) riding on each key."""
 
-	def keys(self, keys=(), rows=(), groups=(), limits=(), teams=None):
+	def keys(self, keys=(), rows=(), groups=(), limits=(), teams=None, default_tier=None):
 		self.calls, seen = {}, {}
-		teams = [frappe._dict(name="T-1", free=0, log_payloads=0, credit_exhausted=0)] if teams is None else teams
+		teams = [frappe._dict(name="T-1", free=0, log_payloads=0, suspended=0)] if teams is None else teams
 
 		def get_all(doctype, filters=None, **kwargs):
 			self.calls[doctype] = self.calls.get(doctype, 0) + 1
@@ -265,10 +266,14 @@ class TestEffectiveKeys(unittest.TestCase):
 			if doctype == "Model Group Row":
 				return list(groups)
 			if doctype == "Model Limit":
-				return list(limits)
+				# A key's own rows, or a tier's: the two reads the resolution makes.
+				return [row for row in limits if row.get("parenttype", "Grove API Key") == filters["parenttype"]]
 			raise AssertionError(f"unexpected get_all({doctype})")
 
-		with unittest.mock.patch.object(frappe, "get_all", side_effect=get_all):
+		with (
+			unittest.mock.patch.object(frappe, "get_all", side_effect=get_all),
+			unittest.mock.patch.object(access, "default_tier", return_value=default_tier),
+		):
 			projected = snapshot.effective_keys()
 		self.filters = seen.get("filters")
 		return projected
@@ -284,14 +289,14 @@ class TestEffectiveKeys(unittest.TestCase):
 				frappe._dict(parent="KEY-1", model_key="qwen3-35b", parentfield="deny"),
 			],
 			[frappe._dict(parent="KEY-1", model_group="acme")],
-			teams=[frappe._dict(name="T-1", free=0, log_payloads=1, credit_exhausted=1)],
+			teams=[frappe._dict(name="T-1", free=0, log_payloads=1, suspended=1)],
 		)
 		self.assertEqual(
 			key,
 			{
 				"key_hash": "abc", "prefix": "KEY-1", "team": "T-1", "status": "active", "group": "acme",
 				"allow": "qwen3-4b", "deny": "qwen3-35b", "limited": True, "log_payloads": True,
-				"geography": "in", "prepaid": True, "budget": 0, "limits": "",
+				"geography": "in", "prepaid": True, "budget": 0, "limits": "requests:1m:20,total_tokens:1m:100000",
 			},
 		)
 
@@ -327,9 +332,15 @@ class TestEffectiveKeys(unittest.TestCase):
 	def test_a_key_that_grants_nothing_is_still_pushed_as_blank(self):
 		# Blank overwrites Redis; omitting the fields would leave a removed allow in force.
 		[key] = self.keys([self.key()])
-		self.assertEqual((key["group"], key["allow"], key["deny"], key["limits"]), ("", "", "", ""))
+		self.assertEqual((key["group"], key["allow"], key["deny"]), ("", "", ""))
 		self.assertIs(key["limited"], False)
 		self.assertIs(key["log_payloads"], False)
+		# No rows of its own and no tier: the defaults. A tier with no rows: uncapped, and blank
+		# overwrites a limit the box still holds.
+		self.assertEqual(key["limits"], "requests:1m:20,total_tokens:1m:100000")
+		open_tier = frappe._dict(name="T-1", free=0, log_payloads=0, suspended=0, tier="Open")
+		[key] = self.keys([self.key()], teams=[open_tier])
+		self.assertEqual(key["limits"], "")
 
 	def test_one_row_query_covers_every_key(self):
 		# The N+1 this projection removes: one query for the keys, one for their rows.
@@ -346,9 +357,10 @@ class TestEffectiveKeys(unittest.TestCase):
 		)
 		self.assertEqual([k["allow"] for k in keys], ["m1", "m2"])
 		self.assertEqual([k["group"] for k in keys], ["acme", "beta"])
-		# Five tables, still five queries: membership and limits must not become the N+1 again.
+		# Five tables, six queries (the keys' own limit rows, then the tiers'): membership and
+		# limits must not become the N+1 again.
 		self.assertEqual(
-			self.calls, {"Grove API Key": 1, "Central Team": 1, "Grove Model Row": 1, "Model Group Row": 1, "Model Limit": 1}
+			self.calls, {"Grove API Key": 1, "Central Team": 1, "Grove Model Row": 1, "Model Group Row": 1, "Model Limit": 2}
 		)
 
 	def test_limits_are_one_sorted_comma_list(self):
@@ -371,13 +383,32 @@ class TestEffectiveKeys(unittest.TestCase):
 		self.assertEqual(changed, {snapshot.bucket_of("abc")})
 
 	def test_a_key_carries_its_cap_in_nano_usd(self):
-		# The slice of the team's balance cut for it; each box subtracts its own spend.
+		# The box counts its own spend per month and compares this month's with it.
 		[key] = self.keys([self.key(cap=Decimal("7.5"))])
 		self.assertEqual((key["prepaid"], key["budget"]), (True, 7_500_000_000))
 
+	def test_limits_are_the_keys_own_else_its_tiers_else_the_defaults(self):
+		tiered = frappe._dict(name="T-2", free=0, log_payloads=0, suspended=0, tier="Growth")
+		keys = self.keys(
+			[self.key("KEY-1", "abc"), self.key("KEY-2", "abd", team="T-2"), self.key("KEY-3", "abe", team="T-2")],
+			limits=[
+				frappe._dict(parenttype="Grove API Key", parent="KEY-3", metric="requests", window="1m", value=5),
+				frappe._dict(parenttype="Tier", parent="Growth", metric="requests", window="1m", value=60),
+			],
+			teams=[frappe._dict(name="T-1", free=0, log_payloads=0, suspended=0), tiered],
+		)
+		self.assertEqual(
+			[k["limits"] for k in keys], ["requests:1m:20,total_tokens:1m:100000", "requests:1m:60", "requests:1m:5"]
+		)
+
+	def test_a_team_with_no_tier_runs_under_the_default_tier(self):
+		growth = frappe._dict(parenttype="Tier", parent="Growth", metric="requests", window="1m", value=60)
+		[key] = self.keys([self.key()], limits=[growth], default_tier="Growth")
+		self.assertEqual(key["limits"], "requests:1m:60")
+
 	def test_a_free_teams_key_carries_no_ceiling(self):
 		# The wire still says `prepaid`: absent on an old push has to read as no gate.
-		[key] = self.keys([self.key(cap=Decimal("2.5"))], teams=[frappe._dict(name="T-1", free=1, log_payloads=0, credit_exhausted=0)])
+		[key] = self.keys([self.key(cap=Decimal("2.5"))], teams=[frappe._dict(name="T-1", free=1, log_payloads=0, suspended=0)])
 		self.assertEqual((key["prepaid"], key["budget"]), (False, 0))
 
 	def test_every_key_carries_its_pin(self):
@@ -722,7 +753,7 @@ class TestSyncProjection(unittest.TestCase):
 			unittest.mock.patch.object(projection, "mark_corrected") as self.mark_corrected,
 			unittest.mock.patch.object(
 				frappe, "db", frappe._dict(
-					commit=lambda: None, set_value=set_value,
+					commit=lambda: None, set_value=set_value, get_value=lambda *a, **k: "store1",
 					get_single_value=lambda _doctype, field: field == self.paused,
 				)
 			),
@@ -746,6 +777,16 @@ class TestSyncProjection(unittest.TestCase):
 		self.mark_corrected.assert_called_once_with({"CD-1": 40})
 		[row] = doc.results
 		self.assertNotIn("adjusted", row)
+
+	def test_a_named_gateway_is_pushed_what_its_store_is_owed(self):
+		# The operator's Sync button names one box; the store's corrections must not wait for the tick.
+		owed = {"store1": [{"key": "abc", "delta": -5, "id": "CD-1"}]}
+		self.run_projection(
+			{"gw1": {**self.row(), "adjusted": {"CD-1": 40}}}, owed=owed,
+			entry=lambda **kwargs: projection.sync_projection(proxies=["gw1"], **kwargs),
+		)
+		self.assertEqual(self.handed, {"gw1": owed["store1"]})
+		self.mark_corrected.assert_called_once_with({"CD-1": 40})
 
 	def test_a_fleet_in_sync_logs_no_doc(self):
 		name, doc, targets = self.run_projection({})

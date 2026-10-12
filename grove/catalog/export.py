@@ -6,7 +6,7 @@ from pathlib import Path
 
 import frappe
 
-from grove.access import model_rows
+from grove.access import limit_entries, model_rows
 from grove.catalog.seed import CATALOG, get_model_key
 from grove.grove.doctype.model.model import get_modality_names
 from grove.billing.pricing import CounterTable
@@ -26,8 +26,16 @@ def write(path=None):
 		"cloud_providers": get_cloud_providers(), "regions": get_regions(),
 		"providers": get_providers(), "denied_tools": get_denied_tools(),
 		"models": models, "model_groups": get_model_groups(models),
+		"tiers": get_tiers(), "default_tier": frappe.db.get_single_value("Grove Settings", "default_tier") or "",
 	}
 	Path(path or CATALOG).write_text(json.dumps(catalog, indent=1, sort_keys=True) + "\n")
+
+
+def get_tiers():
+	"""Every tier, its caps and its rows, so a site's ladder ships with the catalog."""
+	rows = limit_entries("Tier")
+	tiers = frappe.get_all("Tier", fields=["name", "max_keys", "spend_limit"], order_by="name")
+	return [{"name": t.name, "max_keys": t.max_keys, "spend_limit": t.spend_limit, "limits": rows.get(t.name, [])} for t in tiers]
 
 
 def get_counters():

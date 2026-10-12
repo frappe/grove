@@ -1,5 +1,5 @@
 """What a site starts with: usage counters, modalities, geographies, cloud accounts, regions,
-providers, vendor models and model groups, read from `catalog.json`. Not Frappe fixtures: those delete and re-insert on every migrate, secrets included."""
+tiers, providers, vendor models and model groups, read from `catalog.json`. Not Frappe fixtures: those delete and re-insert on every migrate, secrets included."""
 
 import json
 from pathlib import Path
@@ -30,6 +30,11 @@ def insert_missing(path=None):
 		insert_named("Cloud Provider", cloud_provider, ignore_mandatory=True)
 	for region in catalog.get("regions", []):
 		insert_named("Region", region)
+	# Starter values: the operator's edits stick, since a held tier is never touched.
+	for tier in catalog.get("tiers", []):
+		insert_named("Tier", tier)
+	if (default := catalog.get("default_tier")) and not frappe.db.get_single_value("Grove Settings", "default_tier"):
+		frappe.db.set_single_value("Grove Settings", "default_tier", default)
 	for provider in catalog["providers"]:
 		if not frappe.db.exists("Model Provider", {"provider_name": provider["provider_name"]}):
 			frappe.get_doc({"doctype": "Model Provider", **provider}).insert()

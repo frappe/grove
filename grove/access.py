@@ -8,6 +8,33 @@ records, and the GATEWAY resolves the two at request time. That is what stops a 
 group from invalidating every key beneath it."""
 
 import frappe
+from frappe.utils import flt
+
+# What a key runs under when neither it, its team's Tier nor the default tier says otherwise.
+DEFAULT_LIMITS = (
+	{"metric": "requests", "window": "1m", "value": 20},
+	{"metric": "total_tokens", "window": "1m", "value": 100_000},
+)
+
+
+def default_tier():
+	"""The Tier a team with none runs under, and the one an unseen name is cloned from; None when
+	Grove Settings names none."""
+	return frappe.db.get_single_value("Grove Settings", "default_tier") or None
+
+
+def team_limits(team, for_update=False):
+	"""What gates `team`'s keys: `free`, `suspended`, its `tier` and `max_keys` / `spend_limit` — the
+	team's own under Override Limits, else its tier's (the default tier when it has none), else 0 and
+	0: no key limit, and no cap can be set. `for_update` locks the team row for a cap check."""
+	fields = ["free", "suspended", "tier", "override_limits", "max_keys", "spend_limit"]
+	row = frappe.db.get_value("Central Team", team, fields, as_dict=True, for_update=for_update) or frappe._dict()
+	if not row.override_limits:
+		tier = row.tier or default_tier()
+		limits = tier and frappe.db.get_value("Tier", tier, ["max_keys", "spend_limit"], as_dict=True)
+		row.update(limits or {"max_keys": 0, "spend_limit": 0})
+	row.max_keys, row.spend_limit = row.max_keys or 0, flt(row.spend_limit)
+	return row
 
 
 def model_rows(parenttype, parents=None):
@@ -40,15 +67,52 @@ def group_rows(parents=None):
 	return {parent: sorted(names) for parent, names in grouped.items()}
 
 
-def limit_rows():
-	"""{Grove API Key: ["requests:1m:200", ...]}, sorted: each entry as the gateway reads it."""
-	rows = frappe.get_all(
-		"Model Limit", filters={"parenttype": "Grove API Key"}, fields=["parent", "metric", "window", "value"]
-	)
+def limit_entries(parenttype, parents=None):
+	"""{parent: [{metric, window, value}, ...]} of the Model Limit rows on every `parenttype` doc, or
+	on `parents`, each list sorted by metric and window."""
+	filters = {"parenttype": parenttype}
+	if parents is not None:
+		filters["parent"] = ("in", list(parents))
+	rows = frappe.get_all("Model Limit", filters=filters, fields=["parent", "metric", "window", "value"])
 	grouped = {}
 	for row in rows:
-		grouped.setdefault(row.parent, []).append(f"{row.metric}:{row.window}:{row.value}")
-	return {parent: sorted(entries) for parent, entries in grouped.items()}
+		grouped.setdefault(row.parent, []).append({"metric": row.metric, "window": row.window, "value": row.value})
+	return {parent: sorted_limits(entries) for parent, entries in grouped.items()}
+
+
+def effective_limits(keys, own, tiers):
+	"""{key: [{metric, window, value}, ...]} for `keys` (rows with `name` and `team`), as the gateway
+	is to count them: the key's own rows (`own`, from `limit_entries`), else the rows of its team's
+	Tier (`tiers`: {team: tier}; blank is the default tier; a tier with no rows is uncapped), else
+	DEFAULT_LIMITS."""
+	by_tier = limit_entries("Tier")
+	fallback = default_tier()
+	default = sorted_limits(DEFAULT_LIMITS)
+	resolved = {}
+	for key in keys:
+		if key.name in own:
+			resolved[key.name] = own[key.name]
+		elif tier := tiers.get(key.team) or fallback:
+			resolved[key.name] = by_tier.get(tier, [])
+		else:
+			resolved[key.name] = default
+	return resolved
+
+
+def sorted_limits(rows):
+	return sorted(({"metric": r["metric"], "window": r["window"], "value": r["value"]} for r in rows), key=lambda r: (r["metric"], r["window"]))
+
+
+def validate_limit_rows(rows):
+	"""One limit per metric and window, each above zero; the gateway refuses a push carrying one it
+	cannot read. The same rule on a key's own rows and on a Tier's."""
+	seen = set()
+	for row in rows:
+		if (row.value or 0) <= 0:
+			frappe.throw(f"Limit row {row.idx}: the value must be above zero.")
+		if (row.metric, row.window) in seen:
+			frappe.throw(f"Two limits on {row.metric} per {row.window}.")
+		seen.add((row.metric, row.window))
 
 
 def get_reachable_models(api_key):

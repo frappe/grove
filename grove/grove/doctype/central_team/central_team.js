@@ -10,7 +10,7 @@ frappe.ui.form.on('Central Team', {
 		} else {
 			frm.add_custom_button(__('Mark Free'), () => {
 				frappe.confirm(
-					__('Mark {0} Free? Its keys are no longer charged or gated; their spend limits stop applying.', [frm.doc.name]),
+					__('Mark {0} Free? Its keys are no longer charged or gated; their caps stop applying.', [frm.doc.name]),
 					() => frm.call('set_free', { free: 1 }).then(() => frm.reload_doc()),
 				);
 			});
@@ -18,8 +18,8 @@ frappe.ui.form.on('Central Team', {
 	},
 });
 
-// The flip to prepaid is where every live key gets its spend limit: the balance is handed
-// out here; a key left at 0 stays refused until it gets one.
+// The flip to paid is where every live key gets its monthly cap, within the team's spend
+// limit; a key left at 0 stays refused until it gets one.
 async function markPrepaid(frm) {
 	const keys = await frappe.db.get_list('Grove API Key', {
 		filters: { team: frm.doc.name, status: 'active' },
@@ -27,13 +27,12 @@ async function markPrepaid(frm) {
 		order_by: 'creation asc',
 	});
 	const dialog = new frappe.ui.Dialog({
-		title: __('Mark {0} Prepaid', [frm.doc.name]),
+		title: __('Mark {0} Paid', [frm.doc.name]),
 		fields: [
 			{
 				fieldtype: 'HTML',
 				options: `<p class="text-muted">${__(
-					'Balance {0}. Give each live key what it may spend; together they may not exceed the balance. A key left at 0 is refused until it gets a limit.',
-					[format_currency(frm.doc.balance, null, 2)],
+					"Give each live key what it may spend a month; together they may not exceed the team's spend limit. A key left at 0 is refused until it gets a cap.",
 				)}</p>`,
 			},
 			{
@@ -49,7 +48,7 @@ async function markPrepaid(frm) {
 					{ fieldtype: 'Data', fieldname: 'title', label: __('Title'), read_only: 1, in_list_view: 1 },
 					{ fieldtype: 'Data', fieldname: 'geography', label: __('Geography'), read_only: 1, in_list_view: 1 },
 					{ fieldtype: 'Currency', fieldname: 'spent', label: __('Spent'), read_only: 1, in_list_view: 1 },
-					{ fieldtype: 'Currency', fieldname: 'cap', label: __('Spend limit (USD)'), in_list_view: 1 },
+					{ fieldtype: 'Currency', fieldname: 'cap', label: __('Cap (USD / month)'), in_list_view: 1 },
 				],
 			},
 		],

@@ -1,19 +1,22 @@
-"""Prices per counter, and the prepaid balance they debit.
+"""Prices per counter, and what each key has spent at them.
 
 One rate table, joined at evaluation and never snapshotted onto usage: SELL on `Model Pricing`.
 A drain is priced by the pricing id the gateway tagged each request with, so both sides price the
 same counters at the same rates.
 
 `Grove API Key.spent` is the running USD total the pull increments per key; `settle` is the one
-writer of the team's `spent`, `balance` and `credit_exhausted` verdict."""
+writer of the team's `spent`. What was spent this month is never stored: `month_spent_by` sums
+it off the records and the corrections."""
 
 from decimal import Decimal
 
 import frappe
 
-from grove.grove.doctype.central_team.central_team import set_credit_exhausted
+from grove.utils import utc_today
 
 NANO = 10**9
+# What `month_spent_by` sums by: a column both Usage Record and Credit Discrepancy carry.
+MONTH_SPENT_BY = ("team", "api_key")
 
 # Tokens per unit a rate is quoted per: USD per Mtok, or per request.
 UNITS = {"Mtok": 1_000_000, "request": 1}
@@ -166,15 +169,6 @@ class PriceBook:
 		return cost(counts, self.pricing(pricing_id).rates, self.counters)
 
 
-def allocated(team, lock=False):
-	"""Σ the team's Grove Credit ledger. Locked while a verdict is being decided."""
-	suffix = " for update" if lock else ""
-	total = frappe.db.sql(
-		f"select coalesce(sum(amount), 0) from `tabGrove Credit` where team = %s{suffix}", [team]
-	)[0][0]
-	return Decimal(str(total))
-
-
 def spent_by_keys(team):
 	"""Σ what the team's keys have been charged, revoked ones included: a revoked key's spend is
 	still the team's."""
@@ -183,25 +177,34 @@ def spent_by_keys(team):
 
 
 def settle(team):
-	"""The one writer of the team's `spent`, `balance` and the verdict: Σ credits less Σ the keys'
-	spent, and `credit_exhausted` = not free and nothing left, both directions. A negative balance
-	stays on the team until a top-up covers it. → actual balance."""
-	free = frappe.db.get_value("Central Team", team, "free", for_update=True)
+	"""The one writer of the team's `spent`: Σ what its keys were charged. → that."""
 	spent = spent_by_keys(team)
-	actual = allocated(team, lock=True) - spent
-	frappe.db.set_value("Central Team", team, {"spent": float(spent), "balance": float(actual)}, update_modified=False)
-	set_credit_exhausted(team, int(not free and actual <= 0))
-	return actual
+	frappe.db.set_value("Central Team", team, "spent", float(spent), update_modified=False)
+	return spent
 
 
-def credit_summary(team):
-	"""{allocated, spent, remaining, unallocated}, summed live rather than read off `balance`.
-	`unallocated` is what no live key's cap has claimed yet — what a new cap may be cut from."""
-	from grove.grove.doctype.grove_api_key.grove_api_key import allotted
-
-	spent = spent_by_keys(team)
-	total = allocated(team)
-	return {"allocated": total, "spent": spent, "remaining": total - spent, "unallocated": total - spent - allotted(team)}
+def month_spent_by(field, names):
+	"""{name: USD spent this month} by `field` (team or api_key): Σ the billed Usage Records landed
+	on a day of this UTC month, plus the corrections of discrepancies Grove resolved on one. A
+	revoked key counts: what it spent is still the team's. Two grouped queries however many names."""
+	if field not in MONTH_SPENT_BY:
+		raise ValueError(f"month_spent_by sums by one of {MONTH_SPENT_BY}, not {field!r}")
+	if not names:
+		return {}
+	first = utc_today().replace(day=1)
+	spent = dict(frappe.db.sql(
+		f"""select `{field}`, sum(cost) from `tabUsage Record`
+		where `{field}` in %(names)s and billed = 1 and day >= %(first)s group by `{field}`""",
+		{"names": names, "first": first},
+	))
+	corrected = frappe.db.sql(
+		f"""select `{field}`, sum(correction) from `tabCredit Discrepancy`
+		where `{field}` in %(names)s and resolution = 'Grove corrected' and resolved_day >= %(first)s group by `{field}`""",
+		{"names": names, "first": first},
+	)
+	for name, correction in corrected:
+		spent[name] = (spent.get(name) or 0) + correction
+	return {name: Decimal(str(total)) for name, total in spent.items()}
 
 
 def validate_price_rows(rows, key):
