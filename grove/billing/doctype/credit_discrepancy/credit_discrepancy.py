@@ -3,11 +3,15 @@ from decimal import Decimal
 import frappe
 from frappe.model.document import Document
 
+from grove.utils import utc_today
+
 
 class CreditDiscrepancy(Document):
 	"""The gateway charged a drain differently from Grove's price of the same counters at the same
 	pricing. Logged by the pull and never acted on by it: a person decides which side is wrong and
-	corrects that side's spend, which brings the two balances back together."""
+	corrects that side's spend, which brings the two balances back together. The row is the
+	correction's record too: one Grove made is folded into every money read (`money_rows`,
+	`month_spent_by`) on `resolved_day`, so the Usage Record it corrects is never changed."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -28,6 +32,8 @@ class CreditDiscrepancy(Document):
 		note: DF.SmallText | None
 		pricing: DF.Link | None
 		resolution: DF.Literal['', 'Grove corrected', 'Gateway corrected']
+		resolved_day: DF.Date | None
+		resolved_on: DF.Datetime | None
 		team: DF.Link | None
 		usage_record: DF.Link | None
 	# end: auto-generated types
@@ -42,7 +48,7 @@ class CreditDiscrepancy(Document):
 		delta = Decimal(str(self.delta))
 		frappe.db.sql("update `tabGrove API Key` set spent = spent + %s where name = %s", [delta, self.api_key])
 		settle(self.team)
-		self.db_set({"correction": delta, "resolution": "Grove corrected"})
+		self.db_set({"correction": delta, "resolution": "Grove corrected", **resolved_now()})
 
 	@frappe.whitelist()
 	def correct_gateway(self):
@@ -90,11 +96,24 @@ def mark_corrected(spent_by_row):
 		delta = frappe.db.get_value("Credit Discrepancy", name, "delta")
 		frappe.db.set_value("Credit Discrepancy", name, {
 			"correction": -delta, "resolution": "Gateway corrected", "gateway_spent": Decimal(spent) / NANO,
-			"gateway_correction_pending": 0,
+			"gateway_correction_pending": 0, **resolved_now(),
 		})
+
+
+def resolved_now():
+	"""When a side was corrected: the moment (site time, what a landing window reads) and the UTC
+	day (what a day range and `month_spent` read, like a record's `day`)."""
+	return {"resolved_on": frappe.utils.now_datetime(), "resolved_day": utc_today()}
 
 
 def record(**facts):
 	"""The one writer: one row per (Usage Record, pricing) the gateway charged differently."""
 	facts = {k: float(v) if isinstance(v, Decimal) else v for k, v in facts.items()}
 	return frappe.get_doc({"doctype": "Credit Discrepancy", **facts}).insert(ignore_permissions=True).name
+
+
+def on_doctype_update():
+	"""Every money read folds in the corrections of a team or a key since a moment, like it reads
+	the records by day."""
+	frappe.db.add_index("Credit Discrepancy", ["team", "resolved_day"])
+	frappe.db.add_index("Credit Discrepancy", ["api_key", "resolved_day"])

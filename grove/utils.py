@@ -5,8 +5,10 @@
 import os
 import re
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import frappe
+from frappe.utils import get_system_timezone
 
 MIB_PER_GB = 1024
 
@@ -75,6 +77,18 @@ def is_hostname(name):
 def utc_today():
 	"""The billing day off OUR clock: usage days, price windows and top-ups all read it."""
 	return datetime.now(timezone.utc).date()
+
+
+def site_datetime(utc):
+	"""A moment in UTC — an RFC 3339 string, a datetime (naive is UTC), or a date at its midnight —
+	as the naive site-time datetime the database holds. The inverse of `routes.utc_timestamp`."""
+	if isinstance(utc, str):
+		utc = datetime.fromisoformat(utc)
+	elif not isinstance(utc, datetime):
+		utc = datetime.combine(utc, datetime.min.time())
+	if utc.tzinfo is None:
+		utc = utc.replace(tzinfo=timezone.utc)
+	return utc.astimezone(ZoneInfo(get_system_timezone())).replace(tzinfo=None)
 
 
 def slugify(text):

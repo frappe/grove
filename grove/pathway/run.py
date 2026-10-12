@@ -138,10 +138,14 @@ def sync_targets(geography=None):
 
 
 def gateway_units(gateways=None, geography=None):
-	"""One Unit per gateway Redis. A named gateway is dialled itself, whatever store it is on: that
-	is an operator's button. None means every Active box — `is None` and not truthiness, because
-	an empty list is a caller saying "no gateway work" — or every Active box of `geography`."""
-	groups = sync_targets(geography) if gateways is None else [(None, [gateway]) for gateway in gateways]
+	"""One Unit per gateway Redis. A named gateway is dialled itself, under its own store, so what
+	the store is owed or holds lands with it: that is an operator's button. None means every Active
+	box — `is None` and not truthiness, because an empty list is a caller saying "no gateway work"
+	— or every Active box of `geography`."""
+	if gateways is None:
+		groups = sync_targets(geography)
+	else:
+		groups = [(frappe.db.get_value("Gateway Server", gateway, "gateway_store"), [gateway]) for gateway in gateways]
 	return [
 		Unit(store, tuple(Target.resolve("Gateway Server", gateway) for gateway in group))
 		for store, group in groups

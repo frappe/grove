@@ -23,7 +23,7 @@ class TestRevenue(IntegrationTestCase):
 			{"doctype": "Model", "model_id": "revenue-7b", "hf_repo": "org/revenue-7b"}
 		).insert(ignore_permissions=True).name
 		cls.team = frappe.get_doc(
-			{"doctype": "Central Team", "__newname": "revenue", "email": "revenue@grove.test", "free": 1}
+			{"doctype": "Central Team", "__newname": "revenue", "free": 1}
 		).insert(ignore_permissions=True).name
 		cls.key = frappe.get_doc({"doctype": "Grove API Key", "team": cls.team}).insert(ignore_permissions=True).name
 		cls.other_key = frappe.get_doc({"doctype": "Grove API Key", "team": cls.team}).insert(ignore_permissions=True).name

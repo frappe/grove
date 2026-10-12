@@ -57,7 +57,7 @@ class PullCase(IntegrationTestCase):
 
 	@classmethod
 	def central_team(cls, email):
-		return frappe.get_doc({"doctype": "Central Team", "__newname": email, "email": email, "free": 1}).insert(ignore_permissions=True).name
+		return frappe.get_doc({"doctype": "Central Team", "__newname": email, "free": 1}).insert(ignore_permissions=True).name
 
 	def key(self, team=None):
 		return frappe.get_doc({"doctype": "Grove API Key", "team": team or self.team}).insert(ignore_permissions=True).name
@@ -319,7 +319,7 @@ class TestAStoreIsPulledThroughOneWriter(unittest.TestCase):
 			unittest.mock.patch.object(run, "finalize") as finalize,
 			unittest.mock.patch.object(
 				frappe, "db", frappe._dict(
-					commit=lambda: None, rollback=lambda: None,
+					commit=lambda: None, rollback=lambda: None, get_value=lambda *a, **k: "store9",
 					get_single_value=lambda _doctype, field: field == self.paused,
 				)
 			),
@@ -340,9 +340,15 @@ class TestAStoreIsPulledThroughOneWriter(unittest.TestCase):
 		pulled, _counts = self.pull([("store1", ["gw1"])], succeeds={"gw1"}, trigger="Manual")
 		self.assertEqual(pulled, ["gw1"])
 
-	def test_a_named_gateway_is_pulled_itself_whatever_store_it_is_on(self):
-		pulled, counts = self.pull([("store1", ["gw1"])], succeeds={"gw9"}, gateways=["gw9"])
-		self.assertEqual((pulled, counts), (["gw9"], (1, 1)))
+	def test_a_named_gateway_is_pulled_itself_under_its_own_store(self):
+		landed = []
+
+		def record(*_args, **kwargs):
+			landed.append(kwargs.get("gateway_store"))
+			return 1, {}, [], 0
+
+		pulled, counts = self.pull([("store1", ["gw1"])], succeeds={"gw9"}, gateways=["gw9"], record=record)
+		self.assertEqual((pulled, counts, landed), (["gw9"], (1, 1), ["store9"]))
 
 	def test_the_next_writer_is_tried_when_one_fails_and_none_after_a_success(self):
 		pulled, counts = self.pull([(None, ["gw0"]), ("store1", ["gw1", "gw2", "gw3"])], succeeds={"gw0", "gw2"})
