@@ -239,6 +239,9 @@ Nothing else pushes. A doctype hook, a provision and a pod lifecycle all just wr
 tick carries it within a minute. The only manual paths are Gateway Server → **Full Sync**, Ingress
 Server → **Sync Replicas**, and **Force Sync All** on the Pathway Sync list.
 
+Grove Settings → **Pause Projection** stops the scheduled push; **Pause Usage Pull** stops the
+hourly usage pull and 6-hourly key stats read (`SyncRun.pause_field`). The manual paths above still work.
+
 There is no separate backstop job: the hashes live on the box, so losing the store means losing
 them, which the very next tick reads as drift and heals. All Projection runs serialize on one
 MariaDB advisory lock, so a slow run cannot land a stale write after a newer one.

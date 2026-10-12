@@ -690,6 +690,8 @@ class TestSyncProjection(unittest.TestCase):
 	"""The run: one snapshot built for all gateways, one per ingress, and a log doc only when
 	something was actually pushed — a fleet in sync leaves nothing behind."""
 
+	paused = ""
+
 	def run_projection(self, results, proxies=("gw1", "gw2"), entry=None, groups=None, owed=None, **kwargs):
 		doc = FakeRun()
 		targets = []
@@ -719,7 +721,10 @@ class TestSyncProjection(unittest.TestCase):
 			unittest.mock.patch.object(projection, "pending_adjustments", return_value=owed or {}),
 			unittest.mock.patch.object(projection, "mark_corrected") as self.mark_corrected,
 			unittest.mock.patch.object(
-				frappe, "db", frappe._dict(commit=lambda: None, set_value=set_value)
+				frappe, "db", frappe._dict(
+					commit=lambda: None, set_value=set_value,
+					get_single_value=lambda _doctype, field: field == self.paused,
+				)
 			),
 			unittest.mock.patch.object(
 				frappe.utils, "now_datetime", lambda: "2026-08-16 00:00:00"
@@ -747,6 +752,25 @@ class TestSyncProjection(unittest.TestCase):
 		self.assertIsNone(name)
 		self.assertFalse(doc.inserted)
 		self.assertEqual(len(targets), 2)  # every box was still checked
+
+	def test_a_paused_tick_dials_nothing(self):
+		self.paused = "pause_projection"
+		name, doc, targets = self.run_projection({"gw1": self.row()})
+		self.assertIsNone(name)
+		self.assertEqual((targets, doc.results), ([], []))
+
+	def test_pausing_the_usage_pull_leaves_the_push_running(self):
+		self.paused = "pause_usage_pull"
+		_name, _doc, targets = self.run_projection({"gw1": self.row()}, proxies=("gw1",))
+		self.assertEqual(targets, [("Gateway Server", "gw1", False)])
+
+	def test_a_button_still_pushes_while_paused(self):
+		self.paused = "pause_projection"
+		_name, doc, targets = self.run_projection(
+			{"gw1": self.row()}, proxies=("gw1",), entry=projection.full_sync, wait=0
+		)
+		self.assertEqual(targets, [("Gateway Server", "gw1", True)])
+		self.assertTrue(doc.inserted)
 
 	def test_a_gateway_is_never_stamped(self):
 		# Gateways on a store are reached through one writer, so a per-gateway timestamp would read
@@ -855,7 +879,7 @@ class TestSyncProjection(unittest.TestCase):
 			unittest.mock.patch.object(projection, "pending_adjustments", return_value={}),
 			unittest.mock.patch.object(
 				frappe, "db",
-				frappe._dict(commit=lambda: None, set_value=lambda *a, **k: None),
+				frappe._dict(commit=lambda: None, set_value=lambda *a, **k: None, get_single_value=lambda *a: 0),
 			),
 			unittest.mock.patch.object(
 				frappe.utils, "now_datetime", lambda: "2026-08-16 00:00:00"

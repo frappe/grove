@@ -22,6 +22,7 @@ class KeyStats(SyncRun):
 	"""Every gateway store read once, every key asked of each."""
 
 	sync_type = "Key Stats"
+	pause_field = "pause_usage_pull"
 
 	def __init__(self, gateways=None, trigger="Scheduled", wait=0):
 		super().__init__(trigger, wait)

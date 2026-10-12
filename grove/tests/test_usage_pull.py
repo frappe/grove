@@ -294,6 +294,8 @@ class TestAStoreIsPulledThroughOneWriter(unittest.TestCase):
 	"""Every gateway on a store shares its counters, so the pull drains a store once, through the
 	first of its writers that answers. Pure: the run doc and the pull are fakes."""
 
+	paused = ""
+
 	def pull(self, groups, succeeds, record=None, fetch=None, **kwargs):
 		doc, pulled = unittest.mock.MagicMock(), []
 		doc.acquire_lock.return_value = True
@@ -315,10 +317,28 @@ class TestAStoreIsPulledThroughOneWriter(unittest.TestCase):
 			unittest.mock.patch.object(usage, "fetch_usage", side_effect=lambda target, _keys: (fetch or fetch_one)(target)),
 			unittest.mock.patch.object(usage, "record_drains", side_effect=record or (lambda *_, **__: (1, {}, [], 0))),
 			unittest.mock.patch.object(run, "finalize") as finalize,
-			unittest.mock.patch.object(frappe, "db", frappe._dict(commit=lambda: None, rollback=lambda: None)),
+			unittest.mock.patch.object(
+				frappe, "db", frappe._dict(
+					commit=lambda: None, rollback=lambda: None,
+					get_single_value=lambda _doctype, field: field == self.paused,
+				)
+			),
 		):
 			usage.pull_all(**kwargs)
-		return pulled, finalize.call_args.args[1:]
+		return pulled, finalize.call_args.args[1:] if finalize.called else None
+
+	def test_a_paused_tick_pulls_nothing(self):
+		self.paused = "pause_usage_pull"
+		self.assertEqual(self.pull([("store1", ["gw1"])], succeeds={"gw1"}), ([], None))
+
+	def test_pausing_the_projection_leaves_the_pull_running(self):
+		self.paused = "pause_projection"
+		self.assertEqual(self.pull([("store1", ["gw1"])], succeeds={"gw1"}), (["gw1"], (1, 1)))
+
+	def test_a_button_still_pulls_while_paused(self):
+		self.paused = "pause_usage_pull"
+		pulled, _counts = self.pull([("store1", ["gw1"])], succeeds={"gw1"}, trigger="Manual")
+		self.assertEqual(pulled, ["gw1"])
 
 	def test_a_named_gateway_is_pulled_itself_whatever_store_it_is_on(self):
 		pulled, counts = self.pull([("store1", ["gw1"])], succeeds={"gw9"}, gateways=["gw9"])

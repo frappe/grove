@@ -46,6 +46,7 @@ class Usage(SyncRun):
 	Usage Records. With `team`, only that team's keys, from every store."""
 
 	sync_type = "Usage"
+	pause_field = "pause_usage_pull"
 
 	def __init__(self, gateways=None, trigger="Scheduled", wait=0, team=None):
 		super().__init__(trigger, wait)

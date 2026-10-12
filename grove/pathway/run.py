@@ -235,6 +235,7 @@ class SyncRun:
 	order asked, and finalizes only when a row was left."""
 
 	sync_type = ""
+	pause_field = ""  # the Grove Settings check that stops this run's scheduled ticks
 
 	def __init__(self, trigger="Scheduled", wait=0):
 		self.trigger = trigger
@@ -243,7 +244,9 @@ class SyncRun:
 
 	def run(self):
 		"""→ the Pathway Sync name, or None when nothing was logged: a run already in flight, no
-		boxes to dial, or a fleet already in sync."""
+		boxes to dial, a fleet already in sync, or a scheduled run Grove Settings pauses."""
+		if self.trigger == "Scheduled" and frappe.db.get_single_value("Grove Settings", self.pause_field):
+			return None
 		self.doc = new_run(self.sync_type, self.trigger)
 		if not self.doc.acquire_lock(wait=self.wait):  # scheduled → skip if a run is in flight; forced → queue
 			return None

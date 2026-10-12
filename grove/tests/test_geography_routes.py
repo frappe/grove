@@ -167,7 +167,7 @@ class TestOneSnapshotPerGeography(unittest.TestCase):
 			patch.object(Target, "resolve", side_effect=lambda kind, name: Target(kind, name, "u", "t")),
 			patch.object(projection, "push_target", side_effect=push_target),
 			patch.object(projection, "pending_adjustments", return_value={}),
-			patch.object(frappe, "db", frappe._dict(commit=lambda: None)),
+			patch.object(frappe, "db", frappe._dict(commit=lambda: None, get_single_value=lambda *a: 0)),
 		):
 			projection.sync_projection()
 		self.assertEqual(sorted(built), ["eu", "in"])

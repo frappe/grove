@@ -29,6 +29,7 @@ class Projection(SyncRun):
 	doc: a Pathway Sync is written only when something was pushed or failed."""
 
 	sync_type = "Projection"
+	pause_field = "pause_projection"
 
 	def __init__(self, trigger="Scheduled", proxies=None, ingresses=None, force=False, wait=0):
 		super().__init__(trigger, wait)
