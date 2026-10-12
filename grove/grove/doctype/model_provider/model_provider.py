@@ -127,7 +127,8 @@ class ModelProvider(Document):
 		vendor and list the same models, and an Anthropic shim beside an OpenAI front (DeepSeek's)
 		has no list at all."""
 		frappe.only_for("System Manager")
-		secret = self.api_keys[0].get_password("api_key") if self.api_keys else None
+		enabled = [row for row in self.api_keys if not row.disabled]
+		secret = enabled[0].get_password("api_key") if enabled else None
 		if not ((self.base_url or self.anthropic_base_url) and secret):
 			frappe.throw(f"{self.provider_name} has no front and key to ask for its models.")
 		upstream = set(self.list_upstream_models(secret))

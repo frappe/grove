@@ -279,8 +279,8 @@ def upstream_model(model, is_vendor):
 def vendor_endpoints(geography):
 	"""Every third party in `geography` we can actually dial, by provider name: a Model is served by
 	whichever record of its provider sits in the geography. A provider is dialable as a whole — an
-	address without a key is not a route. Every key goes, under its row's id: the gateway picks
-	one per request, swaps it on a per-key refusal, and counts what each answered."""
+	address without a key is not a route. Every enabled key goes, under its row's id: the gateway
+	picks one per request, swaps it on a per-key refusal, and counts what each answered."""
 	out = {}
 	denied = denied_tools()
 	for name in frappe.get_all("Model Provider", filters={"geography": geography}, pluck="name"):
@@ -302,7 +302,7 @@ def vendor_endpoints(geography):
 		credentials = [
 			{"id": row.name, "secret": secret}
 			for row in provider.api_keys
-			if (secret := row.get_password("api_key", raise_exception=False))
+			if not row.disabled and (secret := row.get_password("api_key", raise_exception=False))
 		]
 		if credentials:
 			out[provider.provider_name] = {

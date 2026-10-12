@@ -42,13 +42,13 @@ MODELS = [
 ]
 PROVIDERS = {
 	# The URL fields are the dialect declaration; there is no dialect field to keep in step.
-	# `keys` becomes the Keys table: (row id, secret) pairs, a blank secret standing for a row whose
-	# password was never set.
+	# `keys` becomes the Keys table: (row id, secret[, disabled]) rows, a blank secret standing for
+	# a row whose password was never set.
 	"frappe": {"base_url": None, "api_version": None, "keys": []},
 	"anthropic": {"anthropic_base_url": "https://api.anthropic.com",
 	              "api_version": "2023-06-01", "keys": [("k-anthropic-1", "vendor-key")]},
 	"deepseek": {"base_url": "https://api.deepseek.com", "api_version": "",
-	             "keys": [("k-deepseek-1", "ds-key"), ("k-deepseek-2", "ds-key-2")]},
+	             "keys": [("k-deepseek-1", "ds-key"), ("k-deepseek-2", "ds-key-2"), ("k-deepseek-3", "ds-key-3", 1)]},
 	# One URL genuinely answering both shapes: the same address in both fields.
 	"dual": {"base_url": "https://api.dual.test",
 	         "anthropic_base_url": "https://api.dual.test", "api_version": "",
@@ -88,8 +88,8 @@ class FakeQuery:
 		return [frappe._dict(r) for r in rows]
 
 
-def fake_key_row(row_id, secret):
-	row = frappe._dict(name=row_id, api_key="*****" if secret else None)
+def fake_key_row(row_id, secret, disabled=0):
+	row = frappe._dict(name=row_id, api_key="*****" if secret else None, disabled=disabled)
 	row.get_password = lambda *a, **k: secret or None
 	return row
 
@@ -194,8 +194,9 @@ class TestAVendorModelIsRoutable(unittest.TestCase):
 			for row in rows:
 				self.assertNotIn("halfway", str(row))
 
-	def test_every_key_goes_under_its_rows_id(self):
-		# The gateway picks among them per request; the id is what it rotates and counts by.
+	def test_every_enabled_key_goes_under_its_rows_id(self):
+		# The gateway picks among them per request; the id is what it rotates and counts by. A
+		# disabled row stays home.
 		[row] = routes()["deepseek/deepseek-chat"]
 		self.assertEqual(
 			row["credentials"],
