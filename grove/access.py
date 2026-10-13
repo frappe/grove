@@ -24,16 +24,17 @@ def default_tier():
 
 
 def team_limits(team, for_update=False):
-	"""What gates `team`'s keys: `free`, `suspended`, its `tier` and `max_keys` / `spend_limit` — the
-	team's own under Override Limits, else its tier's (the default tier when it has none), else 0 and
-	0: no key limit, and no cap can be set. `for_update` locks the team row for a cap check."""
-	fields = ["free", "suspended", "tier", "override_limits", "max_keys", "spend_limit"]
+	"""What gates `team`'s keys: `free`, `suspended`, its `tier`, and the tier's `max_keys` /
+	`spend_limit` (the default tier's when it has none; without either, 0 and 0: no key limit, and
+	no cap can be set). `max_keys` is the team's own under Override Max Keys. `for_update` locks
+	the team row for a cap check."""
+	fields = ["free", "suspended", "tier", "override_max_keys", "max_keys"]
 	row = frappe.db.get_value("Central Team", team, fields, as_dict=True, for_update=for_update) or frappe._dict()
-	if not row.override_limits:
-		tier = row.tier or default_tier()
-		limits = tier and frappe.db.get_value("Tier", tier, ["max_keys", "spend_limit"], as_dict=True)
-		row.update(limits or {"max_keys": 0, "spend_limit": 0})
-	row.max_keys, row.spend_limit = row.max_keys or 0, flt(row.spend_limit)
+	tier = row.tier or default_tier()
+	limits = (tier and frappe.db.get_value("Tier", tier, ["max_keys", "spend_limit"], as_dict=True)) or frappe._dict()
+	if not row.override_max_keys:
+		row.max_keys = limits.max_keys
+	row.max_keys, row.spend_limit = row.max_keys or 0, flt(limits.spend_limit)
 	return row
 
 

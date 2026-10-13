@@ -55,11 +55,13 @@ class CreditsCase(IntegrationTestCase):
 		return model, enabled_pricing(model, completion_tokens=rate).name
 
 	def team(self, cap=1, free=0):
-		"""A team under a spend limit of 100 a month with one key capped at `cap`."""
+		"""A team on a tier with a spend limit of 100 a month, with one key capped at `cap`."""
 		CreditsCase.counter += 1
+		if not frappe.db.exists("Tier", "credits-tier"):
+			frappe.get_doc({"doctype": "Tier", "__newname": "credits-tier", "spend_limit": 100}).insert()
 		doc = frappe.get_doc({
 			"doctype": "Central Team", "__newname": f"credits-{CreditsCase.counter}",
-			"free": free, "override_limits": 1, "spend_limit": 100,
+			"free": free, "tier": "credits-tier",
 		}).insert(ignore_permissions=True)
 		return doc.name, self.key(doc.name, cap)
 

@@ -9,10 +9,9 @@
   "free",
   "log_payloads",
   "tier",
-  "override_limits",
-  "column_break_head",
+  "override_max_keys",
   "max_keys",
-  "spend_limit",
+  "column_break_head",
   "suspended",
   "spent"
  ],
@@ -34,7 +33,7 @@
    "label": "Log Prompts & Outputs"
   },
   {
-   "description": "The Tier the team runs under: its key count, monthly spend limit and, for keys with no limits of their own, rate limits. Named by Central from the team's trust tier; blank is the default tier in Grove Settings. Tick Override Limits to pin this team's own numbers instead.",
+   "description": "The Tier the team runs under: its key count, monthly spend limit and, for keys with no limits of their own, rate limits. Named by Central from the team's trust tier; blank is the default tier in Grove Settings.",
    "fieldname": "tier",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -45,32 +44,22 @@
   },
   {
    "default": "0",
-   "description": "Pin this team's own Max Keys and Spend Limit below; unticked, its tier's apply.",
-   "fieldname": "override_limits",
+   "description": "Pin this team's own Max Keys below; unticked, its tier's applies.",
+   "fieldname": "override_max_keys",
    "fieldtype": "Check",
-   "label": "Override Limits"
-  },
-  {
-   "fieldname": "column_break_head",
-   "fieldtype": "Column Break"
+   "label": "Override Max Keys"
   },
   {
    "default": "0",
-   "depends_on": "override_limits",
+   "depends_on": "override_max_keys",
    "description": "How many live keys the team may hold; 0 is no limit.",
    "fieldname": "max_keys",
    "fieldtype": "Int",
    "label": "Max Keys"
   },
   {
-   "default": "0",
-   "depends_on": "override_limits",
-   "description": "What the team's live keys may spend in a month together: \u03a3 the keys' caps stays within it. Lowering it stops no key; it only refuses a raise or a new cap until the caps fit again.",
-   "fieldname": "spend_limit",
-   "fieldtype": "Currency",
-   "in_list_view": 1,
-   "label": "Spend Limit (USD / month)",
-   "precision": "9"
+   "fieldname": "column_break_head",
+   "fieldtype": "Column Break"
   },
   {
    "default": "0",
@@ -113,7 +102,7 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-10-13 13:30:00.000000",
+ "modified": "2026-10-13 14:30:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Central Team",

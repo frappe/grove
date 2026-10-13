@@ -16,12 +16,13 @@ from grove.pathway.snapshot import effective_keys
 
 
 def team(name, free=1, **fields):
-	"""Free unless said otherwise: a paying team's caps have to fit its spend limit. Numbers given
-	here are the team's own, not a tier's."""
+	"""Free unless said otherwise: a paying team's caps have to fit its spend limit. `max_keys` /
+	`spend_limit` given here go on a Tier of the team's own."""
 	if frappe.db.exists("Central Team", name):
 		return name
 	if "max_keys" in fields or "spend_limit" in fields:
-		fields.setdefault("override_limits", 1)
+		numbers = {k: fields.pop(k) for k in ("max_keys", "spend_limit") if k in fields}
+		fields["tier"] = frappe.get_doc({"doctype": "Tier", "__newname": f"{name}-tier", **numbers}).insert().name
 	return frappe.get_doc({
 		"doctype": "Central Team", "__newname": name, "free": free, **fields,
 	}).insert(ignore_permissions=True).name
@@ -325,9 +326,9 @@ class IntegrationTestCapsFitTheSpendLimit(IntegrationTestCase):
 	def test_a_lowered_limit_stops_no_key_and_refuses_only_a_raise(self):
 		name = team("key-cap-demoted", free=0, spend_limit=10)
 		doc = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 8}).insert()
-		team_doc = frappe.get_doc("Central Team", name)
-		team_doc.spend_limit = 5
-		team_doc.save()
+		tier = frappe.get_doc("Tier", frappe.db.get_value("Central Team", name, "tier"))
+		tier.spend_limit = 5
+		tier.save()
 		self.assertEqual(projected(doc.name)["budget"], 8_000_000_000)
 		doc.title = "renamed"
 		doc.save()

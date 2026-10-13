@@ -131,9 +131,9 @@ it holds no money that must not run out. What gates is:
   keys together never outspend the tier on any mix of stores. Only a raise is checked: a lowered
   limit stops no key, it refuses a new cap or a raise until the caps fit; a revoke frees the key's
   cap. A team with no tier runs under the default tier (Grove Settings), and a tier Central names
-  before Grove has one is created as a copy of it. **Override Limits** on the team pins its own
-  `max_keys` and `spend_limit` instead; `access.team_limits` resolves all of this. Central also
-  sets **`free`** and **`suspended`**.
+  before Grove has one is created as a copy of it. **Override Max Keys** on the team pins its own
+  key count instead (`access.team_limits` resolves which apply).
+  Central also sets **`free`** and **`suspended`**.
 - **`suspended`**, set by Central when an invoice goes unpaid, pushed as `limited` on every key
   of the team (402 whatever the cap says).
 

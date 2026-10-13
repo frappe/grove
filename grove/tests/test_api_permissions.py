@@ -17,6 +17,10 @@ from grove.pathway.routes import utc_timestamp
 from grove.utils import utc_today
 
 PROBE = "control-probe@example.com"
+
+
+def tier(name, **fields):
+	return frappe.get_doc({"doctype": "Tier", "__newname": name, **fields}).insert().name
 WITHHELD = ("Machine", "Inference Server", "Model Replica", "Monitoring Agent")
 
 
@@ -153,10 +157,10 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		# Minted at 0 whatever the limit: it waits for a cap.
 		api.provision_key(team, title="uncapped")
 		self.assertEqual(api.keys(team)[0]["cap"], 0)
-		frappe.db.set_value("Central Team", team, {"override_limits": 1, "max_keys": 5, "spend_limit": 10})
+		tier("probe-cap-tier", max_keys=5, spend_limit=10)
 		self.assertEqual(
-			api.update_team(team),
-			{"team": team, "free": 0, "suspended": 0, "tier": None, "override_limits": 1, "max_keys": 5, "spend_limit": 10},
+			api.update_team(team, tier="probe-cap-tier"),
+			{"team": team, "free": 0, "suspended": 0, "tier": "probe-cap-tier", "override_max_keys": 0, "max_keys": 5, "spend_limit": 10},
 		)
 		first = api.provision_key(team, title="first", cap=6)["name"]
 		with self.assertRaises(frappe.ValidationError):
@@ -175,7 +179,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 	def test_caps_move_between_keys_in_one_call_or_not_at_all(self):
 		team = "probe-caps"
 		api.provision_team(team)
-		frappe.db.set_value("Central Team", team, {"override_limits": 1, "spend_limit": 10})
+		api.update_team(team, tier=tier("probe-caps-tier", spend_limit=10))
 		first = api.provision_key(team, title="first", cap=6)["name"]
 		second = api.provision_key(team, title="second", cap=4)["name"]
 		# 6/4 to 2/8: saved one by one in the order given, the raise would pass the limit first.
@@ -212,7 +216,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 	def test_central_sets_free_and_turning_it_off_resets_the_caps(self):
 		team = "probe-free"
 		api.provision_team(team, free=True)
-		frappe.db.set_value("Central Team", team, {"override_limits": 1, "spend_limit": 5})
+		api.update_team(team, tier=tier("probe-free-tier", spend_limit=5))
 		# A Free team's caps are not checked, so this one passes the limit.
 		key = api.provision_key(team, title="generous", cap=7)["name"]
 		self.assertTrue(frappe.db.get_value("Central Team", team, "free"))
@@ -230,9 +234,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		]
 		self.assertEqual(api.limits(team, unpinned), defaults)
 		growth = [{"metric": "requests", "window": "1m", "value": 60}]
-		frappe.get_doc({
-			"doctype": "Tier", "__newname": "probe-growth", "max_keys": 3, "spend_limit": 50, "limits": [dict(r) for r in growth],
-		}).insert()
+		tier("probe-growth", max_keys=3, spend_limit=50, limits=[dict(r) for r in growth])
 		limits = api.update_team(team, tier="probe-growth")
 		self.assertEqual((limits["tier"], limits["max_keys"], limits["spend_limit"]), ("probe-growth", 3, 50))
 		listed = {row.name: row.limits for row in api.keys(team)}
@@ -246,9 +248,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertEqual((api.update_team(team, tier="")["spend_limit"], api.limits(team, unpinned)), (50, growth))
 		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 		self.assertEqual((api.spend(team)["spend_limit"], api.limits(team, unpinned)), (0, defaults))
-		# Override Limits pins the team's own numbers, whatever its tier says.
-		frappe.db.set_value("Central Team", team, {"override_limits": 1, "max_keys": 1, "spend_limit": 7})
-		self.assertEqual((api.spend(team)["max_keys"], api.spend(team)["spend_limit"]), (1, 7))
 
 	def test_a_minted_key_is_unique_by_its_hash(self):
 		team = "probe-unique"

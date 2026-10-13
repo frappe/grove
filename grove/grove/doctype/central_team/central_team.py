@@ -12,8 +12,8 @@ class CentralTeam(Document):
 	"""A team in Central, named by its id there (`TEAM-00520`).
 	Policy — models, geography, rate limits, the monthly cap — sits on each Grove API Key; what is
 	the team's is what its `tier` allows (`max_keys`, `spend_limit`, the rate limits its unpinned
-	keys run under; its own two under Override Limits), whether it is Free or suspended, and what
-	its keys spent. Who the team is, its contacts, credit and invoices are Central's.
+	keys run under; its own `max_keys` under Override Max Keys), whether it is Free or suspended,
+	and what its keys spent. Who the team is, its contacts, credit and invoices are Central's.
 
 	The gateway holds no team record: `free`, `log_payloads` and `suspended` ride on every key of
 	the team, so suspending it refuses every key with one field each."""
@@ -29,8 +29,7 @@ class CentralTeam(Document):
 		free: DF.Check
 		log_payloads: DF.Check
 		max_keys: DF.Int
-		override_limits: DF.Check
-		spend_limit: DF.Currency
+		override_max_keys: DF.Check
 		spent: DF.Currency
 		suspended: DF.Check
 		tier: DF.Link | None
@@ -39,8 +38,6 @@ class CentralTeam(Document):
 	def validate(self):
 		if (self.max_keys or 0) < 0:
 			frappe.throw("Max Keys cannot be negative; 0 is no limit.")
-		if flt(self.spend_limit) < 0:
-			frappe.throw("A spend limit cannot be negative.")
 		if not self.is_new():
 			# save() writes every column and the pull writes this one behind the form's back.
 			self.spent = frappe.db.get_value("Central Team", self.name, "spent", for_update=True)
