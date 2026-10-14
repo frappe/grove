@@ -4,6 +4,7 @@
 user goes to every gateway carrying the pin the gateway enforces. Pure — the rows are faked."""
 
 import unittest
+from datetime import datetime
 from unittest.mock import patch
 
 import frappe
@@ -148,12 +149,12 @@ class TestOneSnapshotPerGeography(unittest.TestCase):
 		built, pushed = [], []
 		geographies = {"gw-in-1": "in", "gw-in-2": "in", "gw-in-3": "in", "gw-eu-1": "eu"}
 
-		def build(geography, shared=None):
+		def build(geography, _keys):
 			built.append(geography)
-			return {"geography": geography}
+			return {"routes": {"table": geography, "hash": geography}}
 
-		def push_target(target, desired, force, _adjustments):
-			pushed.append((target.name, desired["geography"]))
+		def push_target(target, delta, _adjustments):
+			pushed.append((target.name, delta["routes"]["table"]))
 			return None
 
 		doc = unittest.mock.Mock(results=[])
@@ -162,12 +163,21 @@ class TestOneSnapshotPerGeography(unittest.TestCase):
 			patch.object(run, "new_run", return_value=doc),
 			patch.object(run, "sync_targets", return_value=[(None, [name]) for name in geographies]),
 			patch.object(projection, "active_ingresses", return_value=[]),
+			patch.object(projection, "read_hashes", side_effect=lambda targets: {t: {} for t in targets}),
+			patch.object(frappe.utils, "now_datetime", lambda: datetime(2026, 8, 16, 0, 1)),
 			patch.object(snapshot, "gateway_geography", side_effect=geographies.get),
+			patch.object(snapshot, "keys_section", return_value={"buckets": {}}),
 			patch.object(snapshot, "gateway_snapshot", side_effect=build),
 			patch.object(Target, "resolve", side_effect=lambda kind, name: Target(kind, name, "u", "t")),
 			patch.object(projection, "push_target", side_effect=push_target),
 			patch.object(projection, "pending_adjustments", return_value={}),
-			patch.object(frappe, "db", frappe._dict(commit=lambda: None, get_single_value=lambda *a: 0)),
+			patch.object(
+				frappe, "db",
+				frappe._dict(
+					commit=lambda: None, get_single_value=lambda *a: 0,
+					get_value=lambda *a, **k: None, set_value=lambda *a, **k: None,
+				),
+			),
 		):
 			projection.sync_projection()
 		self.assertEqual(sorted(built), ["eu", "in"])

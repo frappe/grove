@@ -12,6 +12,7 @@
   "network",
   "region",
   "geography",
+  "last_synced_at",
   "column_break_redis",
   "redis_password",
   "frappe_public_key",
@@ -81,6 +82,13 @@
    "read_only": 1
   },
   {
+   "fieldname": "last_synced_at",
+   "fieldtype": "Datetime",
+   "label": "Last Synced At",
+   "read_only": 1,
+   "description": "When a Projection tick last confirmed this store holds the desired state, through any of its writers: stamped with the tick's read time on every in-sync check and every successful push, never on failure. The next tick rebuilds only the key buckets saved since it; blank, it rebuilds all. Goes stale = no writer is reachable or every push is rejected; the failed Pathway Sync rows say why."
+  },
+  {
    "default": "Pending",
    "fieldname": "status",
    "fieldtype": "Select",
@@ -121,7 +129,7 @@
   }
  ],
  "links": [],
- "modified": "2026-09-28 10:00:00.000000",
+ "modified": "2026-10-15 03:38:19.395159",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Gateway Store",

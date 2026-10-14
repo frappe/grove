@@ -51,7 +51,7 @@ class CentralTeam(Document):
 		"""Caps are not checked while a team is Free, so turning Free off starts every live key at
 		0: each is capped again within the spend limit, never at a number nobody vetted."""
 		for key in self.live_keys:
-			frappe.db.set_value("Grove API Key", key, "cap", 0, update_modified=False)
+			frappe.db.set_value("Grove API Key", key, "cap", 0)
 
 	@property
 	def live_keys(self):

@@ -19,6 +19,7 @@
   "admin_url",
   "admin_token",
   "agent_version",
+  "last_synced_at",
   "monitoring_agent",
   "memory_limit_mb",
   "gateway_store",
@@ -130,6 +131,13 @@
    "read_only": 1
   },
   {
+   "fieldname": "last_synced_at",
+   "fieldtype": "Datetime",
+   "label": "Last Synced At",
+   "read_only": 1,
+   "description": "Written only on a gateway not on a Gateway Store; one on a store is stamped on the store. When a Projection tick last confirmed this box holds the desired state: stamped with the tick's read time on every in-sync check and every successful push, never on failure. The next tick rebuilds only the key buckets saved since it; blank, it rebuilds all."
+  },
+  {
    "default": "0",
    "description": "New requests get 503 with Retry-After while running ones finish. Written to config.json and applied with SIGUSR1, so it survives a restart. Start/End Maintenance under Gateway.",
    "fieldname": "is_in_maintenance",
@@ -176,7 +184,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-04 00:59:27.903854",
+ "modified": "2026-10-15 03:38:19.395603",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Gateway Server",

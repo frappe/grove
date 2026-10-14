@@ -181,8 +181,7 @@ class TestADrainIsBilledAtGrovesPrice(CreditsCase):
 		self.assertEqual(self.keys_pushed()[key]["limited"], False)
 
 	def keys_pushed(self):
-		with unittest.mock.patch.object(snapshot, "effective_groups", return_value=[]):
-			section = snapshot.gateway_snapshot("", {})["keys"]
+		section = snapshot.keys_section()
 		return {k["prefix"]: k for bucket in section["buckets"].values() for k in bucket["records"]}
 
 
@@ -406,8 +405,7 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 
 class TestThePushCarriesTheCap(CreditsCase):
 	def keys(self):
-		with unittest.mock.patch.object(snapshot, "effective_groups", return_value=[]):
-			section = snapshot.gateway_snapshot("", {})["keys"]
+		section = snapshot.keys_section()
 		return {k["prefix"]: k for bucket in section["buckets"].values() for k in bucket["records"]}
 
 	def test_every_store_is_pushed_the_keys_cap_whatever_was_spent(self):

@@ -5,7 +5,10 @@
 `groups` and `routes` travel whole. `keys` scale with customer count, so they split into 256
 buckets (`bucket_of`) hashed independently — one key minted re-pushes one bucket, not the
 population. Absence prunes: a deleted group or revoked key stops being named and the agent
-removes it."""
+removes it.
+
+A tick rebuilds only the buckets a save moved since the boxes' stamps (`dirty_buckets`), finding
+their keys by hashing every live key's hash (`bucket_names`): nothing stores the bucket yet."""
 
 import hashlib
 import json
@@ -30,7 +33,7 @@ def effective_groups():
 	]
 
 
-def effective_keys():
+def effective_keys(names=None):
 	"""Every LIVE API Key projected for the gateway, with the whole policy the gates read: its
 	groups and own allow/deny, its geography, its rate limits (its own, else its team's tier's,
 	else the defaults) and `budget` — its monthly cap; the box counts its spend per month and
@@ -39,20 +42,29 @@ def effective_keys():
 	`log_payloads`, and `limited` — the team is suspended, which refuses every key whatever its
 	own cap says.
 
-	Revoked keys are not projected: absent from their bucket, the push prunes them off every box.
-	The row stays in Grove as the record of a credential that existed."""
-	deltas = model_rows("Grove API Key")
-	memberships = group_rows()
+	`names` narrows it to those keys, with their teams and rows: what a tick rebuilds. Revoked
+	keys are not projected: absent from their bucket, the push prunes them off every box. The row
+	stays in Grove as the record of a credential that existed."""
+	if names is not None and not names:
+		return []
+	filters = {"status": "active"}
+	if names is not None:
+		filters["name"] = ("in", sorted(names))
+	keys = frappe.get_all(
+		"Grove API Key", filters=filters, fields=["name", "key_hash", "team", "status", "geography", "cap"]
+	)
+	if names is not None and not keys:
+		return []
+	team_filter = None if names is None else {"name": ("in", sorted({k.team for k in keys if k.team}))}
 	teams = {
 		t.name: t
-		for t in frappe.get_all("Central Team", fields=["name", "free", "log_payloads", "suspended", "tier"])
+		for t in frappe.get_all(
+			"Central Team", filters=team_filter, fields=["name", "free", "log_payloads", "suspended", "tier"]
+		)
 	}
-	keys = frappe.get_all(
-		"Grove API Key",
-		filters={"status": "active"},
-		fields=["name", "key_hash", "team", "status", "geography", "cap"],
-	)
-	limits = effective_limits(keys, limit_entries("Grove API Key"), {name: t.tier for name, t in teams.items()})
+	deltas = model_rows("Grove API Key", names)
+	memberships = group_rows(names)
+	limits = effective_limits(keys, limit_entries("Grove API Key", names), {name: t.tier for name, t in teams.items()})
 	records = []
 	for k in sorted(keys, key=lambda k: k.key_hash or ""):
 		team = teams.get(k.team)
@@ -80,6 +92,43 @@ def effective_keys():
 			"limits": ",".join(f"{r['metric']}:{r['window']}:{r['value']}" for r in limits.get(k.name, [])),
 		})
 	return records
+
+
+def dirty_buckets(since):
+	"""The key buckets a save after `since` moved: a saved key's own — revoked or not, a revoke
+	being what empties its slot — and a saved team's every live key's, its fields riding on each."""
+	hashes = frappe.get_all("Grove API Key", filters={"modified": (">", since)}, pluck="key_hash")
+	teams = frappe.get_all("Central Team", filters={"modified": (">", since)}, pluck="name")
+	if teams:
+		hashes += frappe.get_all(
+			"Grove API Key", filters={"team": ("in", teams), "status": "active"}, pluck="key_hash"
+		)
+	return {bucket_of(key_hash) for key_hash in hashes if key_hash}
+
+
+def needs_full(since):
+	"""Whether a save after `since` reached keys it does not name: a Tier's rows ride on every key
+	under it, and Grove Settings names the default tier."""
+	settings = frappe.db.get_single_value("Grove Settings", "modified")
+	if settings and frappe.utils.get_datetime(settings) > since:
+		return True
+	return bool(frappe.db.exists("Tier", {"modified": (">", since)}))
+
+
+def bucket_names(labels):
+	"""The live keys of `labels`' buckets, picked by hashing every live key's hash."""
+	if not labels:
+		return []
+	# ponytail: a two-column scan of every live key; a `bucket` column set at mint makes it one indexed query.
+	rows = frappe.get_all("Grove API Key", filters={"status": "active"}, fields=["name", "key_hash"])
+	return [row.name for row in rows if row.key_hash and bucket_of(row.key_hash) in labels]
+
+
+def keys_section(labels=None):
+	"""The `keys` section: every live key when `labels` is None, else the keys of those buckets
+	only. A bucket left with no live key is absent; the delta prunes it."""
+	names = None if labels is None else bucket_names(labels)
+	return bucketed_section(effective_keys(names), "key_hash")
 
 
 def bucket_of(record_id):
@@ -110,16 +159,12 @@ def bucketed_section(records, id_field):
 	}}
 
 
-def gateway_snapshot(geography, shared=None):
-	"""The same for every gateway in `geography`, so a run builds it once per geography: only the
-	routes differ between them. A run hands every call the same `shared` dict, so the key records
-	are built once."""
-	shared = {} if shared is None else shared
-	if "keys" not in shared:
-		shared["keys"] = effective_keys()
+def gateway_snapshot(geography, keys):
+	"""The same for every gateway in `geography` but the routes, so a run builds it once per
+	geography over the one `keys` section it built."""
 	return {
 		"groups": flat_section({"records": effective_groups()}),
-		"keys": bucketed_section(shared["keys"], "key_hash"),
+		"keys": keys,
 		"routes": flat_section({"table": routes.gateway_routes(geography)}),
 	}
 
@@ -139,26 +184,33 @@ def ingress_snapshot(ingress):
 	return {"routes": flat_section({"table": routes.replicas_for_ingress(ingress)})}
 
 
-def snapshot_delta(snapshot, remote):
-	"""The sections whose hash the box does not already hold. A bucket the box hashes but the
-	snapshot no longer has is sent explicitly EMPTY, so the agent prunes its members instead of
-	holding them forever."""
+def snapshot_delta(snapshot, remote, labels=None):
+	"""The sections whose hash the box does not already hold. `labels` are the buckets a tick
+	rebuilt, when it did not rebuild them all."""
 	delta = {}
 	for section, content in snapshot.items():
 		if "buckets" in content:
-			changed = {
-				label: bucket
-				for label, bucket in content["buckets"].items()
-				if remote.get(f"{section}:{label}") != bucket["hash"]
-			}
-			held = {k.split(":", 1)[1] for k in remote if k.startswith(f"{section}:")}
-			for label in held - set(content["buckets"]):
-				changed[label] = {"records": []}
+			changed = bucket_delta(section, content["buckets"], remote, labels)
 			if changed:
 				delta[section] = {"buckets": changed}
 		elif remote.get(section) != content["hash"]:
 			delta[section] = content
 	return delta
+
+
+def bucket_delta(section, buckets, remote, labels):
+	"""The buckets whose hash the box lacks, and — explicitly EMPTY — those it still hashes but
+	the section no longer has, so the agent prunes their members instead of holding them forever.
+	`labels` keeps the prune to the buckets a tick rebuilt: the rest it never looked at."""
+	changed = {
+		label: bucket for label, bucket in buckets.items() if remote.get(f"{section}:{label}") != bucket["hash"]
+	}
+	held = {k.split(":", 1)[1] for k in remote if k.startswith(f"{section}:")}
+	if labels is not None:
+		held &= set(labels)
+	for label in held - set(buckets):
+		changed[label] = {"records": []}
+	return changed
 
 
 def section_label(section, content):

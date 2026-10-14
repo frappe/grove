@@ -228,7 +228,7 @@ prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south
 
 | When | Job | Note |
 |---|---|---|
-| `*/1` | `pathway.projection.sync_projection` | hash-gated: pushes each box only what it does not already hold; a fleet in sync logs nothing. Also sends each store the spend adjustments it is owed (pending `Credit Discrepancy` rows) |
+| `*/1` | `pathway.projection.sync_projection` | stamp-bounded and hash-gated: rebuilds only the key buckets a save moved since the stores' `last_synced_at`, reads every box's hashes, pushes each box only what it does not already hold; a fleet in sync logs nothing and builds no key record. Every 10th minute every bucket is rebuilt. Also sends each store the spend adjustments it is owed (pending `Credit Discrepancy` rows) |
 | `*/2` | `cloud_provider.reconcile.sync_all` | the provider owns whether a pod is up; this closes the drift |
 | `0 */6` | `pathway.key_stats.pull_all` | one Provider Key Stats row per key per store: what it answered since the last pull, cleared on the gateway as it is read |
 | `*/5` | `gateway_store.backup_all` | one `redis-cli --rdb` snapshot per Active store, over SSH, into the weights bucket under `gateway-store/<store>/<utc stamp>.rdb`, the doc's Last Backup Key pointing at it; usage leaves a store only on the hourly pull, so this is what a lost disk costs: 5 minutes. Off until the bucket and Mirror keys are set; prune with a bucket lifecycle rule |
@@ -243,8 +243,9 @@ Grove Settings → **Pause Projection** stops the scheduled push; **Pause Usage 
 hourly usage pull and 6-hourly key stats read (`SyncRun.pause_field`). The manual paths above still work.
 
 There is no separate backstop job: the hashes live on the box, so losing the store means losing
-them, which the very next tick reads as drift and heals. All Projection runs serialize on one
-MariaDB advisory lock, so a slow run cannot land a stale write after a newer one.
+them, which the very next tick reads as a box with no key hash and rebuilds everything for. All
+Projection runs serialize on one MariaDB advisory lock, so a slow run cannot land a stale write
+after a newer one.
 
 **Boxes are dialled in parallel** (`MAX_PARALLEL = 8`), a store's writers in turn, so one dead box
 costs a run one timeout, not one per box. Rows land in the order asked, whichever box answered
@@ -254,9 +255,29 @@ thread (`settle()`) — a pool thread has no `frappe.local`, so no db, no docs, 
 moment it arrives; one that cannot be recorded fails its own row and acks nothing, so the box sends
 it again.
 
-A quiet tick still leaves a trace on an Ingress Server: every in-sync check and successful push
-stamps its `last_synced_at`, and a stale stamp means the box is unreachable or rejecting pushes.
-Gateways carry no stamp — the Pathway Sync rows are their record.
+### The projection tick
+
+Every minute, bounded by a stamp. Each Gateway Store, each gateway not yet on one and each Ingress
+Server carries `last_synced_at`: the read time of the last tick it took a push from or already
+held. A stale stamp means the box is unreachable or rejecting pushes; the failed Pathway Sync rows
+say why.
+
+1. Read every box's hashes, side by side on the pool. A box that does not answer gets nothing
+   built for it; its row reads unreachable as before.
+2. Decide the key buckets in play: those a Grove API Key or Central Team save moved since the
+   oldest stamp among the gateway units that answered, less `LOOKBACK` (120 s, for a save stamped
+   before the read but committed after it). Every bucket instead under force, every `FULL_EVERY`
+   (10th) minute, for a unit with no stamp or no `keys:*` hash (new or wiped), after a Tier or
+   Grove Settings save, and past `FULL_ABOVE` (32) dirty buckets.
+3. Build those buckets once (`snapshot.keys_section`): their keys are picked by hashing every live
+   key's hash, there being no bucket column yet. Groups and routes are built whole, as always.
+4. Each box is sent what its hashes lack among the buckets in play; a held bucket outside them is
+   never pruned. A box holding everything and owed nothing is skipped, no row.
+5. Stamp each unit that took the push or held the state with the tick's read time. Never on
+   failure: the next tick that reaches it rebuilds everything saved since.
+
+A quiet minute is one GET per box and three `modified >` reads. A store restored from an RDB has a
+fresh stamp and a full map, so it heals at the next full tick, not the next minute.
 
 **A store is reached through its writers.** Each tick (and each usage pull) reaches a gateway not
 yet on a store directly, and a Gateway Store through the gateways marked **Gateway Store
