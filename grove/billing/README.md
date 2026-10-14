@@ -103,7 +103,7 @@ is a doc plus the one parser line in pathway that fills its bucket from the resp
 
 **Revenue and usage reads.** The `Revenue` report (Desk) sums what each billed drain was charged —
 Grove's cost in each record's per-model detail, records of Free teams left out — plus the corrections of discrepancies Grove resolved, grouped by model, API key, team or day over a date range,
-with a total row; export from the report toolbar. Revenue only, no margin. `api.usage(teams, from_date, to_date | period | month | pulled_after, pulled_until, key_hash)` (read-only: on the replica when the site sets `read_from_replica`) gives a control client requests and cost (what was charged: usage while Free adds requests, no cost; a Grove correction adds its cost under its model on the day it was resolved)
+with a total row; export from the report toolbar. Revenue only, no margin. `api.usage.usage(teams, from_date, to_date | period | month | pulled_after, pulled_until, key_hash)` (read-only: on the replica when the site sets `read_from_replica`) gives a control client requests and cost (what was charged: usage while Free adds requests, no cost; a Grove correction adds its cost under its model on the day it was resolved)
 per team and model (periods: Today, Yesterday, Last 7 Days, Last 30 Days, This Month, Last Month),
 and the per-model summary again per UTC day (`daily_summary`, for a chart; a day with no usage has no entry),
 with `as_of` = when the newest usage in the range was pulled. `pulled_after`/`pulled_until` (RFC 3339 UTC, until exclusive) read by when a record landed (`creation`) or a correction was resolved instead of by day: Central's invoice is every record landed since its last one, so a drain that lands late goes on the next invoice and nothing is billed twice. Each is one grouped SQL statement
@@ -123,8 +123,8 @@ it holds no money that must not run out. What gates is:
   is a field not yet written, which reads 0, so nothing resets and nothing runs at midnight), and
   refuses at `spent >= budget` (402). Every key is pinned to one geography, so all its spend lands
   on one store and that store gates it exactly. A key is minted at 0 and refused until
-  `api.update_key(cap=)` gives it one.
-- **The team's `Tier`**, named by Central from the team's trust tier (`api.update_team`; `Beginner`
+  `api.keys.update_key(cap=)` gives it one.
+- **The team's `Tier`**, named by Central from the team's trust tier (`api.teams.update_team`; `Beginner`
   … `Elite`, the catalog seeds a starter ladder once and the operator edits the values in Desk):
   its `spend_limit` (USD a month), `max_keys` (0: no limit) and the rate limits a key with no
   limit rows of its own runs under. Σ the live keys' caps stays within the spend limit, so the
@@ -143,12 +143,12 @@ gateway decides per request: Free takes effect when the push reaches it (the nex
 pull bills what it tagged `p:`, never the team's flag at the time of the pull. Turning Free off
 resets every live key's cap to 0, since a Free team's caps are never checked.
 
-**What Central reads.** `api.spend(team)`: `spent`, `month_spent` (this UTC month's billed
+**What Central reads.** `api.usage.spend(team)`: `spent`, `month_spent` (this UTC month's billed
 records of every key the team held, revoked ones too, plus what Grove corrected; nothing is
 stored), `capped` (Σ live caps) against `spend_limit`, `max_keys` and `suspended`
-(`api.pull_usage(team)` first for a figure less than an hour old; 2 an hour per team, then 429).
+(`api.usage.pull_usage(team)` first for a figure less than an hour old; 2 an hour per team, then 429).
 Credit, invoices and payment are Central's: it bills what landed since its last invoice from
-`api.usage(pulled_after=, pulled_until=)`, its Credit Wallet used first. Grove holds no money.
+`api.usage.usage(pulled_after=, pulled_until=)`, its Credit Wallet used first. Grove holds no money.
 
 **Two spends, one input.** The gateway's `spent:<month>` per key and store, and Grove's lifetime
 `spent` per key, are each priced at the same pricing id; neither side writes the other's. A key on

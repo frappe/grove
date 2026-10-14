@@ -10,7 +10,7 @@ from decimal import Decimal
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from grove import api
+from grove.api import usage as usage_api
 from grove.billing import pricing
 from grove.billing.doctype.credit_discrepancy.credit_discrepancy import mark_corrected, pending_adjustments
 from grove.grove.doctype.geography.test_geography import make_test_geography
@@ -99,9 +99,9 @@ class CreditsCase(IntegrationTestCase):
 		today = str(usage.utc_today())
 		_, rows = revenue({"from_date": today, "to_date": today, "group_by": "Team", "team": team})
 		return (
-			api.usage([team], period="Today")[team]["cost"],
+			usage_api.usage([team], period="Today")[team]["cost"],
 			sum(row["revenue"] for row in rows),
-			api.spend(team)["month_spent"],
+			usage_api.spend(team)["month_spent"],
 		)
 
 
@@ -219,7 +219,7 @@ class TestAFreeTeamIsNeverCharged(CreditsCase):
 	def test_the_usage_api_counts_their_requests_and_no_cost(self):
 		free, key = self.team(cap=0, free=1)
 		self.pull({key: self.hash(80_000, charged=False)})
-		result = api.usage([free], period="Today")
+		result = usage_api.usage([free], period="Today")
 		self.assertEqual(result[free], {"requests": 1, "tokens": 80_000, "cost": 0})
 
 	def test_untagged_usage_of_a_known_model_is_recorded_and_bills_nothing(self):
@@ -265,7 +265,7 @@ class TestTheUsageApiSumsInTheDatabase(CreditsCase):
 		team, key = self.team(cap=5)
 		self.pull({key: self.hash(50_000)})
 		self.pull({key: self.hash(30_000, requests=2)})
-		result = api.usage([team], period="Today")
+		result = usage_api.usage([team], period="Today")
 		# Tokens are the whole counters: the hashes carry completion tokens only.
 		self.assertEqual(result[team], {"requests": 3, "tokens": 80_000, "cost": 0.8})
 		self.assertEqual(
@@ -277,7 +277,7 @@ class TestTheUsageApiSumsInTheDatabase(CreditsCase):
 		)
 		self.assertTrue(result["as_of"].endswith("Z"))
 		self.assertEqual(
-			api.usage([team], period="Yesterday")[team], {"requests": 0, "tokens": 0, "cost": 0}
+			usage_api.usage([team], period="Yesterday")[team], {"requests": 0, "tokens": 0, "cost": 0}
 		)
 
 	def test_a_key_hash_narrows_it_to_that_key(self):
@@ -286,7 +286,7 @@ class TestTheUsageApiSumsInTheDatabase(CreditsCase):
 		self.pull({key: self.hash(50_000), other_key: self.hash(30_000, requests=2)})
 		key_hash = frappe.db.get_value("Grove API Key", key, "key_hash")
 
-		result = api.usage([team], period="Today", key_hash=key_hash)
+		result = usage_api.usage([team], period="Today", key_hash=key_hash)
 		self.assertEqual(result[team], {"requests": 1, "tokens": 50_000, "cost": 0.5})
 		self.assertEqual(
 			result["model_summary"], [{"model": self.model_key, "requests": 1, "tokens": 50_000, "cost": 0.5}]
@@ -302,7 +302,7 @@ class TestTheUsageApiSumsInTheDatabase(CreditsCase):
 		key_hash = frappe.db.get_value("Grove API Key", stranger_key, "key_hash")
 
 		with self.assertRaises(frappe.DoesNotExistError):
-			api.usage([team], period="Today", key_hash=key_hash)
+			usage_api.usage([team], period="Today", key_hash=key_hash)
 
 
 class TestTheGatewaysChargeIsAudited(CreditsCase):
@@ -346,7 +346,7 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		# A row from before pricings were tagged names none: its money still counts, under no model.
 		frappe.db.set_value("Credit Discrepancy", row.name, "pricing", None)
 		self.assertEqual(self.money(team), (0.6, 0.6, 0.6))
-		self.assertIn("", [entry["model"] for entry in api.usage([team], period="Today")["model_summary"]])
+		self.assertIn("", [entry["model"] for entry in usage_api.usage([team], period="Today")["model_summary"]])
 		with self.assertRaises(frappe.ValidationError):
 			row.correct_grove()
 

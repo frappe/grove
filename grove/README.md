@@ -54,7 +54,7 @@ topology stays inside its VPC and several deployments behind one ingress fold in
 | `tls.py` | Each Geography's zone wildcard: issue over DNS-01, renew, push to that geography's boxes. |
 | `monitoring.py` / `log_relay.py` | Exporters on every box, and shipping their output. |
 | `failure.py` | `@reports_failure` — a long job that dies marks its doc Broken and says why. |
-| `api.py` | The whitelisted surface a customer's portal calls. |
+| `api/` | The whitelisted surface Central calls, one module per subject: `control` (enrollment), `teams`, `keys`, `catalog` (geographies, models), `usage` (usage, spend, pulls). |
 | `net.py` / `utils.py` | Addresses, slugs, paths. |
 
 ## What gets pushed, and under which key
@@ -211,7 +211,7 @@ prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south
   search types.
 - A geography lands with `endpoint` and `fleet_zone` blank, for the operator to fill, and is the
   default only when the site has none. Until then a box in it serves :80 in the clear and
-  `api.provision_key` refuses it.
+  `api.keys.provision_key` refuses it.
 - A model group the site has no doc named for lands with the models the file lists for it, by key,
   in the geography those models landed in, and is that geography's default only when it has none.
   The file ships one, `catalog`, granting every model in it. A model added to the file later does
@@ -232,7 +232,7 @@ prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south
 | `*/2` | `cloud_provider.reconcile.sync_all` | the provider owns whether a pod is up; this closes the drift |
 | `0 */6` | `pathway.key_stats.pull_all` | one Provider Key Stats row per key per store: what it answered since the last pull, cleared on the gateway as it is read |
 | `*/5` | `gateway_store.backup_all` | one `redis-cli --rdb` snapshot per Active store, over SSH, into the weights bucket under `gateway-store/<store>/<utc stamp>.rdb`, the doc's Last Backup Key pointing at it; usage leaves a store only on the hourly pull, so this is what a lost disk costs: 5 minutes. Off until the bucket and Mirror keys are set; prune with a bucket lifecycle rule |
-| hourly | `pathway.usage.pull_all` | a store is drained once, through its first writer that answers; recorded, billed, then what landed is acked. A failed pull loses nothing: the box re-sends every unacked pair. Also Gateway Server → **Pull Usage**, Stuck Usage → **Pull Now**, and `api.pull_usage(user)` for one user (3 an hour per user, counted in the site cache; the rest are not limited) |
+| hourly | `pathway.usage.pull_all` | a store is drained once, through its first writer that answers; recorded, billed, then what landed is acked. A failed pull loses nothing: the box re-sends every unacked pair. Also Gateway Server → **Pull Usage**, Stuck Usage → **Pull Now**, and `api.usage.pull_usage(user)` for one user (3 an hour per user, counted in the site cache; the rest are not limited) |
 | hourly | `tls.renew_fleet_certificate`, `cloud_provider.schedule.run_due_pods` | |
 
 Nothing else pushes. A doctype hook, a provision and a pod lifecycle all just write state; the

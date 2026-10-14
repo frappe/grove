@@ -114,10 +114,10 @@ class IntegrationTestNewKeysStartInTheDefaultGroup(IntegrationTestCase):
 		self.assertEqual(self.groups_of(doc.reload()), [])
 
 	def test_provisioning_a_key_puts_it_in_the_default_group(self):
-		from grove import api
+		from grove.api import keys, teams
 
-		api.provision_team("key-group-provisioned", free=True)
-		minted = api.provision_key("key-group-provisioned")
+		teams.provision_team("key-group-provisioned", free=True)
+		minted = keys.provision_key("key-group-provisioned")
 		self.assertEqual(self.groups_of(frappe.get_doc("Grove API Key", minted["name"])), [self.default])
 
 	def test_a_new_key_starts_in_its_own_geographys_default(self):
@@ -154,10 +154,10 @@ class IntegrationTestOwnGrantsAreTheKeysGeographys(IntegrationTestCase):
 				self.key(f"key-{field}-away", **{field: [{"model": self.docs[self.away]}]}).insert()
 
 	def test_provisioning_by_key_allows_the_keys_geographys_doc(self):
-		from grove import api
+		from grove.api import keys, teams
 
-		api.provision_team("key-allow-keyed", free=True)
-		minted = api.provision_key("key-allow-keyed", geography=self.away, models=[self.KEY])
+		teams.provision_team("key-allow-keyed", free=True)
+		minted = keys.provision_key("key-allow-keyed", geography=self.away, models=[self.KEY])
 		allowed = frappe.get_all("Grove Model Row", filters={"parent": minted["name"], "parentfield": "allow"}, pluck="model")
 		self.assertEqual(allowed, [self.docs[self.away]])
 
@@ -198,17 +198,17 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 			key("key-limit-week", limits=[{"metric": "requests", "window": "1w", "value": 5}])
 
 	def test_provisioning_replaces_the_limits_it_is_given_and_keeps_them_otherwise(self):
-		from grove import api
+		from grove.api import keys, teams
 
 		team_id = "key-limit-provisioned"
-		api.provision_team(team_id, free=True)
-		name = api.provision_key(team_id, limits=[{"metric": "requests", "window": "1m", "value": 5}])["name"]
-		api.update_key(team_id, name)
+		teams.provision_team(team_id, free=True)
+		name = keys.provision_key(team_id, limits=[{"metric": "requests", "window": "1m", "value": 5}])["name"]
+		keys.update_key(team_id, name)
 		self.assertEqual(limit_entries("Grove API Key")[name], [{"metric": "requests", "window": "1m", "value": 5}])
-		api.update_key(team_id, name, limits=[{"metric": "requests", "window": "1h", "value": 9}])
+		keys.update_key(team_id, name, limits=[{"metric": "requests", "window": "1h", "value": 9}])
 		self.assertEqual(limit_entries("Grove API Key")[name], [{"metric": "requests", "window": "1h", "value": 9}])
 		# Back under the team's tier: no rows of its own, so the defaults reach the wire.
-		api.update_key(team_id, name, limits=[])
+		keys.update_key(team_id, name, limits=[])
 		self.assertNotIn(name, limit_entries("Grove API Key"))
 		self.assertEqual(projected(name)["limits"], "requests:1m:20,total_tokens:1m:100000")
 

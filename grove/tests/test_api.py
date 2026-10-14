@@ -7,8 +7,8 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
-from grove import api
-from grove.api import _totals_by_model as totals_by_model
+from grove.api import usage
+from grove.api.usage import _totals_by_model as totals_by_model
 
 
 def row(model, requests=0, cost=0.0):
@@ -40,8 +40,8 @@ class TestUsageWindow(unittest.TestCase):
 	"""Every way of asking resolves to two UTC days."""
 
 	def window(self, **kwargs):
-		with patch.object(api, "utc_today", return_value=date(2026, 9, 28)):
-			return api.usage_window(kwargs.get("from_date"), kwargs.get("to_date"), kwargs.get("period"), kwargs.get("month"))
+		with patch.object(usage, "utc_today", return_value=date(2026, 9, 28)):
+			return usage.usage_window(kwargs.get("from_date"), kwargs.get("to_date"), kwargs.get("period"), kwargs.get("month"))
 
 	def test_the_named_periods(self):
 		self.assertEqual(self.window(), (date(2026, 9, 1), date(2026, 9, 28)))
