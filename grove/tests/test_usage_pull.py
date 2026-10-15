@@ -80,11 +80,18 @@ class TestADrainIsOneRecordPerKey(PullCase):
 		self.assertEqual(self.pull({key: drained}), (1, {"d1": [key]}, [], 0))
 		[doc] = self.records(key)
 		self.assertEqual(
-			(doc.team, doc.day, doc.drain_id, doc.gateway_store, doc.request_count, doc.cost, doc.gateway_cost),
-			(self.team, self.day, "d1", self.store, 2, 0, 0),
+			(doc.team, doc.day, doc.drain_id, doc.gateway_store, doc.request_count, doc.total_tokens, doc.cost, doc.gateway_cost),
+			(self.team, self.day, "d1", self.store, 2, 10, 0, 0),
 		)
 		[entry] = self.detail(doc)
 		self.assertEqual((entry["model"], entry["pricing"], entry["requests"], entry["completion_tokens"]), (self.model, None, 2, 10))
+
+	def test_total_tokens_counts_prompt_and_completion_once_and_no_part_again(self):
+		key = self.key()
+		counters = {"prompt_tokens": "100", "cached_tokens": "60", "completion_tokens": "7"}
+		self.pull({key: {"request_count": "1", **{f"m:{c}:{self.model}": v for c, v in counters.items()}}})
+		[doc] = self.records(key)
+		self.assertEqual(doc.total_tokens, 107)
 
 	def test_the_gateways_own_view_of_the_key_is_ignored(self):
 		# The box still writes these two; Grove bills from the pricing-tagged counters alone.

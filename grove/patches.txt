@@ -7,3 +7,4 @@ grove.patches.v1_0.move_grove_users_to_central_teams
 grove.patches.v1_0.drop_grove_credit
 grove.patches.v1_0.rate_limit_tiers
 grove.patches.v1_0.title_provider_keys
+grove.patches.v1_0.fill_total_tokens

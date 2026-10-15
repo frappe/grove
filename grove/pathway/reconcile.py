@@ -70,6 +70,7 @@ class Reconciler:
 			"doctype": "Usage Record", "api_key": prefix, "team": team, "day": self.day,
 			"gateway_store": self.gateway_store, "drain_id": self.drain_id,
 			"billed": billed, "request_count": requests,
+			"total_tokens": sum(e[counter] for e in entries for counter in self.book.counters.whole),
 			"cost": sum((e["grove_cost"] for e in entries), Decimal(0)),
 			"gateway_cost": sum((e["gateway_cost"] for e in entries), Decimal(0)),
 			# The gateway's cost is kept as the header total only; per pricing it is compared, not stored.
