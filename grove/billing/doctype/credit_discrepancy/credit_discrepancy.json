@@ -6,13 +6,15 @@
  "engine": "InnoDB",
  "field_order": [
   "usage_record",
-  "grove_user",
+  "team",
   "api_key",
   "pricing",
   "column_break_where",
   "gateway_store",
   "resolution",
   "gateway_correction_pending",
+  "resolved_on",
+  "resolved_day",
   "section_values",
   "gateway_value",
   "grove_value",
@@ -33,11 +35,11 @@
    "read_only": 1
   },
   {
-   "fieldname": "grove_user",
+   "fieldname": "team",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Grove User",
-   "options": "Grove User",
+   "label": "Team",
+   "options": "Central Team",
    "read_only": 1
   },
   {
@@ -59,6 +61,15 @@
    "fieldtype": "Column Break"
   },
   {
+   "description": "The store drained; a gateway correction goes to its writers.",
+   "fieldname": "gateway_store",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Gateway Store",
+   "options": "Gateway Store",
+   "read_only": 1
+  },
+  {
    "description": "Blank while open; set by whichever side was corrected.",
    "fieldname": "resolution",
    "fieldtype": "Select",
@@ -73,6 +84,20 @@
    "fieldname": "gateway_correction_pending",
    "fieldtype": "Check",
    "label": "Gateway Correction Pending",
+   "read_only": 1
+  },
+  {
+   "description": "When a side was corrected (site time); blank while open. A landing window reads a Grove correction by it.",
+   "fieldname": "resolved_on",
+   "fieldtype": "Datetime",
+   "label": "Resolved On",
+   "read_only": 1
+  },
+  {
+   "description": "The UTC day a Grove correction counts on, like a record's Day: the usage API, the Revenue report and this month's spend read it.",
+   "fieldname": "resolved_day",
+   "fieldtype": "Date",
+   "label": "Resolved Day",
    "read_only": 1
   },
   {
@@ -129,19 +154,10 @@
    "fieldname": "note",
    "fieldtype": "Small Text",
    "label": "Note"
-  },
-  {
-   "description": "The store drained; a gateway correction goes to its writers.",
-   "fieldname": "gateway_store",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Gateway Store",
-   "options": "Gateway Store",
-   "read_only": 1
   }
  ],
  "links": [],
- "modified": "2026-10-04 00:00:00.000000",
+ "modified": "2026-10-12 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Credit Discrepancy",

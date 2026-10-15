@@ -3,16 +3,12 @@
 
 import re
 
-import requests
-
 import frappe
+import requests
 from frappe.model.document import Document
 
-from grove.pathway.run import gateway_units, in_turn
 from grove.utils import slugify
 
-COUNTS = ("requests", "ok", "rate_limited", "rejected", "failed")
-LAST = ("last_used", "last_rate_limited")
 # What Anthropic's front takes when the record names no version.
 ANTHROPIC_VERSION = "2023-06-01"
 
@@ -69,6 +65,7 @@ class ModelProvider(Document):
 		if self.is_self_hosted:
 			self.validate_self_hosted()
 		self.validate_siblings()
+		self.validate_key_titles()
 		# self.validate_endpoint()
 
 	def validate_self_hosted(self):
@@ -95,6 +92,14 @@ class ModelProvider(Document):
 			if sibling.geography == self.geography:
 				frappe.throw(f"{self.provider_name} already has a record in {self.geography}.")
 
+	def validate_key_titles(self):
+		"""A key is known by its title — Provider Key Stats names it so — and a blank one is the
+		mandatory check's to refuse."""
+		titles = [row.title for row in self.api_keys if row.title]
+		repeated = sorted(title for title in set(titles) if titles.count(title) > 1)
+		if repeated:
+			frappe.throw(f"{self.provider_name} has two keys titled {repeated[0]!r}.")
+
 	def on_update(self):
 		# The mirror on Model is what its form and the Model link filters read.
 		if self.has_value_changed("is_self_hosted"):
@@ -116,30 +121,14 @@ class ModelProvider(Document):
 			frappe.throw(f"{self.provider_name} has a Base URL but no key, so nothing could dial it.")
 
 	@frappe.whitelist()
-	def key_stats(self):
-		"""What every key of this record has answered, lifetime, summed over the gateway stores of
-		its geography — read live off one gateway per store, nothing kept here."""
-		frappe.only_for("System Manager")
-		ids = [row.name for row in self.api_keys]
-		totals = {row.name: {"title": row.title or row.name, **dict.fromkeys(COUNTS + LAST, 0)} for row in self.api_keys}
-		unreached = []
-		for unit in gateway_units(geography=self.geography):
-			reached, rows = in_turn(unit, lambda target: fetch_key_stats(target, ids))
-			if not reached:
-				unreached.append(unit.store or rows[0]["server"])
-				continue
-			for key, stats in rows[-1]["stats"].items():
-				add_key_stats(totals[key], stats)
-		return {"keys": [totals[key] for key in ids], "unreached": unreached}
-
-	@frappe.whitelist()
 	def fetch_models(self):
 		"""Button: what the vendor serves, read off its `/v1/models`, split into the ids this record
 		already holds and the ones it could add. One front is asked — the fronts are dialects of one
 		vendor and list the same models, and an Anthropic shim beside an OpenAI front (DeepSeek's)
 		has no list at all."""
 		frappe.only_for("System Manager")
-		secret = self.api_keys[0].get_password("api_key") if self.api_keys else None
+		enabled = [row for row in self.api_keys if not row.disabled]
+		secret = enabled[0].get_password("api_key") if enabled else None
 		if not ((self.base_url or self.anthropic_base_url) and secret):
 			frappe.throw(f"{self.provider_name} has no front and key to ask for its models.")
 		upstream = set(self.list_upstream_models(secret))
@@ -200,20 +189,3 @@ def on_doctype_update():
 def self_hosted_provider():
 	"""The one provider our own engines serve under, None until one is flagged."""
 	return frappe.db.get_value("Model Provider", {"is_self_hosted": 1}, "name")
-
-
-def fetch_key_stats(target, ids):
-	"""GET /provider-keys off one gateway: {key id: its counts}. Pool-safe: no frappe."""
-
-	def work(row):
-		row["stats"] = target.get("provider-keys?ids=" + ",".join(ids))
-
-	return target.dial(work, stats={})
-
-
-def add_key_stats(total, stats):
-	"""Counts add up across stores; a timestamp is the latest any store saw."""
-	for field in COUNTS:
-		total[field] += int(stats.get(field) or 0)
-	for field in LAST:
-		total[field] = max(total[field], int(stats.get(field) or 0))

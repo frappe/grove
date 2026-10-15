@@ -138,10 +138,14 @@ def sync_targets(geography=None):
 
 
 def gateway_units(gateways=None, geography=None):
-	"""One Unit per gateway Redis. A named gateway is dialled itself, whatever store it is on: that
-	is an operator's button. None means every Active box — `is None` and not truthiness, because
-	an empty list is a caller saying "no gateway work" — or every Active box of `geography`."""
-	groups = sync_targets(geography) if gateways is None else [(None, [gateway]) for gateway in gateways]
+	"""One Unit per gateway Redis. A named gateway is dialled itself, under its own store, so what
+	the store is owed or holds lands with it: that is an operator's button. None means every Active
+	box — `is None` and not truthiness, because an empty list is a caller saying "no gateway work"
+	— or every Active box of `geography`."""
+	if gateways is None:
+		groups = sync_targets(geography)
+	else:
+		groups = [(frappe.db.get_value("Gateway Server", gateway, "gateway_store"), [gateway]) for gateway in gateways]
 	return [
 		Unit(store, tuple(Target.resolve("Gateway Server", gateway) for gateway in group))
 		for store, group in groups
@@ -235,6 +239,7 @@ class SyncRun:
 	order asked, and finalizes only when a row was left."""
 
 	sync_type = ""
+	pause_field = ""  # the Grove Settings check that stops this run's scheduled ticks
 
 	def __init__(self, trigger="Scheduled", wait=0):
 		self.trigger = trigger
@@ -243,7 +248,9 @@ class SyncRun:
 
 	def run(self):
 		"""→ the Pathway Sync name, or None when nothing was logged: a run already in flight, no
-		boxes to dial, or a fleet already in sync."""
+		boxes to dial, a fleet already in sync, or a scheduled run Grove Settings pauses."""
+		if self.trigger == "Scheduled" and frappe.db.get_single_value("Grove Settings", self.pause_field):
+			return None
 		self.doc = new_run(self.sync_type, self.trigger)
 		if not self.doc.acquire_lock(wait=self.wait):  # scheduled → skip if a run is in flight; forced → queue
 			return None

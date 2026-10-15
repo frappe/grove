@@ -6,7 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "api_key",
-  "user",
+  "team",
   "day",
   "column_break_drain",
   "gateway_store",
@@ -14,6 +14,7 @@
   "section_totals",
   "billed",
   "request_count",
+  "total_tokens",
   "column_break_avch",
   "gateway_cost",
   "cost",
@@ -32,11 +33,11 @@
    "reqd": 1
   },
   {
-   "fieldname": "user",
+   "fieldname": "team",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "User",
-   "options": "Grove User",
+   "label": "Team",
+   "options": "Central Team",
    "read_only": 1
   },
   {
@@ -77,6 +78,13 @@
    "fieldname": "request_count",
    "fieldtype": "Int",
    "label": "Requests",
+   "read_only": 1
+  },
+  {
+   "description": "Prompt and completion tokens of every model, once each: a cached or audio part is already inside its whole. A cheap read beside the JSON.",
+   "fieldname": "total_tokens",
+   "fieldtype": "Int",
+   "label": "Total Tokens",
    "read_only": 1
   },
   {
@@ -131,7 +139,7 @@
  ],
  "in_create": 1,
  "links": [],
- "modified": "2026-10-05 03:22:42.629764",
+ "modified": "2026-10-15 17:02:25.528943",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Usage Record",

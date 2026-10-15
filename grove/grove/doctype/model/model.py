@@ -84,18 +84,18 @@ class Model(Document):
 
 	@property
 	def is_granted(self):
-		"""Someone can call it: a user's own Allow names the key, or a Model Group with a user in it
-		does. A group nobody is in grants nothing yet, the default one included."""
+		"""Someone can call it: a key's own Allow names it, or a Model Group with a key in it does.
+		A group nobody is in grants nothing yet, the default one included."""
 		rows = frappe.get_all(
 			"Grove Model Row",
 			filters={"model_key": self.model_key, "parentfield": ("in", ("allow", "models"))},
 			fields=["parenttype", "parent"],
 		)
-		if any(row.parenttype == "Grove User" for row in rows):
+		if any(row.parenttype == "Grove API Key" for row in rows):
 			return True
 		groups = [row.parent for row in rows if row.parenttype == "Model Group"]
 		return bool(groups) and bool(
-			frappe.db.exists("Model Group Row", {"parenttype": "Grove User", "model_group": ("in", groups)})
+			frappe.db.exists("Model Group Row", {"parenttype": "Grove API Key", "model_group": ("in", groups)})
 		)
 
 	@frappe.whitelist()
@@ -112,7 +112,7 @@ class Model(Document):
 
 	def validate_publishable(self):
 		"""Publishing is the operator's call, and only a priced, served model can take it. Not an
-		access gate — access is granted per user via Model Group or Grove User."""
+		access gate — access is granted per key via Model Group or its own Allow."""
 		if not frappe.db.exists("Model Pricing", {"model": self.name, "status": "Enabled"}):
 			frappe.throw(
 				f"{self.model_key} has no Enabled Model Pricing. Enable one first — zero rates serve it free."

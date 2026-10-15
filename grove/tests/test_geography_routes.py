@@ -4,6 +4,7 @@
 user goes to every gateway carrying the pin the gateway enforces. Pure — the rows are faked."""
 
 import unittest
+from datetime import datetime
 from unittest.mock import patch
 
 import frappe
@@ -113,27 +114,31 @@ class TestRoutesStayInTheirGeography(unittest.TestCase):
 		self.assertEqual(routes(""), {})
 
 
-class TestEveryUserCarriesTheirPin(unittest.TestCase):
-	def users(self, rows):
+class TestEveryKeyCarriesItsPin(unittest.TestCase):
+	def keys(self, rows):
 		def get_all(doctype, **kwargs):
-			return [frappe._dict(row) for row in rows] if doctype == "Grove User" else []
+			if doctype == "Grove API Key":
+				return [frappe._dict(row) for row in rows]
+			if doctype == "Central Team":
+				return [frappe._dict(name="T-1", free=0, log_payloads=0, suspended=0)]
+			return []
 
 		with (
 			patch.object(snapshot, "model_rows", return_value={}),
 			patch.object(snapshot, "group_rows", return_value={}),
+			patch.object(snapshot, "effective_limits", return_value={}),
 			patch.object(frappe, "get_all", side_effect=get_all),
-			patch.object(snapshot, "allocations", return_value={}),
 		):
-			return {user["name"]: user for user in snapshot.effective_users()}
+			return {key["prefix"]: key for key in snapshot.effective_keys()}
 
-	def test_pinned_and_unpinned_users_both_reach_every_gateway(self):
-		users = self.users([
-			{"name": "u1", "user": "a@x.test", "credit_exhausted": 0, "log_payloads": 0, "geography": "eu"},
-			{"name": "u2", "user": "b@x.test", "credit_exhausted": 0, "log_payloads": 0, "geography": None},
+	def test_pinned_and_unpinned_keys_both_reach_every_gateway(self):
+		keys = self.keys([
+			{"name": "k1", "key_hash": "aa", "team": "T-1", "status": "active", "cap": 0, "geography": "eu"},
+			{"name": "k2", "key_hash": "bb", "team": "T-1", "status": "active", "cap": 0, "geography": None},
 		])
-		self.assertEqual(users["u1"]["geography"], "eu")
+		self.assertEqual(keys["k1"]["geography"], "eu")
 		# Blank, never null: the gateway reads absent and "" as unpinned.
-		self.assertEqual(users["u2"]["geography"], "")
+		self.assertEqual(keys["k2"]["geography"], "")
 
 
 class TestOneSnapshotPerGeography(unittest.TestCase):
@@ -144,12 +149,12 @@ class TestOneSnapshotPerGeography(unittest.TestCase):
 		built, pushed = [], []
 		geographies = {"gw-in-1": "in", "gw-in-2": "in", "gw-in-3": "in", "gw-eu-1": "eu"}
 
-		def build(geography, shared=None):
+		def build(geography, _keys):
 			built.append(geography)
-			return {"geography": geography}
+			return {"routes": {"table": geography, "hash": geography}}
 
-		def push_target(target, desired, force, _adjustments):
-			pushed.append((target.name, desired["geography"]))
+		def push_target(target, delta, _adjustments):
+			pushed.append((target.name, delta["routes"]["table"]))
 			return None
 
 		doc = unittest.mock.Mock(results=[])
@@ -158,12 +163,21 @@ class TestOneSnapshotPerGeography(unittest.TestCase):
 			patch.object(run, "new_run", return_value=doc),
 			patch.object(run, "sync_targets", return_value=[(None, [name]) for name in geographies]),
 			patch.object(projection, "active_ingresses", return_value=[]),
+			patch.object(projection, "read_hashes", side_effect=lambda targets: {t: {} for t in targets}),
+			patch.object(frappe.utils, "now_datetime", lambda: datetime(2026, 8, 16, 0, 1)),
 			patch.object(snapshot, "gateway_geography", side_effect=geographies.get),
+			patch.object(snapshot, "keys_section", return_value={"buckets": {}}),
 			patch.object(snapshot, "gateway_snapshot", side_effect=build),
 			patch.object(Target, "resolve", side_effect=lambda kind, name: Target(kind, name, "u", "t")),
 			patch.object(projection, "push_target", side_effect=push_target),
 			patch.object(projection, "pending_adjustments", return_value={}),
-			patch.object(frappe, "db", frappe._dict(commit=lambda: None)),
+			patch.object(
+				frappe, "db",
+				frappe._dict(
+					commit=lambda: None, get_single_value=lambda *a: 0,
+					get_value=lambda *a, **k: None, set_value=lambda *a, **k: None,
+				),
+			),
 		):
 			projection.sync_projection()
 		self.assertEqual(sorted(built), ["eu", "in"])

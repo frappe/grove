@@ -18,7 +18,6 @@
    "description": "The key a rate names, the gateway counts under, and a Usage Record carries: lowercase letters, digits and underscores.",
    "fieldname": "counter_name",
    "fieldtype": "Data",
-   "in_list_view": 1,
    "label": "Counter",
    "reqd": 1,
    "unique": 1
@@ -67,7 +66,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-02 00:00:00.000000",
+ "modified": "2026-10-12 20:00:16.612308",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Usage Counter",

@@ -10,6 +10,9 @@
   "pathway_repo",
   "synthetic_session_ttl",
   "usage_retention",
+  "pause_projection",
+  "pause_usage_pull",
+  "default_tier",
   "column_break_tls",
   "dns_provider",
   "acme_email",
@@ -187,8 +190,29 @@
    "label": "Pod"
   },
   {
-   "default": "168h",
-   "description": "How long a gateway keeps usage after Grove acknowledged it, as a Go duration (168h = 7 days). Rendered into each gateway's config.json, which it re-reads on a signal; blank keeps the gateway's default.",
+   "default": "0",
+   "description": "Stops the every-minute push of keys, routes and spend adjustments to every box. The Sync buttons still push.",
+   "fieldname": "pause_projection",
+   "fieldtype": "Check",
+   "label": "Pause Projection"
+  },
+  {
+   "default": "0",
+   "description": "Stops the hourly usage pull and the 6-hourly key stats read. The Pull buttons still run. Usage waits on the gateways until it is pulled, so none is lost; billing lags.",
+   "fieldname": "pause_usage_pull",
+   "fieldtype": "Check",
+   "label": "Pause Usage Pull"
+  },
+  {
+   "description": "What a team with no tier runs under, and what a tier Central names before Grove has one is cloned from. Blank: 20 requests and 100 000 tokens a minute, no key limit, spend limit 0.",
+   "fieldname": "default_tier",
+   "fieldtype": "Link",
+   "label": "Default Tier",
+   "options": "Tier"
+  },
+  {
+   "default": "72h",
+   "description": "How long a gateway keeps usage after Grove acknowledged it, as a Go duration (72h = 3 days). Rendered into each gateway's config.json, which it re-reads on a signal; blank keeps the gateway's default.",
    "fieldname": "usage_retention",
    "fieldtype": "Data",
    "label": "Usage Retention"
@@ -196,7 +220,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-09-29 12:00:00.000000",
+ "modified": "2026-10-15 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove Settings",

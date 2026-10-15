@@ -29,6 +29,10 @@ scheduler_events = {
 		"*/2 * * * *": [
 			"grove.cloud_provider.reconcile.sync_all",
 		],
+		# What every vendor key answered since the last pull, off every store, one Provider Key Stats row each.
+		"0 */6 * * *": [
+			"grove.pathway.key_stats.pull_all",
+		],
 		"*/5 * * * *": [
 			# One RDB per Active store into the weights bucket, over SSH; off until the Mirror keys are set.
 			"grove.grove.doctype.gateway_store.gateway_store.backup_all",
@@ -49,5 +53,6 @@ require_type_annotated_api_methods = True
 default_log_clearing_doctypes = {
 	"Pathway Sync": 60,
 	"Pod Activity": 60,
+	"Provider Key Stats": 60,
 	"Stuck Usage": 90,
 }

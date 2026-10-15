@@ -18,7 +18,7 @@ DOCTYPE = Path(__file__).parent / "ingress_server.json"
 # infra plane has learned who its callers are.
 TENANT_DOCTYPES = {
 	"Grove API Key",
-	"Grove User",
+	"Central Team",
 	"Model",
 	"Model Group",
 	"Usage Record",

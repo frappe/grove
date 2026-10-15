@@ -42,13 +42,13 @@ MODELS = [
 ]
 PROVIDERS = {
 	# The URL fields are the dialect declaration; there is no dialect field to keep in step.
-	# `keys` becomes the Keys table: (row id, secret) pairs, a blank secret standing for a row whose
-	# password was never set.
+	# `keys` becomes the Keys table: (row id, secret[, disabled]) rows, a blank secret standing for
+	# a row whose password was never set.
 	"frappe": {"base_url": None, "api_version": None, "keys": []},
 	"anthropic": {"anthropic_base_url": "https://api.anthropic.com",
 	              "api_version": "2023-06-01", "keys": [("k-anthropic-1", "vendor-key")]},
 	"deepseek": {"base_url": "https://api.deepseek.com", "api_version": "",
-	             "keys": [("k-deepseek-1", "ds-key"), ("k-deepseek-2", "ds-key-2")]},
+	             "keys": [("k-deepseek-1", "ds-key"), ("k-deepseek-2", "ds-key-2"), ("k-deepseek-3", "ds-key-3", 1)]},
 	# One URL genuinely answering both shapes: the same address in both fields.
 	"dual": {"base_url": "https://api.dual.test",
 	         "anthropic_base_url": "https://api.dual.test", "api_version": "",
@@ -64,6 +64,12 @@ DEPLOYMENTS = [
 	          status="Active", inference_server="INF-direct", max_num_seqs=4),
 ]
 PODS = [placement("frappe/nemo-asr", name="POD-1", engine_url="http://1.2.3.4:8081", max_num_seqs=2)]
+# What a vendor would run on its own side, as the operator listed it; out of order on purpose.
+DENIED_TOOLS = [
+	{"provider_name": "anthropic", "tool": "web_search_20250305"},
+	{"provider_name": "anthropic", "tool": "mcp_servers"},
+	{"provider_name": "nobody", "tool": "web_search_options"},
+]
 
 
 class FakeQuery:
@@ -75,14 +81,15 @@ class FakeQuery:
 			"Pod": PODS,
 			"Model Provider": [{"name": name} for name in PROVIDERS],
 			"Inference Server": [{"name": "INF-direct", "ingress": None}],
+			"Denied Tool": DENIED_TOOLS,
 		}.get(doctype, [])
 		if pluck:
 			return [r[pluck] for r in rows]
 		return [frappe._dict(r) for r in rows]
 
 
-def fake_key_row(row_id, secret):
-	row = frappe._dict(name=row_id, api_key="*****" if secret else None)
+def fake_key_row(row_id, secret, disabled=0):
+	row = frappe._dict(name=row_id, api_key="*****" if secret else None, disabled=disabled)
 	row.get_password = lambda *a, **k: secret or None
 	return row
 
@@ -119,6 +126,13 @@ class TestAVendorModelIsRoutable(unittest.TestCase):
 		self.assertEqual(row["key_selection"], "round_robin")
 		self.assertEqual(row["api_version"], "2023-06-01")
 		self.assertEqual(row["dialect"], "anthropic")
+
+	def test_it_carries_the_vendors_denied_tools_sorted_and_a_blank_list_when_none(self):
+		table = routes()
+		[row] = table["anthropic/claude-4-5"]
+		self.assertEqual(row["denied_tools"], ["mcp_servers", "web_search_20250305"])
+		[row] = table["deepseek/deepseek-chat"]
+		self.assertEqual(row["denied_tools"], [])
 
 	def test_each_url_field_names_its_own_dialect(self):
 		[row] = routes()["deepseek/deepseek-chat"]
@@ -180,8 +194,9 @@ class TestAVendorModelIsRoutable(unittest.TestCase):
 			for row in rows:
 				self.assertNotIn("halfway", str(row))
 
-	def test_every_key_goes_under_its_rows_id(self):
-		# The gateway picks among them per request; the id is what it rotates and counts by.
+	def test_every_enabled_key_goes_under_its_rows_id(self):
+		# The gateway picks among them per request; the id is what it rotates and counts by. A
+		# disabled row stays home.
 		[row] = routes()["deepseek/deepseek-chat"]
 		self.assertEqual(
 			row["credentials"],

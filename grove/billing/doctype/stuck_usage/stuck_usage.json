@@ -5,7 +5,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "grove_user",
+  "team",
   "gateway_store",
   "dead_line",
   "api_keys",
@@ -22,12 +22,12 @@
  "fields": [
   {
    "description": "Blank for a dead line whose user cannot be read.",
-   "fieldname": "grove_user",
+   "fieldname": "team",
    "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Grove User",
-   "options": "Grove User",
+   "label": "Team",
+   "options": "Central Team",
    "read_only": 1
   },
   {

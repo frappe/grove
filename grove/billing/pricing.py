@@ -1,19 +1,22 @@
-"""Prices per counter, and the prepaid balance they debit.
+"""Prices per counter, and what each key has spent at them.
 
 One rate table, joined at evaluation and never snapshotted onto usage: SELL on `Model Pricing`.
 A drain is priced by the pricing id the gateway tagged each request with, so both sides price the
 same counters at the same rates.
 
-`Grove User.spent` is the running USD total the pull increments; `settle` is the one writer of
-`balance` and the `credit_exhausted` verdict."""
+`Grove API Key.spent` is the running USD total the pull increments per key; `settle` is the one
+writer of the team's `spent`. What was spent this month is never stored: `month_spent_by` sums
+it off the records and the corrections."""
 
 from decimal import Decimal
 
 import frappe
 
-from grove.grove.doctype.grove_user.grove_user import set_credit_exhausted
+from grove.utils import utc_today
 
 NANO = 10**9
+# What `month_spent_by` sums by: a column both Usage Record and Credit Discrepancy carry.
+MONTH_SPENT_BY = ("team", "api_key")
 
 # Tokens per unit a rate is quoted per: USD per Mtok, or per request.
 UNITS = {"Mtok": 1_000_000, "request": 1}
@@ -47,6 +50,12 @@ class CounterTable:
 	@property
 	def roots(self):
 		return [row.name for row in self.rows if not row.base_counter]
+
+	@property
+	def whole(self):
+		"""The root token counters that are not a part of another: prompt and completion once each,
+		never their cached or audio parts again. Their sum is a record's whole tokens."""
+		return [row.name for row in self.rows if row.unit == "Mtok" and not row.base_counter and not row.part_of]
 
 	def base(self, counter):
 		return self.by_name[counter].base_counter or None
@@ -166,37 +175,42 @@ class PriceBook:
 		return cost(counts, self.pricing(pricing_id).rates, self.counters)
 
 
-def allocated(user, lock=False):
-	"""Σ the user's Grove Credit ledger. Locked while a verdict is being decided."""
-	suffix = " for update" if lock else ""
-	total = frappe.db.sql(
-		f"select coalesce(sum(amount), 0) from `tabGrove Credit` where grove_user = %s{suffix}", [user]
-	)[0][0]
+def spent_by_keys(team):
+	"""Σ what the team's keys have been charged, revoked ones included: a revoked key's spend is
+	still the team's."""
+	total = frappe.db.sql("select coalesce(sum(spent), 0) from `tabGrove API Key` where team = %s", [team])[0][0]
 	return Decimal(str(total))
 
 
-def allocations():
-	"""{user: Σ Grove Credit} for every user with a ledger entry — the push's budget, one query."""
-	rows = frappe.db.sql("select grove_user, sum(amount) from `tabGrove Credit` group by grove_user")
-	return {user: Decimal(str(total)) for user, total in rows}
+def settle(team):
+	"""The one writer of the team's `spent`: Σ what its keys were charged. → that."""
+	spent = spent_by_keys(team)
+	frappe.db.set_value("Central Team", team, "spent", float(spent), update_modified=False)
+	return spent
 
 
-def settle(user):
-	"""The one writer of `balance` and the verdict: allocated − spent, written to the user, and
-	`credit_exhausted` = not free and nothing left, both directions. A negative balance stays on
-	the user until a top-up covers it. → actual balance."""
-	doc = frappe.db.get_value("Grove User", user, ["free", "spent"], as_dict=True, for_update=True)
-	actual = allocated(user, lock=True) - Decimal(str(doc.spent or 0))
-	frappe.db.set_value("Grove User", user, "balance", float(actual), update_modified=False)
-	set_credit_exhausted(user, int(not doc.free and actual <= 0))
-	return actual
-
-
-def credit_summary(user):
-	"""{allocated, spent, remaining}, summed live rather than read off `balance`."""
-	spent = Decimal(str(frappe.db.get_value("Grove User", user, "spent") or 0))
-	total = allocated(user)
-	return {"allocated": total, "spent": spent, "remaining": total - spent}
+def month_spent_by(field, names):
+	"""{name: USD spent this month} by `field` (team or api_key): Σ the billed Usage Records landed
+	on a day of this UTC month, plus the corrections of discrepancies Grove resolved on one. A
+	revoked key counts: what it spent is still the team's. Two grouped queries however many names."""
+	if field not in MONTH_SPENT_BY:
+		raise ValueError(f"month_spent_by sums by one of {MONTH_SPENT_BY}, not {field!r}")
+	if not names:
+		return {}
+	first = utc_today().replace(day=1)
+	spent = dict(frappe.db.sql(
+		f"""select `{field}`, sum(cost) from `tabUsage Record`
+		where `{field}` in %(names)s and billed = 1 and day >= %(first)s group by `{field}`""",
+		{"names": names, "first": first},
+	))
+	corrected = frappe.db.sql(
+		f"""select `{field}`, sum(correction) from `tabCredit Discrepancy`
+		where `{field}` in %(names)s and resolution = 'Grove corrected' and resolved_day >= %(first)s group by `{field}`""",
+		{"names": names, "first": first},
+	)
+	for name, correction in corrected:
+		spent[name] = (spent.get(name) or 0) + correction
+	return {name: Decimal(str(total)) for name, total in spent.items()}
 
 
 def validate_price_rows(rows, key):

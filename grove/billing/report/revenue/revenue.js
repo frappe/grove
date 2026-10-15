@@ -6,13 +6,13 @@ frappe.query_reports['Revenue'] = {
 			fieldname: 'group_by',
 			label: __('Group By'),
 			fieldtype: 'Select',
-			options: 'Model\nAPI Key\nGrove User\nDay',
+			options: 'Model\nAPI Key\nTeam\nDay',
 			default: 'Model',
 			reqd: 1,
 		},
 		// The key (openai/gpt-5), as the usage names it; a Link would pick one geography's doc.
 		{ fieldname: 'model', label: __('Model Key'), fieldtype: 'Data' },
 		{ fieldname: 'api_key', label: __('API Key'), fieldtype: 'Link', options: 'Grove API Key' },
-		{ fieldname: 'grove_user', label: __('Grove User'), fieldtype: 'Link', options: 'Grove User' },
+		{ fieldname: 'team', label: __('Team'), fieldtype: 'Link', options: 'Central Team' },
 	],
 };

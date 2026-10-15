@@ -1,0 +1,134 @@
+{
+ "actions": [],
+ "autoname": "Prompt",
+ "creation": "2026-10-08 00:00:00",
+ "description": "Named by Central's id for the team (TEAM-00520). One team per id: the tier limits are the team's.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "free",
+  "log_payloads",
+  "tier",
+  "override_max_keys",
+  "max_keys",
+  "column_break_head",
+  "suspended",
+  "spent"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "description": "Never charged and never gated: usage is still recorded, with what it would have cost, but Spent does not move and no key's cap applies. Flip it with Mark Paid / Mark Free.",
+   "fieldname": "free",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Free",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "description": "Store the prompts and model outputs of this team's keys in the gateway's payload log (short retention, support queries).",
+   "fieldname": "log_payloads",
+   "fieldtype": "Check",
+   "label": "Log Prompts & Outputs"
+  },
+  {
+   "description": "The Tier the team runs under: its key count, monthly spend limit and, for keys with no limits of their own, rate limits. Named by Central from the team's trust tier; blank is the default tier in Grove Settings.",
+   "fieldname": "tier",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Tier",
+   "options": "Tier",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Pin this team's own Max Keys below; unticked, its tier's applies.",
+   "fieldname": "override_max_keys",
+   "fieldtype": "Check",
+   "label": "Override Max Keys"
+  },
+  {
+   "default": "0",
+   "depends_on": "override_max_keys",
+   "description": "How many live keys the team may hold; 0 is no limit.",
+   "fieldname": "max_keys",
+   "fieldtype": "Int",
+   "label": "Max Keys"
+  },
+  {
+   "fieldname": "column_break_head",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Set by Central when the team's invoice goes unpaid; an edit here would be overwritten on the next sync. Pushed as limited on every key of the team, which the gateways then refuse whatever its own cap says.",
+   "fieldname": "suspended",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Suspended",
+   "read_only": 1
+  },
+  {
+   "description": "\u03a3 what the team's keys have been charged: priced by the pull from each billed drain, plus any correction from a resolved Credit Discrepancy. Does not move while the team is Free.",
+   "fieldname": "spent",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Spent (USD)",
+   "precision": "9",
+   "read_only": 1
+  }
+ ],
+ "links": [
+  {
+   "group": "Access",
+   "link_doctype": "Grove API Key",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Usage",
+   "link_doctype": "Usage Record",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Usage",
+   "link_doctype": "Credit Discrepancy",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Usage",
+   "link_doctype": "Stuck Usage",
+   "link_fieldname": "team"
+  }
+ ],
+ "modified": "2026-10-13 14:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Grove",
+ "name": "Central Team",
+ "naming_rule": "Set by user",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Grove Control",
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

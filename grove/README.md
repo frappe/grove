@@ -19,7 +19,7 @@ read back out of a box to decide what is true.
 
 | | takes | holds tenant state |
 |---|---|---|
-| **Gateway Server** | groups, users, keys, the global route table | yes |
+| **Gateway Server** | groups, keys, the global route table | yes |
 | **Ingress Server** | one thing: the replica table for the boxes in its own Network | no |
 
 A gateway's Redis is its Network's **Gateway Store**: Setup puts a new gateway on the Network's
@@ -41,8 +41,8 @@ topology stays inside its VPC and several deployments behind one ingress fold in
 |---|---|
 | `pathway/run.py` | What every run shares: `Target` (one box's admin API), `SyncRun` (lock, parallel dial, rows in the order asked). Every path that reaches a box goes through it. |
 | `pathway/projection.py` | `Projection`: every push to every box. A push that left no Pathway Sync row did not happen. |
-| `pathway/usage.py` | `Usage`: each store's drain (or one user's keys) into one Usage Record per key (two when it holds both billed and free usage), then the ack of what landed. `reconcile.py` lands each touched user: records, `spent` moved by Grove's price, the gateway's charge audited, the verdict settled. |
-| `billing/` | Usage counters, sell prices, the credit ledger, usage records and the Revenue report — its own Frappe module, [`billing/README.md`](billing/README.md). |
+| `pathway/usage.py` | `Usage`: each store's drain (or one team's keys) into one Usage Record per key (two when it holds both billed and free usage), then the ack of what landed. `reconcile.py` lands each touched team: records, `spent` moved by Grove's price, the gateway's charge audited, the team settled. |
+| `billing/` | Usage counters, sell prices, monthly caps, usage records and the Revenue report — its own Frappe module, [`billing/README.md`](billing/README.md). |
 | `catalog/` | What a site starts with: `catalog.json` (geographies, providers, vendor models and their rates, model groups; no secret, no `published`), `seed.insert_missing` (after install and after every migrate), `export.write` (by hand). |
 | `pathway/snapshot.py` | The desired state a box is pushed, and the hash gate that decides which sections travel. |
 | `pathway/routes.py` | `deploy:<model>` tables — a gateway's for its Geography, an ingress's for the boxes it owns. |
@@ -54,17 +54,17 @@ topology stays inside its VPC and several deployments behind one ingress fold in
 | `tls.py` | Each Geography's zone wildcard: issue over DNS-01, renew, push to that geography's boxes. |
 | `monitoring.py` / `log_relay.py` | Exporters on every box, and shipping their output. |
 | `failure.py` | `@reports_failure` — a long job that dies marks its doc Broken and says why. |
-| `api.py` | The whitelisted surface a customer's portal calls. |
+| `api/` | The whitelisted surface Central calls, one module per subject: `control` (enrollment), `teams`, `keys`, `catalog` (geographies, models), `usage` (usage, spend, pulls). |
 | `net.py` / `utils.py` | Addresses, slugs, paths. |
 
 ## What gets pushed, and under which key
 
 The agent's admin API is token-gated (`X-Grove-Admin-Token`) at
 `<box>/grove-admin/{state,state-hash,usage}`. The push is **desired state, whole, and absence
-prunes**: `POST state` carries any subset of the four sections (groups, users, keys, routes),
+prunes**: `POST state` carries any subset of the three sections (groups, keys, routes),
 each stamped with a hash the agent stores in `grove:state_hash` and returns from `GET state-hash`.
 The tick pushes only sections whose hash the box does not already hold; a wiped Redis holds no
-hashes, so the next tick re-pushes everything — that IS the repair path. `users` and `keys` are
+hashes, so the next tick re-pushes everything — that IS the repair path. `keys` is
 split into 256 buckets (`pathway.snapshot.bucket_of`) hashed independently, so one key minted re-pushes
 one bucket, not the population. The full contract lives in `plan_agent_state_sync.md` at the
 repo root.
@@ -90,7 +90,7 @@ The compare is per fingerprint, so wire cost tracks what changed, not fleet size
         groups   aa11…          groups   aa11…     same → skip
         routes   bb22…          routes   bb22…     same → skip
         keys:3f  7d90…          keys:3f  9f3a…     DIFFERS → ship bucket 3f only
-        users:ef dd44…          users:ef dd44…     same → skip
+        keys:ef  dd44…          keys:ef  dd44…     same → skip
 
   minted key hashes into ONE bucket → one ~25 KB push, not the population.
   wiped Redis → held column empty → every row differs → full re-push next tick.
@@ -102,8 +102,7 @@ fleet gets re-pushed over row order. Order means nothing on the wire; it exists 
 
 | Redis key | Written by | Holds |
 |---|---|---|
-| `key:<sha256(secret)>` | state push (keys) | whose the key is, and `can_read_balance`: whether it may read their credit at `/v1/credits` |
-| `user:<name>` | state push (users) + the agent | groups (comma list), own allow/deny, `limited`, `budget` (the amount loaded); the agent's own lifetime `spent` |
+| `key:<sha256(secret)>` | state push (keys) + the agent | the whole policy: `team`, `group` (comma list), own `allow`/`deny`, `geography`, `limits` (the key's own, else its team's Tier's, else the default tier's, else the defaults), `prepaid`, `budget` (its monthly cap), `limited`, `log_payloads`; the agent's own `spent:<YYYY-MM>`, this month's spend |
 | `model_group:<name>` | state push (groups) | the model grant for everyone in it |
 | `deploy:<model>` | state push (routes) | every placement of one model |
 | `grove:state_hash` | state push | per-section/bucket hashes of what the box holds |
@@ -113,10 +112,11 @@ fleet gets re-pushed over row order. Order means nothing on the wire; it exists 
 | `inflight:<engine>` | the agent | what is running right now |
 | `health:<target>` | the agent | consecutive failures behind passive ejection (60s TTL) |
 
-Access is pushed as **three** records, one per thing that can change on its own: a group edit is one
-record however many members, a budget flip is one record however many keys, and the agent resolves
-all three at request time — unioning every group the user names before applying their own
-allow/deny.
+Access is pushed as **two** records: a group edit is one record however many members, and the key
+carries everything else — the agent resolves the two at request time, unioning every group the key
+names before applying its own allow/deny. The team is not a record on the box: what is the team's
+(Free, payload logging, suspension) is stamped on each of its keys, so suspending the team is one
+field per key.
 
 A model id is always `<provider>/<name>` (`frappe/qwen3.5-4b`) — the Model's **key**, not its doc
 name, which is a hash. One key, one route key, one grant — the bare form was deliberately broken,
@@ -146,11 +146,26 @@ models route straight to that vendor — a `kind: "provider"` row naming the pro
 with no deployment, no pod and no capacity of ours to divide. The record's **Keys** table rides the
 row as `credentials` (`[{id, secret}]`, the id being the key row's name, in table order) with the
 record's **Key Selection** (`round_robin`); `internal_key` stays blank on a provider row and is the
-single-key spelling only an engine row uses. The gateway takes the keys in turn — one cursor per
+single-key spelling only an engine row uses. The row also carries `denied_tools`: every `Denied Tool`
+row under the vendor's Provider Name, sorted — a `tools[].type` or a top-level request field the
+vendor would run on its own side and bill outside the token counts, which nothing meters. The gateway
+answers a request that names one with a 400 before the dial (`route`, from the client's own bytes),
+so a search or a code run never reaches the vendor. One doctype for all geographies, keyed by the
+name and not by a Model Provider link, because the list is the vendor's. Always written, so a row
+deleted here is a change the next tick pushes; delete the row once a tool is priced, and drop it from
+the catalog too or the next migrate puts it back. The gateway takes the keys in turn — one cursor per
 vendor across all its models, so the limits the keys share are drawn on evenly — swaps a key the
 vendor answers 429 for the next (each tried once, then once more round), skips one answering
-401/402/403 for the rest of that request, and counts what every key answered. **Key Stats** on the
-form reads those counts live off one gateway per store in the geography; nothing is stored here.
+401/402/403 for the rest of that request — an exhausted account reported under a 400 or 429
+(Anthropic's "credit balance", OpenAI's `insufficient_quota`) counts as the 402 it is — and answers
+such a refusal with its own 502 (`upstream credential rejected` / `upstream account
+unpaid` / `upstream credential lacks permission`), never the vendor's words, which go to its error
+log. It counts what every key answered: `requests`, `ok`, `rate_limited`, `unauthorized`, `unpaid`,
+`forbidden` (`rejected` is those three together), `failed`, `last_used`, `last_rate_limited`. Every 6
+hours `grove.pathway.key_stats.pull_all` reads them off every store into **Provider Key Stats**, one row
+per key per store with what it answered since the pull before, in one `stats` JSON field (the
+`last_*` seconds as site time; a key the store did not dial leaves no row). The gateway clears the
+counters as it answers, so a pull that does not land loses those 6 hours. Kept 90 days.
 **Fetch Models** asks the vendor's `/v1/models` on one front — the OpenAI one with a Bearer when set
 (a dual vendor's Anthropic shim, DeepSeek's, has no list), else Anthropic's with `x-api-key` and the
 version header, paged with `after_id` — hides what the record already holds, then asks for our id
@@ -168,9 +183,9 @@ one place (`_upstream_model`):
 Access, routing, metering and `/v1/models` all key on the id the caller sent, so the rewrite never
 desyncs a grant from a route, and usage lands against the Grove model whatever the vendor calls it.
 
-## Prices and credits
+## Prices and caps
 
-Live in [`billing/`](billing/README.md): the counter table, sell prices, the prepaid balance, what a
+Live in [`billing/`](billing/README.md): the counter table, sell prices, the monthly caps, what a
 drain is audited for, and the Revenue report.
 
 ## The catalog (`catalog/`)
@@ -184,11 +199,19 @@ prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south
 
 - `seed.insert_missing()` runs after install and after every migrate. It inserts a geography,
   cloud account (keyless, for the operator to fill), region or model the site has no doc
-  named for, and a provider the site has no record named for in any geography. It never updates
-  and never deletes.
+  named for, a provider the site has no record named for in any geography, and a `Denied Tool`
+  pair the site lacks. It never updates and never deletes.
+- `denied_tools` is what a vendor bills outside the token counts, and only that: Anthropic's web
+  search ($10 per 1,000 searches) and code execution (container hours), OpenAI's `web_search_options`
+  and the Responses API's priced hosted tools (web search, file search, code interpreter, image
+  generation). A server tool priced in tokens alone — Anthropic's web fetch, tool search and MCP
+  connector, OpenAI's `mcp` — is not listed and goes through; so does a client-run tool. DeepSeek's
+  Anthropic front runs web search (probed 2026-10-09: `server_tool_use` blocks came back) and its
+  price list names no rate for it, and Baseten charges for its tools, so both carry the two web
+  search types.
 - A geography lands with `endpoint` and `fleet_zone` blank, for the operator to fill, and is the
   default only when the site has none. Until then a box in it serves :80 in the clear and
-  `api.provision_key` refuses it.
+  `api.keys.provision_key` refuses it.
 - A model group the site has no doc named for lands with the models the file lists for it, by key,
   in the geography those models landed in, and is that geography's default only when it has none.
   The file ships one, `catalog`, granting every model in it. A model added to the file later does
@@ -197,7 +220,7 @@ prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south
   inserts the catalog's rates as a Disabled `Model Pricing`. Shown while the catalog prices the
   model and no pricing names it. Enabling and publishing stay the operator's call.
 - `bench --site <site> execute grove.catalog.export.write` rewrites the file from the site: every
-  provider once (no API key, a vendor's geography set to `Main`), vendor models only,
+  provider once (no API key, a vendor's geography set to `Main`), every denied tool, vendor models only,
   each with the rows of its Enabled pricing, the one geography `Main`, every cloud account's type
   (no key), every region, and every model group with the exported models it grants (no `is_default`, no geography).
 
@@ -205,19 +228,24 @@ prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south
 
 | When | Job | Note |
 |---|---|---|
-| `*/1` | `pathway.projection.sync_projection` | hash-gated: pushes each box only what it does not already hold; a fleet in sync logs nothing. Also sends each store the spend adjustments it is owed (pending `Credit Discrepancy` rows) |
+| `*/1` | `pathway.projection.sync_projection` | stamp-bounded and hash-gated: rebuilds only the key buckets a save moved since the stores' `last_synced_at`, reads every box's hashes, pushes each box only what it does not already hold; a fleet in sync logs nothing and builds no key record. Every 10th minute every bucket is rebuilt. Also sends each store the spend adjustments it is owed (pending `Credit Discrepancy` rows) |
 | `*/2` | `cloud_provider.reconcile.sync_all` | the provider owns whether a pod is up; this closes the drift |
+| `0 */6` | `pathway.key_stats.pull_all` | one Provider Key Stats row per key per store: what it answered since the last pull, cleared on the gateway as it is read |
 | `*/5` | `gateway_store.backup_all` | one `redis-cli --rdb` snapshot per Active store, over SSH, into the weights bucket under `gateway-store/<store>/<utc stamp>.rdb`, the doc's Last Backup Key pointing at it; usage leaves a store only on the hourly pull, so this is what a lost disk costs: 5 minutes. Off until the bucket and Mirror keys are set; prune with a bucket lifecycle rule |
-| hourly | `pathway.usage.pull_all` | a store is drained once, through its first writer that answers; recorded, billed, then what landed is acked. A failed pull loses nothing: the box re-sends every unacked pair. Also Gateway Server → **Pull Usage**, Stuck Usage → **Pull Now**, and `api.pull_usage(user)` for one user (3 an hour per user, counted in the site cache; the rest are not limited) |
+| hourly | `pathway.usage.pull_all` | a store is drained once, through its first writer that answers; recorded, billed, then what landed is acked. A failed pull loses nothing: the box re-sends every unacked pair. Also Gateway Server → **Pull Usage**, Stuck Usage → **Pull Now**, and `api.usage.pull_usage(user)` for one user (3 an hour per user, counted in the site cache; the rest are not limited) |
 | hourly | `tls.renew_fleet_certificate`, `cloud_provider.schedule.run_due_pods` | |
 
 Nothing else pushes. A doctype hook, a provision and a pod lifecycle all just write state; the
 tick carries it within a minute. The only manual paths are Gateway Server → **Full Sync**, Ingress
 Server → **Sync Replicas**, and **Force Sync All** on the Pathway Sync list.
 
+Grove Settings → **Pause Projection** stops the scheduled push; **Pause Usage Pull** stops the
+hourly usage pull and 6-hourly key stats read (`SyncRun.pause_field`). The manual paths above still work.
+
 There is no separate backstop job: the hashes live on the box, so losing the store means losing
-them, which the very next tick reads as drift and heals. All Projection runs serialize on one
-MariaDB advisory lock, so a slow run cannot land a stale write after a newer one.
+them, which the very next tick reads as a box with no key hash and rebuilds everything for. All
+Projection runs serialize on one MariaDB advisory lock, so a slow run cannot land a stale write
+after a newer one.
 
 **Boxes are dialled in parallel** (`MAX_PARALLEL = 8`), a store's writers in turn, so one dead box
 costs a run one timeout, not one per box. Rows land in the order asked, whichever box answered
@@ -227,9 +255,29 @@ thread (`settle()`) — a pool thread has no `frappe.local`, so no db, no docs, 
 moment it arrives; one that cannot be recorded fails its own row and acks nothing, so the box sends
 it again.
 
-A quiet tick still leaves a trace on an Ingress Server: every in-sync check and successful push
-stamps its `last_synced_at`, and a stale stamp means the box is unreachable or rejecting pushes.
-Gateways carry no stamp — the Pathway Sync rows are their record.
+### The projection tick
+
+Every minute, bounded by a stamp. Each Gateway Store, each gateway not yet on one and each Ingress
+Server carries `last_synced_at`: the read time of the last tick it took a push from or already
+held. A stale stamp means the box is unreachable or rejecting pushes; the failed Pathway Sync rows
+say why.
+
+1. Read every box's hashes, side by side on the pool. A box that does not answer gets nothing
+   built for it; its row reads unreachable as before.
+2. Decide the key buckets in play: those a Grove API Key or Central Team save moved since the
+   oldest stamp among the gateway units that answered, less `LOOKBACK` (120 s, for a save stamped
+   before the read but committed after it). Every bucket instead under force, every `FULL_EVERY`
+   (10th) minute, for a unit with no stamp or no `keys:*` hash (new or wiped), after a Tier or
+   Grove Settings save, and past `FULL_ABOVE` (32) dirty buckets.
+3. Build those buckets once (`snapshot.keys_section`): their keys are picked by hashing every live
+   key's hash, there being no bucket column yet. Groups and routes are built whole, as always.
+4. Each box is sent what its hashes lack among the buckets in play; a held bucket outside them is
+   never pruned. A box holding everything and owed nothing is skipped, no row.
+5. Stamp each unit that took the push or held the state with the tick's read time. Never on
+   failure: the next tick that reaches it rebuilds everything saved since.
+
+A quiet minute is one GET per box and three `modified >` reads. A store restored from an RDB has a
+fresh stamp and a full map, so it heals at the next full tick, not the next minute.
 
 **A store is reached through its writers.** Each tick (and each usage pull) reaches a gateway not
 yet on a store directly, and a Gateway Store through the gateways marked **Gateway Store

@@ -3,7 +3,7 @@
 """Identity, money and the catalogue are never deleted through permissions: no role holds
 `delete` on them. Read off the doctype JSON, so no site is needed and a re-granted delete fails
 here before it reaches one. Administrator and `ignore_permissions` bypass DocPerm; only an
-`on_trash` guard (Grove Credit has one) stops those."""
+`on_trash` guard stops those."""
 
 import json
 import unittest
@@ -11,7 +11,7 @@ from pathlib import Path
 
 APP = Path(__file__).resolve().parents[1]
 PROTECTED = (
-	"Grove User", "Grove API Key", "Grove Credit", "Usage Record", "Credit Discrepancy",
+	"Central Team", "Grove API Key", "Usage Record", "Credit Discrepancy",
 	"Model Pricing", "Model", "Model Provider", "Stuck Usage",
 )
 

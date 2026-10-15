@@ -92,7 +92,7 @@
   },
   {
    "default": "0",
-   "description": "Grove Users saved without a geography are put here. Only one Geography is the default: ticking it here unticks the others.",
+   "description": "Grove API Keys saved without a geography are put here. Only one Geography is the default: ticking it here unticks the others.",
    "fieldname": "is_default",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -132,6 +132,10 @@
    "role": "System Manager",
    "share": 1,
    "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Grove Control"
   }
  ],
  "row_format": "Dynamic",
