@@ -211,8 +211,8 @@
    "options": "Tier"
   },
   {
-   "default": "168h",
-   "description": "How long a gateway keeps usage after Grove acknowledged it, as a Go duration (168h = 7 days). Rendered into each gateway's config.json, which it re-reads on a signal; blank keeps the gateway's default.",
+   "default": "72h",
+   "description": "How long a gateway keeps usage after Grove acknowledged it, as a Go duration (72h = 3 days). Rendered into each gateway's config.json, which it re-reads on a signal; blank keeps the gateway's default.",
    "fieldname": "usage_retention",
    "fieldtype": "Data",
    "label": "Usage Retention"
@@ -220,7 +220,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-13 12:30:00.000000",
+ "modified": "2026-10-15 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove Settings",
