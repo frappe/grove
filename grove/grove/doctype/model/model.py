@@ -12,10 +12,8 @@ from grove.grove.doctype.model_provider.model_provider import self_hosted_provid
 from grove.utils import slugify
 
 HF_CONFIG_URL = "https://huggingface.co/{repo}/resolve/main/config.json"
-# Root listing with a size per file. The limit is well past any real shard count.
 HF_TREE_URL = "https://huggingface.co/api/models/{repo}/tree/main?limit=1000"
 
-# The two lists of a Model, and the Modality flag a word needs to go in each.
 MODALITY_FIELDS = {"input_modalities": "is_input", "output_modalities": "is_output"}
 
 
@@ -60,7 +58,6 @@ class Model(Document):
 		self.set_model_key()
 		self.set_modalities()
 		self.provider_is_self_hosted = self.is_self_hosted
-		# mandatory_depends_on is client-side only; this is the gate an API insert hits.
 		if self.is_self_hosted and not self.hf_repo:
 			frappe.throw(
 				f"{self.model_id} needs an HF Repo: nothing else says where its weights come from, "
@@ -129,8 +126,7 @@ class Model(Document):
 		self.model_id = slugify(self.model_id)
 		if not self.model_id:
 			frappe.throw("No Model ID set")
-		# slugify keeps a slash, and the slash separates provider from id — one here would name
-		# `<provider>/a/b` and read as a provider nobody registered.
+		# slugify keeps a slash, and the slash separates provider from id.
 		if "/" in self.model_id:
 			frappe.throw("Model ID cannot contain '/'")
 		self.provider = self.provider or self_hosted_provider()
@@ -214,8 +210,7 @@ class Model(Document):
 		if not self.hf_repo:
 			frappe.throw("Set the HF Repo first — that's what's read.")
 		config = self.get_hf_config()
-		# Multimodal repos nest the language model's shape; the top level describes the whole
-		# thing, vision tower included.
+		# Multimodal repos nest the language model's shape; the top level describes the whole thing.
 		shape = config.get("text_config") or config.get("llm_config") or {}
 		heads = shape.get("num_attention_heads") or config.get("num_attention_heads")
 		layers = shape.get("num_hidden_layers") or config.get("num_hidden_layers")
@@ -377,8 +372,6 @@ def is_reachable(model, exclude=None, provider=None):
 		return True
 	if frappe.db.get_all("Pod", filters={"model": model, "status": "Running"}, limit=1):
 		return True
-	# A vendor model is reachable from the moment it exists. The key is unchecked because
-	# validate refuses a provider holding an address without one.
 	# TODO: clearing a provider's Base URL leaves its models published until something
 	# touches them. They emit no route, so they 404 rather than mis-route.
 	return has_vendor_front(provider or frappe.db.get_value("Model", model, "provider"))
@@ -392,8 +385,6 @@ def has_vendor_front(provider):
 	return any(fronts or ())
 
 
-# Read live off the Model, never mirrored onto a placement, so editing one reaches every placement
-# on the next deploy.
 LAUNCH_FIELDS = (
 	"hf_repo", "weights_s3_uri", "enable_prefix_caching",
 	"enable_auto_tool_choice", "tool_call_parser", "thinking", "reasoning_parser",

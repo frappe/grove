@@ -25,8 +25,7 @@ import frappe
 from grove import failure
 
 CERTBOT = "certbot"
-# Long enough for a DNS-01 round trip: certbot waits on Route53 propagation before it even asks
-# Let's Encrypt to look.
+# A DNS-01 round trip: certbot waits on Route53 propagation before it even asks Let's Encrypt.
 TIMEOUT = 600
 
 
@@ -141,8 +140,6 @@ def run_certbot(settings, arguments, geography):
 	)
 	record_run(geography, command, result)
 	if result.returncode != 0:
-		# certbot's own last lines name the failure — a rate limit, a DNS permission, a zone it
-		# cannot find — and every one of them needs a different fix.
 		frappe.throw(
 			f"certbot exited {result.returncode}:\n{(result.stderr or result.stdout)[-2000:]}",
 			title="Certificate request failed",

@@ -38,8 +38,6 @@ def role_defaults(path):
 TEMPLATES = environment(INFERENCE_ROLES / "vllm/templates")
 PROXY_TEMPLATES = environment(INFERENCE_ROLES / "engine_proxy/templates")
 
-# grove_https owns the certificate and htpasswd paths engine_proxy names, and runs ahead of it in
-# every play that uses either — so its defaults are in scope on the box, and here.
 def resolve(variables):
 	"""A default that references another default (grove_tls_cert → grove_tls_dir) is resolved lazily
 	by Ansible and not at all by plain Jinja. Without this the config renders with the braces still
@@ -64,8 +62,6 @@ PROXY_VARS = resolve({
 	**role_defaults(INFERENCE_ROLES / "engine_proxy"),
 })
 
-# Layered on the role's OWN defaults, never a copy: a fixture that re-declares one can supply a
-# variable the play never sets, which is how `vllm_download_glob` reached production undefined.
 RAW_BASE = {
 	**role_defaults(INFERENCE_ROLES / "vllm"),
 	"vllm_unit": "vllm-md-00007",
@@ -88,7 +84,6 @@ RAW_BASE = {
 	"vllm_predownload_model": True,
 }
 BASE = resolve(RAW_BASE)
-# The unpinned single-GPU box with no operator env and a caller-supplied key.
 BARE = {**BASE, "vllm_cuda_visible_devices": "", "vllm_env": {}, "vllm_effective_api_key": ""}
 
 
@@ -106,16 +101,13 @@ class TestContainerRunScript(unittest.TestCase):
 				self.assertEqual(check.returncode, 0, check.stderr)
 
 	def test_the_image_is_invoked_exactly_as_the_fleet_already_invokes_it(self):
-		# Byte identity. Every running deployment holds this line on its box, so re-rendering it
-		# differently — a changed quoting style, a moved argument — notifies `recreate vllm
-		# container` and replaces every engine in the fleet.
+		"""A changed quoting style or a moved argument notifies `recreate vllm container` fleet-wide."""
 		self.assertIn(
 			"  vllm/vllm-openai:latest Qwen/Qwen3-35B '--port' '8081' '--tensor-parallel-size' '2'",
 			render("vllm-container-run.sh.j2", BASE),
 		)
 
 	def test_a_custom_image_runs_its_own_entrypoint(self):
-		# The line ends at the image; what the container does next is its business.
 		custom = {**BASE, "vllm_model": "", "vllm_serve_args": []}
 		script = render("vllm-container-run.sh.j2", custom)
 		self.assertIn("  vllm/vllm-openai:latest\n", script)
@@ -123,7 +115,6 @@ class TestContainerRunScript(unittest.TestCase):
 		self.assertEqual(check.returncode, 0, check.stderr)
 
 	def test_a_custom_startup_command_rides_the_entrypoint(self):
-		# Single-quoted, which is what stops a Startup Command reaching the shell.
 		custom = {**BASE, "vllm_model": "", "vllm_serve_args": ["--http-port", "9000", "a b;c"]}
 		self.assertIn(
 			"  vllm/vllm-openai:latest '--http-port' '9000' 'a b;c'",
@@ -141,14 +132,12 @@ class TestContainerRunScript(unittest.TestCase):
 		self.assertIn("--gpus all", render("vllm-container-run.sh.j2", BARE))
 
 	def test_secrets_stay_out_of_the_argv(self):
-		# `ps` is world-readable; the env file is 0600.
 		script = render("vllm-container-run.sh.j2", BASE)
 		self.assertNotIn("hf_secret", script)
 		self.assertNotIn("deadbeef", script)
 		self.assertIn("--env-file /opt/vllm/containers/vllm-md-00007.env", script)
 
 	def test_the_compile_cache_survives_a_container_replace(self):
-		# Without this mount every replace re-runs torch.compile (~1 min of Loading).
 		script = render("vllm-container-run.sh.j2", BASE)
 		self.assertIn("-v /opt/vllm/cache:/root/.cache/vllm", script)
 
@@ -168,7 +157,7 @@ class TestContainerEnvFile(unittest.TestCase):
 		)
 
 	def test_a_deployment_env_row_overrides_the_cache_defaults(self):
-		# docker --env-file: the last occurrence of a key wins, so ours must come first.
+		"""docker --env-file: the last occurrence of a key wins, so ours must come first."""
 		override = {**BASE, "vllm_env": {"TRITON_CACHE_DIR": "/elsewhere"}}
 		lines = render("vllm-container.env.j2", override).splitlines()
 		self.assertLess(lines.index(CACHE_LINES[0]), lines.index("TRITON_CACHE_DIR=/elsewhere"))
@@ -183,19 +172,16 @@ class TestTheEngineDoesNotFetchWeightsItself(unittest.TestCase):
 	different weights, or OOMs loading them."""
 
 	def env(self, **overrides):
-		# Resolved, not merged: the glob is derived from vllm_model in the role's defaults, so
-		# overriding it directly would never exercise the derivation.
+		"""Resolved, not merged: the glob is derived from vllm_model, so an override would skip the derivation."""
 		return render("vllm-container.env.j2", resolve({**RAW_BASE, **overrides})).splitlines()
 
 	def test_a_predownloaded_repo_runs_offline(self):
 		self.assertIn("HF_HUB_OFFLINE=1", self.env())
 
 	def test_a_gguf_ref_stays_online(self):
-		# Its download is one file; the config and tokenizer beside it are fetched at boot.
 		self.assertNotIn("HF_HUB_OFFLINE=1", self.env(vllm_model="unsloth/Qwen3-35B-GGUF:Q4_K_M"))
 
 	def test_a_streaming_placement_stays_online(self):
-		# Weights come from S3, but the tokenizer is still the hub's.
 		self.assertNotIn("HF_HUB_OFFLINE=1", self.env(vllm_predownload_model=False))
 
 	def test_it_can_be_overridden_per_deployment(self):
@@ -215,38 +201,29 @@ class TestEngineProxyLocation(unittest.TestCase):
 		self.assertNotIn("server {", self.fragment)
 
 	def test_the_prefix_is_stripped_before_the_engine_sees_it(self):
-		# The trailing slash is the mechanism: without it nginx forwards the whole path verbatim
-		# and vLLM 404s every request.
+		"""Without the trailing slash nginx forwards the whole path verbatim and vLLM 404s every request."""
 		self.assertIn("proxy_pass http://127.0.0.1:8081/;", self.fragment)
 
 	def test_a_vllm_engine_is_not_gated_at_the_proxy(self):
-		# vLLM enforces VLLM_API_KEY itself, and a check here would make this file carry the key
-		# for every deployment.
 		self.assertNotIn("$http_authorization", self.fragment)
 		self.assertNotIn("deadbeef", self.fragment)
 
 	def test_a_custom_engine_is_gated_at_the_proxy(self):
-		# An image that serves itself enforces nothing, and this proxy is the only thing between it
-		# and the box's 443.
 		fragment = render("engine-location.conf.j2", {**BASE, "vllm_engine_kind": "custom"})
 		self.assertIn('if ($http_authorization != "Bearer deadbeef") { return 401; }', fragment)
 
 	def test_a_custom_engine_with_no_key_refuses_everything(self):
-		# Fails closed: a blank key must not render a check that anything satisfies.
 		fragment = render(
 			"engine-location.conf.j2", {**BASE, "vllm_engine_kind": "custom", "vllm_api_key": ""}
 		)
 		self.assertIn('if ($http_authorization != "Bearer ") { return 401; }', fragment)
 
 	def test_streaming_survives_the_extra_hop(self):
-		# Buffered, an SSE response arrives in one blob at the end — passes every smoke test.
 		self.assertIn("proxy_buffering off;", self.fragment)
 		self.assertIn("proxy_http_version 1.1;", self.fragment)
 		self.assertIn("proxy_read_timeout 600s;", self.fragment)
 
 	def test_no_secret_reaches_a_world_readable_file(self):
-		# 0644 because nginx reads it, unlike the 0600 env file. The engine's key travels per
-		# request from the gateway and has no business being here.
 		self.assertNotIn("deadbeef", self.fragment)
 		self.assertNotIn("hf_secret", self.fragment)
 
@@ -258,23 +235,16 @@ class TestEngineProxyConfig(unittest.TestCase):
 		self.config = PROXY_TEMPLATES.get_template("grove.conf.j2").render(**PROXY_VARS)
 
 	def test_it_is_a_whole_config_not_a_conf_d_snippet(self):
-		# It overwrites OpenResty's packaged nginx.conf, which ships neither conf.d nor
-		# sites-enabled. Owning the whole file removed the distro default site and its
-		# `default_server` collision.
 		for directive in ("events {", "http {", "worker_processes"):
 			with self.subTest(directive):
 				self.assertIn(directive, self.config)
 
 	def test_no_lua_runs_on_an_inference_box(self):
-		# Auth, metering and routing live on the gateway; this box terminates TLS and forwards to
-		# a local port. OpenResty for one fleet-wide build, not for Lua.
 		for directive in ("lua_package_path", "_by_lua", "content_by_lua_block"):
 			with self.subTest(directive):
 				self.assertNotIn(directive, self.config)
 
 	def test_the_box_serves_one_thing_over_tls_and_nothing_in_the_clear(self):
-		# The security group opens 22 and 443 only, so a `listen 80` would sit on an unreachable
-		# port — and answer if the group were ever widened by hand.
 		self.assertEqual(self.config.count("server {"), 1)
 		self.assertNotIn("listen 80", self.config)
 		self.assertIn("listen 443 ssl", self.config)
@@ -284,12 +254,9 @@ class TestEngineProxyConfig(unittest.TestCase):
 		self.assertIn("include", self.config)
 
 	def test_the_exporters_are_behind_basic_auth(self):
-		# They answer anyone who reaches them, so the front is the only thing gating them.
 		self.assertEqual(self.config.count("auth_basic_user_file"), 2)
 
 	def test_a_body_larger_than_nginxs_default_is_not_refused(self):
-		# nginx defaults to 1m and the gateway forwards 32m, so a larger request 413s and looks
-		# like the engine refused it.
 		self.assertIn("client_max_body_size 32m;", self.config)
 
 
@@ -327,8 +294,7 @@ class TestStopIsResumable(unittest.TestCase):
 		[self.play] = yaml.safe_load(self.text)
 
 	def test_it_runs_no_roles(self):
-		# Pulling the vllm role in for its defaults would run a pull, a disk check and a download
-		# against a box being stopped.
+		"""The vllm role's defaults come with a pull, a disk check and a download."""
 		self.assertFalse(self.play.get("roles"))
 
 	def test_it_removes_nothing(self):
@@ -337,13 +303,9 @@ class TestStopIsResumable(unittest.TestCase):
 				self.assertNotIn(absent, self.text)
 
 	def test_it_does_not_go_through_the_run_script(self):
-		# The script stops, removes and re-runs, so starting through it would hand back a NEW
-		# container from the current argv — a silent Update Engine Config.
 		self.assertNotIn("vllm_container_script", self.text)
 
 	def test_the_state_is_read_back_rather_than_assumed(self):
-		# The status this play returns to is what the gateway routes on, so a stop that did not
-		# take has to fail the play.
 		[_action, check] = self.play["tasks"]
 		self.assertIn("--filter status=running", check["ansible.builtin.command"])
 		self.assertIn("vllm_container_running", check["failed_when"])
@@ -378,7 +340,6 @@ class TestCompileCachePrewarmHooks(unittest.TestCase):
 		sync = render("vllm-cache-sync.sh.j2", self.WITH_BUCKET)
 		check = subprocess.run(["sh", "-n"], input=sync, text=True, capture_output=True)
 		self.assertEqual(check.returncode, 0, check.stderr)
-		# digest (torch/vLLM), GPU from nvidia-smi, TP, model — a :latest tag pins nothing.
 		self.assertIn("RepoDigests", sync)
 		self.assertIn("nvidia-smi", sync)
 		self.assertIn("tp2/Qwen--Qwen3-35B", sync)
@@ -439,7 +400,6 @@ class TestTheHostVenvHasWhatItNeedsToExist(unittest.TestCase):
 		self.assertLess(apt, venv)
 
 	def test_so_does_the_mirror_play(self):
-		# It builds the same venv and can be the first thing to want it on a box.
 		apt, venv = self.order(PLAYBOOKS / "inference_server/mirror_weights.yml")
 		self.assertLess(apt, venv)
 
@@ -469,7 +429,6 @@ class TestWeightsOffTheDataVolume(unittest.TestCase):
 
 	def test_the_instance_store_layout_does_not(self):
 		self.assertFalse(self.on_data("/opt/vllm", "/mnt/instance/hf"))
-		# /opt/vllm-other must not read as "under /opt/vllm".
 		self.assertFalse(self.on_data("/opt/vllm", "/opt/vllm-other/hf"))
 
 	def test_off_volume_weights_leave_the_data_path_check(self):
@@ -477,7 +436,6 @@ class TestWeightsOffTheDataVolume(unittest.TestCase):
 		self.assertIn("vllm_weights_on_data", check["vars"]["weights_gb"])
 
 	def test_the_separate_mount_check_only_runs_off_volume(self):
-		# And never for a streaming deploy, which downloads nothing into the HF cache.
 		block = self.task("Check the separate weights mount")
 		self.assertEqual(
 			block["when"], "(vllm_predownload_model | bool) and not (vllm_weights_on_data | bool)"
@@ -491,8 +449,6 @@ class TestWeightsOffTheDataVolume(unittest.TestCase):
 
 class TestCertificateLifetime(unittest.TestCase):
 	def test_a_box_certificate_is_short_lived(self):
-		# Nothing renews it and nothing verifies it, so this number is only ever read by a human
-		# deciding whether the fleet needs reissuing. Worth pinning so it is not quietly bumped.
 		self.assertEqual(role_defaults(PLAYBOOKS / "roles/grove_https")["grove_tls_days"], 90)
 
 
@@ -517,8 +473,6 @@ class TestOneWebServerForTheFleet(unittest.TestCase):
 		return found
 
 	def test_the_version_is_pinned_in_exactly_one_place(self):
-		# It used to be a var inside a play's own tasks. Extracting the role is what stops one
-		# inference box drifting to a different build than the next.
 		pinned = role_defaults(PLAYBOOKS / "roles/openresty")["openresty_version"]
 		self.assertRegex(pinned, r"^\d+\.\d+\.\d+\.\d+$")
 		for play in ("inference_server/serve.yml", "inference_server/provision.yml"):
@@ -531,16 +485,11 @@ class TestOneWebServerForTheFleet(unittest.TestCase):
 		self.assertIn("provision.yml", plays)
 
 	def test_no_front_box_installs_it_any_more(self):
-		# pathway owns :80 and :443 on a Gateway or Ingress Server. A play that reinstalled
-		# OpenResty there would take the ports back from it on the next provision.
 		plays = self.plays_using("openresty")
 		self.assertNotIn("gateway.yml", plays)
 		self.assertNotIn("ingress.yml", plays)
 
 	def test_it_installs_before_anything_that_writes_its_config(self):
-		# grove_https puts the certificate on disk and engine_proxy writes the config; both are
-		# meaningless before the package exists, and a `listen 443 ssl` block with no certificate
-		# stops OpenResty starting at all.
 		for play in ("inference_server/serve.yml", "inference_server/provision.yml"):
 			with self.subTest(play):
 				[doc] = yaml.safe_load((PLAYBOOKS / play).read_text())
@@ -570,23 +519,16 @@ class TestWarmupGate(unittest.TestCase):
 		return self.tasks[self.index_of("vllm_warmup_request.path")]
 
 	def test_it_runs_after_the_health_gate(self):
-		# Before it, the engine has not bound its port and every attempt is a connection refused.
 		self.assertLess(self.index_of("vllm_health_path"), self.index_of("vllm_warmup_request.path"))
 
 	def test_it_carries_the_bearer(self):
-		# The engine runs with VLLM_API_KEY set, so an unauthenticated POST is a 401 on a healthy
-		# engine — a warmup that fails every deploy for the wrong reason.
 		headers = self.warmup()["ansible.builtin.uri"]["headers"]
 		self.assertEqual(headers["Authorization"], "Bearer {{ vllm_effective_api_key }}")
 
 	def test_it_asks_the_engine_not_the_proxy(self):
-		# Box-local plain HTTP. The nginx front carries a self-signed cert, and the assertion is
-		# about the engine rather than the proxy in front of it.
 		self.assertIn("http://127.0.0.1:{{ vllm_port }}", self.warmup()["ansible.builtin.uri"]["url"])
 
 	def test_a_failed_warmup_fails_the_play(self):
-		# rc != 0 is the whole mechanism: it leaves the deployment Broken and unpublished. Suppress
-		# the failure and the route goes live on an engine that cannot serve a request.
 		warmup = self.warmup()
 		self.assertEqual(warmup["ansible.builtin.uri"]["status_code"], 200)
 		for suppressor in ("failed_when", "ignore_errors"):
@@ -598,7 +540,5 @@ class TestWarmupGate(unittest.TestCase):
 		self.assertIn("vllm_warmup", self.warmup()["when"])
 
 	def test_a_modality_with_nothing_to_prove_skips_it(self):
-		# The Engine hands back {} for audio, and for a custom image that names no warmup path;
-		# the same guard covers a role run that sets nothing.
 		self.assertIn("vllm_warmup_request | length > 0", self.warmup()["when"])
 

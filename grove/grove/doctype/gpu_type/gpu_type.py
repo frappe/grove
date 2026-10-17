@@ -14,9 +14,8 @@ import re
 import frappe
 from frappe.model.document import Document
 
-# Dropped from the front of a reported name. `Tesla` is nvidia's old product line rather than a
-# vendor, but it prefixes exactly the silicon AWS reports bare — dropping it is what makes
-# `Tesla T4` and `T4` one record.
+# `Tesla` is not a vendor, but AWS reports that silicon bare: dropping it makes `Tesla T4`
+# and `T4` one record.
 VENDOR_WORDS = ("nvidia", "tesla")
 
 
@@ -84,8 +83,7 @@ def resolve(reported, vram_gb=None, compute_capability=None):
 	if frappe.db.exists("GPU Type", name):
 		doc = frappe.get_doc("GPU Type", name)
 		changed = False
-		# Seeded only where there is nothing: the sources disagree, so last-write-wins would make
-		# the figure depend on which box was rescanned most recently.
+		# Seeded only where blank: the sources disagree, so overwriting would follow the last rescan.
 		if vram_gb and not doc.vram_gb:
 			doc.vram_gb = vram_gb
 			changed = True

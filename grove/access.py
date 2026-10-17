@@ -10,7 +10,6 @@ group from invalidating every key beneath it."""
 import frappe
 from frappe.utils import flt
 
-# What a key runs under when neither it, its team's Tier nor the default tier says otherwise.
 DEFAULT_LIMITS = (
 	{"metric": "requests", "window": "1m", "value": 20},
 	{"metric": "total_tokens", "window": "1m", "value": 100_000},

@@ -1,13 +1,8 @@
 ---
-# One-time host bootstrap for an Inference Server: NVIDIA driver + data volume (gpu_host
-# role), then its metrics exporters and the engine proxy that publishes them -- one Setup click
-# leaves the box both serving-ready and scrape-ready. Run by inference_server.setup via
-# ansible_runner against a single-host inventory (hosts: all). Separate lifecycle from serve.yml
-# -- a box is provisioned once, then serves many models.
-#
-# The exporters install before engine_proxy because it proxies to them, and fleet_tls/grove_https
-# before engine_proxy because a `listen 443 ssl` block with no certificate on disk stops nginx
-# starting. fleet_tls writes only on a standalone box, which is the only one handed the cert.
+# One-time host bootstrap for an Inference Server: driver, data volume, exporters, engine proxy
+# (inference_server.setup). extra-vars: gpu_data_mount, gpu_instance_store_hf_cache,
+# monitoring_has_gpu, gpu_reboot_timeout, scrape_password_hash, the fleet TLS pair.
+# grove_https before engine_proxy: a `listen 443 ssl` block with no certificate on disk stops nginx.
 - name: Provision a GPU inference host
   hosts: all
   become: true

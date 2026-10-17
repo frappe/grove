@@ -67,7 +67,13 @@ not what buttons call — it has no Frappe tracking.)
   variable a template renders is one the button passes.
 - **Restart vs reload is a real distinction.** Identity and secrets (`agent.env`) make it a different
   process → restart. Tunables (`config.json`) are re-read on `SIGUSR1` → reload, so live token streams
-  are untouched.
+  are untouched. A new binary reloads too: `SIGHUP` forks a child that inherits the listening sockets
+  and serves at once while the old process drains, so Deploy Agent is not a traffic event. A changed
+  `agent.env` still restarts — the child reads its environment from systemd, not from the parent.
+- **A certificate renewal is a file copy.** `deploy_tls.yml` ships the fleet wildcard and nothing else;
+  pathway watches the file's mtime and uses the new one on the next handshake. The one restart is a box
+  set up before its Geography had a certificate: pathway decides at startup whether to open :443, so the
+  first certificate writes the TLS lines into `agent.env` and restarts once; every later run finds them.
 - **`systemctl reload-or-restart`, not the systemd module's `state: reloaded`.** That refuses on an
   inactive unit — and a box with a stopped gateway is the likeliest one to be having a binary shipped
   to it, so the deploy would fail on the handler with the fix already on disk, unstarted.
@@ -90,6 +96,35 @@ not what buttons call — it has no Frappe tracking.)
   `scripts/dev_deploy_pathway.py` builds a pathway working tree into `<bench>/builds/` and ships it to
   one Gateway Server through the same play. `agent_version` still records the pinned release, and the
   next Deploy Agent or Setup puts that release back.
+
+## Restoring a Gateway Store
+
+`gateway_store/restore.yml` loads one RDB into the live store without a restart: a side `redis-server`
+(:6380, no password) reads it, the live one `REPLICAOF`s it for a few seconds, rewrites its own AOF from
+what it got, and is a master again. Afterwards it drops every transient key (`inflight:*`, `health:*`,
+`sticky:*`) and the `usage:<prefix>:<day>` buckets a drain newer than the snapshot already billed
+(`drop_prefixes`), and raises each live key's `spent:<month>` to what Grove has billed it where the
+snapshot has less (`spent_seeds`) — a snapshot older than the last pull would otherwise hand every key
+the difference of its cap again. For a lost disk only: an AOF that survived already holds everything.
+
+## Monitoring
+
+One vmagent per fleet (`monitoring_agent/agent.yml`), on its own box. It holds no target list: it asks
+Grove (`grove.monitoring.targets`, http_sd) for the boxes, engines and pods that name this agent and
+re-asks on the interval, so a deploy or a new box appears with nothing re-run. With **Push Targets
+Manually** ticked, Grove writes the lists onto the box instead (file_sd, `push_targets.yml`) for a Grove
+the box cannot reach — same entries and labels (`machine`, `region`, `server`, `engine`), but a snapshot
+that goes stale until Push Targets is pressed again. The agent box installs its own node_exporter, bound
+to localhost, since no Setup play would, and scrapes itself.
+
+Every box answers on one port and its exporters are re-published as paths behind it (`/metrics/node`,
+`/metrics/gpu`), so a box needs nothing open but 22 and that port; the exporters still listen on
+9100/9400, just not from outside. Every target is https on the box's TLS front with a self-signed
+certificate, so both scrape jobs skip verification: the scrape is encrypted, the box is not
+authenticated. Only the host job authenticates — the two exporter paths sit behind basic auth
+(the Scrape Password, rotated by a server's Update Scrape Auth button through `exporters.yml`),
+because an exporter answers anyone who reaches it. An engine's `/metrics` under `/e/<slug>/` is guarded
+by nothing, exactly as when its port was open: vLLM's auth middleware covers `/v1`, not `/metrics`.
 
 ## Running one by hand
 

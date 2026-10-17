@@ -48,8 +48,6 @@ class TestPlaybookMachine(unittest.TestCase):
 		self.assertEqual(AnsibleHost.playbook_machine.fget(server), "MACHINE-1")
 
 	def test_a_server_with_no_box_is_refused_rather_than_guessed_at(self):
-		# Without it, the lookup falls through to the server's own name and finds no Machine — or
-		# one that happens to share it.
 		server = SimpleNamespace(doctype="Inference Server", name="INF-1", machine=None)
 		with self.assertRaises(Exception):
 			AnsibleHost.playbook_machine.fget(server)
@@ -75,8 +73,6 @@ class TestRunPlaybook(unittest.TestCase):
 		self.assertEqual(called["machine_name"], "MACHINE-1")
 
 	def test_a_shared_play_is_taken_from_the_doctype_that_owns_it(self):
-		# exporters.yml is a Monitoring Agent play run against other boxes — what `project` is
-		# for.
 		called = self.run_playbook(
 			host("Gateway Server", "PROXY-1", "MACHINE-2"), "exporters.yml", project="Monitoring Agent"
 		)
@@ -97,7 +93,6 @@ class TestEveryRoleAPlaybookNamesResolves(unittest.TestCase):
 		return sorted(p for p in PLAYBOOKS.glob("*/*.yml"))
 
 	def test_a_playbook_is_found_for_every_doctype_folder(self):
-		# The walk below proves nothing if the glob quietly matched nothing.
 		folders = {path.parent.name for path in self.playbooks()}
 		self.assertEqual(
 			folders,
@@ -115,7 +110,6 @@ class TestEveryRoleAPlaybookNamesResolves(unittest.TestCase):
 					)
 
 	def test_a_shared_role_is_not_also_copied_into_a_doctype_folder(self):
-		# Two copies drift, and which one runs would depend on the playbook that named it.
 		shared = {path.name for path in SHARED_ROLES.iterdir() if path.is_dir()}
 		for roles_dir in PLAYBOOKS.glob("*/roles"):
 			if roles_dir == SHARED_ROLES:
@@ -213,7 +207,6 @@ class TestTheBoxesOwnKeyComesBack(CallbackCase):
 		self.assertEqual(runner.key, "ssh-ed25519 AAAA frappe@box")
 
 	def test_only_frappes_key_and_only_when_there_is_one(self):
-		# The ubuntu removal is a user task too and reports no key; root has no field to land on.
 		callback, runner = self.callback()
 		self.start(callback, "Remove the cloud image's ubuntu user")
 		callback.v2_runner_on_ok(self.result(action="ansible.builtin.user", name="ubuntu"))
@@ -347,11 +340,10 @@ class TestTheRunCodeComesFromAnsible(unittest.TestCase):
 		self.assertEqual(self.rc_of(0, play_status="Running"), 0)
 
 	def test_ansibles_own_failure_codes_come_through(self):
-		self.assertEqual(self.rc_of(2), 2)  # RUN_FAILED_HOSTS
-		self.assertEqual(self.rc_of(4), 4)  # RUN_UNREACHABLE_HOSTS
+		self.assertEqual(self.rc_of(2), 2)
+		self.assertEqual(self.rc_of(4), 4)
 
 	def test_a_stopped_play_is_never_a_success(self):
-		# The strategy unwinds with whatever rc its tasks earned, usually 0.
 		self.assertEqual(self.rc_of(0, stopped=True), 1)
 
 
@@ -394,7 +386,6 @@ class TestALostConnectionDoesNotLoseTheWrite(unittest.TestCase):
 		connect.assert_not_called()
 
 	def test_any_other_failure_is_raised_where_it_happened(self):
-		# Retrying a validation error would only raise it twice and report the second.
 		with self.assertRaises(frappe.ValidationError):
 			self.update_play(frappe.ValidationError("nope"))
 

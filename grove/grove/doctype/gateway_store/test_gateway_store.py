@@ -35,7 +35,7 @@ def stub_get_all(stores):
 	def get_all(doctype, filters=None, pluck=None, **kwargs):
 		if doctype == "Machine":
 			return [store for store, _ in stores.get(filters["network"], [])]
-		wanted = filters["status"]  # "Active", or ("!=", "Terminated")
+		wanted = filters["status"]
 		matches = lambda status: status != wanted[1] if isinstance(wanted, tuple) else status == wanted  # noqa: E731
 		return [
 			store for pairs in stores.values() for store, status in pairs
@@ -59,7 +59,6 @@ class TestOneStorePerNetwork(unittest.TestCase):
 		self.validate("store1", {"Mumbai": [("store1", "Pending")]})
 
 	def test_a_second_live_store_is_refused(self):
-		# Two stores split the gateways onto two counters, which is the over-admission a store removes.
 		with self.assertRaises(Refused):
 			self.validate("store2", {"Mumbai": [("store1", "Active"), ("store2", "Pending")]})
 
@@ -104,7 +103,6 @@ class TestWhatAGatewayIsGiven(unittest.TestCase):
 		self.assertEqual(self.network_store({"Mumbai": [("store1", "Active")]}), "store1")
 
 	def test_a_store_not_yet_active_refuses_the_gateway(self):
-		# Setup has not finished: there is no Redis there to run on.
 		with self.assertRaises(Refused):
 			self.network_store({"Mumbai": [("store1", "Installing")]})
 
@@ -161,7 +159,6 @@ class TestBackup(unittest.TestCase):
 		self.assertEqual(argv[0][:2], ["sh", "-c"])
 
 	def test_a_backup_refuses_bytes_without_the_rdb_magic(self):
-		# NOAUTH, a dead box or an empty answer: nothing is uploaded and nothing is recorded.
 		for answer in ("NOAUTH Authentication required.", "", "not base64!"):
 			with self.assertRaises(Refused):
 				self.backup(answer)
@@ -201,7 +198,6 @@ class TestRestore(unittest.TestCase):
 		)
 
 	def test_a_drain_id_orders_against_the_stamp_as_a_string(self):
-		# Same format on both sides, so the SQL comparison is plain; a blank id never matches.
 		stamp = "20260928T100000Z"
 		self.assertGreater("20260928T100001Z-1a2b3c4d", stamp)
 		self.assertLess("20260928T095959Z-1a2b3c4d", stamp)

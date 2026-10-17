@@ -11,7 +11,6 @@ from grove.catalog.seed import CATALOG, get_model_key
 from grove.grove.doctype.model.model import get_modality_names
 from grove.billing.pricing import CounterTable
 
-# The one geography the catalog ships: a name, its endpoint and zone filled on the site.
 MAIN = "Main"
 PROVIDER_FIELDS = ("provider_name", "is_self_hosted", "base_url", "anthropic_base_url", "api_version")
 MODEL_FIELDS = ("model_id", "upstream_model_id")

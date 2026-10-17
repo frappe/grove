@@ -1,6 +1,4 @@
 ---
-# A cap that leaves pathway nothing, or one past the box's RAM, is a typo on the server doc or a box
-# too small for the reserve. Refused before the drop-in is touched.
 - name: refuse a memory cap the box cannot hold
   ansible.builtin.assert:
     that:
@@ -24,9 +22,6 @@
     mode: "0644"
   register: pathway_memory_cap
 
-# MemoryMax is a cgroup setting, so a daemon-reload puts it on the running process. GOMEMLIMIT is
-# read when pathway starts, and a SIGHUP child copies its parent's environment: it waits for the
-# next restart, which this role never causes.
 - name: put the cap on the running unit
   ansible.builtin.systemd:
     daemon_reload: true

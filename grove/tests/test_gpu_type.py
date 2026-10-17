@@ -12,7 +12,6 @@ from grove.grove.doctype.gpu_type.gpu_type import type_name_from
 
 class TestDerivingTheName(unittest.TestCase):
 	def test_the_three_spellings_of_one_t4_collapse(self):
-		# The actual rows in this fleet, and two different cards to every filter before this.
 		self.assertEqual(type_name_from("Tesla T4"), "T4")
 		self.assertEqual(type_name_from("T4"), "T4")
 		self.assertEqual(type_name_from("NVIDIA T4"), "T4")
@@ -22,12 +21,9 @@ class TestDerivingTheName(unittest.TestCase):
 		self.assertEqual(type_name_from("L40S"), "L40S")
 
 	def test_a_suffix_it_cannot_judge_is_kept(self):
-		# `80GB HBM3` might be a memory configuration or a different card, and nothing here can
-		# tell. An alias row is how it reaches `H100`; a guess would merge two cards into one.
 		self.assertEqual(type_name_from("NVIDIA H100 80GB HBM3"), "H100 80GB HBM3")
 
 	def test_a_mig_slice_is_not_its_parent(self):
-		# Resolving a slice to its parent would offer a replica 80 GB that does not exist.
 		parent = type_name_from("NVIDIA A100-SXM4-80GB")
 		slice_ = type_name_from("NVIDIA A100-SXM4-80GB MIG 1g.10gb")
 		self.assertNotEqual(parent, slice_)
@@ -38,8 +34,6 @@ class TestDerivingTheName(unittest.TestCase):
 		self.assertEqual(type_name_from(None), "")
 
 	def test_deriving_is_stable(self):
-		# Called on every scan: the same string landing on a new record would split a fleet's
-		# cards across two types.
 		self.assertEqual(type_name_from("Tesla T4"), type_name_from("Tesla T4"))
 
 

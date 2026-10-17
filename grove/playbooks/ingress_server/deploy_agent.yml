@@ -1,24 +1,14 @@
 ---
-# Ship a new binary and the tunables to an ALREADY-provisioned Ingress Server. Does not touch Redis
-# or the systemd unit — use ingress.yml for a full provision.
-#
-# The binary RELOADS rather than restarts: SIGHUP forks a child that inherits the listening sockets
-# and starts serving immediately while the old process drains behind it. agent.env still restarts —
-# the child reads its environment from systemd, not from the parent.
-#
-# extra-vars: agent_version, admin_token, data_token, ingress_id, ingress_hostname.
+# Ship a new binary and the tunables to a provisioned Ingress Server. extra-vars: agent_version,
+# admin_token, data_token, ingress_id, ingress_hostname.
 - hosts: all
   become: true
   gather_facts: true
   vars:
     grove_dir: "{{ playbook_dir }}"
-    # No self-signed certificate on a front box — see gateway.yml.
     grove_tls_selfsigned: false
 
-  # grove_https and fleet_tls are here for their DEFAULTS — the htpasswd and certificate paths that
-  # agent.env names — and for the htpasswd itself, so a rotated scrape password reaches the box on a
-  # config push. Both idempotent: grove_https issues no certificate here, and fleet_tls writes
-  # nothing when it is handed none, which is the case on a binary-only deploy.
+  # grove_https and fleet_tls supply the paths agent.env names; both write nothing they are not handed.
   roles:
     - grove_https
     - fleet_tls
@@ -33,8 +23,6 @@
           all, and every replica-table push with it. Re-run from the Ingress Server's Deploy Agent
           button, or pass the same extra-vars it does.
 
-    # A blank data token is not a degraded ingress, it is one that refuses every gateway — which
-    # reads as a routing outage rather than the config fault it is.
     - name: refuse to write agent.env without a data token
       ansible.builtin.assert:
         that: data_token | default('') | trim | length > 0
@@ -45,7 +33,6 @@
     - name: agent.env
       ansible.builtin.copy:
         dest: /etc/pathway/agent.env
-        # pathway's own user, like the unit's User=: it already holds every value here in its environment.
         owner: frappe
         group: frappe
         content: |
@@ -83,8 +70,6 @@
       notify: upgrade pathway
 
   handlers:
-    # reload-or-restart, not `state: reloaded`: that fails on a unit which is not active, and a box
-    # whose gateway is down is exactly the one a new binary is being shipped to.
     - name: upgrade pathway
       ansible.builtin.command: systemctl reload-or-restart pathway
       changed_when: true

@@ -1,7 +1,6 @@
 # Copyright (c) 2026, developers@frappe.io and Contributors
 # See license.txt
 
-# import frappe
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -12,12 +11,8 @@ from frappe.tests import IntegrationTestCase
 from grove.grove.doctype.inference_server.inference_server import InferenceServer
 
 
-# On IntegrationTestCase, the doctype test records and all
-# link-field test record dependencies are recursively loaded
-# Use these module variables to add/remove to/from that list
-EXTRA_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
-IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
-
+EXTRA_TEST_RECORD_DEPENDENCIES = []
+IGNORE_TEST_RECORD_DEPENDENCIES = []
 
 
 class IntegrationTestInferenceServer(IntegrationTestCase):
@@ -54,7 +49,6 @@ class TestATerminatedServerTakesItsReplicasWithIt(unittest.TestCase):
 		# Only Terminated is already gone; Inactive and Broken still hold a port.
 		self.assertEqual(asked["Model Replica"], {"inference_server": "inf-1", "status": ("!=", "Terminated")})
 		self.assertEqual(written, [("Model Replica", "r1", {"status": "Terminated", "engine_port": 0})])
-		# A model nothing serves any more comes off the published list.
 		self.assertEqual(synced, ["m1"])
 
 	def test_a_box_with_no_replicas_writes_nothing(self):

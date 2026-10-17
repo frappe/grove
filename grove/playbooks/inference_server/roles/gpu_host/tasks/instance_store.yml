@@ -1,6 +1,4 @@
 ---
-# Opt-in ephemeral NVMe for the HF cache. A systemd oneshot does the work at every boot —
-# the disk is blank after a stop/start, so fstab alone would mount nothing.
 - name: Install the instance-store mount script
   ansible.builtin.template:
     src: grove-instance-store.sh.j2

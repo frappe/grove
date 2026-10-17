@@ -44,7 +44,6 @@ class GatewayServer(PathwayHost, Document):
 		status: DF.Literal["Pending", "Installing", "Active", "Broken", "Terminated"]
 	# end: auto-generated types
 
-	# Records also need the Geography whose endpoint they join.
 	dns_fields = ("public_ip", "geography")
 
 	def validate(self):
@@ -72,8 +71,6 @@ class GatewayServer(PathwayHost, Document):
 			self.remove_dns_records()
 
 	def on_trash(self):
-		# While its name still says which records are its own. A row left behind in the multivalue set
-		# is a black hole for whichever share of customers resolves to it.
 		self.remove_dns_records()
 
 	@property
@@ -260,11 +257,8 @@ class GatewayServer(PathwayHost, Document):
 			**gateway_agent_release(),
 			"agent_binary": agent_binary,
 			"admin_token": self.get_password("admin_token"),
-			# The box's label: GROVE_GATEWAY_ID, which names the process in its startup line.
 			"gateway_id": self.short_name,
-			# Which routes this gateway prefers: a same-region row wins outright.
 			"gateway_region": self.region or "",
-			# Which pinned users it refuses, and the shared name it answers for.
 			"gateway_geography": self.geography or "",
 			"gateway_host": frappe.db.get_value("Geography", self.geography, "endpoint") if self.geography else "",
 			"proxy_hostname": self.hostname,
@@ -297,8 +291,6 @@ class GatewayServer(PathwayHost, Document):
 		store = self.network_store
 		play_name, rc = self.run_playbook(
 			"gateway.yml",
-			# The fleet key too: Setup is what writes the certificate. Blank zone renders a box that
-			# serves :80 in the clear.
 			extravars={
 				**self.get_agent_extravars(store, agent_binary),
 				**self.tls_variables,
@@ -307,7 +299,6 @@ class GatewayServer(PathwayHost, Document):
 		)
 
 		# Derived at validate, so a zone set after the last save leaves it naming the old address.
-		# Refreshed here so the sync below goes where the box now answers.
 		self.set_admin_url()
 		frappe.db.set_value(
 			"Gateway Server",
@@ -319,7 +310,5 @@ class GatewayServer(PathwayHost, Document):
 		frappe.db.commit()
 
 		if rc == 0:
-			# Its name has to resolve before the tick pushes to admin_url, which IS that name once
-			# a zone is set.
 			self.sync_dns_records()
 		return play_name, rc

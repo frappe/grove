@@ -57,7 +57,6 @@ class TestGatewayRoutes(unittest.TestCase):
 
 		def get_all(doctype, filters=None, **kwargs):
 			if doctype == "Model Replica":
-				# The Active filter moved into the query, so the mock honours it.
 				return [r for r in replicas if r.status == (filters or {}).get("status")]
 			if doctype == "Model":
 				return [frappe._dict(model_row(m)) for m in models]
@@ -68,10 +67,8 @@ class TestGatewayRoutes(unittest.TestCase):
 			if doctype == "Model Deployment":
 				return list(deployments)
 			if doctype in ("Ingress Server", "Inference Server", "Model Provider", "Denied Tool"):
-				# No third party in this suite: every model here is one we run ourselves.
 				return []
 			if doctype == "Engine Image":
-				# No rows, so every placement's kind resolves to vllm.
 				return []
 			raise AssertionError(f"unexpected get_all({doctype})")
 
@@ -94,38 +91,27 @@ class TestGatewayRoutes(unittest.TestCase):
 		self.assertEqual(route["engine_url"], "https://10.0.0.9/e/md-00007")
 
 	def test_two_deployments_of_one_model_on_one_box_stay_distinct(self):
-		# The case the field exists for: `server` is identical, and so is $upstream_addr now that
-		# both sit behind the box's engine proxy on :443.
 		routes = self.routes([replica("MD-00007"), replica("MD-00008")])["qwen3-35b"]
 		self.assertEqual([r["deployment"] for r in routes], ["MD-00007", "MD-00008"])
 		self.assertEqual({r["server"] for r in routes}, {"INF-1"})
 		self.assertEqual(len({r["engine_url"] for r in routes}), 2)
 
 	def test_a_pod_is_its_own_placement(self):
-		# No separate deployment doc, so both fields are the pod. Explicit, so no consumer
-		# special-cases a pod route.
 		[route] = self.routes(pods=[pod("POD-1")])["qwen3-35b"]
 		self.assertEqual(route["deployment"], "POD-1")
 		self.assertEqual(route["server"], "POD-1")
 
 	def test_only_active_deployments_are_routed(self):
-		# A Broken engine still holds its port and doc, so routing to it 502s every request
-		# instead of the 503 a model with nowhere to go means.
 		self.assertEqual(self.routes([replica("MD-00007", status="Broken")]), {})
 
 	def test_a_model_with_no_engine_is_absent_not_sent_empty(self):
-		# The push is the whole table and absence prunes, so no empty list is needed to say so.
 		self.assertNotIn("qwen3-35b", self.routes(models=["qwen3-35b"]))
 
 	def test_the_rows_are_ordered_by_deployment(self):
-		# The hash is over the serialized table, so the same rows in a different order must not
-		# read as drift and re-push the fleet.
 		routes = self.routes([replica("MD-00008"), replica("MD-00007")])["qwen3-35b"]
 		self.assertEqual([r["deployment"] for r in routes], ["MD-00007", "MD-00008"])
 
 	def test_a_route_carries_the_engines_concurrency_cap(self):
-		# Past it vLLM queues, where the gateway can neither see the wait nor spend it — so this
-		# is admission control, not a hint.
 		[route] = self.routes([replica("MD-00007", max_num_seqs=64)])["qwen3-35b"]
 		self.assertEqual(route["capacity"], 64)
 
@@ -134,9 +120,6 @@ class TestGatewayRoutes(unittest.TestCase):
 		self.assertEqual(route["capacity"], 16)
 
 	def test_an_unset_cap_falls_back_to_the_assumed_one(self):
-		# Blank is not "no cap": the gate has to hold the engine to something. It is an ASSUMPTION
-		# though — the serve command passes no --max-num-seqs, so vLLM sizes its own and the two
-		# can differ. Setting max_num_seqs pins both.
 		[route] = self.routes([replica("MD-00007")])["qwen3-35b"]
 		self.assertEqual(route["capacity"], VllmEngine.default_concurrency)
 
@@ -183,7 +166,6 @@ class TestRouteModalities(unittest.TestCase):
 		self.assertEqual((row["input_modalities"], row["output_modalities"]), (["text", "image"], ["text"]))
 
 	def test_a_pod_row_carries_it_too(self):
-		# The ASR container is a Pod, never a Model Replica.
 		routes = self.routes(
 			{"nemotron-asr": {"input_modalities": ["audio"], "output_modalities": ["transcription"]}},
 			pods=[pod("test-nemo-asr", model="nemotron-asr")],
@@ -192,7 +174,6 @@ class TestRouteModalities(unittest.TestCase):
 		self.assertEqual((row["input_modalities"], row["output_modalities"]), (["audio"], ["transcription"]))
 
 	def test_a_model_that_declares_nothing_sends_empty_lists_not_null(self):
-		# Empty reads as unrestricted; None would serialise as null and read as a value.
 		routes = self.routes(
 			{"qwen3-4b": {"input_modalities": [], "output_modalities": []}},
 			replicas=[replica("MD-1", model="qwen3-4b")],
@@ -224,8 +205,7 @@ class TestEffectiveGroups(unittest.TestCase):
 		self.assertEqual(group, {"name": "acme", "models": "qwen3-35b"})
 
 	def test_models_are_one_sorted_comma_list(self):
-		# The agent splits on commas (pathway, internal/domain/access.go `ModelSet`), so the
-		# join is the wire format, not a display choice.
+		"""The agent splits on commas (pathway, internal/domain/access.go `ModelSet`): the join is the wire format."""
 		[group] = self.groups(
 			["acme"],
 			[
@@ -236,13 +216,10 @@ class TestEffectiveGroups(unittest.TestCase):
 		self.assertEqual(group["models"], "a,b")
 
 	def test_a_group_that_grants_nothing_is_still_pushed_as_blank(self):
-		# Blank means "grants nothing", not "unset": an emptied group has to overwrite what is
-		# already in Redis.
 		[group] = self.groups(["acme"])
 		self.assertEqual(group["models"], "")
 
 	def test_the_records_are_ordered_by_name(self):
-		# Same as the route rows: the section hash must not move on query order.
 		groups = self.groups(["b", "a"])
 		self.assertEqual([g["name"] for g in groups], ["a", "b"])
 
@@ -267,7 +244,6 @@ class TestEffectiveKeys(unittest.TestCase):
 			if doctype == "Model Group Row":
 				return list(groups)
 			if doctype == "Model Limit":
-				# A key's own rows, or a tier's: the two reads the resolution makes.
 				return [row for row in limits if row.get("parenttype", "Grove API Key") == filters["parenttype"]]
 			raise AssertionError(f"unexpected get_all({doctype})")
 
@@ -302,8 +278,6 @@ class TestEffectiveKeys(unittest.TestCase):
 		)
 
 	def test_the_lists_are_sorted_comma_joins(self):
-		# The agent splits on commas (pathway, internal/domain/access.go `ModelSet`), so the
-		# join is the wire format, not a display choice.
 		[key] = self.keys(
 			[self.key()],
 			[
@@ -319,7 +293,6 @@ class TestEffectiveKeys(unittest.TestCase):
 		self.assertEqual(key["group"], "acme,zeta")
 
 	def test_the_same_group_twice_is_one_membership(self):
-		# Two rows naming one group are one grant, so the hash cannot move on a duplicate.
 		[key] = self.keys(
 			[self.key()],
 			[],
@@ -331,20 +304,16 @@ class TestEffectiveKeys(unittest.TestCase):
 		self.assertEqual(key["group"], "acme")
 
 	def test_a_key_that_grants_nothing_is_still_pushed_as_blank(self):
-		# Blank overwrites Redis; omitting the fields would leave a removed allow in force.
 		[key] = self.keys([self.key()])
 		self.assertEqual((key["group"], key["allow"], key["deny"]), ("", "", ""))
 		self.assertIs(key["limited"], False)
 		self.assertIs(key["log_payloads"], False)
-		# No rows of its own and no tier: the defaults. A tier with no rows: uncapped, and blank
-		# overwrites a limit the box still holds.
 		self.assertEqual(key["limits"], "requests:1m:20,total_tokens:1m:100000")
 		open_tier = frappe._dict(name="T-1", free=0, log_payloads=0, suspended=0, tier="Open")
 		[key] = self.keys([self.key()], teams=[open_tier])
 		self.assertEqual(key["limits"], "")
 
 	def test_one_row_query_covers_every_key(self):
-		# The N+1 this projection removes: one query for the keys, one for their rows.
 		keys = self.keys(
 			[self.key("KEY-1", "abc"), self.key("KEY-2", "abd")],
 			[
@@ -358,14 +327,12 @@ class TestEffectiveKeys(unittest.TestCase):
 		)
 		self.assertEqual([k["allow"] for k in keys], ["m1", "m2"])
 		self.assertEqual([k["group"] for k in keys], ["acme", "beta"])
-		# Five tables, six queries (the keys' own limit rows, then the tiers'): membership and
-		# limits must not become the N+1 again.
 		self.assertEqual(
 			self.calls, {"Grove API Key": 1, "Central Team": 1, "Grove Model Row": 1, "Model Group Row": 1, "Model Limit": 2}
 		)
 
 	def test_limits_are_one_sorted_comma_list(self):
-		# pathway, internal/domain/limit.go `ParseLimits`: metric:window:value, comma-joined.
+		"""pathway, internal/domain/limit.go `ParseLimits`: metric:window:value, comma-joined."""
 		[key] = self.keys(
 			[self.key()],
 			limits=[
@@ -384,7 +351,6 @@ class TestEffectiveKeys(unittest.TestCase):
 		self.assertEqual(changed, {snapshot.bucket_of("abc")})
 
 	def test_a_key_carries_its_cap_in_nano_usd(self):
-		# The box counts its own spend per month and compares this month's with it.
 		[key] = self.keys([self.key(cap=Decimal("7.5"))])
 		self.assertEqual((key["prepaid"], key["budget"]), (True, 7_500_000_000))
 
@@ -408,29 +374,22 @@ class TestEffectiveKeys(unittest.TestCase):
 		self.assertEqual(key["limits"], "requests:1m:60")
 
 	def test_a_free_teams_key_carries_no_ceiling(self):
-		# The wire still says `prepaid`: absent on an old push has to read as no gate.
 		[key] = self.keys([self.key(cap=Decimal("2.5"))], teams=[frappe._dict(name="T-1", free=1, log_payloads=0, suspended=0)])
 		self.assertEqual((key["prepaid"], key["budget"]), (False, 0))
 
 	def test_every_key_carries_its_pin(self):
 		keys = self.keys([self.key("KEY-1", "abc", geography="eu"), self.key("KEY-2", "abd", geography=None)])
 		self.assertEqual(keys[0]["geography"], "eu")
-		# Blank, never null: the gateway reads absent and "" as unpinned.
 		self.assertEqual(keys[1]["geography"], "")
 
 	def test_a_key_with_no_hash_or_no_team_is_dropped(self):
-		# Nothing can present the first, and the agent would key the record on an empty string;
-		# the second has nobody to bill.
 		self.assertEqual(self.keys([self.key(key_hash=None), self.key("KEY-2", "abd", team="T-gone")]), [])
 
 	def test_only_live_keys_are_asked_for(self):
-		# A revoked key is not projected at all, so its bucket's hash moves and the push prunes it.
-		# Asserted on the FILTER, because leaving it out keeps every dead credential alive.
 		self.keys([self.key()])
 		self.assertEqual(self.filters["Grove API Key"], {"status": "active"})
 
 	def test_named_keys_narrow_every_read_to_them_and_their_teams(self):
-		# What a tick rebuilds: the keys of its dirty buckets, their rows and their teams, no more.
 		self.keys([self.key()], names=["KEY-1"])
 		self.assertEqual(self.filters["Grove API Key"], {"status": "active", "name": ("in", ["KEY-1"])})
 		self.assertEqual(self.filters["Central Team"], {"name": ("in", ["T-1"])})
@@ -503,7 +462,6 @@ class TestDelta(unittest.TestCase):
 		self.assertEqual(snapshot.snapshot_delta(desired, self.hashes(desired)), {})
 
 	def test_a_wiped_box_gets_everything(self):
-		# What a wiped Redis reports: the resync backstop, as one ordinary tick.
 		desired = self.snapshot([self.key("aa")])
 		self.assertEqual(snapshot.snapshot_delta(desired, {}), desired)
 
@@ -515,8 +473,6 @@ class TestDelta(unittest.TestCase):
 		self.assertEqual(list(delta["keys"]["buckets"]), [snapshot.bucket_of("aa")])
 
 	def test_a_bucket_the_box_still_holds_but_no_longer_exists_is_sent_empty(self):
-		# The last key in a bucket was deleted, and the box's hash map still names it — so it is
-		# pushed explicitly EMPTY rather than left forever.
 		old = self.snapshot([self.key("aa")])
 		delta = snapshot.snapshot_delta(self.snapshot(), self.hashes(old))
 		self.assertEqual(
@@ -524,8 +480,6 @@ class TestDelta(unittest.TestCase):
 		)
 
 	def test_a_partial_tick_prunes_only_among_the_buckets_it_rebuilt(self):
-		# The box still hashes "aa" and "bb"; the tick rebuilt "bb" alone and found it empty. "aa"
-		# was never looked at, so it must not be sent empty: that would prune live keys.
 		old = self.snapshot([self.key("aa"), self.key("bb")])
 		delta = snapshot.snapshot_delta(self.snapshot(), self.hashes(old), labels={snapshot.bucket_of("bb")})
 		self.assertEqual(delta, {"keys": {"buckets": {snapshot.bucket_of("bb"): {"records": []}}}})
@@ -583,7 +537,6 @@ class TestSyncTarget(unittest.TestCase):
 		self.assertIsNone(calls["posted"])
 
 	def test_an_old_agent_404_is_a_loud_failure(self):
-		# No fallback: a box on the old binary logs a failed row every tick, which is the point.
 		import requests
 
 		response = unittest.mock.Mock(status_code=404)
@@ -753,8 +706,6 @@ class TestSyncProjection(unittest.TestCase):
 			self.stamps.append((doctype, name, field, value))
 
 		def get_value(_doctype, _name, field, *args, **kwargs):
-			# No stamp: every tick in here rebuilds everything, which keeps the run's own tests
-			# to the run. What a stamp bounds is test_projection_stamps.
 			return None if field == "last_synced_at" else "store1"
 
 		with (
@@ -800,7 +751,6 @@ class TestSyncProjection(unittest.TestCase):
 		self.assertNotIn("adjusted", row)
 
 	def test_a_named_gateway_is_pushed_what_its_store_is_owed(self):
-		# The operator's Sync button names one box; the store's corrections must not wait for the tick.
 		owed = {"store1": [{"key": "abc", "delta": -5, "id": "CD-1"}]}
 		self.run_projection(
 			{"gw1": {**self.row(), "adjusted": {"CD-1": 40}}}, owed=owed,
@@ -813,7 +763,7 @@ class TestSyncProjection(unittest.TestCase):
 		name, doc, targets = self.run_projection({})
 		self.assertIsNone(name)
 		self.assertFalse(doc.inserted)
-		self.assertEqual(len(targets), 2)  # every box was still checked
+		self.assertEqual(len(targets), 2)
 
 	def test_a_paused_tick_dials_nothing(self):
 		self.paused = "pause_projection"
@@ -835,8 +785,6 @@ class TestSyncProjection(unittest.TestCase):
 		self.assertTrue(doc.inserted)
 
 	def test_a_store_is_stamped_with_the_ticks_read_time_never_a_gateway_on_it(self):
-		# A store's writers share one Redis, so the stamp is the store's: a per-gateway one would
-		# read stale on every other writer.
 		self.run_projection({"gw1": self.row()}, groups=[("store1", ["gw1", "gw2"])])
 		self.assertEqual(self.stamps, [("Gateway Store", "store1", "last_synced_at", self.NOW)])
 
@@ -856,7 +804,6 @@ class TestSyncProjection(unittest.TestCase):
 		)
 		self.assertEqual([name for _, name in targets], ["gw1", "gw2"])
 		self.assertEqual([row["server"] for row in doc.results], ["gw1", "gw2"])
-		# One store, and it got the state: the dead writer is a row, not a failed run.
 		self.assertEqual((doc.targets_total, doc.targets_ok, doc.status), (1, 1, "Success"))
 
 	def test_a_store_whose_writers_all_fail_fails_the_run(self):
@@ -870,7 +817,6 @@ class TestSyncProjection(unittest.TestCase):
 		self.assertEqual([name for _, name in targets], ["gw1"])
 
 	def test_a_store_with_no_writer_is_reported(self):
-		# Nothing would update it, and its gateways would serve revoked keys without a word.
 		_name, doc, targets = self.run_projection({}, groups=[("store1", [])])
 		self.assertEqual(targets, [])
 		[row] = doc.results
@@ -903,7 +849,6 @@ class TestSyncProjection(unittest.TestCase):
 		self.assertEqual([row["server"] for row in doc.results], ["gw1", "gw2"])
 
 	def test_boxes_are_dialled_side_by_side(self):
-		# Each waits for the other: in sequence the first would time out alone at the barrier.
 		together = threading.Barrier(2, timeout=5)
 
 		def meet(_target):
@@ -929,7 +874,6 @@ class TestSyncProjection(unittest.TestCase):
 		self.assertEqual((doc.targets_total, doc.targets_ok, doc.status), (2, 1, "Partial"))
 
 	def test_full_sync_forces_every_box(self):
-		# The wrapper the operator buttons call: a box already holding the state is sent all of it.
 		_name, _doc, targets = self.run_projection(
 			{"gw1": self.row()}, proxies=("gw1",), entry=projection.full_sync, remote={"gw1": {"groups": "g1"}}
 		)
@@ -946,8 +890,6 @@ class TestSyncProjection(unittest.TestCase):
 		self.assertIs(self.deltas["gw1"], down)
 
 	def test_an_empty_proxies_list_means_no_gateway_work(self):
-		# `is None` and not truthiness: an ingress-only run names proxies=[] on purpose, and
-		# reading that as "unspecified" would push the whole fleet.
 		doc = FakeRun()
 		seen = []
 		with (
@@ -1066,8 +1008,6 @@ class TestCapacityResolvesThroughTheDeployment(unittest.TestCase):
 		)
 
 	def test_siblings_of_one_deployment_are_capped_independently(self):
-		# Two replicas of one deployment, one of which was turned down for its box. The gateway
-		# holds each to its own number rather than to the deployment's for both.
 		self.assertEqual(
 			sorted(
 				self.capacity(
@@ -1082,8 +1022,6 @@ class TestCapacityResolvesThroughTheDeployment(unittest.TestCase):
 		)
 
 	def test_a_deployment_that_names_no_cap_still_leaves_a_number_on_the_route(self):
-		# Blank all the way up is not "no cap": the gate has to hold the engine to something, and
-		# the engine's own default is what the serve command leaves it running at.
 		self.assertEqual(
 			self.capacity(
 				[replica("MD-00007", model_deployment="T1")], [deployment("T1")]

@@ -34,6 +34,9 @@ The split is enforced by what each is *given*, not by a flag: an Ingress Server 
 tenant fields, and the agent in ingress mode mounts no endpoint to send them to. A box behind an
 ingress contributes a route row that names the ingress and never its own address, so replica
 topology stays inside its VPC and several deployments behind one ingress fold into **one** row.
+The `capacity` on that folded row is the sum of its replicas' and is advisory: the gateway reads it
+only to choose *between* ingresses. The ingress applies the exact per-replica gate, which is why two
+gateways cannot jointly overrun one replica.
 
 ## Where each concern lives
 
@@ -233,7 +236,7 @@ prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south
 | `0 */6` | `pathway.key_stats.pull_all` | one Provider Key Stats row per key per store: what it answered since the last pull, cleared on the gateway as it is read |
 | `*/5` | `gateway_store.backup_all` | one `redis-cli --rdb` snapshot per Active store, over SSH, into the weights bucket under `gateway-store/<store>/<utc stamp>.rdb`, the doc's Last Backup Key pointing at it; usage leaves a store only on the hourly pull, so this is what a lost disk costs: 5 minutes. Off until the bucket and Mirror keys are set; prune with a bucket lifecycle rule |
 | hourly | `pathway.usage.pull_all` | a store is drained once, through its first writer that answers; recorded, billed, then what landed is acked. A failed pull loses nothing: the box re-sends every unacked pair. Also Gateway Server → **Pull Usage**, Stuck Usage → **Pull Now**, and `api.usage.pull_usage(user)` for one user (3 an hour per user, counted in the site cache; the rest are not limited) |
-| hourly | `tls.renew_fleet_certificate`, `cloud_provider.schedule.run_due_pods` | |
+| hourly | `tls.renew_fleet_certificate`, `cloud_provider.schedule.run_due_pods` | renew runs certbot only when it says the certificate is due, and pushes only when the certificate changed |
 
 Nothing else pushes. A doctype hook, a provision and a pod lifecycle all just write state; the
 tick carries it within a minute. The only manual paths are Gateway Server → **Full Sync**, Ingress

@@ -1,14 +1,7 @@
 ---
-# Start or stop ONE vLLM instance's container on a multi-tenant box. Run by
-# model_replica.set_container_state with extra-vars vllm_instance and vllm_container_running.
-#
-# Everything else stays: the run script, the env file, the key, the port and the GPU claims. That
-# is the whole difference from teardown.yml — a stop here is resumable, and Start brings the same
-# container back rather than building a new one.
-#
-# `docker start`/`stop`, deliberately not the instance's run script: the script stops, removes and
-# re-runs the container with the current argv, which is a replace and loses the container Stop was
-# asked to keep. Update Engine Config is the button for that.
+# Start or stop one vLLM instance's container, keeping everything else (model_replica.set_container_state).
+# extra-vars: vllm_instance, vllm_container_running.
+# docker start/stop, not the run script: the script stops, removes and re-runs, which is a replace.
 - name: Set a vLLM instance's container state
   hosts: all
   become: true
@@ -17,17 +10,11 @@
     vllm_unit: "vllm-{{ vllm_instance }}"
     container_action: "{{ 'start' if (vllm_container_running | bool) else 'stop' }}"
   tasks:
-    # A stop waits out the engine's SIGTERM grace before docker kills it — a streaming completion
-    # legitimately takes a while — which is why this play is enqueued rather than run inline.
     - name: "{{ container_action | capitalize }} the instance container"
       ansible.builtin.command: "docker {{ container_action }} {{ vllm_unit }}"
       changed_when: true
 
-    # Read back rather than assumed. docker reports what it was asked to do, not what the
-    # container settled on, and the status this play returns to is what publishes the model — so
-    # a stop that did not take must fail here rather than leave the doc claiming Inactive while
-    # the engine still serves. Same filter idiom the config tasks use, which needs no braces of
-    # its own: `docker inspect --format` would collide with Jinja.
+    # docker ps --filter, not inspect --format: its braces collide with Jinja.
     - name: Prove the container reached that state
       ansible.builtin.command: "docker ps --quiet --filter name=^{{ vllm_unit }}$ --filter status=running"
       register: container_ps

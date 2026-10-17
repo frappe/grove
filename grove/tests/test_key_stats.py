@@ -20,12 +20,10 @@ class TestKeyStatsPull(IntegrationTestCase):
 		cls.vendor = provider("probe-stats-vendor", base_url="https://api.probe.test", api_key="k").insert()
 		cls.key = cls.vendor.api_keys[0].name
 		for store in ("store-a", "store-b"):
-			# A store is a box's Redis; the row is enough for the link, the box is not needed.
 			frappe.get_doc({"doctype": "Gateway Store", "name": store}).db_insert()
 
 	def setUp(self):
 		super().setUp()
-		# The class shares one transaction: each test starts from no rows of its own.
 		frappe.db.delete("Provider Key Stats", {"model_provider": self.vendor.name})
 
 	def settle(self, stats, store="store-a"):
@@ -56,7 +54,6 @@ class TestKeyStatsPull(IntegrationTestCase):
 		[row] = self.rows()
 		self.assertEqual((row.gateway_store, row.stats["requests"], row.stats["unpaid"], row.stats["rejected"]), ("store-a", 3, 1, 1))
 		self.assertEqual((row.key_title, row.model_provider), ("key", self.vendor.name))
-		# Every counter is there, whole, and a `last_*` second reads as site time, null for never.
 		self.assertEqual(row.stats["forbidden"], 0)
 		self.assertRegex(row.stats["last_used"], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
 		self.assertIsNone(row.stats["last_rate_limited"])

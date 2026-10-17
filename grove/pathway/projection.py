@@ -33,8 +33,8 @@ from grove.pathway import snapshot
 from grove.pathway.run import InSync, SyncRun, Target, Unit, each_in_parallel, gateway_units, in_turn, redact
 
 LOOKBACK = 120  # seconds behind a stamp a save is still read: one stamped before the read commits after it
-FULL_EVERY = 10  # minutes: every bucket rebuilt and compared, whatever the stamps say
-FULL_ABOVE = 32  # dirty buckets past which naming their keys costs more than reading every key
+FULL_EVERY = 10
+FULL_ABOVE = 32
 
 
 class Projection(SyncRun):
@@ -51,7 +51,7 @@ class Projection(SyncRun):
 		self.force = force
 		self.read_at = None
 		self.remote = {}
-		self.labels = None  # the key buckets this tick rebuilt; None is all of them
+		self.labels = None
 		self.deltas = {}
 		self.adjustments = {}
 
@@ -189,10 +189,8 @@ def push_target(target, delta, adjustments=()):
 		if not delta and not adjustments:
 			raise InSync
 		if delta:
-			# Recorded before the push: what a rejected one tried to send is the whole question.
 			row["payload"].append({"push": "state", "body": redact(delta)})
 			row["detail"] = snapshot.describe(delta, target.post("state", delta))
-		# After the state, so an adjustment the box refuses never holds it back.
 		for body in adjustments:
 			row["payload"].append({"push": "spend-adjust", "body": body})
 			row["adjusted"][body["id"]] = target.post("spend-adjust", body)["spent"]

@@ -42,21 +42,16 @@ class TestMachineTypesAreCreatableDoctypes(unittest.TestCase):
 		self.server_doctypes = form_script_map()
 
 	def test_the_monitoring_agent_is_one_of_them(self):
-		# It is Machine-backed like the servers are, so it is created the same way — and it is the
-		# one type whose doctype name is the option, which is why the map is a map and not a suffix.
 		self.assertIn("Monitoring Agent", self.machine_types)
 		self.assertEqual(self.server_doctypes["Monitoring Agent"], "Monitoring Agent")
 
 	def test_every_type_starts_a_name(self):
-		# A type with no prefix could not name its Machine, so it could not be created at all.
 		self.assertEqual(sorted(NAME_PREFIX), sorted(self.machine_types))
 
 	def test_every_type_is_routed_by_the_form(self):
-		# A type missing from the map is silent: the button simply never appears.
 		self.assertEqual(sorted(self.server_doctypes), sorted(self.machine_types))
 
 	def test_every_type_names_a_doctype_that_links_back_to_a_machine(self):
-		# The form prefills {machine: <this box>} on create and looks the doc up by it after.
 		for machine_type, server_doctype in self.server_doctypes.items():
 			with self.subTest(machine_type):
 				[field] = [

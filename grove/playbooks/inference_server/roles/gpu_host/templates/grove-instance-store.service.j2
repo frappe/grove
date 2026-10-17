@@ -1,7 +1,4 @@
-{#
-  Before=docker.service: engine containers bind-mount the HF cache under this mount, and a
-  late mount would hand them an empty directory that shadows it.
-#}
+{# Before=docker.service: a late mount hands the containers an empty directory that shadows it. #}
 [Unit]
 Description=Grove: format and mount the instance-store NVMe for the HF cache
 After=local-fs.target

@@ -13,14 +13,11 @@ import time
 import requests
 
 RUNPOD_API_URL = "https://api.runpod.io/v2"
-# A quiet pod sends nothing for long stretches; cut the read here and let the caller resume.
 LOG_READ_TIMEOUT = 65
 
-# A Pod always names its own image, so this is the fallback for direct API callers only.
 DEFAULT_IMAGE = "vllm/vllm-openai:latest"
 DEFAULT_CONTAINER_DISK_GB = 2
 
-# Everything else — CREATED, RESTARTING, a state RunPod adds later — is a pod on its way up.
 POD_STATUS = {
 	"RUNNING": "Running",
 	"EXITED": "Stopped",
@@ -182,9 +179,8 @@ class RunPodClient:
 			for p in ports
 			if p.get("private") and p.get("public")
 		}
-		# The direct-TCP mappings share one real public IP; a RunPod http proxy port reports a
-		# separate CGNAT address instead, and entry order is not stable between calls — so read
-		# the IP off a tcp mapping rather than whichever entry happens to come first.
+		# The tcp mappings share the real public IP; a RunPod http proxy port reports a separate
+		# CGNAT address, and entry order is not stable between calls.
 		direct = [p for p in ports if p.get("type") == "tcp"] or ports
 		gpu = pod.get("gpu") or {}
 		return {
@@ -208,7 +204,7 @@ class RunPodClient:
 				if pod.get("public_ip") and pod.get("ssh_port"):
 					return pod
 			except RunPodError:
-				pass  # not ready yet
+				pass
 			time.sleep(poll_interval_sec)
 		raise RunPodError(f"Pod {pod_id} did not become SSH-reachable within {timeout_sec}s")
 

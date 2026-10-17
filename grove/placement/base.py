@@ -24,14 +24,9 @@ class Candidate:
 
 	inference_server: str
 	region: str = ""
-	# Free cards meeting the deployment's filters, as GPU docnames, lowest index first. Names, not
-	# CUDA indices: a MIG slice has no index, and a number resolved against the box later may have
-	# been renumbered onto other silicon by a scan.
+	# GPU docnames, not CUDA indices: a MIG slice has no index, and a scan may renumber them.
 	fitting_gpus: tuple = ()
-	# Spare cards left over if this replica lands here. Negative means it does not fit.
 	surplus: int = 0
-	# A sibling replica of this Model is here AND the weights are not streamed from S3. The caller
-	# decides both halves.
 	has_local_weights: bool = False
 	active_replicas: int = 0
 	replicas_in_region: int = 0
@@ -66,9 +61,7 @@ def placement_policy(policy):
 
 	policies = {
 		"balanced": (WarmCache(), SpreadRegions(), BestFit(), FewestReplicas()),
-		# Region is not weighed at all, so replicas gather onto as few boxes as the shape allows.
 		"pack": (WarmCache(), BestFit(), FewestReplicas()),
-		# Warmth only breaks a remaining tie, so one box taking everything is the last thing.
 		"spread": (SpreadRegions(), WorstFit(), WarmCache(), FewestReplicas()),
 	}
 	scorers = policies.get(policy)

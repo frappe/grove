@@ -66,8 +66,6 @@ def engine(**tuning):
 
 class TestEngineEnv(unittest.TestCase):
 	def test_a_deployment_that_sets_nothing_still_logs_each_request(self):
-		# INFO is enough for vLLM to log the request and its output — the only per-request record
-		# on the box — without the per-op debug lines that cost more than the record is worth.
 		env = _engine_env(replica(), engine(), "")
 		self.assertEqual(env["VLLM_LOGGING_LEVEL"], "INFO")
 
@@ -78,24 +76,18 @@ class TestEngineEnv(unittest.TestCase):
 		self.assertEqual(env["VLLM_ALLOW_LONG_MAX_MODEL_LEN"], "1")
 
 	def test_an_operator_row_can_turn_the_logging_level_up(self):
-		# A default, not a policy: the prompt text is DEBUG-only, so a deployment being debugged
-		# can ask for it and pay for it.
 		md = replica({"VLLM_LOGGING_LEVEL": "DEBUG"})
 		self.assertEqual(_engine_env(md, engine(), "")["VLLM_LOGGING_LEVEL"], "DEBUG")
 
 	def test_attention_backend_is_a_serve_flag_not_env(self):
-		# vLLM 0.24 dropped VLLM_ATTENTION_BACKEND, so setting it here would leave the engine
-		# auto-selecting while the doc claimed otherwise. VllmEngine passes the flag instead.
 		md = replica(attention_backend="FLASHINFER")
 		self.assertNotIn("VLLM_ATTENTION_BACKEND", _engine_env(md, engine(), ""))
 
 	def test_deployment_rows_reach_every_replica(self):
-		# A row typed once on the deployment reaches every replica's --env-file.
 		env = _engine_env(replica(deployment_env={"HF_HUB_ENABLE_HF_TRANSFER": "1"}), engine(), "")
 		self.assertEqual(env["HF_HUB_ENABLE_HF_TRANSFER"], "1")
 
 	def test_a_replicas_rows_layer_on_top_of_the_deployments(self):
-		# Additive: a replica adds to the deployment's list and wins only on the keys it names.
 		env = _engine_env(
 			replica(
 				deployment_env={"HF_HUB_ENABLE_HF_TRANSFER": "1", "VLLM_LOGGING_LEVEL": "INFO"},
@@ -115,7 +107,7 @@ class TestEngineEnv(unittest.TestCase):
 	def test_operator_rows_are_carried_through(self):
 		env = _engine_env(replica({"AWS_REGION": "us-east-1", "BLANK": None}), engine(), "")
 		self.assertEqual(env["AWS_REGION"], "us-east-1")
-		self.assertEqual(env["BLANK"], "")  # set-but-empty, not dropped
+		self.assertEqual(env["BLANK"], "")
 
 
 class TestEnginePortAllocation(unittest.TestCase):
@@ -142,8 +134,6 @@ class TestEnginePortAllocation(unittest.TestCase):
 		return doc.engine_port
 
 	def test_the_box_is_locked_before_the_siblings_are_read(self):
-		# Two placements on one box at once: the second waits on the box row, then reads the
-		# siblings with a locking read so it sees the port the first just committed.
 		self.allocate([])
 		self.assertEqual(self.locked, [("Inference Server", True), ("Model Replica", True)])
 
@@ -151,7 +141,6 @@ class TestEnginePortAllocation(unittest.TestCase):
 		self.assertEqual(self.allocate([]), ENGINE_PORT_BASE)
 
 	def test_a_port_a_running_engine_holds_is_skipped(self):
-		# Broken still has a container holding its port; only teardown frees it.
 		siblings = [
 			{"status": "Active", "engine_port": ENGINE_PORT_BASE},
 			{"status": "Broken", "engine_port": ENGINE_PORT_BASE + 1},
@@ -159,7 +148,6 @@ class TestEnginePortAllocation(unittest.TestCase):
 		self.assertEqual(self.allocate(siblings), ENGINE_PORT_BASE + 2)
 
 	def test_a_stopped_deployment_keeps_its_port(self):
-		# Stop leaves the container on the box, so Start has to find the same port free.
 		siblings = [
 			{"status": "Active", "engine_port": ENGINE_PORT_BASE},
 			{"status": "Inactive", "engine_port": ENGINE_PORT_BASE + 1},
@@ -189,32 +177,25 @@ class TestGpuClaims(unittest.TestCase):
 		return doc.calls[0]
 
 	def test_a_draft_replica_already_holds_its_cards(self):
-		# The reservation that closes the race: before it, two placements reading the same free
-		# list both insert.
 		self.assertEqual(self.acted("Draft"), "claim")
 
 	def test_a_deploying_replica_holds_its_cards(self):
-		# deploy_model flips to Provisioning mid-play, and the cards claimed at insert stay.
 		self.assertEqual(self.acted("Provisioning"), "claim")
 
 	def test_a_serving_replica_holds_its_cards(self):
 		self.assertEqual(self.acted("Active"), "claim")
 
 	def test_a_broken_replica_still_holds_its_cards(self):
-		# --restart unless-stopped brings a crash-looping engine back onto its cards, however
-		# dead the replica looks.
+		"""--restart unless-stopped brings a crash-looping engine back onto its cards."""
 		self.assertEqual(self.acted("Broken"), "claim")
 
 	def test_a_stopped_replica_releases_its_cards(self):
-		# A stopped container holds no VRAM, so the card is genuinely free. Start re-takes it.
 		self.assertEqual(self.acted("Inactive"), "release")
 
 	def test_a_torn_down_replica_releases_its_cards(self):
 		self.assertEqual(self.acted("Terminated"), "release")
 
 	def test_every_status_the_doctype_offers_is_decided(self):
-		# A status nobody classified falls through to release and frees a card still in use. Walk
-		# the Select rather than a list kept in step by hand.
 		fields = json.loads((Path(__file__).parent / "model_replica.json").read_text())["fields"]
 		[status] = [f for f in fields if f["fieldname"] == "status"]
 		for option in status["options"].split("\n"):
@@ -239,7 +220,6 @@ class TestGpuInventory(unittest.TestCase):
 			model_deployment="qwen3-35b-ap-south-1",
 			gpus=[SimpleNamespace(gpu=name) for name in pinned],
 			server=SimpleNamespace(machine="mc-1"),
-			# One card, and a deployment that asks for one. The shape check has its own class.
 			deployment=SimpleNamespace(gpus_per_replica=1),
 			serve_command="",
 			max_model_len=max_model_len,
@@ -260,8 +240,6 @@ class TestGpuInventory(unittest.TestCase):
 		return doc
 
 	def test_a_context_length_suffix_is_stored_as_tokens(self):
-		# What the field holds after a save is what the engine ran with, so nothing downstream
-		# parses it a second time.
 		self.assertEqual(self.validated(["gpu-a"], ["gpu-a"], "128k").max_model_len, "131072")
 		self.assertIsNone(self.validated(["gpu-a"], ["gpu-a"]).max_model_len)
 
@@ -269,8 +247,6 @@ class TestGpuInventory(unittest.TestCase):
 		self.assertEqual(self.validated(["gpu-b"], ["gpu-a", "gpu-b"]).gpus[0].gpu, "gpu-b")
 
 	def test_a_card_on_another_box_is_refused(self):
-		# The Link field offers every GPU in the fleet, so this is the only thing between an
-		# operator and a replica pinned to hardware it cannot reach.
 		with self.assertRaises(frappe.ValidationError):
 			self.validated(["gpu-elsewhere"], ["gpu-a"])
 
@@ -297,7 +273,7 @@ class TestParseKvCacheMemory(unittest.TestCase):
 		self.assertEqual(parse_kv_cache_memory(PROFILE_LINE), 32723451249)
 
 	def test_the_tightest_rank_wins(self):
-		# Each TP/PP worker prints its own; vLLM sizes the cache off the smallest, so must we.
+		"""Each TP/PP rank prints its own figure; vLLM sizes the cache off the smallest."""
 		log = PROFILE_LINE + PROFILE_LINE.replace("32723451249", "32000000000")
 		self.assertEqual(parse_kv_cache_memory(log), 32000000000)
 
@@ -340,7 +316,7 @@ class TestABootTeachesItsKvCacheFigure(unittest.TestCase):
 		self.assertEqual(state["kv_cache_memory_for"], self.KEY)
 
 	def test_a_boot_that_carried_the_hint_learns_nothing(self):
-		# vLLM skipped profiling, so there is no line — and the figure it booted with must stay.
+		"""vLLM skips profiling when handed the figure, so the log carries no line."""
 		state = _post_play_state(Replica(kv_cache_memory=1, kv_cache_memory_for=self.KEY, log=""), 0)
 		self.assertEqual(state, {"status": "Active", "engine_url": "https://10.0.0.9/e/md-1"})
 
@@ -354,7 +330,6 @@ class TestABootTeachesItsKvCacheFigure(unittest.TestCase):
 
 	def test_the_engine_carries_the_figure_only_under_its_key(self):
 		self.assertEqual(Replica(kv_cache_memory=7, kv_cache_memory_for=self.KEY).engine.kv_cache_memory, 7)
-		# A tuning change moved the command: the figure stays on the doc but is not passed.
 		self.assertEqual(Replica(kv_cache_memory=7, kv_cache_memory_for="stale").engine.kv_cache_memory, 0)
 
 	def test_a_log_read_that_fails_is_logged_not_raised(self):
@@ -395,10 +370,8 @@ class TestReconfigureKeepsTheModelRoutable(unittest.TestCase):
 			model_key="qwen3.5-4b",
 			derived_engine_url="https://10.0.0.9/e/md-00007",
 			get_password=lambda *args, **kwargs: "internal-key",
-			# No figure to learn or drop: _post_play_state asks both.
 			engine=SimpleNamespace(kv_cache_memory=0),
 			learned_kv_cache_memory=lambda: {},
-			# The play's status lands on the doc, then the claims are settled against it.
 			sync_gpu_claims=lambda: claims.append(md.status),
 			server=SimpleNamespace(
 				name="INF-1",
@@ -409,8 +382,6 @@ class TestReconfigureKeepsTheModelRoutable(unittest.TestCase):
 		written = []
 
 		def set_value(doctype, name, values, value=None):
-			# Both shapes frappe supports. The pair form is how the removed Provisioning write was
-			# made, so it records as a failed assertion below rather than a TypeError.
 			written.append({values: value} if isinstance(values, str) else values)
 
 		db = SimpleNamespace(set_value=set_value, commit=lambda: None)
@@ -424,7 +395,6 @@ class TestReconfigureKeepsTheModelRoutable(unittest.TestCase):
 		return written
 
 	def test_nothing_is_written_before_the_play(self):
-		# One write, and it is the post-play one. A second, earlier write is the bug.
 		self.assertEqual(len(self.writes_during(rc=0)), 1)
 
 	def test_the_deployment_never_leaves_active_on_a_good_run(self):
@@ -436,14 +406,10 @@ class TestReconfigureKeepsTheModelRoutable(unittest.TestCase):
 		self.assertEqual(final["engine_url"], "https://10.0.0.9/e/md-00007")
 
 	def test_it_runs_its_own_play_not_a_trimmed_serve(self):
-		# A trimmed serve still pulled the image, checked the disk and ran the proxy roles —
-		# minutes of work for a flag change, and too slow on a deploy stuck at its health gate.
 		self.writes_during(rc=0)
 		self.assertEqual(self.played, "reconfigure.yml")
 
 	def test_a_failed_run_is_broken_and_leaves_the_url_alone(self):
-		# A failed play may not have written the box's nginx location, so the gateway would
-		# forward to a route that is not there.
 		self.assertEqual(self.writes_during(rc=2), [{"status": "Broken"}])
 
 
@@ -455,7 +421,6 @@ class TestExtraVarsFollowTheEngineKind(unittest.TestCase):
 		md = SimpleNamespace(
 			name="MD-00007", model="qwen3-35b", model_key="qwen3-35b", gpus=[], env=[], engine=engine,
 			deployment=deployment(engine_image="img"),
-			# No pinned cards, so the device list is empty and the container gets --gpus all.
 			gpu_records=[],
 		)
 		inf = SimpleNamespace(data_path="/opt/vllm", hf_home="/opt/vllm/hf", tls_variables={})
@@ -475,9 +440,6 @@ class TestExtraVarsFollowTheEngineKind(unittest.TestCase):
 			return _vllm_extravars(md, SimpleNamespace(hf_repo="Qwen/Qwen3-35B"), inf, "k")
 
 	def test_a_custom_image_is_never_asked_to_predownload(self):
-		# The role derives the download repo from vllm_model, so leaving this on for an image with
-		# no positional runs `hf download` with no argument. It also turns off the weights half of
-		# the disk pre-check, which is right — the image half still runs.
 		vars = self.extravars(CustomEngine("nemotron-asr", {}, port=8080), engine_kind="custom")
 		self.assertEqual(vars["vllm_model"], "")
 		self.assertFalse(vars["vllm_predownload_model"])
@@ -489,7 +451,6 @@ class TestExtraVarsFollowTheEngineKind(unittest.TestCase):
 		self.assertEqual(self.extravars(engine)["vllm_serve_args"], ["--http-port", "9000"])
 
 	def test_a_custom_image_gets_no_health_gate_unless_it_names_one(self):
-		# A guessed path is worse than none: plenty of images 404 whatever we would try.
 		vars = self.extravars(CustomEngine("nemotron-asr", {}, port=8080), engine_kind="custom")
 		self.assertEqual(vars["vllm_health_path"], "")
 
@@ -531,8 +492,6 @@ class TestStartRetakesTheCards(unittest.TestCase):
 		self.assertEqual(self.start(claimed=False), [True])
 
 	def test_a_taken_card_never_reaches_the_play(self):
-		# Refused on the button, not in a worker, so no Play is queued for a start that cannot
-		# happen and the operator reads the refusal.
 		self.assertEqual(self.start(claimed=True), [])
 
 
@@ -552,7 +511,6 @@ class TestStopAndStartRunAsAPlay(unittest.TestCase):
 			model="qwen3.5-4b",
 			model_key="qwen3.5-4b",
 			server=SimpleNamespace(name="INF-1", run_playbook=self.record_play(rc)),
-			# The status lands first, then the claims are settled against it.
 			sync_gpu_claims=lambda: written.append(f"claims:{md.status}"),
 		)
 
@@ -577,8 +535,6 @@ class TestStopAndStartRunAsAPlay(unittest.TestCase):
 		return run_playbook
 
 	def test_it_runs_its_own_play(self):
-		# Not teardown.yml with a flag: that removes the run script, env file and key — exactly
-		# what Stop promises to leave behind.
 		self.run_state(running=False, rc=0)
 		self.assertEqual(self.played, "container_state.yml")
 
@@ -592,8 +548,6 @@ class TestStopAndStartRunAsAPlay(unittest.TestCase):
 		self.assertEqual(self.run_state(running=True, rc=0), [{"status": "Active"}, "claims:Active"])
 
 	def test_a_failed_run_writes_nothing(self):
-		# A stop that did not take has to leave the doc Active: writing Inactive would pull a
-		# serving engine out of the route table.
 		self.assertEqual(self.run_state(running=False, rc=2), [])
 
 
@@ -660,20 +614,16 @@ class TestEveryStatusHasItsOwnColour(unittest.TestCase):
 		return dict(re.findall(r"\b(\w+): '([a-z-]+)',", listview))
 
 	def test_every_status_it_names_is_one_the_doctype_offers(self):
-		# An unnamed status falls through to grey on purpose. A MISNAMED one is the bug: `Inactve`
-		# reads fine and silently leaves Inactive grey.
 		for status in self.colours():
 			with self.subTest(status):
 				self.assertIn(status, self.statuses())
 
 	def test_every_colour_it_names_is_one_frappe_renders(self):
-		# An unknown colour is not a fallback; the pill renders unstyled.
 		for status, colour in self.colours().items():
 			with self.subTest(status):
 				self.assertIn(colour, self.RENDERABLE)
 
 	def test_a_deliberate_stop_does_not_look_like_a_failure(self):
-		# The pair this exists for: the same colour here is the bug, whatever they are.
 		colours = self.colours()
 		self.assertNotEqual(colours["Inactive"], colours["Broken"])
 
@@ -688,7 +638,6 @@ class TestAReplicaNamesItselfBeforeFetchFromRuns(unittest.TestCase):
 	`self.model` as stored, it would be built from a blank."""
 
 	def name(self, **sent):
-		# The deployment answers (doc, key); the key names the replica, the doc stays its link.
 		values = {"Model Deployment": ("md-doc", "frappe/qwen3-35b"), "Inference Server": "ap-south-1"}
 		md = frappe._dict(sent)
 		with (
@@ -702,7 +651,6 @@ class TestAReplicaNamesItselfBeforeFetchFromRuns(unittest.TestCase):
 	def test_the_model_comes_off_the_deployment_not_the_unfetched_field(self):
 		md = self.name(model_deployment="qwen3-35b-ap-south-1", inference_server="inf3")
 		self.assertEqual(md.name, "frappe/qwen3-35b|ap-south-1|inf3")
-		# Left ON the doc, so the mandatory check and sync_published both see it.
 		self.assertEqual((md.model, md.model_key), ("md-doc", "frappe/qwen3-35b"))
 
 
@@ -729,6 +677,5 @@ class TestAReplicaMustBeTheShapeItsDeploymentDeclares(unittest.TestCase):
 				self.check(cards=cards, declared=4)
 
 	def test_naming_no_cards_is_still_the_unpinned_single_gpu_case(self):
-		# Back-compat: no GPU rows runs --gpus all, whatever the deployment declares.
 		self.check(cards=0, declared=1)
 		self.check(cards=0, declared=4)

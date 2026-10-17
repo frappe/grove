@@ -1,6 +1,5 @@
 frappe.ui.form.on('Pathway Update', {
 	setup(frm) {
-		// Only the ticked types may be added as rows.
 		frm.set_query('server_type', 'servers', () => ({
 			filters: { name: ['in', [frm.doc.ingresses && 'Ingress Server', frm.doc.gateways && 'Gateway Server'].filter(Boolean)] },
 		}));
@@ -9,7 +8,6 @@ frappe.ui.form.on('Pathway Update', {
 
 	onload(frm) {
 		if (!frm.is_new()) return;
-		// Shown before saving; the server copies them from Grove Settings at insert either way.
 		for (const [field, setting] of [['release', 'pathway_release'], ['repo', 'pathway_repo']]) {
 			frappe.db.get_single_value('Grove Settings', setting).then((value) => frm.set_value(field, value));
 		}

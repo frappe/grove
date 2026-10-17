@@ -85,18 +85,16 @@ class Ansible:
 
 		playbook_path = self._resolve_playbook_path(self.playbook)
 
-		# Run via ansible-playbook directly (not ansible_runner, which tracks in Frappe)
 		cmd = [
 			"ansible-playbook",
 			playbook_path,
-			"-i", f"{self.server},",  # trailing comma = single host
+			"-i", f"{self.server},",
 			"-u", self.user,
 			"-p", str(self.port),
 		]
 		if self.variables:
 			cmd.extend(["-e", json.dumps(self.variables)])
 
-		# Set ANSIBLE_ROLES_PATH in a copy of the environment; don't pollute global
 		env = os.environ.copy()
 		roles_path = os.path.join(self.project_root, "roles")
 		if os.path.isdir(roles_path):
@@ -164,7 +162,6 @@ class Ansible:
 		return ansible_runner.run_play(**kwargs)
 
 
-# Singleton instance for module-level access
 _ansible_instance = None
 
 

@@ -3,7 +3,6 @@
 
 frappe.ui.form.on('Grove API Key', {
 	setup(frm) {
-		// A group grants what its own geography serves.
 		frm.set_query('model_groups', () => ({ filters: { geography: frm.doc.geography } }));
 	},
 

@@ -39,7 +39,6 @@ class CentralTeam(Document):
 		if (self.max_keys or 0) < 0:
 			frappe.throw("Max Keys cannot be negative; 0 is no limit.")
 		if not self.is_new():
-			# save() writes every column and the pull writes this one behind the form's back.
 			self.spent = frappe.db.get_value("Central Team", self.name, "spent", for_update=True)
 
 	def on_update(self):

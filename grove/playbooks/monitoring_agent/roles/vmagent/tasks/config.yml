@@ -1,9 +1,4 @@
 ---
-# Everything that makes an installed vmagent match its Monitoring Agent doc: where it pushes,
-# as whom, how often it scrapes, how much it buffers, and what it scrapes. Split out of
-# main.yml so config.yml can re-run just this much — changing a scrape interval should not
-# cost a binary download.
-
 - name: Create the config directory
   ansible.builtin.file:
     path: "{{ vmagent_config_dir }}"
@@ -18,15 +13,13 @@
     group: "{{ vmagent_user }}"
     mode: "0755"
 
-# It spools here, and a box from before the cutover has root-owned buffer files it would fail on.
-# Ownership only — `file: recurse` would stamp the directory's mode onto every file.
+# Ownership only: `file: recurse` would stamp the directory's mode onto every file.
 - name: Hand the existing buffer to vmagent
   ansible.builtin.command: "chown -Rc {{ vmagent_user }}:{{ vmagent_user }} {{ vmagent_buffer_path }}"
   register: vmagent_buffer_chown
   changed_when: vmagent_buffer_chown.stdout | length > 0
 
-# In files, not the unit's argv: /proc/<pid>/cmdline is world-readable, and Ansible records
-# the argv it runs on the Ansible Task doc.
+# In files, not the argv: /proc/<pid>/cmdline is world-readable, and the Ansible Task doc records what ran.
 - name: Write the remote write token
   ansible.builtin.copy:
     content: "{{ monitoring_remote_write_token }}"
@@ -36,8 +29,6 @@
   no_log: true
   notify: restart vmagent
 
-# What the host job presents to each box's /metrics/*. Same reasoning as the token above: a
-# password_file, never a value in the scrape config or the argv.
 - name: Write the metrics scrape password
   ansible.builtin.copy:
     content: "{{ monitoring_scrape_password }}"
@@ -47,8 +38,6 @@
   no_log: true
   notify: restart vmagent
 
-# The SD token is in the URL (see scrape.yml.j2), so this file holds a live credential and
-# gets the same 0600 the token files do. Boxes built before that carry a now-unread sd.token.
 - name: Drop the superseded service-discovery token file
   ansible.builtin.file:
     path: "{{ vmagent_config_dir }}/sd.token"
@@ -74,8 +63,6 @@
 - name: Flush handlers so the health check sees the current config
   ansible.builtin.meta: flush_handlers
 
-# A bad scrape config is fatal to vmagent, and Restart=on-failure hides that behind a crash
-# loop — so this waits long enough that a refused connection means broken, not slow.
 - name: Check vmagent answers
   ansible.builtin.uri:
     url: "http://{{ vmagent_listen_address }}/health"
@@ -87,8 +74,6 @@
   until: vmagent_health.status == 200
   failed_when: false
 
-# The play failed here before with nothing but "Connection refused" — the reason was in the
-# journal, reachable only by SSHing to the box. It fails with the reason attached now.
 - name: Report why vmagent is not answering
   when: vmagent_health.status != 200
   ansible.builtin.command: journalctl -u vmagent -n 30 --no-pager

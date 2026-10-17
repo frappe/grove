@@ -164,7 +164,8 @@ transactional with the replica that holds it.
 `CLAIM_HOLDING_STATUSES` = `Draft` + `GPU_CLAIMING_STATUSES` (`Provisioning`, `Active`, `Broken`).
 
 `Draft` holding is the point: a replica takes its cards the moment its row exists, before anything
-is deployed. `Inactive` releases — a stopped container holds no VRAM — and `start()` re-takes them,
+is deployed. `Provisioning` holds because `deploy_model` checks the claim *before* it flips the
+status. `Inactive` releases — a stopped container holds no VRAM — and `start()` re-takes them,
 failing loudly if a sibling won meanwhile. `Broken` keeps them, because `--restart unless-stopped`
 means a crash-looping engine comes back onto its cards.
 

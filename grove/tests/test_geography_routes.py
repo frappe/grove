@@ -17,7 +17,6 @@ from grove.pathway.run import Target
 ZONE = "grove.example.com"
 MODELS = [
 	model_row("frappe/qwen3-8b", model_id="qwen3-8b"),
-	# One key, a doc per provider record: each geography's doc carries its own upstream id.
 	model_row("gpt5-in", "openai", "in", model_key="openai/gpt-5", model_id="gpt-5"),
 	model_row("gpt5-eu", "openai", "eu", model_key="openai/gpt-5", model_id="gpt-5",
 	          upstream_model_id="gpt-5-eu"),
@@ -31,9 +30,7 @@ REPLICAS = [
 INGRESSES = [{"name": "eu-i1", "region": "eu-central-1", "geography": "eu"}]
 SERVERS = [{"name": "INF-eu-behind", "ingress": "eu-i1"}]
 PODS = [placement("frappe/qwen3-8b", name="POD-1", engine_url="http://1.2.3.4:8081")]
-# Every pod serves in this one, set on Grove Settings.
 POD_GEOGRAPHY = "in"
-# One vendor, a record per geography: the ids are hashes, the name is what they share.
 PROVIDERS = {
 	"frappe": {"provider_name": "frappe", "geography": None},
 	"a1b2": {"provider_name": "openai", "base_url": "https://api.openai.com/v1", "api_key": "in-key",
@@ -101,16 +98,13 @@ class TestRoutesStayInTheirGeography(unittest.TestCase):
 		self.assertEqual(row["upstream_model"], "gpt-5")
 		[row] = routes("eu")["openai/gpt-5"]
 		self.assertEqual((row["engine_url"], row["credentials"][0]["secret"]), ("https://eu.api.openai.com/v1", "eu-key"))
-		# The eu doc's own upstream id; the in doc's never reaches this table.
 		self.assertEqual(row["upstream_model"], "gpt-5-eu")
-		# The vendor is named by its provider, not by a record id.
 		self.assertEqual(row["vendor"], "openai")
 
 	def test_a_vendor_is_dialled_only_where_it_has_a_record(self):
 		self.assertNotIn("openai/gpt-5", routes("us"))
 
 	def test_a_gateway_with_no_geography_gets_no_routes(self):
-		# Fail closed: blank must not match rows that were never given a geography.
 		self.assertEqual(routes(""), {})
 
 
@@ -137,7 +131,6 @@ class TestEveryKeyCarriesItsPin(unittest.TestCase):
 			{"name": "k2", "key_hash": "bb", "team": "T-1", "status": "active", "cap": 0, "geography": None},
 		])
 		self.assertEqual(keys["k1"]["geography"], "eu")
-		# Blank, never null: the gateway reads absent and "" as unpinned.
 		self.assertEqual(keys["k2"]["geography"], "")
 
 

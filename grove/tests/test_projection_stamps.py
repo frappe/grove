@@ -38,7 +38,6 @@ class TestDirtyBuckets(unittest.TestCase):
 			return snapshot.dirty_buckets(STAMP)
 
 	def test_a_saved_key_dirties_its_bucket_revoked_or_not(self):
-		# No status filter on the first read: a revoke is what empties the key's slot.
 		self.assertEqual(self.dirty(keys=["aa"]), {AA})
 		self.assertEqual(self.asked[0], ("Grove API Key", {"modified": (">", STAMP)}))
 
@@ -157,7 +156,6 @@ class TestBucketsInPlay(unittest.TestCase):
 		self.assertIsNone(self.in_play([Unit(None, (gw1,))], {gw1: {"keys:96": "h"}}))
 
 	def test_a_box_holding_no_key_hash_rebuilds_everything(self):
-		# A wiped Redis, or a box never pushed: its stamp says nothing about what it holds.
 		gw1 = gateway("gw1")
 		self.assertIsNone(self.in_play([Unit(None, (gw1,))], {gw1: {"groups": "g"}}, {"gw1": STAMP}))
 

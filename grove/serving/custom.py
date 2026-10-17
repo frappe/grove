@@ -10,8 +10,7 @@ class CustomEngine(Engine):
 	"""Almost every answer here is the absence of one, and those absences are what the four
 	`is_custom_engine` branches used to say."""
 
-	# Not 0 ("no capacity of ours to divide"), which is the honest number but would move the route
-	# table for every custom placement already running.
+	# Not 0, the honest number: that would move the route table for every custom placement running.
 	default_concurrency = 1024
 
 	@property

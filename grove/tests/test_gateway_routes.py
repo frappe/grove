@@ -32,18 +32,14 @@ SERVERS = [
 	{"name": "INF-direct", "ingress": None},
 ]
 DEPLOYMENTS = [
-	# Two boxes behind one ingress, same model: they must fold into a single row.
 	{"name": "MD-1", "model": "qwen3-35b", "model_key": "qwen3-35b", "engine_url": "https://203.0.113.1/e/md-1",
 	 "status": "Active", "inference_server": "INF-a", "max_num_seqs": 8},
 	{"name": "MD-2", "model": "qwen3-35b", "model_key": "qwen3-35b", "engine_url": "https://203.0.113.2/e/md-2",
 	 "status": "Active", "inference_server": "INF-b", "max_num_seqs": 4},
-	# A second ingress, same model: its own row.
 	{"name": "MD-3", "model": "qwen3-35b", "model_key": "qwen3-35b", "engine_url": "https://203.0.113.3/e/md-3",
 	 "status": "Active", "inference_server": "INF-c", "max_num_seqs": 16},
-	# No ingress: the direct path, exactly as before.
 	{"name": "MD-4", "model": "llama-70b", "model_key": "llama-70b", "engine_url": "https://203.0.113.4/e/md-4",
 	 "status": "Active", "inference_server": "INF-direct", "max_num_seqs": 4},
-	# Behind an ingress that is not Active — no row for it at all.
 	{"name": "MD-5", "model": "llama-70b", "model_key": "llama-70b", "engine_url": "https://203.0.113.5/e/md-5",
 	 "status": "Active", "inference_server": "INF-orphan", "max_num_seqs": 4},
 ]
@@ -101,13 +97,10 @@ class TestIngressRows(unittest.TestCase):
 		)
 
 	def test_the_folded_capacity_is_the_sum_behind_that_ingress(self):
-		# Advisory at this tier — it is how the gateway chooses BETWEEN ingresses. The exact
-		# per-replica gate lives on the ingress, which is the tier that owns the counters.
 		[row] = [r for r in rows_for("qwen3-35b") if r["engine_url"].startswith(f"https://aps1-i1.")]
-		self.assertEqual(row["capacity"], 12)  # MD-1 8 + MD-2 4
+		self.assertEqual(row["capacity"], 12)
 
 	def test_every_row_says_what_its_model_takes_and_gives(self):
-		# On every kind of row: the gateway gates the surface and checks a caller's fallbacks on it.
 		for row in rows_for("qwen3-35b"):
 			with self.subTest(row["engine_url"]):
 				self.assertEqual((row["input_modalities"], row["output_modalities"]), (["text", "image"], ["text"]))
@@ -116,7 +109,6 @@ class TestIngressRows(unittest.TestCase):
 			self.assertNotIn("modality", row)
 
 	def test_an_ingress_row_names_no_replica(self):
-		# The whole point: replica topology never leaves its VPC.
 		for row in rows_for("qwen3-35b"):
 			with self.subTest(row["engine_url"]):
 				for address in ("203.0.113.1", "203.0.113.2", "203.0.113.3"):
@@ -133,8 +125,6 @@ class TestIngressRows(unittest.TestCase):
 				self.assertNotIn("/e/", row["engine_url"])
 
 	def test_an_ingress_that_is_not_active_is_not_routed_to(self):
-		# Its boxes go dark rather than falling back to a direct dial: the gateway may not have a
-		# route to a private box, and a public one would undo the split.
 		self.assertFalse([r for r in rows_for("llama-70b") if "aps1-down" in r["engine_url"]])
 		self.assertFalse([r for r in rows_for("llama-70b") if "203.0.113.5" in r["engine_url"]])
 
@@ -146,13 +136,10 @@ class TestDirectRowsAreUnchanged(unittest.TestCase):
 		self.assertEqual(row["kind"], "direct")
 
 	def test_a_pod_is_always_direct(self):
-		# A pod has no Machine and so no ingress; provider TLS already covers that hop.
 		[row] = [r for r in rows_for("llama-70b") if r["deployment"] == "POD-1"]
 		self.assertEqual(row["kind"], "direct")
 
 	def test_with_no_fleet_zone_every_box_falls_back_to_direct(self):
-		# An ingress has no name to be reached at until a zone is set, and a row with a blank URL
-		# is unroutable — pickRoute drops it and the model reads down.
 		for row in rows_for("qwen3-35b", zone=""):
 			with self.subTest(row["deployment"]):
 				self.assertEqual(row["kind"], "direct")

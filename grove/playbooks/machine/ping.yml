@@ -1,6 +1,5 @@
 ---
-# Connectivity check for any box — proves the Grove ansible runner + streaming works. Lives
-# under machine: every box is a Machine, whatever server doc stands on it.
+# Connectivity check for any box.
 - hosts: all
   gather_facts: false
   tasks:

@@ -3,6 +3,7 @@
 
 import hashlib
 import secrets
+
 import frappe
 from frappe.model.document import Document
 from frappe.utils import flt
@@ -10,7 +11,6 @@ from frappe.utils import flt
 from grove.access import team_limits, validate_limit_rows, validate_model_geography
 
 KEY_PREFIX = "gr_"
-# Guards a race where a key is created and revoked at the same time.
 REVOKE_AFTER_HOURS = 6
 
 
@@ -59,8 +59,6 @@ class GroveAPIKey(Document):
 		"""A new key starts in its geography's default Model Group unless the insert names its own
 		groups. With no limit rows of its own it runs under its team's Tier."""
 		self.check_key_count()
-		# key_hash is what the gateway keys on and what revoke looks up; api_secret holds the full
-		# key encrypted at rest, for reveal-later.
 		full_key = KEY_PREFIX + secrets.token_hex(24)
 		self.key_hash = hash_secret(full_key)
 		self.api_secret = full_key
@@ -86,7 +84,6 @@ class GroveAPIKey(Document):
 
 	def validate(self):
 		validate_model_geography([*self.allow, *self.deny], self.geography)
-		# Deny wins anyway, so a model on both lists is a mistake worth surfacing.
 		both = {row.model_key for row in self.allow} & {row.model_key for row in self.deny}
 		if both:
 			frappe.throw(f"{', '.join(sorted(both))} is in both Allow and Deny")
@@ -100,7 +97,6 @@ class GroveAPIKey(Document):
 			self.spent = frappe.db.get_value("Grove API Key", self.name, "spent", for_update=True)
 		if flt(self.cap) < 0:
 			frappe.throw("A cap cannot be negative.")
-		# A raise, or a key coming back live: either puts its cap back under the team's limit.
 		revived = before and before.status != "active" and self.status == "active"
 		if flt(self.cap, 9) > flt(before.cap if before else 0, 9) or revived:
 			self.validate_cap()

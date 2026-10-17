@@ -46,7 +46,6 @@ class TestWhatBlocksAnArchive(unittest.TestCase):
 			blockers = InferenceServer.archive_blockers.fget(SimpleNamespace(name="inf-1"))
 		self.assertEqual(len(blockers), 1)
 		self.assertIn("r1, r2", blockers[0])
-		# Inactive and Broken still hold the box; only Terminated is gone.
 		self.assertEqual(get_all.asked["Model Replica"], {"inference_server": "inf-1", "status": LIVE})
 
 	def test_an_empty_inference_server(self):
@@ -76,7 +75,6 @@ class TestWhatBlocksAnArchive(unittest.TestCase):
 		with patch.object(frappe, "get_all", side_effect=get_all):
 			blockers = GatewayStore.archive_blockers.fget(SimpleNamespace(name="store1"))
 		self.assertIn("gw1-ap-south-1", blockers[0])
-		# A Broken gateway still points its agent.env here.
 		self.assertEqual(get_all.asked["Gateway Server"], {"gateway_store": "store1", "status": LIVE})
 
 	def test_an_empty_store(self):
@@ -137,7 +135,6 @@ class TestArchive(unittest.TestCase):
 		self.assertEqual(doc.saved, ["Terminated"])
 
 	def test_the_cascade_already_retired_the_row(self):
-		# Machine.terminate saves Active servers as Terminated; reload sees it and nothing is saved twice.
 		doc, box = self.server(), self.machine("aws")
 		doc.reload = lambda: setattr(doc, "status", "Terminated")
 		self.archive(doc, box)
@@ -164,7 +161,6 @@ class TestANewInferenceServerTakesTheNetworksSingletons(unittest.TestCase):
 
 	def test_exactly_one_of_each_is_taken(self):
 		self.assertEqual(self.defaults(["ing-1"], ["ma-1"]), ("ing-1", "ma-1"))
-		# Membership is the Machine's network read live, never the server's mirrored copy.
 		self.assertEqual(self.asked["Machine"], {"network": "net-1"})
 		self.assertEqual(self.asked["Ingress Server"], {"machine": ("in", ["m-1", "m-2"]), "status": LIVE})
 

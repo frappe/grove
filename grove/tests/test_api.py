@@ -20,7 +20,6 @@ class TestTotalsByModel(unittest.TestCase):
 		self.assertEqual(totals_by_model([]), [])
 
 	def test_rows_for_one_model_are_summed_not_overwritten(self):
-		# Two users on the same model arrive as two rows.
 		summary = totals_by_model([row("qwen3-35b", requests=1, cost=0.5), row("qwen3-35b", requests=2, cost=0.25)])
 		self.assertEqual(summary, [{"model": "qwen3-35b", "requests": 3, "cost": 0.75}])
 

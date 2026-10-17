@@ -15,10 +15,8 @@ import frappe
 from grove.utils import utc_today
 
 NANO = 10**9
-# What `month_spent_by` sums by: a column both Usage Record and Credit Discrepancy carry.
 MONTH_SPENT_BY = ("team", "api_key")
 
-# Tokens per unit a rate is quoted per: USD per Mtok, or per request.
 UNITS = {"Mtok": 1_000_000, "request": 1}
 
 
@@ -145,7 +143,6 @@ class PriceBook:
 	def load(cls):
 		book = cls()
 		book.counters = CounterTable.load()
-		# Keys, not docs: a usage bucket names the key, and a key may be several docs.
 		keys = dict(frappe.get_all("Model", fields=["name", "model_key"], as_list=True))
 		book.models = set(keys.values())
 		pricings = frappe.get_all("Model Pricing", fields=["name", "model"])

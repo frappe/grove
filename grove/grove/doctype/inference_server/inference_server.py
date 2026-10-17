@@ -124,8 +124,6 @@ class InferenceServer(FleetHost, Document):
 		network = self.machine and frappe.db.get_value("Machine", self.machine, "network")
 		if not network:
 			return
-		# Membership off the Machine, live: a server's own network field is a mirror as old as
-		# its last save, and one that predates the field never matches.
 		boxes = frappe.get_all("Machine", filters={"network": network}, pluck="name")
 		for field, doctype in (("ingress", "Ingress Server"), ("monitoring_agent", "Monitoring Agent")):
 			if self.get(field) or (field == "ingress" and self.is_standalone):
@@ -149,10 +147,6 @@ class InferenceServer(FleetHost, Document):
 		if not replicas:
 			return []
 		return [f"Replicas still placed here: {', '.join(replicas)}. Tear them down first."]
-
-	# ── The box ───────────────────────────────────────────────────────────────
-	# Everything reaching the hardware goes through here: a Model Replica talks to its Inference
-	# Server, and the Server is the only side that knows about a Machine.
 
 	@property
 	def hf_home(self):
@@ -264,10 +258,7 @@ class InferenceServer(FleetHost, Document):
 				"gpu_data_mount": self.data_path,
 				"gpu_instance_store_hf_cache": bool(self.use_instance_store_for_hf_cache),
 				"monitoring_has_gpu": bool(self.gpus),
-				# The driver reboot outlasts Ansible's default on a bare metal box.
 				"gpu_reboot_timeout": 1800 if is_bare_metal else 600,
-				# The engine proxy's htpasswd: this play and serve.yml both write it, from the
-				# one source, so whichever runs last cannot disagree with the other.
 				**frappe.get_single("Grove Settings").scrape_auth_variables,
 				**self.tls_variables,
 			},
@@ -282,9 +273,6 @@ class InferenceServer(FleetHost, Document):
 		if ok and self.is_standalone:
 			self.sync_dns_records()
 		return play_name, rc
-
-	# ── The front ─────────────────────────────────────────────────────────────
-	# Standalone: its own nginx on the fleet name and wildcard. Otherwise an ingress fronts it.
 
 	@property
 	def front_url(self):
@@ -310,7 +298,6 @@ class InferenceServer(FleetHost, Document):
 			**variables,
 			# nginx's master reads it as root, and the inference plays create no frappe user.
 			"fleet_tls_key_owner": "root",
-			# Ansible resolves these against the fleet_tls role, the one owner of the paths.
 			"grove_tls_cert": "{{ fleet_tls_cert_path }}",
 			"grove_tls_key": "{{ fleet_tls_key_path }}",
 			"grove_tls_selfsigned": False,

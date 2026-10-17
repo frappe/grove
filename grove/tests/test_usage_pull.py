@@ -46,7 +46,6 @@ class PullCase(IntegrationTestCase):
 		doc = frappe.db.exists("Model", {"model_id": model_id}) or frappe.get_doc(
 			{"doctype": "Model", "model_id": model_id, "hf_repo": f"org/{model_id}"}
 		).insert(ignore_permissions=True).name
-		# The key: what a bucket and an entry name. The doc is never looked at here.
 		cls.model = frappe.db.get_value("Model", doc, "model_key")
 		gateway_module = "grove.grove.doctype.gateway_server.gateway_server"
 		with unittest.mock.patch(f"{gateway_module}.GatewayServer.set_admin_url"):
@@ -94,7 +93,6 @@ class TestADrainIsOneRecordPerKey(PullCase):
 		self.assertEqual(doc.total_tokens, 107)
 
 	def test_the_gateways_own_view_of_the_key_is_ignored(self):
-		# The box still writes these two; Grove bills from the pricing-tagged counters alone.
 		key = self.key()
 		self.pull({key: {"request_count": "1", "key_spent": "300000000", "key_balance": "700000000"}})
 		[doc] = self.records(key)
@@ -239,7 +237,7 @@ class TestAPullForOneTeam(PullCase):
 	email = "usage-one@grove.test"
 	box = "usage-one-box"
 
-	def test_every_key_it_holds_is_asked_for_from_every_store(self):
+	def test_every_key_it_holds_is_asked_for_from_the_stores_of_its_geographies(self):
 		keys = sorted([self.key(), self.key()])
 		frappe.db.set_value("Grove API Key", keys[0], "status", "revoked")
 		pull = usage.Usage(team=self.team)
@@ -359,7 +357,6 @@ class TestAStoreIsPulledThroughOneWriter(unittest.TestCase):
 
 	def test_the_next_writer_is_tried_when_one_fails_and_none_after_a_success(self):
 		pulled, counts = self.pull([(None, ["gw0"]), ("store1", ["gw1", "gw2", "gw3"])], succeeds={"gw0", "gw2"})
-		# The two groups run side by side; only a store's own writers are ordered.
 		self.assertEqual(sorted(pulled), ["gw0", "gw1", "gw2"])
 		self.assertLess(pulled.index("gw1"), pulled.index("gw2"))
 		self.assertEqual(counts, (2, 2))

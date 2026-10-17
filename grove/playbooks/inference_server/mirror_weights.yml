@@ -1,7 +1,7 @@
 ---
-# Copy one model's cached safetensors snapshot into the weights bucket, flat, for the runai
-# streamer to serve from. Runs on a provisioned box — it already has the weights cached, or
-# downloads them into the cache first (same guard as the serve play, so a re-run is free).
+# Copy one model's cached snapshot into the weights bucket, flat, for the runai streamer
+# (model.mirror_weights_to_s3). extra-vars: mirror_repo, mirror_uri, mirror_env, vllm_home,
+# vllm_hf_home, vllm_hf_token.
 - name: Mirror model weights to S3
   hosts: all
   become: true
@@ -9,8 +9,6 @@
     mirror_venv: "{{ vllm_home }}/hf-venv"
     mirror_cache_path: "{{ vllm_hf_home }}/hub/models--{{ mirror_repo | replace('/', '--') }}"
   tasks:
-    # Same reason as the vllm role: ensurepip is a separate package on Ubuntu, and this play
-    # can be the first thing to want the venv on a box that has never served.
     - name: Ensure python3 can create a virtualenv
       ansible.builtin.apt:
         name: python3-venv
@@ -35,7 +33,6 @@
         HF_HUB_DISABLE_TELEMETRY: "1"
       args:
         creates: "{{ mirror_cache_path }}"
-      # Many GB, silent for minutes — detached + poll so a dropped SSH session can't abort it.
       async: 7200
       poll: 15
 
@@ -44,8 +41,6 @@
       register: mirror_revision
       changed_when: false
 
-    # --follow-symlinks: the snapshot dir is symlinks into blobs/; the streamer needs the
-    # real files, flat under the mirror URI.
     - name: Sync the snapshot to the bucket
       ansible.builtin.command: >-
         {{ mirror_venv }}/bin/aws s3 sync

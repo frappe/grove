@@ -13,11 +13,8 @@ from grove.grove.doctype.model.model import HF_TREE_URL, Model
 
 # Real `safetensors.parameters` maps, off https://huggingface.co/api/models/<repo>.
 PARAMETERS = {
-	# Ships bf16 — nothing packed, so it can be re-costed at another precision.
 	"Qwen/Qwen2.5-3B-Instruct": {"BF16": 3_085_938_688},
-	# Ships fp8, with bf16 for the parts that stay wide.
 	"Qwen/Qwen3.6-27B-FP8": {"BF16": 3_083_727_792, "F8_E4M3": 24_699_207_680},
-	# AWQ int4: the I32 count is packed containers, not parameters.
 	"cyankiwi/GLM-5.2-AWQ-INT4": {"BF16": 27_199_429_632, "I32": 726_130_491_392, "F32": 19_456},
 }
 # Real shard totals, off the repo tree. What the weights actually weigh.
@@ -52,7 +49,6 @@ def tree(repo, shards=4):
 
 class TestShippedWeights(unittest.TestCase):
 	def test_the_shards_are_measured_not_costed_from_parameter_counts(self):
-		# The I32 count on this repo is packed containers: pricing it per dtype gives 2959 GB.
 		self.assertAlmostEqual(model("cyankiwi/GLM-5.2-AWQ-INT4").get_weights_gb(), 474.22, places=1)
 
 	def test_an_fp8_repo_measures_to_its_real_size(self):
@@ -75,7 +71,6 @@ class TestGgufWeights(unittest.TestCase):
 	"""A GGUF repo ships every quantization of one model side by side, so `repo:QUANT` names
 	the single file that is served. Sizing has to follow that ref, not the repo."""
 
-	# Root listing of https://huggingface.co/unsloth/Qwen3-0.6B-GGUF, trimmed to four quants.
 	TREE = [
 		{"type": "file", "path": "config.json", "size": 752},
 		{"type": "file", "path": "Qwen3-0.6B-Q4_K_M.gguf", "size": 396_705_472},
@@ -90,7 +85,6 @@ class TestGgufWeights(unittest.TestCase):
 		return doc
 
 	def test_only_the_named_quantization_is_measured(self):
-		# Not the 1.82 GB the four quantizations weigh together.
 		self.assertAlmostEqual(self.gguf("unsloth/Qwen3-0.6B-GGUF:Q4_K_M").get_weights_gb(), 0.4, places=2)
 
 	def test_a_longer_name_ending_the_same_way_is_not_picked_up(self):
@@ -100,7 +94,6 @@ class TestGgufWeights(unittest.TestCase):
 		self.assertIsNone(self.gguf("unsloth/Qwen3-0.6B-GGUF:Q3_K_M").get_weights_gb())
 
 	def test_the_hugging_face_reads_drop_the_quantization_suffix(self):
-		# The ref is vLLM's; the HF API only knows the repo.
 		doc = model("unsloth/Qwen3-0.6B-GGUF:Q4_K_M")
 		self.assertEqual(doc.repo_id, "unsloth/Qwen3-0.6B-GGUF")
 		self.assertEqual(model("Qwen/Qwen2.5-3B-Instruct").repo_id, "Qwen/Qwen2.5-3B-Instruct")

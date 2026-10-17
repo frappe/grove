@@ -16,18 +16,10 @@ and skips the card."""
 
 import frappe
 
-# Long enough to outlive a placement and the stale-read window of a transaction that started just
-# before it, short enough that a dead worker frees the card. The TTL is the only cleanup.
 LEASE_TTL = 60
 
 
 def _key(gpu):
-	# The docname is unique across the fleet, so no machine prefix — and nothing here can be
-	# confused by a CUDA index moving between the ranking and the placement.
-	#
-	# Not run through make_key, which is what separates one site's cache from another's: the raw
-	# client is used below for SET NX and raw calls skip it. Two Grove sites on one bench would
-	# share these keys.
 	return f"grove:gpu_lease:{gpu}"
 
 

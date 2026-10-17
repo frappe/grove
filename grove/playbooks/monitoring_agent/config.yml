@@ -1,11 +1,6 @@
 ---
-# Re-render an installed agent's vmagent config and restart it — intervals, buffer size, push
-# endpoint, token and target lists, straight off the Monitoring Agent doc. Run by
-# monitoring_agent.update_config and by Rotate Token.
-#
-# No install tasks: the binary is already on the box, and downloading it again to change a
-# scrape interval only makes the change slower to land. A box that has never been installed
-# has no unit to restart — Update Config is refused there.
+# Re-render an installed agent's vmagent config and restart it (monitoring_agent.update_config,
+# Rotate Token). extra-vars: the same as agent.yml.
 - name: Update the metrics agent config
   hosts: all
   become: true

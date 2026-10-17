@@ -161,7 +161,6 @@ class PathwayUpdate(StepHandler, Document):
 			server = frappe.get_doc(step.server_type, step.server)
 			play_name, rc = server._deploy_agent(reference_doctype=self.doctype, reference_docname=self.name)
 		finally:
-			# On a raise, _execute_steps saves this same row as Failure.
 			step.ended_at = now_datetime()
 		step.job_type, step.job = "Ansible Play", play_name
 		step.status = Status.Success if rc == 0 else Status.Failure
@@ -194,7 +193,6 @@ class PathwayUpdate(StepHandler, Document):
 		failed = [row for row in self.servers if row.status == Status.Failure][-1]
 		if not getattr(frappe.local, "grove_failure_reported", False):
 			failure.report(self.doctype, self.name, "Pathway update failed", failed.output)
-		# Committed first: a server that cannot answer /grove-admin/in-flight raises, and the job's
-		# rollback must not take the failure record with it.
+		# Committed first: set_maintenance can raise, and the rollback must not take the failure record.
 		frappe.db.commit()
 		frappe.get_doc(failed.server_type, failed.server).set_maintenance(1)

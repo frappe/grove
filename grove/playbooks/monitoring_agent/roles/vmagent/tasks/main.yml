@@ -1,6 +1,4 @@
 ---
-# Install, then configure. Requirements are asserted in agent.yml's pre_tasks, before
-# node_exporter installs — a check here fails after the box is already half built.
 - name: Read the installed vmagent version
   ansible.builtin.command: vmagent -version
   register: vmagent_probe

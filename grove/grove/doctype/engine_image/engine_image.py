@@ -9,8 +9,7 @@ import requests
 import frappe
 from frappe.model.document import Document
 
-# Docker Hub's registry API is not served from the hosts its refs name: `docker.io` is a website
-# and the CLI rewrites the host on its way out. Blank counts too. A one-segment repository there is
+# Docker Hub's API is not at the host its refs name, and a one-segment repository there is
 # shorthand for library/, which the API does not accept.
 DOCKER_HUB_REGISTRY = "registry-1.docker.io"
 DOCKER_HUB_HOSTS = ("", "docker.io", "index.docker.io", "registry.hub.docker.com")
@@ -99,7 +98,6 @@ class EngineImage(Document):
 		repository, reference = self.split_image_path()
 		registry = self.api_registry_host
 		manifest = self.get_manifest(registry, repository, reference)
-		# A multi-arch tag points at one manifest per platform, and the variants differ in size.
 		if manifests := manifest.get("manifests"):
 			digest = next(
 				(

@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Pull usage from each gateway Redis into one Usage Record per key per drain, and bill it.
+"""Pull usage from each gateway Redis into one Usage Record per key per drain per day, and bill it.
 
 The gateway accumulates per-key deltas in `usage:<prefix>`. A pull GETs /usage: the box sets each
 live counter aside under a new drain id and returns it together with every key it set aside earlier
@@ -103,7 +103,6 @@ def record_drain(outcome, rows, gateway_store=None):
 			row["had_data"] = 1 if pulled else 0
 			row["detail"] = f"pulled:{pulled} stuck:{stuck}" if stuck else f"pulled:{pulled}"
 			if spool.get("depth") or spool.get("dead"):
-				# The box's usage spool: what it could not write to its store and is still holding.
 				row["detail"] += f" spool:{spool.get('depth', 0)} dead:{spool.get('dead', 0)}"
 			if acks or dead_acks:
 				row["detail"] += acknowledge(row["server"], acks, dead_acks)
@@ -190,7 +189,6 @@ def read_dead_line(line, gateway_store):
 			raise ValueError(f"No Grove API Key {prefix!r}")
 		return team, prefix, fields
 	except Exception:
-		# An unreadable line comes with a blank id; its text names it instead.
 		name = line["id"] or "sha1:" + hashlib.sha1(line["line"].encode()).hexdigest()
 		record_stuck(None, gateway_store, line, dead_line=name)
 		return None

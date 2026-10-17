@@ -1,6 +1,4 @@
 ---
-# Probe before installing, so a re-run over a box that already has the pinned version is a
-# download-free no-op (same shape as the gpu_host driver task).
 - name: Read the installed node_exporter version
   ansible.builtin.command: node_exporter --version
   register: node_exporter_probe

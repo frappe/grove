@@ -64,7 +64,6 @@ class TestWhichPlaysWriteIt(unittest.TestCase):
 		self.assertNotIn("tasks", memory)
 
 	def test_changing_the_cap_is_not_a_traffic_event(self):
-		# GOMEMLIMIT waits for the next restart; the role must not cause one to deliver it.
 		tasks = yaml.safe_load((ROLE / "tasks" / "main.yml").read_text())
 		modules = [key for task in tasks for key in task if key.startswith("ansible.builtin.")]
 		self.assertEqual(

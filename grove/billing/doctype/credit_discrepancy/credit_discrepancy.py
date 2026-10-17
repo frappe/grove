@@ -82,7 +82,6 @@ def pending_adjustments():
 	)
 	owed = {}
 	for row in rows:
-		# The box keys its records on the hash, not the doc name the usage is attributed under.
 		body = {"key": hashes.get(row.api_key, ""), "delta": -nano(row.delta), "id": row.name}
 		owed.setdefault(row.gateway_store, []).append(body)
 	return owed

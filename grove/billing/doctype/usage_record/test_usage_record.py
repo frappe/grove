@@ -1,4 +1,4 @@
-# Copyright (c) 2026, developers@frappe.io and Contributors
+# Copyright (c) 2026, Frappe and contributors
 # See license.txt
 
 # import frappe

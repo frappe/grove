@@ -2,7 +2,6 @@ frappe.ui.form.on('Gateway Store', {
 	refresh(frm) {
 		if (frm.is_new()) return;
 
-		// Offered until it succeeds: Pending, or Broken to retry.
 		if (['Pending', 'Broken'].includes(frm.doc.status)) {
 			frm.add_custom_button(__('Setup'), () => grove.confirm_call(frm,
 				__('Run the store play on {0}? It installs Redis behind its password on the private address.', [frm.doc.name]),

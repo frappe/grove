@@ -1,5 +1,3 @@
 ---
-# The script stops, removes and re-runs the container itself, so this is also what the
-# tasks call to start one that is not running. One owner of the replace sequence.
 - name: recreate vllm container
   ansible.builtin.command: "{{ vllm_container_script }}"

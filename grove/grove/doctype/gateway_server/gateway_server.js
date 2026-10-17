@@ -2,7 +2,6 @@ frappe.ui.form.on('Gateway Server', {
 	refresh(frm) {
 		if (frm.is_new()) return;
 
-		// Offered until it succeeds: Pending, or Broken to retry. Deploy Latest Agent covers a live box.
 		if (['Pending', 'Broken'].includes(frm.doc.status)) {
 			frm.add_custom_button(__('Provision'), () => grove.confirm_call(frm,
 				__('Run the full gateway play on {0}? It installs the agent and its config, and starts it.', [frm.doc.name]),
@@ -27,8 +26,6 @@ frappe.ui.form.on('Gateway Server', {
 			}, ({ limit_mb }) => frm.call('set_memory_limit', { limit_mb }),
 			__('Cap pathway on {0}', [frm.doc.name]), __('Update')), __('Gateway'));
 
-			// The exporters listen on 9100 for the Monitoring Agent above to scrape —
-			// restrict that port to that agent in the security group.
 			frm.add_custom_button(__('Update Scrape Auth'), () => grove.confirm_call(frm,
 				__("Rewrite {0}'s exporter password from Grove Settings? Scrapes with the old one fail from then on.", [frm.doc.name]),
 				'update_scrape_auth'));

@@ -29,7 +29,6 @@ def execute():
 		if frappe.db.has_column(doctype, field):
 			for old, new in teams.items():
 				frappe.db.sql(f"update `tab{doctype}` set team = %s where `{field}` = %s", [new, old])
-	# A discrepancy recorded without its user still names the key, and the key now names the team.
 	frappe.db.sql(
 		"""update `tabCredit Discrepancy` d join `tabGrove API Key` k on k.name = d.api_key
 		set d.team = k.team where ifnull(d.team, '') = ''"""

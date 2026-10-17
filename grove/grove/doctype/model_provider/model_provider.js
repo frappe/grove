@@ -52,7 +52,6 @@ frappe.ui.form.on('Model Provider', {
 		if (frm.is_new() || frm.doc.is_self_hosted || !(frm.doc.api_keys || []).length) {
 			return;
 		}
-		// On a click, never on open: a form open must not dial the vendor.
 		frm.add_custom_button(__('Fetch Models'), () => frm.call('fetch_models').then((r) => {
 			pick_models(frm, r.message);
 		}));

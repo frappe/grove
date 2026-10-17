@@ -4,7 +4,6 @@
 import frappe
 from frappe.model.document import Document
 
-# The same logical filter on each half of `money_rows`.
 RECORD_COLUMNS = {"team": "r.team", "api_key": "r.api_key", "model": "u.model"}
 CORRECTION_COLUMNS = {"team": "d.team", "api_key": "d.api_key", "model": "m.model_key"}
 
@@ -74,9 +73,8 @@ def money_rows(filters, from_date=None, to_date=None, since=None, until=None):
 		parts.append(f"{at} >= %(since)s and {at} < %(until)s" if since else f"{day} between %(from_date)s and %(to_date)s")
 		return " and ".join(parts)
 
-	# A model key is exact, as the gateway's buckets name it: JSON_TABLE's strings carry the JSON
-	# column's utf8mb4_bin, and the correction side is made to match. A correction is never dropped
-	# for lacking a pricing: it lands under a blank model.
+	# JSON_TABLE's strings carry the JSON column's utf8mb4_bin, so the correction side is collated to
+	# match; a correction with no pricing lands under a blank model rather than being dropped.
 	return (
 		f"""(select r.team, r.api_key, u.model, r.day, r.creation as pulled_at, r.billed,
 		u.requests, {tokens_expression()} as tokens, if(r.billed, u.grove_cost, 0) as cost

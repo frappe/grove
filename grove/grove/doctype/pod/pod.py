@@ -11,7 +11,6 @@ from grove.grove.doctype.engine_image.engine_image import engine_tuning
 from grove.grove.doctype.model.model import launch_config
 from grove.serving.base import build_engine
 
-# Seeded on a fresh Pod: SSH + the engine port. The provider cannot hot-add ports.
 _ENGINE_PORT = 8080
 
 
@@ -99,8 +98,7 @@ class Pod(Document):
 		)
 
 	def before_insert(self):
-		# The engine is exposed as http so it rides the provider's HTTPS proxy and needs no
-		# certificate of its own. SSH has to stay direct tcp.
+		# http rides the provider's HTTPS proxy with no certificate of its own; SSH stays direct tcp.
 		if not self.ports:
 			self.append("ports", {"internal_port": 22, "protocol": "tcp"})
 			self.append("ports", {"internal_port": _ENGINE_PORT, "protocol": "http"})
@@ -108,20 +106,14 @@ class Pod(Document):
 	def validate(self):
 		model = frappe.get_cached_doc("Model", self.model)
 		model.reject_if_vendor_served("A pod starts an engine for it")
-		# The health gate polls the serve port and the gateway route is built from it, so a port
-		# the provider never opened leaves the pod Loading forever with a blank endpoint.
 		serve_port = int(self.serve_port or _ENGINE_PORT)
 		if not any(int(p.internal_port) == serve_port for p in self.ports or []):
 			frappe.throw(
 				f"Serve Port {serve_port} is not in the Ports table — add it so it's opened at spawn."
 			)
 		engine = self.engine
-		# The gateway ships this as the route's internal key, so minting one for an image that
-		# enforces nothing would send a bearer to something that never asked.
 		if engine.has_api_key and not self.api_key:
-			self.api_key = secrets.token_hex(24)  # vLLM --api-key via VLLM_API_KEY env
-		# Store what actually reaches --max-model-len; the suffix is input sugar. Blank stays
-		# blank — that is how a placement asks for the engine default.
+			self.api_key = secrets.token_hex(24)
 		if self.max_model_len:
 			self.max_model_len = str(engine.max_model_len)
 		if errors := engine.placement_errors:
@@ -146,14 +138,12 @@ class Pod(Document):
 		"""The Engine Image's ref, registry host included."""
 		return frappe.get_cached_doc("Engine Image", self.engine_image).full_image
 
-	# ── Standalone lifecycle ──
 	@frappe.whitelist()
 	def spawn(self):
 		"""Spawn this pod on its provider (long job)."""
 		frappe.enqueue(
 			"grove.cloud_provider.provisioner.spawn_pod_doc",
-			# The poll and the engine gate fill 1800 s on their own; the create retries add up to
-			# provision_retries * SPAWN_RETRY_DELAY on top.
+			# The poll and the engine gate fill 1800 s; the create retries add up on top.
 			queue="long", timeout=2100, pod_name=self.name,
 		)
 		frappe.msgprint(f"Spawning pod {self.name} on {self.cloud_provider}.", alert=True)
@@ -194,7 +184,6 @@ class Pod(Document):
 		— an edited GPU shape needs Terminate + Spawn. Long job."""
 		from grove.cloud_provider.provisioner import PodProvisioner
 
-		# Throws here, so the operator sees why rather than getting a dead background job.
 		PodProvisioner(self).validate_restart()
 		frappe.enqueue(
 			"grove.cloud_provider.provisioner.restart_pod",

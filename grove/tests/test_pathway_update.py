@@ -18,7 +18,6 @@ from grove.runner import Status, StepHandler
 
 def setUpModule():
 	patches = [
-		# now_datetime reads the site's time zone.
 		patch.object(module, "now_datetime", side_effect=datetime.now),
 		patch.object(module, "gateway_agent_version", return_value="v0.0.4"),
 		patch.object(module, "pathway_repo", return_value="someone/pathway"),
@@ -149,7 +148,6 @@ class TestStartAndContinue(unittest.TestCase):
 		self.assert_refused(PathwayUpdate.start, self.ready(status="Stopped"))
 
 	def test_start_refuses_an_update_still_stopping(self):
-		# Pending again after Stop, its last server still deploying: a second job chain would race it.
 		self.assert_refused(PathwayUpdate.start, self.ready(started_at="then"))
 
 	def test_continue_carries_on_and_keeps_when_it_first_started(self):

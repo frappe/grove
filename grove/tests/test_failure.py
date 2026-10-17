@@ -55,7 +55,6 @@ class TestReportReachesEveryAudience(unittest.TestCase):
 		self.assertEqual(1, len(rec.notifications))
 
 	def test_every_channel_says_what_went_wrong(self):
-		# Both carry title and detail separately, so neither can end up with only half the story.
 		with Recorder() as rec:
 			failure.report("Gateway Server", "gw-1", "Provision failed", "no admin token")
 		for _, _, title, detail in rec.toasts + rec.notifications:
@@ -63,7 +62,6 @@ class TestReportReachesEveryAudience(unittest.TestCase):
 			self.assertEqual("no admin token", detail)
 
 	def test_a_play_with_no_reference_doc_is_skipped(self):
-		# Nothing to link a notification to; the Error Log is the record.
 		with Recorder() as rec:
 			failure.report(None, None, "Play failed", "detail")
 			failure.report("Gateway Server", None, "Play failed", "detail")
@@ -85,7 +83,6 @@ class TestTheDecoratorReportsAndReraises(unittest.TestCase):
 		return SimpleNamespace(doctype="Gateway Server", name="gw-1")
 
 	def test_the_exception_still_reaches_the_worker(self):
-		# Reporting is not rescuing: swallowing marks the job successful and writes no Error Log.
 		@failure.reports_failure()
 		def provision(self):
 			raise ValueError("no admin token")
@@ -108,7 +105,6 @@ class TestTheDecoratorReportsAndReraises(unittest.TestCase):
 		self.assertEqual([("Gateway Server", "gw-1")], rec.statuses)
 
 	def test_a_module_level_job_names_its_doctype(self):
-		# The Model Replica jobs are functions taking a docname, not methods with a self.
 		@failure.reports_failure(doctype="Model Replica")
 		def deploy_model(model_replica):
 			raise ValueError("engine did not come up")
@@ -121,7 +117,6 @@ class TestTheDecoratorReportsAndReraises(unittest.TestCase):
 		self.assertEqual("Deploy model failed", title)
 
 	def test_a_leading_underscore_does_not_reach_the_operator(self):
-		# _deploy_agent is what the method is called; "Deploy agent" is what the button says.
 		@failure.reports_failure()
 		def _deploy_agent(self):
 			raise ValueError("boom")
@@ -171,21 +166,15 @@ class TestMarkingBrokenIsNarrow(unittest.TestCase):
 		return db.set_value.called
 
 	def test_a_box_mid_install_is_marked_broken(self):
-		# The actual bug: it sat at Installing forever, looking like a slow provision.
 		self.assertTrue(self.run_mark("Installing"))
 		self.assertTrue(self.run_mark("Provisioning"))
 
 	def test_a_terminated_box_is_left_alone(self):
-		# Torn down mid-play is gone, not broken — Broken puts it in front of anyone filtering for
-		# boxes to fix.
 		self.assertFalse(self.run_mark("Terminated"))
 
 	def test_an_already_active_box_is_left_alone(self):
-		# A failed config push has not stopped a live box serving; Broken drops it out of the route
-		# table.
 		self.assertFalse(self.run_mark("Active"))
 
 	def test_a_doctype_with_nowhere_to_go_is_left_alone(self):
-		# Machine and Pod have no Broken status at all.
 		self.assertFalse(self.run_mark("Provisioning", options="Pending\nProvisioning\nActive\nTerminated"))
 		self.assertFalse(self.run_mark("Provisioning", options=None))

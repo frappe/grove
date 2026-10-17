@@ -52,8 +52,6 @@ class NamedHost(Server):
 	"""A box with its own A record at <short name>.<fleet zone>, and nothing else from the fleet.
 	A Gateway Store stops here: operators SSH to it by name, but nothing dials it over HTTP."""
 
-	# The doc fields this box's DNS records are built from. Named rather than branched on: a gateway's
-	# records also need its Geography's endpoint, an ingress's do not.
 	dns_fields = ("public_ip",)
 
 	@property

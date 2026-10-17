@@ -1,27 +1,15 @@
 ---
-# Provision a Grove Gateway Server: the pathway binary, which owns the whole data path — TLS,
-# routing, auth, metering — on its Network's Gateway Store. Idempotent.
-#
-# There is no OpenResty here any more. The play stops and disables it rather than ignoring it, so a
-# box provisioned before the cutover frees :80 and :443 for the process that now wants them.
-#
-# extra-vars: admin_token, agent_version, gateway_id, gateway_region, gateway_geography, gateway_host, proxy_hostname,
-# redis_addr, redis_password, the fleet TLS pair, the scrape hash, and the tunables in
-# config.json.j2.
+# Provision a Gateway Server: pathway on its Network's Gateway Store. extra-vars: admin_token,
+# agent_version, gateway_id, gateway_region, gateway_geography, gateway_host, proxy_hostname,
+# redis_addr, redis_password, the fleet TLS pair, the scrape hash, and the tunables in config.json.j2.
 - hosts: all
   become: true
   gather_facts: true
   vars:
     grove_dir: "{{ playbook_dir }}"
-    # No self-signed certificate on a front box. pathway serves the fleet's real wildcard or
-    # it serves plaintext — one that nothing trusts, on the port customers dial, is worse than
-    # either. The reason this box ever had one (nginx will not start `listen 443 ssl` without a file
-    # on disk) left with nginx.
     grove_tls_selfsigned: false
     monitoring_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
 
-  # Checked before anything installs: the gateway refuses to start without this token, so a run that
-  # forgot it would leave a box with pathway crash-looping.
   pre_tasks:
     - name: refuse to provision without an admin token
       ansible.builtin.assert:
@@ -30,17 +18,10 @@
           No admin_token was passed — provision from the Gateway Server's Setup button, or pass the
           same extra-vars it does.
 
-  # grove_https is here for the metrics htpasswd only; fleet_tls writes the wildcard the gateway
-  # actually serves. Both before the binary starts, since it loads its certificate at boot — with
-  # no wildcard it comes up on :80 in the clear rather than refusing, which is the honest answer for
-  # a fleet that has not been given a zone.
   roles:
     - grove_user
     - remove_cloud_user
     - auditd
-    # node_exporter before the binary: pathway publishes /metrics/node behind the htpasswd
-    # grove_https writes, and a front that proxies to nothing answers 502 to every scrape. A
-    # front box has no cards, so there is no dcgm_exporter here.
     - node_exporter
     - grove_https
     - fleet_tls
@@ -48,8 +29,6 @@
     - pathway_memory
 
   tasks:
-    # Guarded and non-fatal: most boxes never had OpenResty, and the ones that did must give up the
-    # ports before pathway asks for them. This is the task that performs the cutover.
     - name: stop and disable openresty
       ansible.builtin.systemd:
         name: openresty
@@ -57,9 +36,6 @@
         enabled: false
       failed_when: false
 
-    # The agent used to be named grove-gateway. A box provisioned before the rename still runs
-    # the old unit on the ports pathway is about to take, so it is retired the same way
-    # openresty is. Logs stay under /var/log/grove-gateway as history; config is re-rendered.
     - name: retire the old grove-gateway unit (agent renamed to pathway)
       ansible.builtin.systemd:
         name: grove-gateway
@@ -81,9 +57,7 @@
       ansible.builtin.systemd:
         daemon_reload: true
 
-    # A box provisioned before this carries a self-signed certificate nothing now reads. Removed by
-    # file, never by directory: /etc/grove/tls also holds the fleet wildcard this box actually
-    # serves, and taking the directory would take that with it.
+    # By file, never by directory: /etc/grove/tls also holds the fleet wildcard.
     - name: remove the self-signed certificate this box no longer serves
       ansible.builtin.file:
         path: "{{ item }}"
@@ -106,16 +80,12 @@
         group: "{{ grove_user }}"
         mode: "0755"
 
-    # The process opens its logs itself, as grove_user, and a box provisioned before the cutover has
-    # root-owned ones it would refuse to append to. Ownership only: `file: recurse` would stamp the
-    # directory's mode onto payload.log too, and logrotate's `create 0640` owns the files' mode.
+    # Ownership only: `file: recurse` would stamp the directory's mode onto payload.log.
     - name: hand the existing logs to the process
       ansible.builtin.command: "chown -Rc {{ grove_user }}:{{ grove_user }} /var/log/pathway"
       register: pathway_log_chown
       changed_when: pathway_log_chown.stdout | length > 0
 
-    # payload.log is customer content. logrotate creates its files 0640; this keeps every file
-    # there at that, whatever wrote it — an earlier run of this play stamped 0755 onto them.
     - name: keep the logs private
       ansible.builtin.command: "find /var/log/pathway -type f ! -perm 0640 -exec chmod -c 0640 {} +"
       register: pathway_log_mode
@@ -135,12 +105,9 @@
         remote_src: true
       notify: restart pathway
 
-    # Identity, secrets and sockets. Changing any of these makes this a different process, which is
-    # why they restart rather than reload.
     - name: agent.env
       ansible.builtin.copy:
         dest: /etc/pathway/agent.env
-        # pathway's own user, like the unit's User=: it already holds every value here in its environment.
         owner: frappe
         group: frappe
         content: |
@@ -166,8 +133,6 @@
       no_log: true
       notify: restart pathway
 
-    # The tunables. Separate from agent.env because these are re-read on a signal, and a reload is
-    # cheaper than a restart on a box carrying live streams.
     - name: config.json
       ansible.builtin.template:
         src: "{{ grove_dir }}/config.json.j2"
@@ -191,11 +156,10 @@
         state: started
         daemon_reload: true
 
-    # The gateway restarts onto the store first, so it never runs without a Redis.
+    # Before the local redis below stops: pathway must already be on the store.
     - name: restart onto the new agent.env
       ansible.builtin.meta: flush_handlers
 
-    # A box from before stores ran its own Redis; its AOF stays on disk.
     - name: stop the redis a gateway once ran itself
       ansible.builtin.systemd:
         name: redis-server
@@ -214,7 +178,6 @@
         state: restarted
         daemon_reload: true
 
-    # SIGUSR1, not a restart: the tunables are re-read in place, so live streams are untouched.
     - name: reload pathway config
       ansible.builtin.command: systemctl kill -s SIGUSR1 pathway
       changed_when: true

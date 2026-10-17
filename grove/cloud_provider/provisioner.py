@@ -18,19 +18,13 @@ from grove.cloud_provider.runpod import RunPodClient, RunPodError, pod_status
 from grove.grove.doctype.pod_activity.pod_activity import record
 from grove.grove.doctype.ssh_key.ssh_key import injected_public_keys
 
-# How long spawn waits for the engine to serve after the pod is SSH-reachable, before leaving it
-# Loading for a later Sync.
 ENGINE_READY_TIMEOUT = 1500
 ENGINE_POLL_INTERVAL = 15
-# Pause between asks when the provider refuses to create the pod (no capacity, mostly).
 SPAWN_RETRY_DELAY = 30
-# One forward pass on an engine already answering its health path: a blip budget, not a load one.
 WARMUP_TIMEOUT = 120
 
-# Fallback mount for the persistent volume; HF_HOME lives under it so weights survive a restart.
 VOLUME_MOUNT = "/data"
 
-# How long to wait before reconnecting a dropped log stream (see pod_log_events).
 LOG_RECONNECT_DELAY = 2
 
 
@@ -40,7 +34,7 @@ class PodProvisioner:
 
 	def __init__(self, pod, trigger="Manual"):
 		self.pod = pod
-		self.trigger = trigger  # who asked: the form's button, or the due-time tick
+		self.trigger = trigger
 		self._client = None
 		self._engine = None
 
@@ -52,7 +46,6 @@ class PodProvisioner:
 			self._engine = self.pod.engine
 		return self._engine
 
-	# ── Provider access ───────────────────────────────────────────────────────
 
 	@property
 	def client(self):
@@ -83,7 +76,6 @@ class PodProvisioner:
 			frappe.throw("No active SSH Key found — add one so Ansible/ops can reach the pod.")
 		return keys
 
-	# ── Request assembly ──────────────────────────────────────────────────────
 
 	@property
 	def env(self):
@@ -100,7 +92,6 @@ class PodProvisioner:
 			cache_root=f"{mount}/vllm-cache",
 			api_key=pod.get_password("api_key", raise_exception=False) or "",
 			hf_token=frappe.conf.get("hf_token") or "",
-			# The engine applies these only if it actually streams.
 			streaming_env=frappe.get_single("Grove Settings").weights_s3_engine_environment,
 		)
 		for row in pod.env or []:
@@ -152,11 +143,9 @@ class PodProvisioner:
 		return dict(
 			self.config_kwargs,
 			gpu_type_id=self.pod.gpu_type_id,
-			gpu_count=self.pod.gpu_count or 1,  # homogeneous pod
-			# cloud_type defaults SECURE in spawn_pod (Community closed to new hosts)
+			gpu_count=self.pod.gpu_count or 1,
 		)
 
-	# ── Reading provider state back ───────────────────────────────────────────
 
 	@property
 	def engine_endpoint(self):
@@ -270,16 +259,8 @@ class PodProvisioner:
 		ready = self.client.poll_pod_ready(self.pod.pod_id)
 		self.apply_provider_state(ready, running=True)
 		if self.health_path:
-			# The engine keeps loading weights after SSH is up, so the route registers only once
-			# the gate passes.
 			self.await_engine(ready)
 		if self.is_warmup_due and (error := self.get_warmup_error()):
-			# Loading with no engine_url is a Pod's Broken: the route table needs both, so the
-			# projection tick has nothing to publish.
-			#
-			# Withheld for the bring-up, not for good — reconcile.sync_all re-decides on the
-			# health path alone, so a pod that answers /health but cannot generate flips back to
-			# Running. The Failure doc is what survives.
 			self.set_state({"status": "Loading", "engine_url": ""})
 			failure.report("Pod", self.pod.name, "Pod engine failed warmup", error)
 		self.sync_model_published()
@@ -302,12 +283,11 @@ class PodProvisioner:
 		frappe.db.set_value("Pod", self.pod.name, values)
 		frappe.db.commit()
 
-	# ── Lifecycle ─────────────────────────────────────────────────────────────
 
 	def spawn(self):
 		"""Create the pod on its provider from the Pod doc, record the provider id, and wait for
 		it to serve."""
-		spawn_kwargs = self.spawn_kwargs  # assembled (and validated) before anything is billed
+		spawn_kwargs = self.spawn_kwargs
 		started = frappe.utils.now_datetime()
 		self.set_state({"status": "Provisioning", "provision_attempts": 0})
 		try:
@@ -380,8 +360,6 @@ class PodProvisioner:
 		config_kwargs = self.config_kwargs
 		started = frappe.utils.now_datetime()
 		try:
-			# Clear the route target before the container goes down: the reset can take as long as
-			# a weight load, and the tick republishes from engine_url once it serves again.
 			self.set_state({"status": "Provisioning", "engine_url": ""})
 			self.sync_model_published()
 
@@ -439,7 +417,6 @@ class PodProvisioner:
 		self.sync_model_published()
 		self.log("Terminate", "Success", detail)
 
-	# ── Guards ────────────────────────────────────────────────────────────────
 
 	def restart_blocker(self, live):
 		"""Why this Pod's config cannot be applied to its live provider pod, or None when it
@@ -499,9 +476,7 @@ class PodProvisioner:
 		if not frappe.db.get_value("Pod", self.pod.name, "pod_id"):
 			self.set_state({"status": "Stopped"})
 		frappe.log_error(title=title)
-		# Reported rather than decorated: this path deliberately does not raise, so there is no
-		# exception for the decorator to catch. mark_broken is left off because a Pod has no Broken
-		# status — the docstring above is the reason, and the reconcile owns the real one.
+		# Not @reports_failure: this path never raises, and a Pod has no Broken status to mark.
 		failure.report("Pod", self.pod.name, title, str(error))
 		self.log(event, "Failure", error, started=started)
 		return {"status": "error", "message": str(error)}
@@ -519,10 +494,6 @@ def _is_engine_serving(health_url, timeout=5):
 
 def _provisioner(pod_name, trigger="Manual"):
 	return PodProvisioner(frappe.get_doc("Pod", pod_name), trigger=trigger)
-
-
-# Queue entry points. frappe.enqueue takes a dotted path to a module function, so the Pod
-# form's buttons reach the provisioner through these.
 
 
 def spawn_pod_doc(pod_name, trigger="Manual"):
@@ -569,10 +540,10 @@ def pod_log_events(client, pod_id, tail=100):
 				last_id, received = event_id or last_id, received + 1
 				yield event.get("line", "")
 		except RunPodError as error:
-			yield f"— {error} —"  # surfaced in the log view rather than dying in a worker
+			yield f"— {error} —"
 			return
 		dead_rounds = dead_rounds + 1 if not received and time.monotonic() - opened_at < 5 else 0
-		tail = 0  # backfill only on the first connect
+		tail = 0
 		time.sleep(LOG_RECONNECT_DELAY)
 		yield None  # tick, so a Stop pressed during a reconnect lands right away
 

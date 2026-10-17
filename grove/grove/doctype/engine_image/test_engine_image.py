@@ -33,13 +33,10 @@ class TestSplitImagePath(unittest.TestCase):
 		self.assertEqual(split("vllm/vllm-openai"), ("vllm/vllm-openai", "latest"))
 
 	def test_a_one_segment_docker_hub_name_is_under_library(self):
-		# The registry API has no shorthand — `ubuntu` is `library/ubuntu` on the wire.
 		self.assertEqual(split("ubuntu:22.04"), ("library/ubuntu", "22.04"))
 		self.assertEqual(split("ubuntu"), ("library/ubuntu", "latest"))
 
 	def test_docker_hub_named_by_host_is_still_docker_hub(self):
-		# The provider spells its Registry Host `docker.io`, which is a website, not the API —
-		# and the library/ shorthand still has to be expanded for it.
 		self.assertEqual(
 			split("vllm/vllm-openai:v0.24.0", registry_host="docker.io"),
 			("vllm/vllm-openai", "v0.24.0"),
@@ -59,7 +56,6 @@ class TestSplitImagePath(unittest.TestCase):
 		self.assertEqual(split("acme/vllm:v1", registry_host="ghcr.io"), ("acme/vllm", "v1"))
 
 	def test_a_one_segment_name_is_left_alone_off_docker_hub(self):
-		# library/ is Docker Hub's convention, not the protocol's.
 		self.assertEqual(split("vllm:v1", registry_host="ghcr.io"), ("vllm", "v1"))
 
 	def test_a_host_port_colon_is_not_mistaken_for_a_tag(self):
@@ -93,7 +89,6 @@ class TestWarmupBody(unittest.TestCase):
 			self.validate('{"model": ')
 
 	def test_json_that_is_not_an_object_is_refused(self):
-		# A list parses, and then every caller sends it as a request body nothing accepts.
 		with self.assertRaises(frappe.ValidationError):
 			self.validate('["ping"]')
 

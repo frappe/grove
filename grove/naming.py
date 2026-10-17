@@ -30,7 +30,6 @@ def next_machine_name(prefix, region, zone="", counter=None):
 	deleted: a retired name may still have a DNS record or a log history behind it."""
 	counter = counter or getseries
 	region = slugify(region)
-	# The series key, not the name — it is what makes the count per region.
 	number = counter(f"{prefix}-{region}-" if region else f"{prefix}-", 1)
 	name = f"{prefix}{number}-{region}" if region else f"{prefix}{number}"
 	return f"{name}.{zone}" if zone else name
@@ -42,13 +41,8 @@ def short_name(name):
 	return (name or "").partition(".")[0]
 
 
-# One counter behind a deployment's name and the number on the end of a replica's, and the key
-# the old `MD-{#####}` format used — so the numbers carry on climbing.
-#
-# Sharing is not what keeps `MD-` names unique: legacy replicas were named by an OLD naming_series
-# whose key is not this one. What keeps them apart is the floor the rename patch put under this
-# counter. Two doctypes are two tables, so a clash never fails an insert — the name just quietly
-# means both, and a route row and an access log both carry `deployment=<name>`.
+# One counter behind deployment names and replica numbers, floored by the rename patch above the
+# legacy `MD-{#####}` names: two doctypes are two tables, so a clash never fails an insert.
 MD_SERIES = "MD-"
 
 

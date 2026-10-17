@@ -35,8 +35,7 @@ class ModelGroup(Document):
 			self.geography = frappe.db.get_value("Geography", {"is_default": 1})
 
 	def validate(self):
-		# The name travels inside a comma-joined membership list, so a comma would split it into
-		# two groups that resolve to nothing.
+		# The name travels inside a comma-joined membership list.
 		if "," in self.name:
 			frappe.throw("A group name cannot contain a comma")
 		validate_model_geography(self.models, self.geography)

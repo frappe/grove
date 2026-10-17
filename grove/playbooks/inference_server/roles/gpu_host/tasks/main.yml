@@ -1,12 +1,6 @@
 ---
-# Prepare a fresh GPU host before the vLLM role: install the NVIDIA driver
-# (reboot to load it) and mount the data volume. Idempotent — safe to re-run.
-
-# ── NVIDIA driver ───────────────────────────────────────────────────────────
-# Probe first, install only if it fails. A box can already have a working driver from its
-# image, a .run installer or a newer package than nvidia_driver_pkg — installing ours over
-# it is an apt "changed", which used to reboot a box that was serving, to land a driver
-# older than the one already working.
+# Probe first: installing nvidia_driver_pkg over a working newer or .run driver is an apt
+# "changed" that reboots a serving box onto an older driver.
 - name: Probe nvidia-smi
   ansible.builtin.command: nvidia-smi
   register: nvidia_smi_probe
@@ -29,7 +23,6 @@
       ansible.builtin.apt:
         name: "{{ nvidia_driver_pkg }}"
         state: present
-      # Minutes of silent download + DKMS build — detached + poll so a dropped SSH session can't abort it.
       async: 1800
       poll: 15
 
@@ -54,7 +47,6 @@
     cache_valid_time: 3600
   when: gpu_host_monitor_packages | length > 0
 
-# ── Data volume ─────────────────────────────────────────────────────────────
 - name: Ensure the mount point exists
   ansible.builtin.file:
     path: "{{ gpu_data_mount }}"
@@ -72,19 +64,10 @@
     gpu_data_disk: "{{ data_mounted.stdout | trim }}"
   when: data_mounted.rc == 0
 
-# Which disk is never assumed. Only a whole disk that is entirely free — no filesystem, no
-# partitions, nothing mounted below it, and not ephemeral — is eligible, which by
-# construction rules out the disk carrying /, whether root sits on a partition of it or on
-# the bare disk. A box whose only disk is the root disk therefore selects nothing:
-# gpu_data_mount stays a plain directory on root, nothing is formatted, and the rest of the
-# role does not care. That is the normal shape on a cloud box, where the durable root volume
-# is sized for the weights and the local NVMe is left alone.
 - name: Pick the data volume
   when: data_mounted.rc != 0
   block:
-    # --sort flattens the tree, so partitions arrive as siblings of their disk rather than
-    # under it. PKNAME is what still ties the two together, and is the whole reason the root
-    # disk is recognisable: it carries no filesystem and no mountpoint of its own.
+    # --sort flattens lsblk's tree: partitions arrive as siblings of their disk, tied to it by PKNAME.
     - name: Read the block devices, largest last
       ansible.builtin.command: >-
         lsblk --json --bytes --sort SIZE
@@ -116,9 +99,6 @@
                    | rejectattr('model', 'in', gpu_ephemeral_disk_models)
                    | map(attribute='path') | list }}
 
-    # A pinned device is the operator's call, so an existing filesystem is allowed — the mkfs
-    # below skips it and the disk is adopted as it stands. Being the root disk, holding
-    # partitions or carrying anything mounted is refused all the same.
     - name: Refuse a pinned data device that is in use
       ansible.builtin.assert:
         that: gpu_data_device in gpu_spare_disks
@@ -170,10 +150,7 @@
            | map(attribute='size_available') | list | default([0], true) | first | int)
           / 1073741824) | round | int }}
 
-# ── Docker + NVIDIA container runtime ───────────────────────────────────────
-# Every Model Replica serves from a container, so this is what makes the box able to.
-# Everything below must come AFTER the mount above: Docker's data-root lives on the data
-# volume, and writing it into an unmounted mount point would shadow it.
+# After the mount: Docker's data-root lives on the data volume.
 - name: Fetch the NVIDIA container-toolkit signing key
   ansible.builtin.get_url:
     url: https://nvidia.github.io/libnvidia-container/gpgkey
@@ -186,14 +163,8 @@
     content: "deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit.asc] https://nvidia.github.io/libnvidia-container/stable/deb/$(ARCH) /\n"
     mode: "0644"
 
-# docker.io is deliberately NOT version-pinned: it comes from the Ubuntu archive, so the
-# release already bounds it, and an exact pin would both hardcode one Ubuntu version and
-# hold back security updates on a network-facing daemon. Behaviour that Docker changes
-# between majors is nailed down explicitly in daemon.json below instead — which is what
-# survives an upgrade, unlike a pin.
-# The toolkit's own dependencies are pinned too: apt resolves an unpinned dependency to the
-# repo's newest build, and NVIDIA ships all four in lockstep, so a newer -base than the pinned
-# toolkit is an unmet-dependency failure, not an upgrade.
+# All four toolkit packages pinned together: apt resolves an unpinned one to the repo's newest
+# build, which the pinned toolkit then fails to depend on.
 - name: Install Docker and the NVIDIA container toolkit
   ansible.builtin.apt:
     name:
@@ -204,14 +175,11 @@
       - "libnvidia-container1={{ nvidia_container_toolkit_version }}"
     state: present
     update_cache: true
-  # Silent download — detached + poll so a dropped SSH session can't abort it.
   async: 1800
   poll: 15
 
-# CRIU (>= 2.0) is what `docker checkpoint` shells out to. Inert until something calls it, and
-# Ubuntu 24.04 dropped the package from its archive — so a box without it still provisions, and
-# the checkpoint path, when it lands, brings its own source for it. Never in the task above:
-# a missing optional package there took every noble box's provision down with it.
+# Not in the list above: noble's archive has no criu, and a missing package there fails the
+# whole provision.
 - name: Install CRIU where the archive has it
   ansible.builtin.apt:
     name: criu
@@ -220,19 +188,14 @@
   failed_when: false
   changed_when: gpu_host_criu.changed | default(false)
 
-# The CLI over the driver's checkpoint API (r570+): parks a process's CUDA/VRAM state in
-# host RAM so CRIU can dump the container. Unpinned on purpose; get_url skips an existing
-# dest, so a box keeps whatever it first pulled until the file is removed.
 - name: Install cuda-checkpoint
   ansible.builtin.get_url:
     url: https://raw.githubusercontent.com/NVIDIA/cuda-checkpoint/main/bin/x86_64_Linux/cuda-checkpoint
     dest: /usr/local/bin/cuda-checkpoint
     mode: "0755"
 
-# This role is the only writer of daemon.json — deliberately NOT `nvidia-ctk runtime
-# configure`, which rewrites the same file and would fight the data-root below, bouncing
-# Docker (and every container on it) on each Setup. The nvidia entry here is what nvidia-ctk
-# writes; `--gpus` also works off the toolkit's OCI hook alone.
+# Not `nvidia-ctk runtime configure`: it rewrites this file, fights the data-root below and
+# bounces Docker on each Setup.
 - name: Read the Docker daemon config
   ansible.builtin.slurp:
     src: /etc/docker/daemon.json
@@ -249,14 +212,10 @@
     docker_daemon_wanted:
       data-root: "{{ gpu_data_mount }}/docker"
       # Docker 29 defaults to the containerd image store, which keeps layers under
-      # containerd's own root (/var/lib/containerd) — data-root would then govern only
-      # volumes and container metadata, and a multi-GB engine image would still extract
-      # onto a small root disk and fail with ENOSPC. Off, so data-root means what it says.
+      # /var/lib/containerd whatever data-root says.
       features:
         containerd-snapshotter: false
-      # The checkpoint API is gated daemon-wide behind this; inert until something calls
-      # `docker checkpoint`. Flipping it on an already-provisioned box restarts dockerd,
-      # bouncing every serving container once.
+      # `docker checkpoint` is gated daemon-wide behind this.
       experimental: true
       runtimes:
         nvidia:
@@ -264,11 +223,7 @@
           args: []
   notify: restart docker
 
-# Engine containers carry --restart unless-stopped, so dockerd starts them at boot — and
-# neither dockerd nor Docker's restart policy knows this volume exists. Without this ordering
-# a late mount means dockerd comes up on an empty data-root and a container bind-mounts an
-# empty weights cache, silently re-downloading multi-GB onto the mount point. fstab is nofail,
-# so that failure is otherwise quiet; RequiresMountsFor makes it loud instead.
+# fstab is nofail: without this, a late mount leaves dockerd on an empty data-root, quietly.
 - name: Ensure the Docker unit drop-in directory exists
   ansible.builtin.file:
     path: /etc/systemd/system/docker.service.d
@@ -284,7 +239,6 @@
     mode: "0644"
   notify: restart docker
 
-# ── Instance-store HF cache (opt-in) ────────────────────────────────────────
 - name: Mount the instance-store NVMe for the HF cache
   ansible.builtin.import_tasks: instance_store.yml
   when: gpu_instance_store_hf_cache | bool

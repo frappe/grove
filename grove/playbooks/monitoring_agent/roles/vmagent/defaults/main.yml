@@ -1,51 +1,29 @@
 ---
-# ── Install ─────────────────────────────────────────────────────────────────
-# vmagent ships inside the vmutils bundle. Pinned so a rebuild lands the same agent.
 vmagent_version: "1.111.0"
 vmagent_config_dir: /etc/vmagent
-# The account the process runs as — grove_user's (see roles/grove_user), restated here because
-# config.yml and push_targets.yml drive this role on their own.
 vmagent_user: frappe
 vmagent_listen_address: 127.0.0.1:8429
 
-# ── Buffering ───────────────────────────────────────────────────────────────
-# The remote is someone else's, so its downtime is normal, not exceptional: samples queue on
-# disk here instead of being dropped. This queue covers every box this agent scrapes, not one.
 vmagent_buffer_path: /var/lib/vmagent
 vmagent_max_disk_usage: 4GiB
-# How long samples are held before a push. Lower gets them to the remote sooner and costs more
-# requests; the queue above is what covers the remote being down either way.
 vmagent_flush_interval: 10s
 
-# ── Remote write (Grove Settings → extra-vars) ──────────────────────────────
-# The ingestion service takes a bearer token that carries the tenant and source; there is no
-# username. Verified against it with a real vmagent — Prometheus remote_write over the wire.
 monitoring_remote_write_url: ""
 monitoring_remote_write_token: ""
 monitoring_extra_labels: {}
 
-# ── Service discovery (Grove Settings ⊕ the agent's own doc) ────────────────
-# The agent's whole target list — boxes, engines and pods — comes from here. Re-fetched on
-# the refresh interval, which is what makes a deploy visible without touching this box.
 monitoring_sd_url: ""
 monitoring_sd_token: ""
 monitoring_agent: ""
 monitoring_sd_refresh_interval: 30s
 
-# Set from the agent's Push Targets Manually box. True swaps both jobs to file_sd and takes the
-# lists below instead of the URL above — for a Grove the box cannot reach. The lists are then a
-# snapshot: nothing re-fetches them, so they are only as fresh as the last Push Targets.
 monitoring_static_targets: false
 monitoring_host_targets: []
 monitoring_engine_targets: []
 
-# ── Scraping ────────────────────────────────────────────────────────────────
 monitoring_scrape_interval: 15s
 monitoring_engine_scrape_interval: 10s
 
-# Basic auth for the host job: every box's /metrics/* is behind it, since an exporter answers
-# whoever reaches it. The username is a constant that must equal scrape_username in the
-# grove_https role, which writes the htpasswd the boxes check against; only the password is
-# fleet-wide config, from Grove Settings.
+# Must equal scrape_username in the grove_https role (TestScrapeCredentialsAgree).
 monitoring_scrape_username: grove
 monitoring_scrape_password: ""

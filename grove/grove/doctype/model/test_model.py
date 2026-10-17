@@ -79,7 +79,6 @@ class TestGranted(IntegrationTestCase):
 		return frappe.get_doc("Model", self.model).is_granted
 
 	def test_a_grant_is_an_allow_or_a_group_with_someone_in_it(self):
-		# One walk: the class shares its state between tests.
 		self.assertFalse(self.is_granted())
 		key = frappe.get_doc("Grove API Key", self.key)
 		key.model_groups = []

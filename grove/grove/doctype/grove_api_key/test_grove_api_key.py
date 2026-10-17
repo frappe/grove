@@ -45,8 +45,6 @@ class IntegrationTestGroveAPIKey(IntegrationTestCase):
 		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 
 	def test_membership_reaches_the_wire_as_one_sorted_comma_list(self):
-		# The unit tests mock the query away, so this is the only thing standing between a wrong
-		# parenttype/parentfield filter and every key projecting as ungrouped.
 		for name in ("key-probe-zeta", "key-probe-acme"):
 			if not frappe.db.exists("Model Group", name):
 				frappe.get_doc({"doctype": "Model Group", "__newname": name}).insert()
@@ -207,7 +205,6 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 		self.assertEqual(limit_entries("Grove API Key")[name], [{"metric": "requests", "window": "1m", "value": 5}])
 		keys.update_key(team_id, name, limits=[{"metric": "requests", "window": "1h", "value": 9}])
 		self.assertEqual(limit_entries("Grove API Key")[name], [{"metric": "requests", "window": "1h", "value": 9}])
-		# Back under the team's tier: no rows of its own, so the defaults reach the wire.
 		keys.update_key(team_id, name, limits=[])
 		self.assertNotIn(name, limit_entries("Grove API Key"))
 		self.assertEqual(projected(name)["limits"], "requests:1m:20,total_tokens:1m:100000")
@@ -223,7 +220,6 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 			"doctype": "Grove API Key", "team": name, "limits": [{"metric": "requests", "window": "1h", "value": 9}]
 		}).insert()
 		self.assertEqual((projected(inherits.name)["limits"], projected(pinned.name)["limits"]), ("requests:1m:60", "requests:1h:9"))
-		# A tier edit reaches every unpinned key on it; a tier with no rows leaves them uncapped.
 		tier.limits = []
 		tier.save()
 		self.assertEqual((projected(inherits.name)["limits"], projected(pinned.name)["limits"]), ("", "requests:1h:9"))
@@ -315,7 +311,6 @@ class IntegrationTestCapsFitTheSpendLimit(IntegrationTestCase):
 		name = team("key-cap-needed", free=0)
 		for cap in (0, None):
 			doc = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": cap}).insert()
-			# Pushed paying with nothing to spend: the gateway refuses it until a cap is set.
 			self.assertEqual((projected(doc.name)["prepaid"], projected(doc.name)["budget"]), (True, 0))
 		free = team("key-cap-free")
 		frappe.get_doc({"doctype": "Grove API Key", "team": free, "cap": 1000}).insert()
@@ -341,7 +336,6 @@ class IntegrationTestCapsFitTheSpendLimit(IntegrationTestCase):
 		frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 0}).insert()
 
 	def test_turning_free_off_resets_the_caps(self):
-		# A Free team's caps were never checked: they do not become budgets by flipping the flag.
 		free = team("key-cap-flip")
 		capped = frappe.get_doc({"doctype": "Grove API Key", "team": free, "cap": 1000}).insert()
 		team_doc = frappe.get_doc("Central Team", free)

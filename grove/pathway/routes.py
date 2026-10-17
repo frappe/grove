@@ -16,7 +16,6 @@ from grove.billing.pricing import PriceBook
 from grove.grove.doctype.model.model import get_modalities
 from grove.serving.base import engine_class
 
-# `model` is the doc; `model_key` is the id the row is keyed under.
 REPLICA_FIELDS = ["name", "model", "model_key", "engine_url", "inference_server", "max_num_seqs", "model_deployment"]
 
 
@@ -60,8 +59,6 @@ def ingress_targets(geography):
 			) or "",
 			"healthy": True,
 			"region": ingress["region"] or "",
-			# Both name the ingress: one records where the gateway SENT it, the other where it
-			# landed.
 			"deployment": short_name(ingress["name"]),
 			"server": short_name(ingress["name"]),
 			"kind": "ingress",
@@ -132,30 +129,21 @@ def gateway_routes(geography):
 	pricing. A model with no Active engine is simply absent; the push prunes its key, so it drops
 	out of Redis and /v1/models next tick."""
 	if not geography:
-		return {}  # a gateway outside every geography serves nothing rather than anyone's
+		return {}
 	deps, kinds = active_replicas(geography=geography)
 	models = models_in(geography)
-	# Keyed by doc: a replica or pod links the doc, and the key is read off it.
 	key_of = {m.name: m.model_key for m in models}
-	# Once, not per model: a handful of providers against thousands of models.
 	vendors = vendor_endpoints(geography)
 	upstream = {m.name: upstream_model(m, m.provider_name in vendors) for m in models}
 	routes = {}
 	targets = ingress_targets(geography)
-	# One row per (model, ingress), so deployments behind one ingress fold together instead of
-	# each getting a row naming the same URL.
 	folded = {}
 	for d in deps:
-		# Blank resolves to the same default the serve command uses — the two have to agree or
-		# the cap is not the engine's.
 		cap = capacity(d, kinds)
 		if d.inference_server in targets:
 			target = targets[d.inference_server]
 			if target is None:
-				continue  # owned by an ingress that cannot take traffic — dark, not dialled direct
-			# Advisory here, authoritative on the ingress: the gateway sums to choose BETWEEN
-			# ingresses, and the ingress applies the exact per-replica gate. That is why two
-			# gateways cannot jointly overrun a replica.
+				continue
 			row = folded.setdefault((d.model, target["server"]), {**target, "capacity": 0})
 			row["capacity"] += cap
 			continue
@@ -165,29 +153,23 @@ def gateway_routes(geography):
 			"internal_key": internal_key,
 			"healthy": True,
 			"capacity": cap,
-			# A box can serve the same model twice, so the server alone cannot name an engine.
 			"deployment": d.name,
-			"server": d.inference_server or d.name,  # which box it is on
+			"server": d.inference_server or d.name,
 			"kind": "direct",
 			"upstream_model": upstream.get(d.model, ""),
 		})
 	for (model, _ingress), row in folded.items():
 		routes.setdefault(key_of[model], []).append({
 			**row,
-			# Here, not on the ingress: the gateway is the last hop that reads a body.
 			"upstream_model": upstream.get(model, ""),
 		})
 
-	# Standalone Pods register the same way. Only Running ones with a derived engine_url, so the
-	# agent 503s instead of routing to a dead endpoint. A model served by both gets both engines.
-	# Every pod serves in the one Pod Geography, so pods are routed there and nowhere else.
 	pods = frappe.get_all(
 		"Pod",
 		filters={"status": "Running"},
 		fields=["name", "model", "engine_url", "max_num_seqs", "engine_image"],
 	) if geography == frappe.db.get_single_value("Grove Settings", "pod_geography") else []
 	for p in pods:
-		# A pod with no Model serves something with no route key — reached directly.
 		if not (p.model and p.engine_url):
 			continue
 		internal_key = frappe.get_doc("Pod", p.name).get_password("api_key") or ""
@@ -196,13 +178,9 @@ def gateway_routes(geography):
 			"internal_key": internal_key,
 			"healthy": True,
 			"capacity": capacity(p, kinds),
-			# A pod IS its own placement, so both fields are the pod. Explicit so consumers never
-			# special-case a pod route.
 			"deployment": p.name,
 			"server": p.name,
-			# Always direct: a pod has no Network and cannot sit behind an ingress.
 			"kind": "direct",
-			# The one case a local route carries this: a custom image advertises its own name.
 			"upstream_model": upstream.get(p.model, ""),
 		})
 	add_vendor_routes(routes, models, vendors, upstream)
@@ -285,8 +263,6 @@ def vendor_endpoints(geography):
 	denied = denied_tools()
 	for name in frappe.get_all("Model Provider", filters={"geography": geography}, pluck="name"):
 		provider = frappe.get_cached_doc("Model Provider", name)
-		# The URL fields ARE the dialect declaration: each front the vendor runs is one field,
-		# and a vendor with neither is one we serve ourselves.
 		fronts = [
 			(url, dialect)
 			for url, dialect in (
@@ -424,7 +400,6 @@ def replicas_for_ingress(ingress_name):
 			"internal_key": internal_key,
 			"healthy": True,
 			"capacity": capacity(replica, kinds),
-			# No `server`: the ingress already holds the box's address in engine_url.
 			"deployment": replica.name,
 		})
 	for rows in routes.values():

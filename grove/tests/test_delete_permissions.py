@@ -18,7 +18,6 @@ PROTECTED = (
 
 def permissions(doctype):
 	folder = doctype.lower().replace(" ", "_")
-	# Whichever module holds it.
 	(path,) = APP.glob(f"*/doctype/{folder}/{folder}.json")
 	return json.load(open(path))["permissions"]
 

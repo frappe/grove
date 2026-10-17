@@ -14,8 +14,7 @@ from grove.fleet import NamedHost
 
 REDIS_PORT = 6379
 RDB_MAGIC = b"REDIS"
-# The password is read on the box from the role's own requirepass line: never in argv, never in a
-# log. Only base64 reaches stdout; redis-cli's progress goes to /dev/null.
+# The password is read on the box from requirepass, so it never lands in argv or a log.
 DUMP = (
 	"REDISCLI_AUTH=\"$(awk '/^requirepass/{print $2}' /etc/redis/redis.conf)\" "
 	"redis-cli --rdb - 2>/dev/null | base64 -w0"
@@ -56,7 +55,6 @@ class GatewayStore(NamedHost, Document):
 			self.remove_dns_records()
 
 	def on_trash(self):
-		# While its name still says which record is its own.
 		self.remove_dns_records()
 
 	def validate_one_per_network(self):
@@ -129,7 +127,7 @@ class GatewayStore(NamedHost, Document):
 		return play_name, rc
 
 	def backup(self):
-		"""A point-in-time RDB off the live Redis into the weights bucket, and the doc points at it.
+		"""A point-in-time RDB off the live Redis into its geography's backup bucket, and the doc points at it.
 		run_command merges stderr and never raises, so the RDB magic is the check: NOAUTH, a dead
 		box or a warning-only answer all fail here, loudly. → the object key."""
 		from grove.grove.doctype.compile_cache.compile_cache import bucket_and_client
@@ -221,7 +219,6 @@ def landed_since(store, key):
 	are billed already, so a restore drops them. Drain ids are minted on the box at the rename in
 	the stamp's format, so strings order them; a blank id (a pre-ack gateway) never matches."""
 	stamp = key.rsplit("/", 1)[-1].removesuffix(".rdb")
-	# A dead line (`dead:<request id>`) was never a live counter, so it names nothing to drop.
 	return frappe.get_all(
 		"Usage Record",
 		filters=[["gateway_store", "=", store], ["drain_id", ">", stamp], ["drain_id", "not like", "dead:%"]],

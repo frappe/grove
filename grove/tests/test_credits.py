@@ -35,7 +35,6 @@ class CreditsCase(IntegrationTestCase):
 		super().setUpClass()
 		make_test_geography()
 		cls.model, cls.pricing = cls.priced_model("credits-7b", cls.RATE)
-		# The doc links pricing; the key is what a bucket, an entry and the API name.
 		cls.model_key = frappe.db.get_value("Model", cls.model, "model_key")
 		cls.store = a_store("credits-store")
 		gateway_module = "grove.grove.doctype.gateway_server.gateway_server"
@@ -108,6 +107,7 @@ class CreditsCase(IntegrationTestCase):
 class TestADrainIsBilledAtGrovesPrice(CreditsCase):
 	def test_a_drain_bills_grove_price_with_both_costs_on_the_record(self):
 		team, key = self.team(cap=1)
+		"""`usages`: {key: hash}, each served today."""
 		self.pull({key: self.hash(50_000)})
 		self.assertEqual(self.state(team), (D("0.5"), 0))
 		record = frappe.get_doc("Usage Record", {"api_key": key})
@@ -265,7 +265,6 @@ class TestTheUsageApiSumsInTheDatabase(CreditsCase):
 		self.pull({key: self.hash(50_000)})
 		self.pull({key: self.hash(30_000, requests=2)})
 		result = usage_api.usage([team], period="Today")
-		# Tokens are the whole counters: the hashes carry completion tokens only.
 		self.assertEqual(result[team], {"requests": 3, "tokens": 80_000, "cost": 0.8})
 		self.assertEqual(
 			result["model_summary"], [{"model": self.model_key, "requests": 3, "tokens": 80_000, "cost": 0.8}]
@@ -328,6 +327,7 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 	def discrepancy(self):
 		team, key = self.team(cap=5)
 		self.pull({key: self.hash(50_000, cost=600_000_000)})
+
 		[row] = self.discrepancies(team)
 		return team, frappe.get_doc("Credit Discrepancy", row.name)
 
@@ -339,10 +339,9 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		self.assertEqual(self.state(team)[0], D("0.6"))
 		self.assertEqual((row.resolution, D(str(row.correction))), ("Grove corrected", D("0.1")))
 		self.assertEqual(row.resolved_day, usage.utc_today())
-		# The correction is folded into every money read; the record it corrects is untouched.
 		self.assertEqual(self.money(team), (0.6, 0.6, 0.6))
 		self.assertEqual(D(str(frappe.db.get_value("Usage Record", row.usage_record, "cost"))), D("0.5"))
-		# A row from before pricings were tagged names none: its money still counts, under no model.
+		# A row from before pricings were tagged: its money still counts, under no model.
 		frappe.db.set_value("Credit Discrepancy", row.name, "pricing", None)
 		self.assertEqual(self.money(team), (0.6, 0.6, 0.6))
 		self.assertIn("", [entry["model"] for entry in usage_api.usage([team], period="Today")["model_summary"]])
@@ -434,7 +433,6 @@ class TestThePushCarriesTheCap(CreditsCase):
 			frappe._dict(name=unpublished, model_key="frappe/unpublished", published=0),
 			frappe._dict(name="no-doc", model_key="unpriced/model", published=1),
 		]
-		# The counter table rides inside the pricing, so the gateway counts under the rows it prices.
 		counters = pricing.CounterTable.load().published
 		self.assertEqual(
 			routes.published_routes(table, models),

@@ -114,16 +114,12 @@ class MonitoringAgent(Server, Document):
 		if not self.get_password("metrics_token", raise_exception=False):
 			problems.append("Metrics Token is empty — the ingestion service would reject the push.")
 
-		# Every box's /metrics/* is behind basic auth, so without this the agent installs happily
-		# and is refused by everything it scrapes — which reads as a fleet that is down.
 		if not variables["monitoring_scrape_password"]:
 			problems.append(
 				"Grove Settings → Metrics Scrape Password is empty — every box would refuse this "
 				"agent's host scrapes."
 			)
 
-		# Only when the box does the fetching: a pushed list has nothing here that could be wrong,
-		# and on a dev site this is exactly the check that cannot pass.
 		if not is_pushing_targets():
 			problems += self.get_target_list_problems(variables)
 
@@ -229,8 +225,7 @@ class MonitoringAgent(Server, Document):
 				params={
 					"agent": self.name,
 					"kind": "host",
-					# In the query string, exactly as the scrape config sends it — an Authorization
-					# header would be rejected by validate_auth before the endpoint ran.
+					# In the query string: validate_auth rejects an Authorization header before the endpoint runs.
 					"token": variables["monitoring_sd_token"],
 				},
 				timeout=10,

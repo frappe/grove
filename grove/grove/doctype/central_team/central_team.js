@@ -18,8 +18,6 @@ frappe.ui.form.on('Central Team', {
 	},
 });
 
-// The flip to paid is where every live key gets its monthly cap, within the team's spend
-// limit; a key left at 0 stays refused until it gets one.
 async function markPrepaid(frm) {
 	const keys = await frappe.db.get_list('Grove API Key', {
 		filters: { team: frm.doc.name, status: 'active' },

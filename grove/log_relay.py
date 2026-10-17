@@ -17,7 +17,6 @@ import time
 import frappe
 
 ALIVE_KEY = "log_stream_alive:{}:{}"
-# Long enough to ride out a slow ping, short enough that an abandoned stream frees its worker.
 ALIVE_TTL = 45
 FLUSH_INTERVAL = 0.25
 EVENT = "grove_log"
@@ -61,8 +60,6 @@ def relay(events, doctype, docname):
 	for line in events:
 		if line is not None:
 			lines.append(line)
-		# Batched: an engine spews thousands of lines loading a model, and one publish each
-		# floods socketio. A quiet stream still gets here on its ticks.
 		if time.monotonic() - flushed_at < FLUSH_INTERVAL:
 			continue
 		if lines:

@@ -1,7 +1,4 @@
 ---
-# Serve one model from an engine image, with Docker owning the container. The box supplies
-# the driver, the directories and the key; everything about the engine itself comes from the
-# image and the run script rendered below.
 - name: Check an engine image was passed
   ansible.builtin.assert:
     that: vllm_image | length > 0
@@ -14,9 +11,6 @@
   register: vllm_nvidia_smi
   changed_when: false
   failed_when: vllm_nvidia_smi.rc != 0
-  # This role deliberately does NOT install/replace the GPU driver. If this fails,
-  # install a driver that exposes your GPU (e.g. `ubuntu-drivers install --gpgpu ...`)
-  # and reboot, then re-run.
 
 - name: Create vLLM base directory
   ansible.builtin.file:
@@ -35,18 +29,10 @@
     - "{{ vllm_home }}/keys"
     - "{{ vllm_container_dir }}"
 
-# Where the weights land: on the data volume by default, on their own mount (the
-# instance-store NVMe) when the control plane pointed vllm_hf_home outside vllm_home.
 - name: Note whether the weights share the data volume
   ansible.builtin.set_fact:
     vllm_weights_on_data: "{{ (vllm_hf_home ~ '/').startswith(vllm_home ~ '/') }}"
 
-# ── Room to work ────────────────────────────────────────────────────────────
-# The image and the weights land on one disk, and Docker only reports ENOSPC after minutes of
-# pulling — from a path inside the image's own filesystem, which names no disk the operator
-# recognises. Both downloads are checked here instead, against what the box is still missing:
-# an image already pulled or weights already cached cost this deploy nothing, so a redeploy on
-# a full-but-working box is never blocked.
 - name: Is the engine image already on the box?
   ansible.builtin.command: "docker image inspect {{ vllm_image }}"
   register: vllm_image_present
@@ -80,9 +66,6 @@
     success_msg: >-
       {{ vllm_home }} has {{ free_gb }} GB free for {{ needed_gb }} GB of downloads.
 
-# Weights off the data volume get their own mount checked — and a missing mount is refused
-# up front, or the download would silently fill the disk the mount point sits on. A
-# streaming deploy (no pre-download) never touches the HF cache, so it skips this too.
 - name: Check the separate weights mount
   when: (vllm_predownload_model | bool) and not (vllm_weights_on_data | bool)
   block:
@@ -124,17 +107,11 @@
   changed_when: false
   when: vllm_registry_token | length > 0
 
-# Deliberately NOT tagged heavy, so Update Engine Config pulls too: a cached image costs one
-# digest check, and skipping it would leave `docker run` to pull a fresh tag inline, stretching
-# a restart into a multi-GB download the health gate then waits out. The recreate notify is the
-# other half — the run script names the image REF, so a moved tag (:latest repushed) renders
-# byte-identical and would otherwise keep serving the old image forever. The box, not a stored
-# field, owns which image is here.
+# The wait below notifies a recreate: the run script names the image REF, so a moved tag
+# renders byte-identical and nothing else would replace the container.
 - name: Pull the engine image (multi-GB on a first pull)
   ansible.builtin.command: "docker pull {{ vllm_image }}"
   register: vllm_pull_job
-  # poll: 0 fires the pull and moves on, so the weight download below overlaps it. The
-  # register is only a job handle — the wait task after the download owns changed/notify.
   async: 5400
   poll: 0
 
@@ -149,9 +126,6 @@
     - "{{ vllm_cache_dir }}/triton"
     - "{{ vllm_hf_home }}"
 
-# Ubuntu ships ensurepip in its own package, so `python3 -m venv` fails on a box carrying only
-# the base python3 — "the virtual environment was not created successfully". Installed here
-# rather than at provision so a box already built keeps serving without one.
 - name: Ensure python3 can create a virtualenv
   ansible.builtin.apt:
     name: python3-venv
@@ -159,9 +133,6 @@
     update_cache: true
     cache_valid_time: 3600
 
-# Host-side hf so the weight download can overlap the image pull above — the image's own hf
-# can't run before the pull lands. hf_transfer saturates the NIC on multi-GB weights; awscli
-# serves the compile-cache pre-warm and the weight mirror.
 - name: Install hf + awscli into a host venv
   ansible.builtin.pip:
     name:
@@ -192,9 +163,7 @@
   register: vllm_api_key_slurp
   when: vllm_api_key | length == 0
 
-# The host venv's hf does the download while the image pull streams in the background.
-# The token rides the task environment, not the argv, which Ansible records verbatim on
-# the Ansible Task doc.
+# The token rides the environment, not the argv: Ansible records the argv on the Ansible Task doc.
 - name: Pre-download model weights into the shared cache
   ansible.builtin.command: >-
     {{ vllm_home }}/hf-venv/bin/hf download {{ vllm_download_repo }}
@@ -205,21 +174,16 @@
     HF_XET_HIGH_PERFORMANCE: "1"
     HF_HUB_DISABLE_TELEMETRY: "1"
   args:
-    # Down to the file for a GGUF ref, not just the repo dir: the quantizations share one repo,
-    # so a repo-level guard would skip the download after a switch from Q4_K_M to Q8_0 and
-    # leave vLLM to fetch it inline, under the health gate.
+    # Down to the file for a GGUF ref: the quantizations share one repo, so a repo-level guard
+    # would skip a switch from Q4_K_M to Q8_0.
     creates: >-
       {{ vllm_hf_home }}/hub/models--{{ vllm_download_repo | replace('/', '--') }}{{
       '/snapshots/*/' + vllm_download_glob if vllm_download_glob else '' }}
   when: vllm_predownload_model | bool
-  # Weights are many GB → same long-silent-download problem as the pull; run detached + poll
-  # so a dropped SSH session can't abort it.
   async: 7200
   poll: 15
   tags: heavy
 
-# Collect the pull fired at the top. docker prints "Status: Image is up to date for X" when
-# nothing moved; matching the negative errs toward a restart, which the button promises anyway.
 - name: Wait for the image pull to finish
   ansible.builtin.async_status:
     jid: "{{ vllm_pull_job.ansible_job_id }}"
@@ -231,9 +195,6 @@
   notify: recreate vllm container
   when: vllm_pull_job.ansible_job_id is defined
 
-# Ahead of the container config below, so the route into this instance exists before any replace
-# that follows. The engine proxy owns the only public port; vllm_port is reachable from the box
-# and nowhere else.
 - name: Write the engine proxy location for this instance
   ansible.builtin.template:
     src: engine-location.conf.j2
@@ -244,8 +205,5 @@
     - check engine proxy config
     - reload engine proxy
 
-# The container's own config, the replace it triggers and the health gate — shared verbatim with
-# reconfigure.yml, which runs this file on its own so Update Engine Config never re-does the work
-# above.
 - name: Write the engine config and bring the container up
   ansible.builtin.import_tasks: config.yml

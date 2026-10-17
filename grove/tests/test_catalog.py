@@ -65,7 +65,6 @@ class TestInsertMissing(CatalogCase):
 		self.assertEqual((cloud.resource_type, cloud.get_password("api_key", raise_exception=False)), ("Machine", None))
 		self.assertEqual(frappe.db.get_value("Region", "catalog-south-1", "geography"), "Catalog")
 		group = frappe.get_doc("Model Group", "catalog-group")
-		# Where its models landed, and the default there because that geography had none.
 		self.assertEqual(
 			([row.model_key for row in group.models], group.geography, group.is_default),
 			(["catalog-vendor/big-1"], "Catalog", 1),
@@ -124,12 +123,10 @@ class TestExport(CatalogCase):
 	def test_no_secret_no_model_of_ours_and_no_geography_but_main(self):
 		text = self.exported()
 		catalog = json.loads(text)
-		# Quoted: a key or a whole value, not a word in a group's description.
 		for key in ("api_key", "export-secret", "published", "access_key_id", "vpc_id", "cidr_block"):
 			self.assertNotIn(f'"{key}"', text)
 		self.assertEqual(catalog["geographies"], [{"name": "Main"}])
 		self.assertEqual({r["geography"] for r in catalog["regions"]}, {"Main"})
-		# The shipped file is the site's table: roots with a unit first, derived rows after their base.
 		self.assertEqual(catalog["counters"], seed.read()["counters"])
 		self.assertEqual({p.get("geography") for p in catalog["providers"] if not p.get("is_self_hosted")}, {"Main"})
 		[model] = [m for m in catalog["models"] if seed.get_model_key(m) == self.key(self.model)]
@@ -156,7 +153,6 @@ class TestExport(CatalogCase):
 		frappe.db.delete("Model", {"name": self.model})
 		frappe.db.delete("Model Provider", {"name": self.provider})
 		seed.insert_missing(self.path)
-		# Reseeded under a new hash: the key is what came back, not the doc name.
 		with patch.object(seed, "CATALOG", self.path):
 			pricing = frappe.get_doc("Model Pricing", frappe.get_doc("Model", {"model_key": key}).load_pricing())
 		pricing.status = "Enabled"

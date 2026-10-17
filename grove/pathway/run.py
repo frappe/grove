@@ -17,15 +17,12 @@ import frappe
 
 TIMEOUT = 10
 MAX_PARALLEL = 8
-ERROR_LIMIT = 2000  # Pathway Sync Row.error is Small Text
+ERROR_LIMIT = 2000
 NO_WRITER = "No Active Gateway Store Writer — mark one of this store's gateways, or nothing updates it."
 
-# Redacted before a payload is written to a Pathway Sync Row, which anyone who can open the Desk
-# can read.
 SECRET_KEYS = frozenset(
 	{"internal_key", "credentials", "key_hash", "admin_token", "data_token", "api_secret"}
 )
-# A log row, not an archive: a fleet-sized route table is megabytes.
 PAYLOAD_LIMIT = 8000
 
 
@@ -239,7 +236,7 @@ class SyncRun:
 	order asked, and finalizes only when a row was left."""
 
 	sync_type = ""
-	pause_field = ""  # the Grove Settings check that stops this run's scheduled ticks
+	pause_field = ""
 
 	def __init__(self, trigger="Scheduled", wait=0):
 		self.trigger = trigger

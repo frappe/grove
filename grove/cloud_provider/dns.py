@@ -20,13 +20,8 @@ Deliberately NOT a CloudClient: that contract is one account in one REGION, and 
 from grove.cloud_provider.base import CloudClientError
 
 TTL = 60
-# A box's own name is dialled by the control plane, not failed over, so it can be cached longer.
-# A DELETE repeats the TTL, so a change here needs Sync DNS on every live box before any delete.
 NAME_TTL = 300
 
-# The failover knob. 30 x 3 + TTL is ~150s of stale answers before a dead gateway leaves the set —
-# Route53's defaults, and the base price. 10 with 2 failures is ~50s at +$1/mo per check. Turning
-# these also needs update_health_check on the checks that already exist.
 HEALTH_CHECK_INTERVAL = 30
 HEALTH_CHECK_FAILURES = 3
 
@@ -62,8 +57,6 @@ class Route53Client:
 				self._zone_ids[zone] = hosted_zone["Id"].split("/")[-1]
 				return self._zone_ids[zone]
 		raise Route53Error(f"No public Route53 hosted zone for '{zone}' in this account.")
-
-	# Records — a gateway's own pair, an ingress's single name.
 
 	def upsert_gateway_records(self, zone, hostname, gateway_host, public_ip, identifier, health_check_id):
 		"""Both records a gateway needs, in one change batch so a box is never half in DNS."""
@@ -144,8 +137,6 @@ class Route53Client:
 		)
 		return (response.get("ChangeInfo") or {}).get("Id", "")
 
-	# Health checks — one endpoint check per gateway.
-
 	def create_endpoint_health_check(self, public_ip, hostname, caller_reference):
 		"""Answered by pathway itself. HTTP on :80 because the plaintext listener serves /healthz
 		outright rather than redirecting, and HTTPS is priced and buys nothing here."""
@@ -158,7 +149,6 @@ class Route53Client:
 			"FailureThreshold": HEALTH_CHECK_FAILURES,
 		}
 		if hostname:
-			# So the probe arrives with a Host header the gateway knows as its own name.
 			config["FullyQualifiedDomainName"] = hostname
 		return self._create_health_check(caller_reference, config)
 
@@ -231,6 +221,5 @@ def gateway_row(gateway_host, public_ip, identifier, health_check_id):
 		"MultiValueAnswer": True,
 	}
 	if health_check_id:
-		# A row with no check counts as healthy.
 		row["HealthCheckId"] = health_check_id
 	return row

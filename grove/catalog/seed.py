@@ -7,7 +7,6 @@ from pathlib import Path
 import frappe
 
 CATALOG = Path(__file__).with_name("catalog.json")
-# A model entry's two lists, each a Table MultiSelect on the doc.
 MODALITY_FIELDS = ("input_modalities", "output_modalities")
 
 
@@ -25,12 +24,10 @@ def insert_missing(path=None):
 		insert_named("Modality", modality)
 	for geography in catalog["geographies"]:
 		insert_geography(geography)
-	# A cloud account ships without its key, for the operator to fill.
 	for cloud_provider in catalog.get("cloud_providers", []):
 		insert_named("Cloud Provider", cloud_provider, ignore_mandatory=True)
 	for region in catalog.get("regions", []):
 		insert_named("Region", region)
-	# Starter values: the operator's edits stick, since a held tier is never touched.
 	for tier in catalog.get("tiers", []):
 		insert_named("Tier", tier)
 	if (default := catalog.get("default_tier")) and not frappe.db.get_single_value("Grove Settings", "default_tier"):
@@ -38,12 +35,9 @@ def insert_missing(path=None):
 	for provider in catalog["providers"]:
 		if not frappe.db.exists("Model Provider", {"provider_name": provider["provider_name"]}):
 			frappe.get_doc({"doctype": "Model Provider", **provider}).insert()
-	# Like a provider, a shipped row comes back on the next migrate: a tool priced later is dropped
-	# from the catalog, not only from the site.
 	for denied in catalog.get("denied_tools", []):
 		if not frappe.db.exists("Denied Tool", denied):
 			frappe.get_doc({"doctype": "Denied Tool", **denied}).insert()
-	# A model lands under the record the catalog's own provider entry describes.
 	geographies = {p["provider_name"]: p.get("geography") for p in catalog["providers"]}
 	docs = {
 		get_model_key(model): insert_model(model, geographies.get(model["provider"]) or default_geography())

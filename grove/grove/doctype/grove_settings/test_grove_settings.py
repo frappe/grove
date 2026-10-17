@@ -36,7 +36,6 @@ class TestLineageStaleness(unittest.TestCase):
 		return tls.is_lineage_stale("grove.example.com")
 
 	def test_nothing_issued_yet_is_not_stale(self):
-		# First run: no lineage to replace, and --force-renewal spends a rate limit on nothing.
 		self.assertFalse(self.stale())
 
 	def test_a_staging_certificate_is_stale(self):
@@ -74,7 +73,6 @@ class TestRenewalIsPerGeography(unittest.TestCase):
 		self.assertEqual(report.call_args.args[:2], ("Geography", "in"))
 
 	def test_a_certificate_reaches_only_its_geographys_boxes(self):
-		# Another geography's boxes serve another zone; this wildcard does not cover their names.
 		queried = []
 		with patch.object(frappe, "get_all", side_effect=lambda doctype, filters, pluck: queried.append(filters) or []):
 			tls.push_to_proxies("eu")

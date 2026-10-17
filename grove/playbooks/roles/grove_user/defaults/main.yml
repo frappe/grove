@@ -1,6 +1,4 @@
 ---
-# The account a front box's daemons run as — pathway and vmagent — and the owner of what they write.
-# Press's `frappe` user. 2000 rather than press's 1000: that is the cloud image's `ubuntu`, and the
-# live fleet already carries 2000.
+# 2000, not press's 1000 (the cloud image's `ubuntu`); the live fleet already carries it.
 grove_user: frappe
 grove_user_uid: 2000

@@ -3,7 +3,7 @@ frappe.ui.form.on('Cloud Provider', {
 		render_gpu_types(frm);
 		if (frm.is_new() || frm.doc.provider_type !== 'runpod') return;
 		frm.add_custom_button(__('Fetch GPU Types'), () => {
-			frm.call('fetch_gpu_types'); // enqueues a bg job; server msgprints "reload in a bit"
+			frm.call('fetch_gpu_types');
 		});
 	},
 
@@ -12,9 +12,6 @@ frappe.ui.form.on('Cloud Provider', {
 	},
 });
 
-// Render the cached gpu_types JSON (refreshed by the Fetch GPU Types bg job) into the
-// read-only HTML field, with a client-side filter. IDs go into a Machine GPU row's
-// GPU Type / a Pod's gpu_type_id.
 function render_gpu_types(frm) {
 	const field = frm.fields_dict.gpu_types_html;
 	if (!field) return;

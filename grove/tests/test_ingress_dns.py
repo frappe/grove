@@ -13,7 +13,6 @@ import unittest
 from grove.tests.test_gateway_dns import ZONE, FakeRoute53, client, rows
 
 HOSTNAME = f"aps1-i1.{ZONE}"
-# rows() keys on (name, set identifier), and an ingress row has none — which is the assertion.
 KEY = (HOSTNAME, None)
 
 
@@ -29,9 +28,6 @@ class TestIngressRecords(unittest.TestCase):
 		self.assertEqual(set(rows(batch)), {KEY})
 
 	def test_it_names_this_box_and_routes_no_further(self):
-		# A gateway reaches this ingress by this exact name out of its route table, and the
-		# control plane pushes a replica table to the same one. Any routing policy here would
-		# make a second ingress overwrite this row instead of standing beside it.
 		self.client.upsert_ingress_records(*self.arguments)
 		own = rows(self.fake.batches[0])[KEY]["ResourceRecordSet"]
 		self.assertEqual(own["ResourceRecords"], [{"Value": "203.0.113.9"}])
@@ -40,7 +36,6 @@ class TestIngressRecords(unittest.TestCase):
 				self.assertNotIn(policy, own)
 
 	def test_a_delete_repeats_what_the_upsert_wrote(self):
-		# Route53 matches a DELETE on the whole record — routing policy and health check included.
 		self.client.upsert_ingress_records(*self.arguments)
 		self.client.delete_ingress_records(*self.arguments)
 		created, deleted = (rows(batch) for batch in self.fake.batches)

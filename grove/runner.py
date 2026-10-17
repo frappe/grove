@@ -43,7 +43,7 @@ class StepHandler:
 		try:
 			frappe.get_doc("Machine", machine).sync()
 		except CloudClientError:
-			pass  # transient provider error, the next attempt syncs again
+			pass
 
 		machine_status = frappe.db.get_value("Machine", machine, "status")
 		if machine_status == "Terminated" and expected_status != "Terminated":
@@ -75,7 +75,6 @@ class StepHandler:
 		frappe.db.commit()
 
 	def handle_step_failure(self):
-		# can be overridden by controllers
 		self.error = frappe.get_traceback(with_context=True)
 		self.save()
 

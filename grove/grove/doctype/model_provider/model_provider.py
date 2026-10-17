@@ -9,11 +9,8 @@ from frappe.model.document import Document
 
 from grove.utils import slugify
 
-# What Anthropic's front takes when the record names no version.
 ANTHROPIC_VERSION = "2023-06-01"
 
-# Prefixes every model id this provider serves, so it has to survive being typed into a JSON body
-# by a customer.
 PROVIDER_NAME = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 
 
@@ -66,7 +63,6 @@ class ModelProvider(Document):
 			self.validate_self_hosted()
 		self.validate_siblings()
 		self.validate_key_titles()
-		# self.validate_endpoint()
 
 	def validate_self_hosted(self):
 		"""One provider is ours, and it dials nothing — a URL is what makes a vendor."""
@@ -101,7 +97,6 @@ class ModelProvider(Document):
 			frappe.throw(f"{self.provider_name} has two keys titled {repeated[0]!r}.")
 
 	def on_update(self):
-		# The mirror on Model is what its form and the Model link filters read.
 		if self.has_value_changed("is_self_hosted"):
 			frappe.db.set_value(
 				"Model", {"provider": self.name}, "provider_is_self_hosted", self.is_self_hosted

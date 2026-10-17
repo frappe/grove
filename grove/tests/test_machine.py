@@ -83,7 +83,6 @@ class TestInstanceTypeFacts(unittest.TestCase):
 			types={"BareMetal": True, "ProcessorInfo": {"SupportedArchitectures": ["x86_64"]}}
 		).get_instance_type_info("g4dn.metal")
 		self.assertTrue(info["is_bare_metal"])
-		# amd64, not x86_64: this is compared against an Engine Image's manifest platform.
 		self.assertEqual(info["cpu_architecture"], "amd64")
 
 	def test_a_virtualized_arm_type_reads_as_neither_metal_nor_amd64(self):
@@ -99,8 +98,6 @@ class TestInstanceTypeFacts(unittest.TestCase):
 		self.assertEqual(parse_architecture({}), "")
 
 	def test_a_type_that_also_boots_32_bit_is_still_read_as_64(self):
-		# t2.micro answers ["i386", "x86_64"] to this day, and taking the first entry picked a
-		# value the Machine's Select rejects.
 		info = {"ProcessorInfo": {"SupportedArchitectures": ["i386", "x86_64"]}}
 		self.assertEqual(parse_architecture(info), "amd64")
 
@@ -112,7 +109,6 @@ class TestInstanceTypeFacts(unittest.TestCase):
 				)
 
 	def test_a_type_grove_cannot_run_still_reports_what_aws_said(self):
-		# Better an architecture the Select refuses, naming itself, than a silent wrong answer.
 		info = {"ProcessorInfo": {"SupportedArchitectures": ["i386"]}}
 		self.assertEqual(parse_architecture(info), "i386")
 
@@ -129,7 +125,6 @@ class TestImageInfo(unittest.TestCase):
 		self.assertEqual(info, {"root_device_name": "/dev/xvda", "cpu_architecture": "arm64"})
 
 	def test_an_ami_without_a_root_device_falls_back_rather_than_launching_with_none(self):
-		# BlockDeviceMappings only resizes the root volume if it names the same device.
 		self.assertEqual(client(images={"Architecture": "x86_64"}).get_image_info("ami-1"),
 			{"root_device_name": "/dev/sda1", "cpu_architecture": "amd64"})
 
@@ -139,7 +134,6 @@ class TestPollInstanceReady(unittest.TestCase):
 	"""The bare metal bug and its fix."""
 
 	def test_running_with_an_ip_is_not_ready_while_a_status_check_is_initializing(self, _sleep):
-		# The bare metal window: EC2 says running, the address is assigned, nothing is listening.
 		ec2 = client(instances=[instance()], statuses=[status(system="initializing")])
 		with self.assertRaises(AWSError) as caught:
 			ec2.poll_instance_ready("i-1", timeout_sec=1, poll_interval_sec=0)
@@ -160,7 +154,6 @@ class TestPollInstanceReady(unittest.TestCase):
 		self.assertEqual(ready["status"], "Active")
 
 	def test_a_pending_instance_is_not_probed_for_status(self, _sleep):
-		# Keeps the describe count down over a twenty-minute wait.
 		ec2 = client(instances=[instance(state="pending", public_ip=None)], statuses=[status()])
 		with self.assertRaises(AWSError):
 			ec2.poll_instance_ready("i-1", timeout_sec=1, poll_interval_sec=0)
@@ -173,8 +166,6 @@ class TestPollInstanceReady(unittest.TestCase):
 		self.assertIn("went terminated", str(caught.exception))
 
 	def test_status_is_asked_for_all_instances(self, _sleep):
-		# Without IncludeAllInstances the response omits anything not already running, and an empty
-		# list reads the same as a passing check.
 		ec2 = client(instances=[instance()], statuses=[status()])
 		ec2.poll_instance_ready("i-1", timeout_sec=60, poll_interval_sec=0)
 		self.assertTrue(ec2.ec2.last_status_kwargs["IncludeAllInstances"])

@@ -20,8 +20,6 @@ import yaml
 
 PLAYBOOKS = pathlib.Path(__file__).resolve().parent.parent / "playbooks"
 
-# Every environment variable the binary reads. One a play writes that is not here is a typo the
-# process ignores in silence.
 KNOWN_ENV = {
 	"GROVE_ADMIN_TOKEN",
 	"GROVE_GATEWAY_ID",
@@ -46,7 +44,6 @@ KNOWN_ENV = {
 	"GROVE_PID_FILE",
 }
 
-# Every key config.json may carry. The gateway REFUSES a file with an unknown key.
 KNOWN_TUNABLES = {
 	"log_level",
 	"middleware",
@@ -93,8 +90,6 @@ def tunable_keys():
 
 class TestTheTwoHalvesStayDisjoint(unittest.TestCase):
 	def test_no_setting_is_in_both_halves(self):
-		# The reason for the split: a value in both means one is silently ignored, and which one
-		# depends on an implementation detail.
 		tunables = tunable_keys()
 		for name in PLAYS:
 			with self.subTest(name):
@@ -107,7 +102,7 @@ class TestTheTwoHalvesStayDisjoint(unittest.TestCase):
 				self.assertLessEqual(set(agent_env(name)), KNOWN_ENV)
 
 	def test_every_tunable_is_one_the_binary_accepts(self):
-		# The gateway refuses the file whole, so a typo leaves a box on its previous config.
+		"""The gateway refuses the file whole, so a typo leaves a box on its previous config."""
 		self.assertLessEqual(tunable_keys(), KNOWN_TUNABLES)
 
 	def test_both_planes_render_the_same_tunables(self):
@@ -136,8 +131,6 @@ class TestAgentEnvIsWrittenWhole(unittest.TestCase):
 				self.assertLessEqual(self.REQUIRED, set(agent_env(name)))
 
 	def test_a_gateway_is_given_a_gateway_id_and_an_ingress_an_ingress_id(self):
-		# What keeps an ingress out of the tenant plane is what it is GIVEN, and both ids set is a
-		# startup refusal.
 		for name, expected, forbidden in (
 			("gateway_server/gateway.yml", "GROVE_GATEWAY_ID", "GROVE_INGRESS_ID"),
 			("gateway_server/deploy_agent.yml", "GROVE_GATEWAY_ID", "GROVE_INGRESS_ID"),
@@ -150,16 +143,12 @@ class TestAgentEnvIsWrittenWhole(unittest.TestCase):
 				self.assertNotIn(forbidden, written)
 
 	def test_an_ingress_is_never_handed_a_tenant_setting(self):
-		# An ingress holds no keys, users or usage — a synthetic session would mean it had a view
-		# of who was calling.
 		for name in ("ingress_server/ingress.yml", "ingress_server/deploy_agent.yml"):
 			with self.subTest(name):
 				self.assertNotIn("GROVE_GATEWAY_REGION", agent_env(name))
 				self.assertNotIn("GROVE_GATEWAY_GEOGRAPHY", agent_env(name))
 
 	def test_provision_and_deploy_write_the_same_file(self):
-		# Two plays write agent.env, and a key in one but not the other is a setting that silently
-		# turns off on whichever runs next. Provisioning gw1 did exactly that to payload logging.
 		for provision, deploy in (
 			("gateway_server/gateway.yml", "gateway_server/deploy_agent.yml"),
 			("ingress_server/ingress.yml", "ingress_server/deploy_agent.yml"),
@@ -168,7 +157,6 @@ class TestAgentEnvIsWrittenWhole(unittest.TestCase):
 				self.assertEqual(set(agent_env(provision)), set(agent_env(deploy)))
 
 	def test_the_env_file_is_never_world_readable(self):
-		# It carries the admin token and, on an ingress, the data token.
 		for name in PLAYS:
 			with self.subTest(name):
 				task = next(t for t in tasks(name) if t.get("name") == "agent.env")
@@ -199,8 +187,6 @@ class TestDeployingIsNotATrafficEvent(unittest.TestCase):
 				self.assertEqual("reload pathway config", config["notify"])
 
 	def test_agent_env_restarts_because_a_reload_would_not_see_it(self):
-		# The child reads its environment from systemd, not the parent, so a reload leaves the old
-		# values in place. The one case that drains.
 		for name in PLAYS:
 			with self.subTest(name):
 				task = next(t for t in tasks(name) if t.get("name") == "agent.env")
@@ -230,7 +216,6 @@ class TestUsageSurvivesTheBoxRestarting(unittest.TestCase):
 	"""
 
 	def setUp(self):
-		# The tasks live in roles/redis, which both the gateway and the gateway store run.
 		self.tasks = yaml.safe_load((PLAYBOOKS / "roles/redis/tasks/main.yml").read_text())
 		self.names = [t.get("name") for t in self.tasks]
 
@@ -241,7 +226,6 @@ class TestUsageSurvivesTheBoxRestarting(unittest.TestCase):
 		self.assertIn("appendfsync everysec", written)
 
 	def test_the_running_server_is_reconciled_too(self):
-		# The file alone only takes effect on a restart that may never come.
 		self.assertIn("enforce persistence on the running redis", self.names)
 
 	def test_it_does_not_depend_on_a_handler_firing(self):
@@ -251,15 +235,12 @@ class TestUsageSurvivesTheBoxRestarting(unittest.TestCase):
 		self.assertNotIn("notify", block)
 
 	def test_redis_is_running_before_anything_talks_to_it(self):
-		# redis-cli needs a live server. This task used to sit near the end of the play.
 		self.assertLess(
 			self.names.index("redis started"),
 			self.names.index("enforce persistence on the running redis"),
 		)
 
 	def test_it_reconciles_without_restarting_redis(self):
-		# A restart drops the pushed keys and routes, so every caller 401s until the next sync.
-		# CONFIG SET enables AOF in place.
 		enforce = next(t for t in self.tasks if t.get("name") == "enforce persistence on the running redis")
 		script = enforce["ansible.builtin.shell"]
 		self.assertIn("config set", script)
@@ -280,8 +261,6 @@ class TestOpenRestyIsGoneFromTheseBoxes(unittest.TestCase):
 				self.assertNotIn("openresty", play(name)["roles"])
 
 	def test_both_provision_plays_take_the_ports_back(self):
-		# A box provisioned before the cutover still has OpenResty on :80 and :443. Stopping it IS
-		# the cutover, and has to be non-fatal for a box that never had it.
 		for name in ("gateway_server/gateway.yml", "ingress_server/ingress.yml"):
 			with self.subTest(name):
 				stop = next(t for t in tasks(name) if t.get("name") == "stop and disable openresty")
@@ -331,8 +310,6 @@ class TestTheUnitCanSurviveAnUpgrade(unittest.TestCase):
 		self.assertNotIn("NotifyAccess", self.settings)
 
 	def test_the_pid_file_is_the_one_the_binary_writes(self):
-		# They drift and the handover breaks silently: systemd keeps pointing at the exited
-		# process, so the next reload signals nothing.
 		for name in PLAYS:
 			with self.subTest(name):
 				self.assertEqual(self.settings["PIDFile"], agent_env(name)["GROVE_PID_FILE"])
@@ -341,8 +318,7 @@ class TestTheUnitCanSurviveAnUpgrade(unittest.TestCase):
 		self.assertEqual("/bin/kill -HUP $MAINPID", self.settings["ExecReload"])
 
 	def test_stop_outlasts_the_drain(self):
-		# The drain defaults to 630s plus a lame-duck window; a shorter TimeoutStopSec SIGKILLs a
-		# process shutting down correctly, mid-stream.
+		"""The drain defaults to 630s plus a lame-duck window; a shorter stop SIGKILLs it mid-stream."""
 		self.assertGreater(int(self.settings["TimeoutStopSec"]), 630)
 
 	def test_it_can_bind_the_privileged_ports(self):
@@ -367,8 +343,6 @@ class TestTheProcessIsNotRoot(unittest.TestCase):
 		self.assertEqual("frappe", self.unit["Group"])
 
 	def test_the_pid_file_lives_in_a_directory_the_process_may_write(self):
-		# tableflip writes it via a temp file + rename in that directory, and /run is root's. Without
-		# RuntimeDirectory the process exits at Ready() and the unit crash-loops.
 		self.assertEqual("pathway", self.unit["RuntimeDirectory"])
 		self.assertTrue(self.unit["PIDFile"].startswith(f"/run/{self.unit['RuntimeDirectory']}/"))
 
@@ -433,8 +407,7 @@ class TestMaintenanceIsATunable(unittest.TestCase):
 	a signal rather than a restart."""
 
 	def test_the_key_is_rendered_only_while_on(self):
-		# A pathway older than the key refuses the file whole, so a box not in maintenance must get the
-		# bytes it always did.
+		"""A pathway older than the key refuses the whole file, so a box not in maintenance gets the old bytes."""
 		template = (PLAYBOOKS / "gateway_server/config.json.j2").read_text()
 		self.assertRegex(template, r'{% if gateway_maintenance \| default\(false\) %}\n\s*"maintenance": true,\n{% endif %}')
 
@@ -442,7 +415,6 @@ class TestMaintenanceIsATunable(unittest.TestCase):
 		for name in ("gateway_server/config.yml", "ingress_server/config.yml"):
 			with self.subTest(name):
 				config = play(name)
-				# The handler runs as the play ends, so the play's rc already covers the signal.
 				self.assertEqual(["config.json"], [task["name"] for task in config["tasks"]])
 				self.assertEqual("reload pathway config", config["tasks"][0]["notify"])
 				[handler] = config["handlers"]

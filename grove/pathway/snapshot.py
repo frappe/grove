@@ -72,23 +72,18 @@ def effective_keys(names=None):
 			continue
 		records.append({
 			"key_hash": k.key_hash,
-			"prefix": k.name,  # doc name (random hash) = usage attribution id
-			"team": k.team,  # the tenant boundary: cache salt, payload log
+			"prefix": k.name,
+			"team": k.team,
 			"status": k.status or "active",
-			# One comma list: the gateway unions the grants per entry. Sorted, so the same
-			# membership always hashes the same.
 			"group": ",".join(memberships.get(k.name, [])),
 			"allow": ",".join(deltas.get(k.name, {}).get("allow", [])),
 			"deny": ",".join(deltas.get(k.name, {}).get("deny", [])),
 			"limited": bool(team.suspended),
-			# Opt-in to prompt/output logging. Customer content: absent or falsy stays off.
 			"log_payloads": bool(team.log_payloads),
-			# Every gateway gets every key; one outside its geography answers 403.
 			"geography": k.geography or "",
 			"prepaid": not team.free,
 			"budget": 0 if team.free else nano(k.cap or 0),
-			# Rate limits, `metric:window:value` each. Blank when none: the box merges fields, so
-			# leaving it out would keep a removed limit in force.
+			# Blank when none: the box merges fields, so leaving it out would keep a removed limit in force.
 			"limits": ",".join(f"{r['metric']}:{r['window']}:{r['value']}" for r in limits.get(k.name, [])),
 		})
 	return records

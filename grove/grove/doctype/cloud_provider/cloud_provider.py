@@ -56,7 +56,6 @@ def update_gpu_types(cloud_provider):
 		return
 	types = RunPodClient(key).list_gpu_types()
 	types.sort(key=lambda g: (not g.get("secureCloud"), -(g.get("memoryInGb") or 0)))
-	# db_set, no validate or version churn: gpu_types is a read-only cache field.
 	cp.db_set("gpu_types", json.dumps(types), update_modified=False)
 	cp.db_set("gpu_types_updated", frappe.utils.now(), update_modified=False)
 	frappe.db.commit()

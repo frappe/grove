@@ -47,13 +47,10 @@ class TestWhatAVendorModelNeeds(IntegrationTestCase):
 		cls.vendor = provider("probe-vendor", base_url="https://api.probe.test", api_key="k").insert()
 
 	def test_it_needs_no_hf_repo(self):
-		# There is no engine to start, so there are no weights to name.
 		doc = vendor_model("probe-sonnet", self.vendor.name).insert()
 		self.assertFalse(doc.hf_repo)
 
 	def test_it_is_not_published_until_someone_ticks_it(self):
-		# Publishing is by hand, and refused while no pricing is enabled: a new vendor model is on
-		# the catalog, not on sale.
 		doc = vendor_model("probe-published", self.vendor.name).insert()
 		self.assertFalse(doc.published)
 		doc.published = 1
@@ -61,8 +58,6 @@ class TestWhatAVendorModelNeeds(IntegrationTestCase):
 			doc.save()
 
 	def test_the_host_only_operations_refuse_it_by_name(self):
-		# The form hides the buttons; these are reachable without one, and the errors underneath
-		# are about a missing repo or a missing deployment — true, and no help at all.
 		doc = vendor_model("probe-buttons", self.vendor.name).insert()
 		for operation in (doc.fetch_architecture, doc.mirror_weights):
 			with self.subTest(operation.__name__), self.assertRaises(frappe.ValidationError) as caught:
@@ -70,8 +65,6 @@ class TestWhatAVendorModelNeeds(IntegrationTestCase):
 			self.assertIn(self.vendor.provider_name, str(caught.exception))
 
 	def test_nothing_of_ours_will_deploy_it(self):
-		# The form filters it out of the picker; an API insert lands here, on validate's first
-		# line, before a missing image or repo gets a turn.
 		model = vendor_model("probe-undeployable", self.vendor.name).insert()
 		for doc in (
 			{"doctype": "Model Deployment", "model": model.name},
@@ -88,8 +81,6 @@ class TestWhatAVendorModelNeeds(IntegrationTestCase):
 
 class TestTheFlagSaysWhoIsOurs(IntegrationTestCase):
 	def test_a_model_under_an_unflagged_provider_is_a_vendors(self):
-		# No endpoint yet, but no engine of ours either: it owes no repo and stays dark until the
-		# provider can be dialled.
 		theirs = provider("probe-unflagged").insert()
 		doc = vendor_model("probe-unflagged-model", theirs.name).insert()
 		self.assertFalse(doc.published)
@@ -129,7 +120,6 @@ class TestOneNameAcrossGeographies(IntegrationTestCase):
 		first = provider("probe-shared").insert()
 		second = provider("probe-shared", geography=make_test_geography("test-2")).insert()
 		self.assertEqual(first.provider_name, second.provider_name)
-		# The name is the prefix; the doc id says nothing.
 		self.assertNotIn("probe-shared", (first.name, second.name))
 
 	def test_a_geography_holds_one_record_per_name(self):
@@ -139,7 +129,7 @@ class TestOneNameAcrossGeographies(IntegrationTestCase):
 		self.assertIn("probe-twice", str(caught.exception))
 
 	def test_the_database_refuses_the_pair_too(self):
-		# validate reads before it writes, so two inserts at once both pass it.
+		"""validate reads before it writes, so two inserts at once both pass it."""
 		provider("probe-raced").insert()
 		twin = provider("probe-raced")
 		twin.flags.ignore_validate = True
@@ -147,7 +137,6 @@ class TestOneNameAcrossGeographies(IntegrationTestCase):
 			twin.insert()
 
 	def test_a_vendor_cannot_take_our_name(self):
-		# The flag is read off whichever record a Model links, so one name cannot be both.
 		ours = frappe.db.get_value("Model Provider", self_hosted_provider(), "provider_name")
 		with self.assertRaises(frappe.ValidationError):
 			provider(ours).insert()
@@ -160,7 +149,6 @@ class TestOneNameAcrossGeographies(IntegrationTestCase):
 		self.assertEqual("probe-moves/probe-moved", doc.model_key)
 		doc.provider = sibling.name
 		doc.save()
-		# The name is inside the id every caller already sends.
 		doc.provider = stranger.name
 		with self.assertRaises(frappe.CannotChangeConstantError):
 			doc.save()
@@ -256,7 +244,6 @@ class TestFetchModels(IntegrationTestCase):
 
 	def test_picked_ids_become_unpublished_models_under_the_record(self):
 		vendor = provider("probe-adder", base_url="https://api.adder.test", api_key="k").insert()
-		# The last id is renamed in the dialog: ours is no longer derived from the vendor's.
 		picked = {"gpt-4o": "gpt-4o", "GPT 4o Mini": "GPT 4o Mini", "org/Model": "org/Model", "x-2025": "x"}
 		keys = vendor.add_models(picked)
 		self.assertEqual(
@@ -268,7 +255,6 @@ class TestFetchModels(IntegrationTestCase):
 			fields=["model_key", "upstream_model_id", "published"],
 			order_by="model_key",
 		)
-		# The vendor's own spelling is kept only where ours differs from it.
 		self.assertEqual(
 			[(row.model_key, row.upstream_model_id or None, row.published) for row in rows],
 			[

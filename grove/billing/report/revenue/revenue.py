@@ -7,7 +7,6 @@ import frappe
 from grove.billing.doctype.usage_record.usage_record import money_rows
 
 GROUP_BY = {
-	# The key the usage names, not a doc: one key may be a doc per geography.
 	"Model": ("model", "Data", None),
 	"API Key": ("api_key", "Link", "Grove API Key"),
 	"Team": ("team", "Link", "Central Team"),

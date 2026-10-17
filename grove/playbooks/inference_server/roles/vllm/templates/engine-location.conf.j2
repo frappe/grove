@@ -1,26 +1,13 @@
-{#
-  Rendered by the vllm role — one file per Model Replica, included by the engine proxy's
-  server block. A bare location, never a server{}: conf.d holds the server, this holds a route
-  into it.
-
-  0600, because for a custom image this file carries the key. nginx parses config in the master,
-  which runs as root to bind 443, so it can still read it.
-#}
+{# Rendered by the vllm role — do not edit on the box. A bare location: the engine proxy's server block includes it. #}
 location /e/{{ vllm_instance }}/ {
 {% if vllm_engine_kind == 'custom' %}
-	# vLLM enforces VLLM_API_KEY itself; an image that serves itself enforces nothing, and this
-	# proxy is the only thing between it and the port. The gateway already sends the deployment's
-	# internal key as a bearer, so check it here. A blank key renders `!= "Bearer "` and refuses
-	# everything, which is the direction to fail in.
+	# A blank key renders `!= "Bearer "` and refuses everything, which is the direction to fail in.
 	if ($http_authorization != "Bearer {{ vllm_api_key }}") { return 401; }
 {% endif %}
-	# The trailing slash is what strips the prefix: /e/{{ vllm_instance }}/v1/chat/completions
-	# reaches the engine as /v1/chat/completions.
+	# The trailing slash is what strips the /e/{{ vllm_instance }}/ prefix before the engine sees it.
 	proxy_pass http://127.0.0.1:{{ vllm_port }}/;
 	proxy_http_version 1.1;
 	proxy_set_header Connection "";
-	# Stream SSE straight through, and let a long generation finish — the same two settings the
-	# gateway uses on its own /v1/ location.
 	proxy_buffering off;
 	proxy_read_timeout 600s;
 	proxy_send_timeout 600s;

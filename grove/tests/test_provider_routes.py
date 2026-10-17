@@ -18,30 +18,20 @@ import frappe
 from grove.tests.model_rows import modality_rows, model_row, placement
 
 MODELS = [
-	# Ours, hosted. The engine answers to frappe/qwen3-8b, so nothing may be rewritten.
 	model_row("frappe/qwen3-8b", model_id="qwen3-8b"),
-	# A vendor, taking the id it knows itself by.
 	model_row("anthropic/claude-4-5", "anthropic", model_id="claude-4-5",
 	          upstream_model_id="claude-sonnet-4-5-20250929"),
-	# A vendor with no override: the bare id is the best guess at its namespace.
 	model_row("anthropic/claude-haiku", "anthropic", model_id="claude-haiku"),
-	# Ours, but the container advertises its own name — the one local case that rewrites.
 	model_row("frappe/nemo-asr", model_id="nemo-asr", upstream_model_id="test-nemo-asr",
 	          input_modalities=["audio"], output_modalities=["transcription"]),
-	# A vendor model nothing has published yet: no route at all.
 	model_row("anthropic/claude-draft", "anthropic", model_id="claude-draft", published=0),
-	# A vendor that speaks the other dialect.
 	model_row("deepseek/deepseek-chat", "deepseek", model_id="deepseek-chat"),
-	# A vendor with no dialect set: claims both shapes at its base URL.
 	model_row("dual/mix-1", "dual", model_id="mix-1"),
-	# A vendor running two fronts, one per dialect, under one provider record.
 	model_row("kimi/k2", "kimi", model_id="k2"),
-	# The same vendor model under another geography's record: a doc of its own, not routed here.
 	model_row("kimi-eu/k2", "kimi", "eu", model_key="kimi/k2", model_id="k2",
 	          upstream_model_id="k2-eu"),
 ]
 PROVIDERS = {
-	# The URL fields are the dialect declaration; there is no dialect field to keep in step.
 	# `keys` becomes the Keys table: (row id, secret[, disabled]) rows, a blank secret standing for
 	# a row whose password was never set.
 	"frappe": {"base_url": None, "api_version": None, "keys": []},
@@ -49,14 +39,11 @@ PROVIDERS = {
 	              "api_version": "2023-06-01", "keys": [("k-anthropic-1", "vendor-key")]},
 	"deepseek": {"base_url": "https://api.deepseek.com", "api_version": "",
 	             "keys": [("k-deepseek-1", "ds-key"), ("k-deepseek-2", "ds-key-2"), ("k-deepseek-3", "ds-key-3", 1)]},
-	# One URL genuinely answering both shapes: the same address in both fields.
 	"dual": {"base_url": "https://api.dual.test",
 	         "anthropic_base_url": "https://api.dual.test", "api_version": "",
 	         "keys": [("k-dual-1", "dual-key")]},
 	"kimi": {"base_url": "https://api.kimi.test", "api_version": "", "keys": [("k-kimi-1", "kimi-key")],
 	         "anthropic_base_url": "https://api.kimi.test/anthropic"},
-	# An address with no key is not a route — half a provider dials nothing. A row with no
-	# password set is no key either.
 	"halfway": {"base_url": "https://api.halfway.test", "api_version": "", "keys": [("k-halfway-1", "")]},
 }
 DEPLOYMENTS = [
@@ -141,14 +128,11 @@ class TestAVendorModelIsRoutable(unittest.TestCase):
 		self.assertEqual(row["dialect"], "anthropic")
 
 	def test_one_url_answering_both_shapes_is_the_same_address_twice(self):
-		# No dialect field to say "both": a vendor like that fills both fields with one URL and
-		# gets a row per surface, both dialling the same place.
 		rows = routes()["dual/mix-1"]
 		self.assertEqual({r["engine_url"] for r in rows}, {"https://api.dual.test"})
 		self.assertEqual({r["dialect"] for r in rows}, {"openai", "anthropic"})
 
 	def test_a_dual_front_vendor_gets_one_row_per_front(self):
-		# One provider record, both surfaces reachable, each front dialled in its own shape.
 		rows = routes()["kimi/k2"]
 		self.assertEqual(
 			{(r["engine_url"], r["dialect"]) for r in rows},
@@ -161,27 +145,22 @@ class TestAVendorModelIsRoutable(unittest.TestCase):
 			self.assertEqual(row["vendor"], "kimi")
 
 	def test_another_geographys_doc_of_the_same_key_is_not_routed_here(self):
-		# kimi/k2 is two docs, one per provider record; this geography's table carries only its
-		# own — two rows for its two fronts, the eu doc's upstream id nowhere.
 		rows = routes()["kimi/k2"]
 		self.assertEqual(len(rows), 2)
 		self.assertNotIn("k2-eu", str(rows))
 
 	def test_an_engine_row_pushes_no_dialect(self):
-		# Blank means "both" on an engine; the gateway's blank rules depend on absence here.
 		for rows in routes().values():
 			for row in rows:
 				if row["kind"] != "provider":
 					self.assertNotIn("dialect", row)
 
 	def test_the_provider_is_the_vendor_not_a_placement(self):
-		# A vendor runs on no deployment or box of ours; the gateway reads its quirks by `vendor`.
 		[row] = routes()["anthropic/claude-4-5"]
 		self.assertEqual(row["vendor"], "anthropic")
 		self.assertEqual((row["deployment"], row["server"]), ("", ""))
 
 	def test_it_claims_no_capacity(self):
-		# We divide GPUs we own. A vendor's own 429 is the only cap there is.
 		[row] = routes()["anthropic/claude-4-5"]
 		self.assertEqual(row["capacity"], 0)
 
@@ -189,14 +168,11 @@ class TestAVendorModelIsRoutable(unittest.TestCase):
 		self.assertNotIn("anthropic/claude-draft", routes())
 
 	def test_an_endpoint_with_no_key_is_not_a_route(self):
-		# Half a provider would push a row that 401s every request.
 		for rows in routes().values():
 			for row in rows:
 				self.assertNotIn("halfway", str(row))
 
 	def test_every_enabled_key_goes_under_its_rows_id(self):
-		# The gateway picks among them per request; the id is what it rotates and counts by. A
-		# disabled row stays home.
 		[row] = routes()["deepseek/deepseek-chat"]
 		self.assertEqual(
 			row["credentials"],
@@ -237,7 +213,6 @@ class TestWhichSurfacesReachAModel(unittest.TestCase):
 
 class TestWhatTheUpstreamIsAskedFor(unittest.TestCase):
 	def test_our_own_engines_are_asked_for_the_id_they_serve(self):
-		# The engine's --served-model-name IS the prefixed id. Stripping it would be a 400.
 		[row] = routes()["frappe/qwen3-8b"]
 		self.assertEqual(row["upstream_model"], "")
 
@@ -246,12 +221,10 @@ class TestWhatTheUpstreamIsAskedFor(unittest.TestCase):
 		self.assertEqual(row["upstream_model"], "claude-sonnet-4-5-20250929")
 
 	def test_a_vendor_without_an_override_gets_the_bare_id(self):
-		# Our namespace is not theirs, so the prefix cannot go out.
 		[row] = routes()["anthropic/claude-haiku"]
 		self.assertEqual(row["upstream_model"], "claude-haiku")
 
 	def test_an_override_reaches_a_local_pod_too(self):
-		# A custom image advertises its own name; asking it for the Grove id is a 400.
 		[row] = routes()["frappe/nemo-asr"]
 		self.assertEqual(row["kind"], "direct")
 		self.assertEqual(row["upstream_model"], "test-nemo-asr")

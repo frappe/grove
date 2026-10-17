@@ -27,13 +27,10 @@ class TestRedaction(unittest.TestCase):
 		self.assertNotIn(SECRET, json.dumps(redact(payload)))
 
 	def test_it_is_marked_not_dropped(self):
-		# "***" says the key WAS sent. A missing field reads as a push that forgot it, which is a
-		# different bug and the one you would go looking for.
 		[route] = redact({"routes": {"m": [{"internal_key": SECRET}]}})["routes"]["m"]
 		self.assertEqual(route["internal_key"], "***")
 
 	def test_a_vendors_whole_keyring_goes_as_one_mark(self):
-		# The ids beside the secrets are not worth keeping either: the row says keys were sent.
 		payload = {"routes": {"m": [{"internal_key": "", "credentials": [{"id": "k1", "secret": SECRET}]}]}}
 		[route] = redact(payload)["routes"]["m"]
 		self.assertEqual(route["credentials"], "***")
@@ -49,7 +46,6 @@ class TestRedaction(unittest.TestCase):
 			self.assertNotIn(leaked, text)
 
 	def test_everything_else_survives_intact(self):
-		# The point of keeping the payload at all: the shape has to still be readable.
 		payload = {"routes": {"m": [{"engine_url": "https://10.0.18.19/e/md", "capacity": 1024,
 		                             "healthy": True, "deployment": "MD-00011", "internal_key": SECRET}]}}
 		[route] = redact(payload)["routes"]["m"]
@@ -59,7 +55,6 @@ class TestRedaction(unittest.TestCase):
 		self.assertEqual(route["deployment"], "MD-00011")
 
 	def test_a_blank_secret_is_left_alone(self):
-		# "" already tells you nothing, and marking it would read as a key that was sent.
 		self.assertEqual(redact({"internal_key": ""})["internal_key"], "")
 
 	def test_nested_structures_are_walked(self):

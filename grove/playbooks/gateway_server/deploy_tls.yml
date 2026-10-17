@@ -1,15 +1,6 @@
 ---
-# Push the fleet's wildcard certificate onto one already-provisioned Gateway or Ingress Server.
-#
-# A renewal is a file copy and nothing else — no packages, no binary, no restart. pathway watches
-# its certificate file's mtime and picks up a replacement on the next handshake, so nothing here
-# interrupts a request on a box that already serves TLS.
-#
-# The one exception is a box set up before its Geography had a certificate: its agent.env names no
-# certificate, and pathway decides at startup whether to open :443. The TLS lines are written here
-# and pathway restarts once, on that first certificate only; every later run finds them in place.
-#
-# Run by grove.tls after an issuance or a renewal, against every Active box in the Geography at once.
+# Push the fleet wildcard onto one provisioned Gateway or Ingress Server (grove.tls, after an
+# issuance or renewal). extra-vars: fleet_tls_cert, fleet_tls_key.
 - name: Install the fleet certificate on a Gateway or Ingress Server
   hosts: all
   become: true
@@ -27,8 +18,6 @@
             path: /etc/pathway/agent.env
           register: agent_env
 
-        # Only the two TLS lines: the rest of agent.env is Setup's and Deploy Agent's to write.
-        # GROVE_LISTEN_HTTPS is already :443 on every box those plays wrote.
         - name: agent.env names the certificate
           when: agent_env.stat.exists
           ansible.builtin.lineinfile:
@@ -41,7 +30,6 @@
           notify: restart pathway
 
   handlers:
-    # A restart, not a SIGHUP: the upgrade child reads its environment from systemd, not the file.
     - name: restart pathway
       ansible.builtin.systemd:
         name: pathway

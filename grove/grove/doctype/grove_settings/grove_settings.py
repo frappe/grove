@@ -10,8 +10,7 @@ from frappe.model.document import Document
 from frappe.utils import get_url
 
 
-# The SD token rides in a query string, so it is restricted to URL-unreserved characters: a `&`
-# or `#` in it would truncate the value the endpoint compares against.
+# The SD token rides in a query string: URL-unreserved characters only.
 SD_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._~-]{16,}$")
 
 
@@ -61,8 +60,7 @@ class GroveSettings(Document):
 		if url and not url.startswith(("http://", "https://")):
 			frappe.throw("Metrics Remote Write URL must start with http:// or https://.")
 		if url.startswith("http://"):
-			# Warned, not refused: the ingestion service is plain HTTP today, and blocking it here
-			# would only get the URL faked.
+			# Warned, not refused: the ingestion service is plain HTTP today.
 			frappe.msgprint(
 				"Metrics Remote Write URL is plain HTTP — the bearer token crosses the network "
 				"in cleartext on every push. Ask the ingestion team for an HTTPS endpoint.",

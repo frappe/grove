@@ -31,7 +31,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		per test, so a per-test insert would collide with itself."""
 		super().setUpClass()
 		make_test_geography()
-		# The site's default tier would gate every team minted here.
 		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 		frappe.get_doc(
 			{
@@ -82,7 +81,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			{"model_groups": [{"model_group": "probe-reach"}], "allow": [{"model": allowed}], "deny": [{"model": denied}]}
 		)
 		key.save()
-		# `name` on the wire is the key: what a caller sends, not a doc id.
 		model_key = lambda doc: frappe.db.get_value("Model", doc, "model_key")  # noqa: E731
 		reach = sorted([model_key(grouped), model_key(allowed)])
 		rows = catalog.available_models(team, key.name)
@@ -101,7 +99,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertEqual(catalog.available_models(geography=make_test_geography("probe-reach-away")), [])
 
 	def test_usage_is_read_off_the_replica_when_the_site_has_one(self):
-		# frappe.read_only: the connection is swapped only when the site config says so.
 		with (
 			unittest.mock.patch.dict(frappe.local.conf, {"read_from_replica": 1}),
 			unittest.mock.patch("frappe.connect_replica", return_value=False) as replica,
@@ -129,7 +126,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		team = "TEAM-PROBE"
 		self.assertEqual(teams.provision_team(team, free=True), {"team": team, "max_keys": 0})
 		key = keys.provision_key(team)["api_key"]
-		# Safe to repeat: the same team, the same keys, and Free kept when not given.
 		self.assertEqual(teams.provision_team(team), {"team": team, "max_keys": 0})
 		self.assertEqual(frappe.db.get_value("Grove API Key", {"key_hash": hash_secret(key)}, "team"), team)
 		self.assertEqual(frappe.db.get_value("Central Team", team, "free"), 1)
@@ -147,14 +143,12 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertTrue(result["api_key"].startswith(KEY_PREFIX))
 		self.assertEqual(frappe.db.get_value("Grove API Key", {"key_hash": hash_secret(result["api_key"])}, "title"), "laptop")
 		self.assertEqual((result["geography"], result["gateway_url"]), (here, self.endpoint(here)))
-		# A second key of the same team may live elsewhere: that is how a team spans geographies.
 		abroad = keys.provision_key(team, title="eu", geography=away)
 		self.assertEqual((abroad["geography"], abroad["gateway_url"]), (away, self.endpoint(away)))
 
-	def test_caps_fit_the_spend_limit_and_a_revoke_frees_its_share(self):
+	def test_caps_fit_the_spend_limit_and_a_revoke_frees_its_cap(self):
 		team = "probe-cap"
 		teams.provision_team(team)
-		# Minted at 0 whatever the limit: it waits for a cap.
 		keys.provision_key(team, title="uncapped")
 		self.assertEqual(keys.keys(team)[0]["cap"], 0)
 		tier("probe-cap-tier", max_keys=5, spend_limit=10)
@@ -185,7 +179,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		# 6/4 to 2/8: saved one by one in the order given, the raise would pass the limit first.
 		rows = keys.update_caps(team, {second: 8, first: 2})
 		self.assertEqual({row.name: row.cap for row in rows}, {first: 2, second: 8})
-		# A lower beside a raise past the limit: refused before either is saved.
 		with self.assertRaisesRegex(frappe.ValidationError, "spend limit of 10"):
 			keys.update_caps(team, {second: 3, first: 9})
 		self.assertEqual({row.name: row.cap for row in keys.keys(team)}, {first: 2, second: 8})
@@ -217,7 +210,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		team = "probe-free"
 		teams.provision_team(team, free=True)
 		teams.update_team(team, tier=tier("probe-free-tier", spend_limit=5))
-		# A Free team's caps are not checked, so this one passes the limit.
 		key = keys.provision_key(team, title="generous", cap=7)["name"]
 		self.assertTrue(frappe.db.get_value("Central Team", team, "free"))
 		self.assertEqual(teams.update_team(team, free=False)["free"], 0)
@@ -252,7 +244,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 	def test_a_minted_key_is_unique_by_its_hash(self):
 		team = "probe-unique"
 		teams.provision_team(team, free=True)
-		# 192 random bits never repeat in practice; the index is what makes sure of it.
 		same_bits = unittest.mock.patch(
 			"grove.grove.doctype.grove_api_key.grove_api_key.secrets.token_hex", return_value="0" * 48
 		)
@@ -271,7 +262,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertEqual(listed.key_hash, hash_secret(minted["api_key"]))
 		self.assertEqual((listed.geography, listed.gateway_url, listed.cap, listed.spent), (minted["geography"], minted["gateway_url"], 0, 0))
 		self.assertEqual([row["metric"] for row in listed.limits], ["requests", "total_tokens"])
-		# When revoke stops refusing it: six hours on, as UTC, so a caller can wait instead of asking.
 		self.assertEqual(
 			listed.revocable_at, utc_timestamp(frappe.utils.add_to_date(listed.creation, hours=6))
 		)
@@ -290,7 +280,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		with self.assertRaises(frappe.DoesNotExistError):
 			keys.update_key(other, key, cap=0)
 
-		# A key younger than six hours cannot be revoked.
 		with self.assertRaises(frappe.ValidationError):
 			keys.revoke_key(team, key)
 		frappe.db.set_value(

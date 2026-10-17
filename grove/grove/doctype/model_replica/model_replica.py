@@ -21,16 +21,8 @@ from grove.utils import is_env_key, is_env_value
 
 
 ENGINE_PORT_BASE = 8080
-# Only teardown takes the container off the box, so only Terminated releases the port. Inactive
-# keeps its: Start expects the same one back.
 _PORT_FREE_STATUSES = ("Terminated",)
-# Provisioning holds because deploy_model checks the claim BEFORE it flips the status; Broken
-# holds because --restart unless-stopped brings a crash-looping engine back onto its cards.
-# Inactive does not: a stopped container holds no VRAM, so its cards are offered to siblings.
 GPU_CLAIMING_STATUSES = ("Provisioning", "Active", "Broken")
-# Draft holds too: a replica takes its cards the moment its row exists, which is what makes two
-# concurrent placements impossible rather than merely unlikely. The cost is that an abandoned
-# Draft strands its cards until it is deleted.
 CLAIM_HOLDING_STATUSES = ("Draft", *GPU_CLAIMING_STATUSES)
 KV_CACHE_MEMORY_LINE = re.compile(
 	r"Replace gpu_memory_utilization config with `--kv-cache-memory=(\d+)`"
@@ -74,9 +66,6 @@ class ModelReplica(Document):
 		status: DF.Literal["Draft", "Provisioning", "Active", "Inactive", "Terminated", "Broken"]
 	# end: auto-generated types
 
-	# No on_update sync hook: any change here moves the routes snapshot hash and
-	# grove.pathway.projection.sync_projection pushes it on the next tick.
-
 	@property
 	def deployment(self):
 		"""What it serves, on what shape, with which tuning. This doc owns only WHERE: the box,
@@ -108,7 +97,7 @@ class ModelReplica(Document):
 		healthy, and a log read failing is not a reason to call it Broken."""
 		engine = self.engine
 		if engine.kv_cache_memory:
-			return {}  # booted with the hint, so vLLM did not profile and there is nothing new
+			return {}
 		try:
 			figure = parse_kv_cache_memory(self.get_engine_logs(lines=5000))
 		except Exception:
@@ -196,7 +185,6 @@ class ModelReplica(Document):
 				frappe.throw(f"GPU {r.gpu} is listed twice.")
 			seen.add(r.gpu)
 
-		# No box yet → the reqd check on inference_server flags it; the shape split is still checked.
 		if self.gpus and self.inference_server:
 			mine = {card.name for card in cards_on([self.server.machine])}
 			for r in self.gpus:
@@ -211,13 +199,8 @@ class ModelReplica(Document):
 		engine = self.engine
 		if errors := engine.placement_errors:
 			frappe.throw("<br>".join(errors))
-		# Store what actually reaches --max-model-len; the suffix is input sugar. Blank stays
-		# blank — that is how a placement asks for the engine default.
 		if self.max_model_len:
 			self.max_model_len = str(engine.max_model_len)
-		# From the same builder the deploy uses, so what is shown is what runs. The only rendered
-		# field left here: it carries this replica's port and overrides, so it genuinely differs
-		# from the deployment's.
 		self.serve_command = engine.command
 
 	def _validate_shape(self):
@@ -256,7 +239,7 @@ class ModelReplica(Document):
 		taken = []
 		for gpu in self.gpu_records:
 			if gpu.held_by == self.name:
-				continue  # already ours, from an earlier transition
+				continue
 			if gpu.held_by:
 				release_if_stale(gpu.name)
 			if claim(gpu.name, self.name):
@@ -339,11 +322,10 @@ class ModelReplica(Document):
 	def _derive_engine_url(self):
 		"""Runs AFTER _assign_engine_port and before the mandatory check."""
 		if not self.inference_server:
-			return  # no box yet → let the reqd check flag engine_url
+			return
 		self.engine_url = self.derived_engine_url
 
 	def on_update(self):
-		# A model stays published only while something serves it.
 		if self.has_value_changed("status"):
 			from grove.grove.doctype.model.model import sync_published
 
@@ -358,7 +340,6 @@ class ModelReplica(Document):
 		self.claim_gpus()
 
 	def on_trash(self):
-		# Exclude self — the row is still in the DB during on_trash.
 		from grove.grove.doctype.model.model import sync_published
 
 		self.release_gpus()
@@ -521,9 +502,6 @@ def _vllm_extravars(md, m, inf, key):
 	Shared by deploy_model and reconfigure_deployment so the two paths cannot drift."""
 	serve = md.engine
 
-	# `GPU-<uuid>` for a whole card, `MIG-<uuid>` for a slice, or the bare index on a cloud box
-	# seeded before any driver existed. A MIG slice HAS no index, so one here would address
-	# nothing. Handed to `docker run --gpus`, not to CUDA_VISIBLE_DEVICES.
 	devices = [card.device_id for card in md.gpu_records]
 
 	hf_token = frappe.conf.get("hf_token", "")
@@ -532,46 +510,31 @@ def _vllm_extravars(md, m, inf, key):
 
 	extravars = {
 		"vllm_model": serve.repo,
-		# The key, not the doc: the engine answers to what the client sends.
 		"vllm_served_name": md.model_key,
 		"vllm_serve_args": serve.args,
-		# Blank = no gate: a custom image that names none finishes the play once it starts.
 		"vllm_health_path": md.deployment.health_path or serve.health_path,
-		# One real request after the health gate, from the same source the args came from.
 		"vllm_warmup_request": serve.warmup_request,
-		# One container + port + key file per deployment: the box is multi-tenant.
 		"vllm_instance": _instance_slug(md.name),
 		"vllm_port": serve.port,
 		"vllm_api_key": key,
 		"vllm_cuda_visible_devices": ",".join(devices),
 		"vllm_env": _engine_env(md, serve, hf_token, settings.weights_s3_engine_environment),
 		"vllm_hf_token": hf_token,
-		# Weights/caches on the mounted data volume, or the instance-store NVMe if opted in.
 		"vllm_home": vllm_home,
 		"vllm_hf_home": inf.hf_home,
 		"vllm_cache_dir": f"{vllm_home}/cache",
-		# The role derives the repo from vllm_model, so leaving this on for an image that brings
-		# its own model would run `hf download` with no repo.
 		"vllm_predownload_model": bool(serve.repo) and not serve.is_streaming,
-		# The free-space check, before either download starts. 0 reads as "cannot check".
 		"vllm_weights_gb": serve.weights_gb,
-		# Compile-cache pre-warm; blank bucket turns the hooks off. The key's other axes (image
-		# digest, GPU) are computed on the box.
 		"vllm_cache_bucket": (settings.weights_bucket or "") if serve.repo else "",
 		"vllm_cache_sync_env": settings.weights_s3_engine_environment,
 		"vllm_tensor_parallel_size": serve.tensor_parallel_size,
 		"vllm_model_slug": (m.hf_repo or md.model_key).split(":")[0].replace("/", "--"),
-		# serve.yml runs grove_https and engine_proxy ahead of the vllm role, so it writes the
-		# box's htpasswd too. Unused by reconfigure.yml, which runs neither role.
 		**settings.scrape_auth_variables,
-		# serve.yml re-renders nginx: without these a standalone box falls back to box.crt.
 		**inf.tls_variables,
 	}
 	image = frappe.get_cached_doc("Engine Image", md.deployment.engine_image)
 	extravars["vllm_image"] = image.full_image
 	extravars["vllm_image_gb"] = image.size_gb or 0
-	# The proxy authenticates nothing itself, and an image that serves itself enforces no key of
-	# ours — so the proxy has to check the bearer for that kind. This is what tells it to.
 	extravars["vllm_engine_kind"] = image.engine_kind
 	if credentials := image.registry_credentials:
 		extravars["vllm_registry_host"] = image.registry_host
@@ -592,13 +555,10 @@ def deploy_model(model_replica):
 			f"Inference Server {inf.name} is not provisioned — run its Setup "
 			"(host bootstrap) before deploying a model onto it."
 		)
-	# No claim check here: the cards were taken at insert and held for every claiming status.
 
-	# Generated once and served with, so the gateway's stored copy always matches.
 	key = md.get_password("internal_api_key", raise_exception=False)
-	# Teardown frees the port with db.set_value, which skips validate, so a redeploy arrives
-	# holding 0. Saving is what reallocates it and re-derives engine_url — without this the
-	# container publishes port 0 while the doc advertises the old one.
+	# Teardown frees the port with db.set_value, which skips validate, so a redeploy arrives holding
+	# 0; saving is what reallocates it and re-derives engine_url.
 	needs_save = not md.engine_port
 	if not key:
 		key = secrets.token_hex(24)
@@ -650,10 +610,8 @@ def reconfigure_deployment(model_replica):
 
 	extravars = _vllm_extravars(md, m, inf, key)
 
-	# Status is deliberately NOT moved to Provisioning here, unlike deploy_model. _gateway_routes
-	# only routes Active, so flipping it for the play would dark the model for MINUTES — to cover
-	# a restart that is seconds long and often does not happen at all, since the container is
-	# replaced only when the rendered config moved.
+	# Not moved to Provisioning, unlike deploy_model: only Active is routed, and the restart this
+	# play may do is seconds long, so flipping it would dark the model for minutes.
 	play_name, rc = inf.run_playbook(
 		"reconfigure.yml",
 		extravars=extravars,
@@ -737,6 +695,6 @@ def teardown_deployment(model_replica):
 	)
 
 	if rc == 0:
-		# 0 = free, reallocated on a later redeploy. The Int column is NOT NULL, so 0 not None.
+		# 0, not None: the Int column is NOT NULL.
 		_land_state(md, {"status": "Terminated", "engine_port": 0})
 	return play_name, rc

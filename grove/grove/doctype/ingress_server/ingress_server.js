@@ -2,7 +2,6 @@ frappe.ui.form.on('Ingress Server', {
 	refresh(frm) {
 		if (frm.is_new()) return;
 
-		// Offered until it succeeds: Pending, or Broken to retry. Deploy Latest Agent covers a live box.
 		if (['Pending', 'Broken'].includes(frm.doc.status)) {
 			frm.add_custom_button(__('Provision'), () => grove.confirm_call(frm,
 				__('Run the full ingress play on {0}? It installs the agent and its config, and starts it.', [frm.doc.name]),
@@ -46,7 +45,6 @@ frappe.ui.form.on('Ingress Server', {
 				__("Rewrite {0}'s exporter password from Grove Settings? Scrapes with the old one fail from then on.", [frm.doc.name]),
 				'update_scrape_auth'));
 
-			// The replica table: every Active replica in this ingress's Network, dialled privately.
 			frm.add_custom_button(__('Sync Replicas'), () => grove.confirm_call(frm,
 				__("Replace {0}'s replica table with every Active replica in its Network?", [frm.doc.name]),
 				'sync_replicas'), __('Ingress'));
