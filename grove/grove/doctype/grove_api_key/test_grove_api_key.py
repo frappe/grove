@@ -6,10 +6,16 @@ record the gateway reads is built from it.
 A team id per test: IntegrationTestCase rolls back once when the class is done, not between
 tests, so anything registered here is still there for the next one."""
 
+import unittest
+import unittest.mock
+from types import SimpleNamespace
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
 from grove.access import limit_entries
+from grove.grove.doctype.grove_api_key import grove_api_key
+from grove.grove.doctype.grove_api_key.grove_api_key import GroveAPIKey
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.model_provider.test_model_provider import our_model, provider, vendor_model
 from grove.pathway.snapshot import effective_keys
@@ -280,6 +286,37 @@ class IntegrationTestOneGeographyPerKey(IntegrationTestCase):
 		self.assertEqual(frappe.get_all("Geography", filters={"is_default": 1}, pluck="name"), [other.name])
 
 
+class IntegrationTestOneTeamPerKey(IntegrationTestCase):
+	"""A key's cap and spent are counted against its team's limit; a move would carry them to a team
+	whose count and limit never checked them."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		make_test_geography()
+
+	def test_a_keys_team_is_set_once(self):
+		doc = key("key-team-pinned")
+		doc.team = team("team-probe-other")
+		with self.assertRaises(frappe.CannotChangeConstantError):
+			doc.save()
+
+
+class IntegrationTestARevokedKeyStaysRevoked(IntegrationTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		make_test_geography()
+
+	def test_setting_it_active_again_is_refused(self):
+		doc = key("key-revoked-for-good")
+		frappe.db.set_value("Grove API Key", doc.name, "status", "revoked")
+		doc.reload()
+		doc.status = "active"
+		with self.assertRaisesRegex(frappe.ValidationError, "stays revoked"):
+			doc.save()
+
+
 class IntegrationTestCapsFitTheSpendLimit(IntegrationTestCase):
 	"""Across a team's live keys, Σ monthly caps never exceeds its spend limit: every store gates
 	its key exactly, so the keys together never outspend the team's tier."""
@@ -343,3 +380,29 @@ class IntegrationTestCapsFitTheSpendLimit(IntegrationTestCase):
 		team_doc.save()
 		self.assertEqual(frappe.db.get_value("Grove API Key", capped.name, "cap"), 0)
 		self.assertEqual(projected(capped.name)["budget"], 0)
+
+
+class TestTwoMintsAtTheLimitSerialize(unittest.TestCase):
+	def test_the_team_row_is_locked_and_the_count_is_a_locking_read(self):
+		"""A plain count answers from the transaction's snapshot, so two mints at max_keys - 1 both
+		passed; the lock on the team row holds the second until the first commits, and FOR UPDATE
+		makes its count see that commit."""
+		queries = []
+		doc = SimpleNamespace(team="TEAM-00001")
+		with (
+			unittest.mock.patch.object(grove_api_key, "team_limits", return_value=frappe._dict(max_keys=2)) as limits,
+			unittest.mock.patch.object(frappe, "db", SimpleNamespace(sql=lambda query, values: queries.append(query) or [[2]])),
+			unittest.mock.patch("frappe.throw", side_effect=frappe.ValidationError),
+			self.assertRaises(frappe.ValidationError),
+		):
+			GroveAPIKey.check_key_count(doc)
+		self.assertEqual(limits.call_args, unittest.mock.call("TEAM-00001", for_update=True))
+		self.assertEqual(len(queries), 1)
+		self.assertIn("for update", queries[0].lower())
+
+	def test_no_limit_takes_no_count(self):
+		with (
+			unittest.mock.patch.object(grove_api_key, "team_limits", return_value=frappe._dict(max_keys=0)),
+			unittest.mock.patch.object(frappe, "db", SimpleNamespace()),
+		):
+			GroveAPIKey.check_key_count(SimpleNamespace(team="TEAM-00001"))

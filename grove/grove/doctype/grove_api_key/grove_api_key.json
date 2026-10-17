@@ -37,7 +37,8 @@
    "label": "Team",
    "options": "Central Team",
    "reqd": 1,
-   "search_index": 1
+   "search_index": 1,
+   "set_only_once": 1
   },
   {
    "description": "The one geography this key works in; every gateway elsewhere answers 403. Left blank, it is the default Geography. Set once: its spend and rate counters live on that geography's store.",
@@ -148,7 +149,7 @@
    "link_fieldname": "api_key"
   }
  ],
- "modified": "2026-10-12 00:00:00.000000",
+ "modified": "2026-10-18 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove API Key",

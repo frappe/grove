@@ -69,10 +69,17 @@ class GroveAPIKey(Document):
 
 	def check_key_count(self):
 		"""Rate limits are per key, so the team's key count is what bounds its throughput. A team with
-		`max_keys` 0 holds as many as it likes."""
-		max_keys = team_limits(self.team).max_keys
-		active = frappe.db.count("Grove API Key", {"team": self.team, "status": "active"})
-		if max_keys and active >= max_keys:
+		`max_keys` 0 holds as many as it likes. The team row is locked first and the count reads
+		FOR UPDATE, so two mints at the limit serialize and the second sees the first's key rather
+		than the snapshot it started on."""
+		max_keys = team_limits(self.team, for_update=True).max_keys
+		if not max_keys:
+			return
+		active = frappe.db.sql(
+			"select count(*) from `tabGrove API Key` where team = %s and status = 'active' for update",
+			[self.team],
+		)[0][0]
+		if active >= max_keys:
 			frappe.throw(f"This team already holds {active} live keys, its limit. Revoke one first.")
 
 	def set_geography(self):
@@ -97,8 +104,9 @@ class GroveAPIKey(Document):
 			self.spent = frappe.db.get_value("Grove API Key", self.name, "spent", for_update=True)
 		if flt(self.cap) < 0:
 			frappe.throw("A cap cannot be negative.")
-		revived = before and before.status != "active" and self.status == "active"
-		if flt(self.cap, 9) > flt(before.cap if before else 0, 9) or revived:
+		if before and before.status == "revoked" and self.status != "revoked":
+			frappe.throw("A revoked key stays revoked. Mint a new one.")
+		if flt(self.cap, 9) > flt(before.cap if before else 0, 9):
 			self.validate_cap()
 
 	def validate_cap(self):
