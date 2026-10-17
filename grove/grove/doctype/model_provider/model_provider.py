@@ -102,19 +102,6 @@ class ModelProvider(Document):
 				"Model", {"provider": self.name}, "provider_is_self_hosted", self.is_self_hosted
 			)
 
-	def validate_endpoint(self):
-		"""A vendor is reachable only as a whole: an address, over TLS, with a credential.
-
-		ponytail: parked — the call in validate() is commented out."""
-		if not self.base_url:
-			return
-		self.base_url = self.base_url.rstrip("/")
-		if not self.base_url.startswith("https://"):
-			# The key rides this hop; plaintext would put it on the wire in the clear.
-			frappe.throw(f"{self.provider_name}'s Base URL must be https — it carries the API key.")
-		if not self.api_keys:
-			frappe.throw(f"{self.provider_name} has a Base URL but no key, so nothing could dial it.")
-
 	@frappe.whitelist()
 	def fetch_models(self):
 		"""Button: what the vendor serves, read off its `/v1/models`, split into the ids this record

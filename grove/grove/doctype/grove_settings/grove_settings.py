@@ -82,13 +82,11 @@ class GroveSettings(Document):
 
 		ponytail: parked — the check below is commented out."""
 		token = self.get_password("sd_token", raise_exception=False) or ""
-		if not token:
-			return
-		# if not SD_TOKEN_PATTERN.match(token):
-		# 	frappe.throw(
-		# 		"Service Discovery Token must be at least 16 characters of letters, digits, "
-		# 		"'-', '_', '.' or '~'. Generate one with: openssl rand -hex 32"
-		# 	)
+		if token and self.has_value_changed("sd_token") and not SD_TOKEN_PATTERN.match(token):
+			frappe.throw(
+				"Service Discovery Token must be at least 16 characters of letters, digits, "
+				"'-', '_', '.' or '~'. Generate one with: openssl rand -hex 32"
+			)
 
 	def set_scrape_password_hash(self):
 		"""The hash each box writes into its htpasswd file, derived here so the password never

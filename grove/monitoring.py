@@ -35,7 +35,10 @@ def run_exporters_play(server):
 	return server.run_playbook(
 		"exporters.yml",
 		project="Monitoring Agent",
-		extravars={"monitoring_has_gpu": bool(machine.gpus)},
+		extravars={
+			"monitoring_has_gpu": bool(machine.gpus),
+			**frappe.get_single("Grove Settings").scrape_auth_variables,
+		},
 	)
 
 

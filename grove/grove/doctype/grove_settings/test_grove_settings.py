@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
+from frappe.tests import IntegrationTestCase
 
 from grove import tls
 
@@ -78,6 +79,32 @@ class TestRenewalIsPerGeography(unittest.TestCase):
 			tls.push_to_proxies("eu")
 		self.assertEqual(len(queried), 3)
 		self.assertEqual({filters["geography"] for filters in queried}, {"eu"})
+
+
+class TestServiceDiscoveryToken(IntegrationTestCase):
+	"""Site-backed: the check reads the Password field and whether it changed on this save."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.addClassCleanup(frappe.clear_document_cache, "Grove Settings", "Grove Settings")
+
+	def save_with_token(self, token):
+		settings = frappe.get_single("Grove Settings")
+		settings.sd_token = token
+		settings.save()
+
+	def test_a_short_or_unsafe_token_is_refused(self):
+		for token in ("short", "an&ampersand-long-enough", "a#hash-long-enough-too"):
+			with self.subTest(token), self.assertRaises(frappe.ValidationError):
+				self.save_with_token(token)
+
+	def test_a_long_url_safe_token_is_taken(self):
+		self.save_with_token("0f3a-b21c_9d.e~4a7b-0f3a")
+		self.assertEqual(frappe.get_single("Grove Settings").get_password("sd_token"), "0f3a-b21c_9d.e~4a7b-0f3a")
+
+	def test_a_save_that_leaves_the_token_alone_is_not_checked(self):
+		frappe.get_single("Grove Settings").save()
 
 
 if __name__ == "__main__":

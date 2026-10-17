@@ -351,6 +351,25 @@ class TestServiceDiscoveryAuth(unittest.TestCase):
 				self.authenticate(supplied, None)
 
 
+class TestTheRotationButtonCarriesTheHash(unittest.TestCase):
+	def test_update_scrape_auth_passes_the_hash_the_htpasswd_task_is_gated_on(self):
+		"""grove_https writes the htpasswd only when the hash is passed; without it the button
+		re-ran the play and rewrote nothing."""
+		machine = SimpleNamespace(name="inf1", public_ip="203.0.113.7", gpus=[])
+		settings = SimpleNamespace(scrape_auth_variables={"scrape_password_hash": "$2b$12$hash"})
+		server = SimpleNamespace(machine="inf1", run_playbook=unittest.mock.Mock())
+		with (
+			unittest.mock.patch.object(frappe, "get_doc", return_value=machine),
+			unittest.mock.patch.object(frappe, "get_single", return_value=settings),
+		):
+			monitoring.run_exporters_play(server)
+		extravars = server.run_playbook.call_args.kwargs["extravars"]
+		self.assertEqual(extravars["scrape_password_hash"], "$2b$12$hash")
+		tasks = yaml.safe_load((SHARED_ROLES / "grove_https/tasks/main.yml").read_text())
+		[htpasswd] = [task for task in tasks if "htpasswd" in task["name"]]
+		self.assertIn("scrape_password_hash", htpasswd["when"])
+
+
 class TestScrapePasswordHash(unittest.TestCase):
 	"""What each box's htpasswd file carries. Derived in the control plane so the password never
 	reaches a box or an Ansible argv, which /proc and the Ansible Task doc both record."""
