@@ -192,13 +192,15 @@ class TestDeployingIsNotATrafficEvent(unittest.TestCase):
 				task = next(t for t in tasks(name) if t.get("name") == "agent.env")
 				self.assertEqual("restart pathway", task["notify"])
 
-	def test_a_renewed_certificate_needs_nothing(self):
-		# The gateway watches the file's mtime, and deploy_tls runs unattended at midnight against
-		# every Active gateway at once.
+	def test_a_renewed_certificate_restarts_nothing_once_agent_env_names_it(self):
+		"""The gateway watches the file's mtime; the one restart is the lineinfile that first writes the
+		certificate paths into agent.env, which reports unchanged on every renewal after."""
 		deploy_tls = play("gateway_server/deploy_tls.yml")
 		self.assertEqual(["fleet_tls"], deploy_tls["roles"])
-		self.assertNotIn("tasks", deploy_tls)
-		self.assertNotIn("handlers", deploy_tls)
+		[point] = deploy_tls["tasks"]
+		notifying = [task for task in point["block"] if "notify" in task]
+		self.assertEqual(["/etc/pathway/agent.env"], [task["ansible.builtin.lineinfile"]["path"] for task in notifying])
+		self.assertEqual(["restart pathway"], [handler["name"] for handler in deploy_tls["handlers"]])
 
 
 class TestUsageSurvivesTheBoxRestarting(unittest.TestCase):

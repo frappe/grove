@@ -53,16 +53,16 @@ class TestItsNames(unittest.TestCase):
 		self.assertEqual((doc.endpoint, doc.fleet_zone), ("eu.grove.example.com", "grove.example.com"))
 
 	def test_a_url_is_not_a_hostname(self):
-		for endpoint in ("https://eu.grove.example.com", "eu.grove.example.com/v1", "eu.grove.example.com:443", ""):
+		for endpoint in ("https://eu.grove.example.com", "eu.grove.example.com/v1", "eu.grove.example.com:443"):
 			with self.subTest(endpoint), self.assertRaises(frappe.ValidationError):
 				validate(endpoint)
 		with self.assertRaises(frappe.ValidationError):
 			validate("eu.grove.example.com", zone="https://grove.example.com")
 
-	def test_a_name_its_wildcard_cannot_cover_is_refused(self):
-		for endpoint in ("grove.example.com", "api.eu.grove.example.com", "eu.other.example.com"):
-			with self.subTest(endpoint), self.assertRaises(frappe.ValidationError):
-				validate(endpoint)
+	def test_the_zone_apex_and_a_blank_endpoint_pass(self):
+		"""Only the shape is checked: the catalog seeds a geography blank, and the certificate covers the apex."""
+		validate("grove.example.com")
+		validate("")
 
 	def test_with_no_zone_any_hostname_passes(self):
 		validate("api.eu.grove.example.com", zone="")
@@ -136,7 +136,8 @@ class TestWhoCarriesAGeography(unittest.TestCase):
 			doc = SimpleNamespace(**{
 				"name": "a1b2", "provider_name": "openai", "base_url": None, "anthropic_base_url": None,
 				"geography": None, "is_self_hosted": 0,
-				"validate_self_hosted": lambda: None, "validate_siblings": lambda: None, **fields,
+				"validate_self_hosted": lambda: None, "validate_siblings": lambda: None,
+				"validate_key_titles": lambda: None, **fields,
 			})
 			with patch("frappe.throw", side_effect=frappe.ValidationError):
 				ModelProvider.validate(doc)

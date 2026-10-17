@@ -11,8 +11,8 @@ from grove.api import usage
 from grove.api.usage import _totals_by_model as totals_by_model
 
 
-def row(model, requests=0, cost=0.0):
-	return {"model": model, "requests": requests, "cost": cost}
+def row(model, requests=0, tokens=0, cost=0.0):
+	return {"model": model, "requests": requests, "tokens": tokens, "cost": cost}
 
 
 class TestTotalsByModel(unittest.TestCase):
@@ -20,8 +20,10 @@ class TestTotalsByModel(unittest.TestCase):
 		self.assertEqual(totals_by_model([]), [])
 
 	def test_rows_for_one_model_are_summed_not_overwritten(self):
-		summary = totals_by_model([row("qwen3-35b", requests=1, cost=0.5), row("qwen3-35b", requests=2, cost=0.25)])
-		self.assertEqual(summary, [{"model": "qwen3-35b", "requests": 3, "cost": 0.75}])
+		summary = totals_by_model([
+			row("qwen3-35b", requests=1, tokens=10, cost=0.5), row("qwen3-35b", requests=2, tokens=20, cost=0.25),
+		])
+		self.assertEqual(summary, [{"model": "qwen3-35b", "requests": 3, "tokens": 30, "cost": 0.75}])
 
 	def test_costliest_comes_first_then_busiest(self):
 		summary = totals_by_model([
@@ -32,7 +34,7 @@ class TestTotalsByModel(unittest.TestCase):
 
 	def test_missing_metrics_count_as_zero(self):
 		summary = totals_by_model([{"model": "qwen3-35b", "requests": None}])
-		self.assertEqual(summary, [{"model": "qwen3-35b", "requests": 0, "cost": 0}])
+		self.assertEqual(summary, [{"model": "qwen3-35b", "requests": 0, "tokens": 0, "cost": 0}])
 
 
 class TestUsageWindow(unittest.TestCase):
