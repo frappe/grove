@@ -45,7 +45,7 @@ gateways cannot jointly overrun one replica.
 | `pathway/run.py` | What every run shares: `Target` (one box's admin API), `SyncRun` (lock, parallel dial, rows in the order asked). Every path that reaches a box goes through it. |
 | `pathway/projection.py` | `Projection`: every push to every box. A push that left no Pathway Sync row did not happen. |
 | `pathway/usage.py` | `Usage`: each store's drain (or one team's keys) into one Usage Record per key (two when it holds both billed and free usage), then the ack of what landed. `reconcile.py` lands each touched team: records, `spent` moved by Grove's price, the gateway's charge audited, the team settled. |
-| `billing/` | Usage counters, sell prices, monthly caps, usage records and the Revenue report — its own Frappe module, [`billing/README.md`](billing/README.md). |
+| `billing/` | Usage counters, sell prices, monthly caps, usage records, the Revenue report and the Vendor Reconciliation report — its own Frappe module, [`billing/README.md`](billing/README.md). |
 | `catalog/` | What a site starts with: `catalog.json` (geographies, providers, vendor models and their rates, model groups; no secret, no `published`), `seed.insert_missing` (after install and after every migrate), `export.write` (by hand). |
 | `pathway/snapshot.py` | The desired state a box is pushed, and the hash gate that decides which sections travel. |
 | `pathway/routes.py` | `deploy:<model>` tables — a gateway's for its Geography, an ingress's for the boxes it owns. |
@@ -189,7 +189,8 @@ desyncs a grant from a route, and usage lands against the Grove model whatever t
 ## Prices and caps
 
 Live in [`billing/`](billing/README.md): the counter table, sell prices, the monthly caps, what a
-drain is audited for, and the Revenue report.
+drain is audited for, the Revenue report, and the Vendor Reconciliation report that sets what Grove
+charged beside what the vendor billed.
 
 ## The catalog (`catalog/`)
 
