@@ -13,8 +13,6 @@ frappe.ui.form.on('Monitoring Agent', {
 		if (!frm.doc.machine) return;
 
 		if (frm.doc.status === 'Active') {
-			// The binary is already on the box; re-downloading it to change an interval only
-			// makes the change slower to land.
 			frm.add_custom_button(__('Update Config'), () => grove.confirm_call(frm,
 				__("Rewrite {0}'s vmagent config and restart it?", [frm.doc.name]),
 				'update_config'));
@@ -38,15 +36,13 @@ frappe.ui.form.on('Monitoring Agent', {
 				'setup'));
 		}
 
-		// developer_mode only: the box cannot reach this Grove, so nothing re-fetches and this is
-		// the only way its target list moves. Off a dev site http_sd does it by itself.
+		// Only a dev site needs it: the box cannot reach this Grove, so http_sd never re-fetches.
 		if (frappe.boot.developer_mode && frm.doc.status === 'Active') {
 			frm.add_custom_button(__('Push Targets'), () => grove.confirm_call(frm,
 				__("Replace {0}'s target list with this Grove's?", [frm.doc.name]),
 				'push_targets'));
 		}
 
-		// The fastest way to tell "nothing is assigned to me" from "the agent is broken".
 		frm.add_custom_button(__('Show Targets'), () => {
 			window.open(
 				`/api/method/grove.monitoring.targets?agent=${encodeURIComponent(frm.doc.name)}&kind=engine`,

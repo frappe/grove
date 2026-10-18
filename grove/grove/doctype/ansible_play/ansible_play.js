@@ -10,7 +10,6 @@ frappe.ui.form.on('Ansible Play', {
 				);
 			}).addClass('btn-danger');
 		}
-		// The other half of a stop: the engine the play left behind on the box.
 		if (frm.doc.reference_doctype === 'Model Replica' && !['Pending', 'Running', 'Stopping'].includes(frm.doc.status)) {
 			frm.add_custom_button(__('Tear Down {0}', [frm.doc.reference_docname]), () => {
 				frappe.confirm(

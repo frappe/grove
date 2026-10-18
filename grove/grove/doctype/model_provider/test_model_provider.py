@@ -21,7 +21,7 @@ def provider(provider_name, api_key=None, **fields):
 	if not fields.get("is_self_hosted"):
 		fields.setdefault("geography", make_test_geography())
 	if api_key:
-		fields["api_keys"] = [{"api_key": api_key}]
+		fields["api_keys"] = [{"title": "key", "api_key": api_key}]
 	return frappe.get_doc({"doctype": "Model Provider", "provider_name": provider_name, **fields})
 
 
@@ -47,13 +47,10 @@ class TestWhatAVendorModelNeeds(IntegrationTestCase):
 		cls.vendor = provider("probe-vendor", base_url="https://api.probe.test", api_key="k").insert()
 
 	def test_it_needs_no_hf_repo(self):
-		# There is no engine to start, so there are no weights to name.
 		doc = vendor_model("probe-sonnet", self.vendor.name).insert()
 		self.assertFalse(doc.hf_repo)
 
 	def test_it_is_not_published_until_someone_ticks_it(self):
-		# Publishing is by hand, and refused while no pricing is enabled: a new vendor model is on
-		# the catalog, not on sale.
 		doc = vendor_model("probe-published", self.vendor.name).insert()
 		self.assertFalse(doc.published)
 		doc.published = 1
@@ -61,8 +58,6 @@ class TestWhatAVendorModelNeeds(IntegrationTestCase):
 			doc.save()
 
 	def test_the_host_only_operations_refuse_it_by_name(self):
-		# The form hides the buttons; these are reachable without one, and the errors underneath
-		# are about a missing repo or a missing deployment — true, and no help at all.
 		doc = vendor_model("probe-buttons", self.vendor.name).insert()
 		for operation in (doc.fetch_architecture, doc.mirror_weights):
 			with self.subTest(operation.__name__), self.assertRaises(frappe.ValidationError) as caught:
@@ -70,8 +65,6 @@ class TestWhatAVendorModelNeeds(IntegrationTestCase):
 			self.assertIn(self.vendor.provider_name, str(caught.exception))
 
 	def test_nothing_of_ours_will_deploy_it(self):
-		# The form filters it out of the picker; an API insert lands here, on validate's first
-		# line, before a missing image or repo gets a turn.
 		model = vendor_model("probe-undeployable", self.vendor.name).insert()
 		for doc in (
 			{"doctype": "Model Deployment", "model": model.name},
@@ -88,8 +81,6 @@ class TestWhatAVendorModelNeeds(IntegrationTestCase):
 
 class TestTheFlagSaysWhoIsOurs(IntegrationTestCase):
 	def test_a_model_under_an_unflagged_provider_is_a_vendors(self):
-		# No endpoint yet, but no engine of ours either: it owes no repo and stays dark until the
-		# provider can be dialled.
 		theirs = provider("probe-unflagged").insert()
 		doc = vendor_model("probe-unflagged-model", theirs.name).insert()
 		self.assertFalse(doc.published)
@@ -113,6 +104,15 @@ class TestOneProviderIsSelfHosted(IntegrationTestCase):
 		self.assertIn("Self Hosted", str(caught.exception))
 
 
+class TestAKeyIsKnownByItsTitle(IntegrationTestCase):
+	def test_two_keys_of_one_provider_cannot_share_a_title(self):
+		vendor = provider("probe-twice-titled", base_url="https://api.probe.test", api_key="k")
+		vendor.append("api_keys", {"title": "key", "api_key": "k2"})
+		with self.assertRaises(frappe.ValidationError) as caught:
+			vendor.insert()
+		self.assertIn("two keys titled 'key'", str(caught.exception))
+
+
 class TestOneNameAcrossGeographies(IntegrationTestCase):
 	"""A vendor is one record per geography under one name, so the model id is the same everywhere."""
 
@@ -120,7 +120,6 @@ class TestOneNameAcrossGeographies(IntegrationTestCase):
 		first = provider("probe-shared").insert()
 		second = provider("probe-shared", geography=make_test_geography("test-2")).insert()
 		self.assertEqual(first.provider_name, second.provider_name)
-		# The name is the prefix; the doc id says nothing.
 		self.assertNotIn("probe-shared", (first.name, second.name))
 
 	def test_a_geography_holds_one_record_per_name(self):
@@ -130,7 +129,7 @@ class TestOneNameAcrossGeographies(IntegrationTestCase):
 		self.assertIn("probe-twice", str(caught.exception))
 
 	def test_the_database_refuses_the_pair_too(self):
-		# validate reads before it writes, so two inserts at once both pass it.
+		"""validate reads before it writes, so two inserts at once both pass it."""
 		provider("probe-raced").insert()
 		twin = provider("probe-raced")
 		twin.flags.ignore_validate = True
@@ -138,7 +137,6 @@ class TestOneNameAcrossGeographies(IntegrationTestCase):
 			twin.insert()
 
 	def test_a_vendor_cannot_take_our_name(self):
-		# The flag is read off whichever record a Model links, so one name cannot be both.
 		ours = frappe.db.get_value("Model Provider", self_hosted_provider(), "provider_name")
 		with self.assertRaises(frappe.ValidationError):
 			provider(ours).insert()
@@ -151,7 +149,6 @@ class TestOneNameAcrossGeographies(IntegrationTestCase):
 		self.assertEqual("probe-moves/probe-moved", doc.model_key)
 		doc.provider = sibling.name
 		doc.save()
-		# The name is inside the id every caller already sends.
 		doc.provider = stranger.name
 		with self.assertRaises(frappe.CannotChangeConstantError):
 			doc.save()
@@ -176,61 +173,6 @@ class TestWithNoSelfHostedProvider(IntegrationTestCase):
 		ours.is_self_hosted = 1
 		ours.save()
 		self.assertTrue(frappe.db.get_value("Model", doc.name, "provider_is_self_hosted"))
-
-
-class TestKeyStats(IntegrationTestCase):
-	"""Counts come off the boxes; Grove only adds them up per key row and names a store that
-	did not answer."""
-
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		cls.vendor = provider(
-			"probe-counted", base_url="https://api.counted.test",
-			api_keys=[{"title": "first", "api_key": "k1"}, {"api_key": "k2"}],
-		).insert()
-
-	def stats(self, answers):
-		"""`answers`: {unit label: {key id: counts} or None for a store nobody answered for}."""
-		from grove.pathway.run import Target, Unit
-
-		units = [Unit(label, (Target("Gateway Server", f"gw-{label}"),)) for label in answers]
-
-		def fetch(target, ids):
-			answer = answers[target.name.removeprefix("gw-")]
-			if answer is None:
-				return {"success": 0, "error": "down", "stats": {}}
-			return {"success": 1, "stats": {key: counts for key, counts in answer.items() if key in ids}}
-
-		with (
-			patch.object(model_provider, "gateway_units", return_value=units) as units_of,
-			patch.object(model_provider, "fetch_key_stats", side_effect=fetch),
-		):
-			result = self.vendor.key_stats()
-		units_of.assert_called_once_with(geography=self.vendor.geography)
-		return result
-
-	def test_counts_add_up_across_stores_and_timestamps_take_the_latest(self):
-		first, second = (row.name for row in self.vendor.api_keys)
-		result = self.stats({
-			"store-a": {first: {"requests": "3", "ok": "2", "rate_limited": "1", "last_used": "100", "last_rate_limited": "90"},
-			            second: {"requests": "1", "rejected": "1", "last_used": "50"}},
-			"store-b": {first: {"requests": "2", "ok": "2", "last_used": "80"}},
-		})
-		self.assertEqual(result["unreached"], [])
-		self.assertEqual(
-			result["keys"],
-			[{"title": "first", "requests": 5, "ok": 4, "rate_limited": 1, "rejected": 0, "failed": 0,
-			  "last_used": 100, "last_rate_limited": 90},
-			 {"title": second, "requests": 1, "ok": 0, "rate_limited": 0, "rejected": 1, "failed": 0,
-			  "last_used": 50, "last_rate_limited": 0}],
-		)
-
-	def test_a_store_nobody_answered_for_is_named_not_summed(self):
-		first, _ = (row.name for row in self.vendor.api_keys)
-		result = self.stats({"store-a": {first: {"requests": "4"}}, "store-b": None})
-		self.assertEqual(result["unreached"], ["store-b"])
-		self.assertEqual(result["keys"][0]["requests"], 4)
 
 
 class TestFetchModels(IntegrationTestCase):
@@ -302,7 +244,6 @@ class TestFetchModels(IntegrationTestCase):
 
 	def test_picked_ids_become_unpublished_models_under_the_record(self):
 		vendor = provider("probe-adder", base_url="https://api.adder.test", api_key="k").insert()
-		# The last id is renamed in the dialog: ours is no longer derived from the vendor's.
 		picked = {"gpt-4o": "gpt-4o", "GPT 4o Mini": "GPT 4o Mini", "org/Model": "org/Model", "x-2025": "x"}
 		keys = vendor.add_models(picked)
 		self.assertEqual(
@@ -314,7 +255,6 @@ class TestFetchModels(IntegrationTestCase):
 			fields=["model_key", "upstream_model_id", "published"],
 			order_by="model_key",
 		)
-		# The vendor's own spelling is kept only where ours differs from it.
 		self.assertEqual(
 			[(row.model_key, row.upstream_model_id or None, row.published) for row in rows],
 			[

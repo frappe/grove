@@ -17,7 +17,6 @@ frappe.ui.form.on('Inference Server', {
 					__("Push the Geography's certificate to {0} and reload nginx?", [frm.doc.name]),
 					'deploy_tls'), __('TLS'));
 			}
-			// The exporters listen on 9100/9400 for the agent above to scrape.
 			frm.add_custom_button(__('Update Scrape Auth'), () => grove.confirm_call(frm,
 				__("Rewrite {0}'s exporter password from Grove Settings? Scrapes with the old one fail from then on.", [frm.doc.name]),
 				'update_scrape_auth'));
@@ -40,8 +39,6 @@ frappe.ui.form.on('Inference Server', {
 	},
 });
 
-// A warning, not a save error: Setup is what refuses a box with no front. A box set up before the
-// choice existed still serves by IP, so it keeps the warning with its own wording.
 function show_front_warning(frm) {
 	const has_no_front = frm.doc.status !== 'Terminated' && !frm.doc.ingress && !frm.doc.is_standalone;
 	const message = frm.doc.is_provisioned
@@ -50,8 +47,6 @@ function show_front_warning(frm) {
 	frm.set_intro(has_no_front ? message : '', 'orange');
 }
 
-// Derived, never stored: recomputed from the Machine's cards and the Active replicas on this box,
-// so it is correct the moment one is deployed or torn down.
 function render_gpus(frm) {
 	frm.call('get_gpu_allocation').then((r) => {
 		grove.render_gpu_table(frm.fields_dict.gpus_html?.$wrapper, r.message || [], {

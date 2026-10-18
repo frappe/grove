@@ -35,7 +35,7 @@ def run_relay(events, cache=None):
 	with (
 		patch.object(frappe, "publish_realtime", lambda *a, **k: published.append(k["message"])),
 		patch.object(frappe, "cache", cache),
-		patch.object(log_relay, "FLUSH_INTERVAL", 0),  # publish per event, so batching is visible
+		patch.object(log_relay, "FLUSH_INTERVAL", 0),
 	):
 		log_relay.relay(iter(events), "Pod", "POD-1")
 	return published
@@ -48,7 +48,6 @@ class TestRelay(unittest.TestCase):
 		self.assertTrue(published[-1]["done"])
 
 	def test_ticks_carry_no_line(self):
-		# A keep-alive is a chance to flush and stop, not a log line — it must not print.
 		published = run_relay([None, "a", None])
 		self.assertEqual([line for p in published for line in p["lines"]], ["a"])
 
@@ -59,13 +58,9 @@ class TestRelay(unittest.TestCase):
 			patch.object(frappe, "cache", FakeCache()),
 		):
 			log_relay.relay(iter(["a", "b", "c"]), "Pod", "POD-1")
-		# The first line goes out at once; the rest wait out the interval and land together,
-		# rather than one socketio publish each.
 		self.assertEqual(published, [{"lines": ["a"]}, {"lines": ["b", "c"], "done": True}])
 
-	def test_a_stream_nobody_watches_ends_without_Stopping_the_source(self):
-		# The viewer stopped refreshing the key. The generator must be ABANDONED, not exhausted —
-		# that is what kills `docker logs -f` and frees the worker.
+	def test_a_stream_nobody_watches_is_abandoned_not_drained(self):
 		consumed = []
 
 		def endless():
@@ -78,7 +73,6 @@ class TestRelay(unittest.TestCase):
 		self.assertEqual(len(consumed), 1)
 
 	def test_the_key_is_released_when_the_stream_ends(self):
-		# Left behind, it would keep the next job alive with nobody watching it.
 		cache = FakeCache(alive=True)
 		run_relay(["a"], cache=cache)
 		self.assertFalse(cache.values["alive"])

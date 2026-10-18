@@ -1,26 +1,19 @@
 ---
-# Read the box's GPU inventory off nvidia-smi. Run by machine.scan_gpus, which parses the
-# task output back into the Machine's GPU child rows. Read-only — nothing on the host changes.
-# Lives under playbooks/machine (not playbooks/inference_server): this describes the hardware, and holds
-# whether or not the box ever serves a model.
+# Read the box's GPU inventory off nvidia-smi (machine.scan_gpus parses the task output). Read-only.
 - name: Scan GPUs
   hosts: all
   become: true
   gather_facts: false
   tasks:
-    # The task NAME is the contract: machine.scan_gpus finds this task's Ansible Task doc by
-    # it to read stdout. CSV so the parse stays trivial; nounits keeps memory a bare MiB int.
-    # used/free are the transient half — nothing is stored from them, machine.gpu_memory reads
-    # the same output for its dialog.
+    # The task NAME is the contract: machine.scan_gpus finds this task's Ansible Task doc by it,
+    # and parses these exact CSV columns (nounits: memory as a bare MiB int).
     - name: query nvidia-smi
       ansible.builtin.command:
         cmd: nvidia-smi --query-gpu=index,name,memory.total,uuid,memory.used,memory.free,compute_cap --format=csv,noheader,nounits
       register: nvidia_smi
       changed_when: false
 
-    # GPU-to-GPU paths: NV# is NVLink, anything else is a PCIe hop. Parsed by
-    # machine.parse_interconnect into Machine.gpu_interconnect. failed_when: false so a topo
-    # hiccup cannot sink the card inventory — the parser reads garbage as blank.
+    # Parsed by machine.parse_interconnect; non-fatal so a topo hiccup cannot sink the inventory.
     - name: query nvidia-smi topo
       ansible.builtin.command:
         cmd: nvidia-smi topo -m

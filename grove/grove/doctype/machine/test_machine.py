@@ -58,12 +58,10 @@ class TestParseNvidiaSmi(unittest.TestCase):
 		self.assertEqual(len(gpus), 2)
 		self.assertEqual(gpus[0]["gpu_index"], 0)
 		self.assertEqual(gpus[0]["gpu_model"], "NVIDIA RTX PRO 6000 Blackwell Workstation Edition")
-		self.assertEqual(gpus[0]["vram_gb"], 96)  # 97887 MiB rounds up to the marketed 96 GB
-		# The UUID becomes the device id, which survives a reseat that shuffles the index.
+		self.assertEqual(gpus[0]["vram_gb"], 96)
 		self.assertTrue(gpus[1]["device_id"].startswith("GPU-6666"))
 
 	def test_vram_rounds_not_truncates(self):
-		# 81559 MiB is an 80 GB A100; truncating would call it 79.
 		self.assertEqual(parse_nvidia_smi("0, NVIDIA A100-SXM4-80GB, 81559, GPU-x")[0]["vram_gb"], 80)
 		self.assertEqual(parse_nvidia_smi("0, Tesla T4, 15360, GPU-x")[0]["vram_gb"], 15)
 
@@ -74,13 +72,10 @@ class TestParseNvidiaSmi(unittest.TestCase):
 		self.assertEqual(gpus[0]["gpu_model"], "Tesla T4")
 
 	def test_missing_uuid_falls_back_to_the_index(self):
-		# A driver that answered without a UUID still has to be addressable, so the index stands in
-		# until a scan that reports one replaces it.
 		gpus = parse_nvidia_smi("0, Tesla T4, 15360")
 		self.assertEqual(gpus[0]["device_id"], "0")
 
 	def test_unreadable_memory_does_not_crash(self):
-		# nvidia-smi prints [N/A] when a card can't report memory.
 		self.assertEqual(parse_nvidia_smi("0, Tesla T4, [N/A], GPU-x")[0]["vram_gb"], 0)
 
 	def test_empty_output(self):
@@ -88,7 +83,7 @@ class TestParseNvidiaSmi(unittest.TestCase):
 		self.assertEqual(parse_nvidia_smi(None), [])
 
 	def test_driver_mismatch_yields_no_gpus(self):
-		# Real rc=18 output: nvidia-smi writes the error to stdout, not stderr.
+		"""Real rc=18 output: nvidia-smi writes the error to stdout, not stderr."""
 		stdout = "Failed to initialize NVML: Driver/library version mismatch\nNVML library version: 580.173"
 		self.assertEqual(parse_nvidia_smi(stdout), [])
 
@@ -110,7 +105,6 @@ class TestParseGpuMemory(unittest.TestCase):
 		self.assertEqual(rows[1]["free_mib"], 15360)
 
 	def test_a_scan_without_the_memory_columns_is_not_reported_as_idle(self):
-		# An older box can still answer the four-column query, and 0 used reads as a free GPU.
 		self.assertEqual(parse_gpu_memory("0, Tesla T4, 15360, GPU-a"), [])
 
 	def test_unreadable_figures_are_skipped(self):
@@ -146,7 +140,6 @@ class TestParseInterconnect(unittest.TestCase):
 			"NIC1\tSYS\tSYS\tPXB\tPXB\tSYS\t X \n"
 			+ self.LEGEND
 		)
-		# The NIC columns are PCIe paths too; they must not drag the verdict down.
 		self.assertEqual(parse_interconnect(stdout), "NVLink")
 
 	def test_no_link_is_pcie(self):
@@ -159,7 +152,6 @@ class TestParseInterconnect(unittest.TestCase):
 		self.assertEqual(parse_interconnect(stdout), "PCIe")
 
 	def test_bridged_pairs_are_mixed(self):
-		# Two NVLink bridges on a four-card PCIe box: a replica across all four still crosses PCIe.
 		stdout = (
 			"\tGPU0\tGPU1\tGPU2\tGPU3\tCPU Affinity\tNUMA Affinity\tGPU NUMA ID\n"
 			"GPU0\t X \tNV4\tSYS\tSYS\t0-15\t0\t\tN/A\n"
@@ -207,7 +199,6 @@ class TestScanWritesTheInterconnect(unittest.TestCase):
 		self.assertEqual(self.scan(topo), [("Machine", "mc-1", "gpu_interconnect", "NVLink")])
 
 	def test_a_topo_task_that_never_answered_blanks_it(self):
-		# failed_when: false in the playbook — a topo hiccup blanks the field and keeps the cards.
 		self.assertEqual(self.scan(), [("Machine", "mc-1", "gpu_interconnect", "")])
 
 
@@ -244,7 +235,6 @@ class TestParseGpus(unittest.TestCase):
 		gpus = parse_gpus(G6_12XLARGE)
 		self.assertEqual([gpu["gpu_index"] for gpu in gpus], [0, 1, 2, 3])
 		self.assertEqual(gpus[0]["gpu_model"], "L4")
-		# AWS has no UUID to report, so the index stands in until a real scan.
 		self.assertEqual(gpus[0]["device_id"], "0")
 
 	def test_indexes_run_across_several_entries(self):
@@ -254,8 +244,7 @@ class TestParseGpus(unittest.TestCase):
 		]}}
 		gpus = parse_gpus(info)
 		self.assertEqual([gpu["gpu_index"] for gpu in gpus], [0, 1, 2])
-		# The placeholder id IS the slot, so a card whose id names a different one takes its
-		# neighbour's identity on the first scan.
+		# The placeholder id IS the slot: a mismatched one takes a neighbour's identity on the first scan.
 		self.assertEqual(
 			[gpu["device_id"] for gpu in gpus], [str(gpu["gpu_index"]) for gpu in gpus]
 		)
@@ -266,7 +255,7 @@ class TestParseGpus(unittest.TestCase):
 
 class TestVramGbFromMib(unittest.TestCase):
 	def test_rounds_half_up_not_bankers(self):
-		# 23040 MiB is exactly 22.5 GiB. Python's round() is banker's and would say 22.
+		"""23040 MiB is exactly 22.5 GiB; Python's round() is banker's and would say 22."""
 		self.assertEqual(vram_gb_from_mib(23040), 23)
 
 	def test_agrees_with_the_nvidia_smi_readings(self):
@@ -297,7 +286,6 @@ class TestBuildIpPermission(unittest.TestCase):
 		})
 
 	def test_a_single_address_rule(self):
-		# The shape sync_ingress writes: one proxy's public IP allowed on the engine proxy's port.
 		permission = build_ip_permission(
 			{"protocol": "tcp", "from_port": 443, "to_port": 443, "cidr": "54.251.169.42/32"}
 		)
@@ -307,8 +295,6 @@ class TestBuildIpPermission(unittest.TestCase):
 		})
 
 	def test_source_group_rule(self):
-		# No rule Grove writes uses this branch, but sync_ingress revokes through it — a
-		# hand-added group-to-group rule on the port it owns is not in its desired set.
 		permission = build_ip_permission(
 			{"protocol": "tcp", "from_port": 443, "to_port": 443, "source_group_id": "sg-proxy"}
 		)
@@ -360,7 +346,7 @@ class TestResizeRootVolume(unittest.TestCase):
 	def client(self, states):
 		"""An EC2Client whose volume modification reports `states` in order, one per poll."""
 		reported = iter(states)
-		client = EC2Client.__new__(EC2Client)  # no boto3, no credentials
+		client = EC2Client.__new__(EC2Client)
 		client.region = "ap-south-1"
 		client.calls = []
 		client.ec2 = SimpleNamespace(
@@ -414,7 +400,7 @@ class TestStaticIp(unittest.TestCase):
 
 	def client(self, addresses):
 		"""An EC2Client whose describe_addresses reports `addresses`, recording every call."""
-		client = EC2Client.__new__(EC2Client)  # no boto3, no credentials
+		client = EC2Client.__new__(EC2Client)
 		client.region = "ap-south-1"
 		client.calls = []
 		record = lambda name: lambda **kw: client.calls.append((name, kw)) or {}
@@ -465,8 +451,6 @@ class TestLaunchResetsStatusOnFailure(IntegrationTestCase):
 		self.addCleanup(frappe.db.commit)
 		self.addCleanup(machine.delete, ignore_permissions=True)
 
-		# No cloud_provider, so cloud_client throws before instance_id is touched — the same
-		# shape as a bad AMI or quota failure inside run_instance.
 		self.assertEqual(machine.status, "Draft")
 		with self.assertRaises(frappe.ValidationError):
 			machine.launch()
@@ -502,8 +486,7 @@ class TestBaremetalMachine(IntegrationTestCase):
 		}).insert(ignore_permissions=True)
 		self.addCleanup(region.delete, ignore_permissions=True)
 
-		# Region is mandatory on Network now, so a blank one is a row predating that — exactly
-		# what this guard is for.
+		# Region is mandatory on Network now; a blank one is a row predating that.
 		dummy_network = frappe.get_doc({
 			"doctype": "Network", "name": "test-baremetal-dummy-network",
 		}).insert(ignore_permissions=True, ignore_mandatory=True)
@@ -692,7 +675,6 @@ class TestNetworkResolution(IntegrationTestCase):
 		self.assertEqual(machine.get_security_group_ids(machine.network_doc), ["sg-inference"])
 
 	def test_monitoring_agent_role_picks_inference_security_groups(self):
-		# It needs 22 inbound and nothing else; the proxy list would open 80/443 for nothing.
 		machine = frappe.get_doc({
 			"doctype": "Machine", "name": "test-net-role-agent", "cloud_provider": self.provider.name,
 			"network": self.network.name, "machine_type": "Monitoring Agent",
@@ -701,7 +683,6 @@ class TestNetworkResolution(IntegrationTestCase):
 		self.assertEqual(machine.get_security_group_ids(machine.network_doc), ["sg-inference"])
 
 	def test_gateway_store_role_picks_store_security_groups(self):
-		# 6379 to the Network's gateways; neither other list opens it.
 		machine = frappe.get_doc({
 			"doctype": "Machine", "name": "test-net-role-store", "cloud_provider": self.provider.name,
 			"network": self.network.name, "machine_type": "Gateway Store",
@@ -710,8 +691,6 @@ class TestNetworkResolution(IntegrationTestCase):
 		self.assertEqual(machine.get_security_group_ids(machine.network_doc), ["sg-store"])
 
 	def test_no_role_set_throws_when_network_present(self):
-		# Machine Type is mandatory, so a saved box always carries one; the guard is for a doc
-		# built in memory and asked before it is saved.
 		machine = frappe.get_doc({
 			"doctype": "Machine", "name": "test-net-role-missing", "cloud_provider": self.provider.name,
 			"network": self.network.name,
@@ -840,14 +819,10 @@ class TestTerminatingABoxTakesItsServersWithIt(unittest.TestCase):
 		return saved, logged, rollbacks
 
 	def test_it_saves_rather_than_writing_the_column(self):
-		# save() runs on_update, which is where remove_dns_records and the security-group
-		# reconcile live.
 		saved, _, _ = self.cascade()
 		self.assertEqual([("Gateway Server", "gw-1", "Terminated", True)], saved)
 
 	def test_an_ingress_is_not_forgotten(self):
-		# Missing from this list until it bit: an ingress carries a machine, a status and DNS
-		# records of its own, so being skipped left it Active and still resolving.
 		saved, _, _ = self.cascade(dependents={"Ingress Server": ["ing-1"]})
 		self.assertEqual([("Ingress Server", "ing-1", "Terminated", True)], saved)
 
@@ -862,7 +837,6 @@ class TestTerminatingABoxTakesItsServersWithIt(unittest.TestCase):
 		)
 
 	def test_a_stopped_box_marks_its_servers_broken_not_terminated(self):
-		# Stopped/Pending is recoverable: Start can bring the box back.
 		saved, _, _ = self.cascade(status="Stopped")
 		self.assertEqual("Broken", saved[0][2])
 

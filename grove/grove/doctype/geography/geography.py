@@ -21,6 +21,10 @@ class Geography(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		backup_access_key_id: DF.Data | None
+		backup_bucket: DF.Data | None
+		backup_region: DF.Data | None
+		backup_secret_access_key: DF.Password | None
 		endpoint: DF.Data
 		fleet_tls_cert: DF.SmallText | None
 		fleet_tls_expires_on: DF.Datetime | None
@@ -31,6 +35,26 @@ class Geography(Document):
 		is_default: DF.Check
 		label: DF.Data | None
 	# end: auto-generated types
+
+	@property
+	def backup_environment(self):
+		"""Env for this geography's Gateway Store backups; empty until bucket and key are set."""
+		if not (self.backup_bucket and self.backup_access_key_id):
+			return {}
+		return {
+			"AWS_ACCESS_KEY_ID": self.backup_access_key_id,
+			"AWS_SECRET_ACCESS_KEY": self.get_password("backup_secret_access_key", raise_exception=False) or "",
+			"AWS_DEFAULT_REGION": self.backup_region or "",
+		}
+
+	def get_backup_bucket_and_client(self):
+		"""(bucket, S3 client) for this geography's Gateway Store backups."""
+		from grove.grove.doctype.compile_cache.compile_cache import s3_client
+
+		env = self.backup_environment
+		if not env:
+			frappe.throw(f"Set the Store Backups bucket and keys on Geography {self.name} first.")
+		return self.backup_bucket.removeprefix("s3://").strip("/"), s3_client(env)
 
 	def validate(self):
 		self.validate_names()

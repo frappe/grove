@@ -41,8 +41,6 @@ class TestClearOldLogs(IntegrationTestCase):
 		self.assertFalse(frappe.db.exists("Pathway Sync", old))
 
 	def test_its_child_rows_go_with_it(self):
-		# The thing that rots quietly: delete the parent by itself and the rows stay forever,
-		# orphaned and invisible, which is most of the table's size now that each carries a payload.
 		old = self.run_aged(90)
 		PathwaySync.clear_old_logs(60)
 		self.assertEqual(self.rows_of(old), 0)
@@ -54,7 +52,6 @@ class TestClearOldLogs(IntegrationTestCase):
 		self.assertTrue(self.rows_of(recent))
 
 	def test_the_window_is_what_the_caller_says(self):
-		# Log Settings owns the number; the default is only a seed.
 		run = self.run_aged(30)
 		PathwaySync.clear_old_logs(60)
 		self.assertTrue(frappe.db.exists("Pathway Sync", run))
@@ -62,5 +59,4 @@ class TestClearOldLogs(IntegrationTestCase):
 		self.assertFalse(frappe.db.exists("Pathway Sync", run))
 
 	def test_it_is_wired_up_for_log_settings(self):
-		# Without the hook, Log Settings refuses the doctype and nothing ever clears.
 		self.assertEqual(frappe.get_hooks("default_log_clearing_doctypes", {}).get("Pathway Sync"), [60])

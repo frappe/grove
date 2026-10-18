@@ -14,10 +14,11 @@ class ModelProviderKey(Document):
 		from frappe.types import DF
 
 		api_key: DF.Password
+		disabled: DF.Check
 		parent: DF.Data
 		parentfield: DF.Data
 		parenttype: DF.Data
-		title: DF.Data | None
+		title: DF.Data
 	# end: auto-generated types
 
 	pass

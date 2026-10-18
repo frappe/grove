@@ -40,6 +40,13 @@ hand. If a test inserts anything, check its base class first.
 The rollback is **once per class, not once per test** (`addClassCleanup`), so a doc one test inserts is
 still there for the next one — give each test its own names, or insert shared fixtures in `setUpClass`.
 
+The rollback also covers nothing the code under test commits itself. `grove.localhost` is wired to the
+dev gateway and a test key lands in its default geography, so a cap check that reached the real
+`usage.peek_team` would dial the box; the pull variant of it once committed mid-test and persisted 27
+teams, 12 tiers, a probe user and `Grove Settings.default_tier = ""`, deleted by hand. Every suite that
+mints a capped key patches it in `setUpClass`:
+`cls.enterClassContext(unittest.mock.patch("grove.pathway.usage.peek_team", return_value={}))`.
+
 ## What a test here is for
 
 Not coverage. Each one pins a rule that something outside this repo enforces and that reading the code
@@ -57,8 +64,21 @@ does not reveal:
 - **The number is deliberate** — `HealthThreshold=1`, `EjectAfter=3`, `total − cached`. A test naming
   the constant is what stops a well-meaning edit.
 
-Two conventions that follow from that: a test's name says the rule (`test_a_gateway_without_a_check_of_its_own_is_not_a_child`),
-and where a rule exists because something broke, the comment says what broke.
+One convention follows: a test's **name** says the rule (`test_a_gateway_without_a_check_of_its_own_is_not_a_child`)
+and no comment restates it. A one-line docstring is for a trap or an external fact only — the tool quirk
+an assertion pins, or why a fixture is shaped the way it is.
+
+## Role defaults as fixtures
+
+A template test renders a role against the role's own `defaults/main.yml` (`role_defaults`), with the
+few variables the play sets layered on top — never a copied dict. A fixture that re-declares a default
+can supply a variable the play never sets, which is how `vllm_download_glob` reached production
+undefined. The vllm role is driven entirely by extra-vars assembled from the doctypes, so
+`test_engine_templates.py` renders it against those; `test_monitoring.py` renders every other role
+against its defaults alone (`test_each_role_defaults_every_variable_its_templates_use`), engine_proxy
+among them because it is what publishes the exporters. engine_proxy names paths that grove_https
+(certificate, htpasswd) and openresty (log directory) own, and both run ahead of it in every play that
+uses it, so their defaults are in scope on the box and in the test.
 
 ## Fakes worth reusing
 

@@ -6,20 +6,18 @@
  "engine": "InnoDB",
  "field_order": [
   "usage_record",
-  "grove_user",
+  "team",
   "api_key",
   "pricing",
   "column_break_where",
   "gateway_store",
   "resolution",
-  "gateway_correction_pending",
+  "resolved_on",
   "section_values",
   "gateway_value",
   "grove_value",
   "delta",
   "column_break_fix",
-  "correction",
-  "gateway_spent",
   "note"
  ],
  "fields": [
@@ -33,11 +31,11 @@
    "read_only": 1
   },
   {
-   "fieldname": "grove_user",
+   "fieldname": "team",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Grove User",
-   "options": "Grove User",
+   "label": "Team",
+   "options": "Central Team",
    "read_only": 1
   },
   {
@@ -59,7 +57,16 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Blank while open; set by whichever side was corrected.",
+   "description": "The store drained; a gateway adjustment goes through its writers.",
+   "fieldname": "gateway_store",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Gateway Store",
+   "options": "Gateway Store",
+   "read_only": 1
+  },
+  {
+   "description": "Which side a System Manager chose to correct; blank while open. The money is a Usage Correction (Grove) or a Gateway Spend Adjustment (gateway).",
    "fieldname": "resolution",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -68,11 +75,10 @@
    "read_only": 1
   },
   {
-   "default": "0",
-   "description": "The gateway was chosen and has not answered yet. The projection tick sends the correction until it does.",
-   "fieldname": "gateway_correction_pending",
-   "fieldtype": "Check",
-   "label": "Gateway Correction Pending",
+   "description": "When the decision was made (site time); blank while open.",
+   "fieldname": "resolved_on",
+   "fieldtype": "Datetime",
+   "label": "Resolved On",
    "read_only": 1
   },
   {
@@ -110,38 +116,22 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "What the resolving side's spend moved by.",
-   "fieldname": "correction",
-   "fieldtype": "Currency",
-   "label": "Correction",
-   "precision": "9",
-   "read_only": 1
-  },
-  {
-   "description": "The gateway's spend counter for the user after a gateway correction.",
-   "fieldname": "gateway_spent",
-   "fieldtype": "Currency",
-   "label": "Gateway Spent After",
-   "precision": "9",
-   "read_only": 1
-  },
-  {
    "fieldname": "note",
    "fieldtype": "Small Text",
    "label": "Note"
-  },
-  {
-   "description": "The store drained; a gateway correction goes to its writers.",
-   "fieldname": "gateway_store",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Gateway Store",
-   "options": "Gateway Store",
-   "read_only": 1
   }
  ],
- "links": [],
- "modified": "2026-10-04 00:00:00.000000",
+ "links": [
+  {
+   "link_doctype": "Usage Correction",
+   "link_fieldname": "credit_discrepancy"
+  },
+  {
+   "link_doctype": "Gateway Spend Adjustment",
+   "link_fieldname": "credit_discrepancy"
+  }
+ ],
+ "modified": "2026-10-18 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Credit Discrepancy",

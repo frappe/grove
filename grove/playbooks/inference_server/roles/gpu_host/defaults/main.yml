@@ -1,38 +1,21 @@
 ---
-# NVIDIA driver to install (proprietary -server variant for datacenter GPUs like
-# the T4). Must be new enough for vLLM's torch CUDA build (cu13 → driver >= 580).
+# vLLM's torch CUDA build (cu13) needs driver >= 580.
 nvidia_driver_pkg: nvidia-driver-580-server
 
-# How long to wait for the box to come back after the driver reboot. A virtualized instance is
-# up in well under a minute; a bare metal one POSTs real firmware and takes ten to twenty, so
-# Inference Server raises this for those. Too low does not just fail the reboot — it fails the
-# play midway and leaves the box with a driver installed and nothing configured on top of it.
 gpu_reboot_timeout: 600
 
-# Container runtime that gives `docker run --gpus` its GPU access. Pinned because it comes
-# from NVIDIA's own repo rather than the distro, so it moves independently of the Ubuntu
-# release, and a toolkit change breaks every container placement at once. NVIDIA publishes
-# one version string across distros, so this needs no codename suffix.
 nvidia_container_toolkit_version: "1.19.1-1"
 
-# Host GPU-monitoring / diagnostic tools installed once with the driver.
 gpu_host_monitor_packages:
   - nvtop
 
-# Data volume: the large secondary disk that holds the engine images, weights and
-# caches.
 gpu_data_device: ""
 gpu_data_mount: /opt/vllm
 gpu_data_fstype: ext4
 
-# Disks that are wiped when the box stops — cloud ephemeral scratch, matched on the model
-# lsblk reports. Never picked automatically: weights are hundreds of GB and re-downloading
-# them on every start costs far more than the durable disk does. Pinning one in
-# gpu_data_device is still allowed, for a box that genuinely wants scratch there.
 gpu_ephemeral_disk_models:
   - Amazon EC2 NVMe Instance Storage
 
-# Opt-in: mount the instance-store NVMe (~30 GB/s vs ~1 GB/s EBS) for the HF cache ONLY.
-# Weights re-download after a stop/start; images and Docker stay on the durable volume.
+# HF cache only: the instance store is blank after a stop/start, so weights re-download.
 gpu_instance_store_hf_cache: false
 gpu_instance_store_mount: /mnt/instance

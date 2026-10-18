@@ -38,24 +38,18 @@ class TestTheAdminTokenIsAlwaysThere(unittest.TestCase):
 		self.assertTrue(self.token_for())
 
 	def test_an_existing_blank_one_is_healed(self):
-		# In validate rather than before_insert precisely so this works: a gateway created before
-		# this generated one is fixed by saving it, not by re-creating it.
 		for blank in (None, ""):
 			with self.subTest(blank):
 				self.assertTrue(self.token_for(blank))
 
 	def test_a_lost_secret_behind_a_placeholder_is_healed(self):
-		# The one that got away. A saved Password field leaves a row of asterisks in the doc's own
-		# column and the real value in __Auth. Lose the __Auth row — a doctype rename does exactly
-		# this — and `if not self.admin_token` reads the asterisks, calls it set, and generates
-		# nothing. The doc then looks fine and every push fails.
+		# Lose the __Auth row (a doctype rename does) and `if not self.admin_token` reads the
+		# asterisks as set.
 		healed = self.token_for(existing=None, field="*" * 48)
 		self.assertTrue(healed)
 		self.assertNotIn("*", healed)
 
 	def test_a_token_that_exists_is_never_replaced(self):
-		# Regenerating on every save would silently desync the box, which holds the value it was
-		# last given in agent.env — every push would start failing and nothing would say why.
 		self.assertEqual("already-set", self.token_for("already-set"))
 
 	def test_two_gateways_do_not_share_one(self):
@@ -70,8 +64,6 @@ class TestTheDoctypeKeepsItsSecretsSecret(unittest.TestCase):
 		self.fields = json.loads(DOCTYPE.read_text())["fields"]
 
 	def test_the_admin_token_is_a_password_field(self):
-		# Not Data: a Data field would put the control plane's credential in every list view, every
-		# report and the doc's own JSON.
 		[token] = [f for f in self.fields if f["fieldname"] == "admin_token"]
 		self.assertEqual("Password", token["fieldtype"])
 

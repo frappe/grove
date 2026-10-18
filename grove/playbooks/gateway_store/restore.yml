@@ -1,14 +1,10 @@
 ---
-# Load one RDB into the live store without a restart: a side redis-server reads it, the live one
-# REPLICAOFs that for a few seconds and rewrites its own AOF from what it got, then is a master
-# again. Counters a later drain already billed, and everything transient, are dropped afterwards.
-# Only for a store whose disk is gone — an AOF that survived already holds everything.
-#
+# Load one RDB into the live store without a restart, through a side redis-server and REPLICAOF.
 # extra-vars: restore_file (a path on the control node; copied here), redis_password,
-# drop_prefixes (API-key prefixes whose usage:<prefix> a later drain landed).
-#
+# drop_prefixes (API-key prefixes whose usage:<prefix>:<day> buckets a later drain landed),
+# spent_seeds ([{key, field, value}]: a key record, its spent:<month> field, nano-USD).
 # The side server has no password, so REDISCLI_AUTH is set per task, on the live store's only:
-# redis-cli sends AUTH whenever the variable exists, and a server without a password refuses it.
+# redis-cli sends AUTH whenever the variable exists.
 - hosts: all
   become: true
   gather_facts: false
@@ -83,8 +79,18 @@
           environment: "{{ live_env }}"
 
         - name: drop live counters a later drain already billed
-          ansible.builtin.command: redis-cli DEL usage:{{ item }}
+          ansible.builtin.shell: redis-cli --scan --pattern 'usage:{{ item }}:*' | xargs -r redis-cli DEL
           loop: "{{ drop_prefixes | default([]) }}"
+          environment: "{{ live_env }}"
+
+        - name: this month's spend on each live key is at least what the control plane has billed it
+          ansible.builtin.shell: |
+            set -eu
+            have=$(redis-cli HGET '{{ item.key }}' '{{ item.field }}')
+            if [ -z "$have" ] || [ "$have" -lt {{ item.value }} ]; then
+              redis-cli HSET '{{ item.key }}' '{{ item.field }}' {{ item.value }}
+            fi
+          loop: "{{ spent_seeds | default([]) }}"
           environment: "{{ live_env }}"
 
         - name: drop transient state — never worth restoring
@@ -97,7 +103,6 @@
           environment: "{{ live_env }}"
 
       always:
-        # Whatever failed above, the live store must not stay a replica of a server about to die.
         - name: the live store is a master, whatever happened
           ansible.builtin.command: redis-cli REPLICAOF NO ONE
           environment: "{{ live_env }}"

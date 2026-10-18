@@ -43,7 +43,6 @@ class FakeRoute53:
 		self.batches = []
 		self.health_checks = []
 		self.deleted_health_checks = []
-		# Every mutating call in order; teardown order is the assertion.
 		self.calls = []
 		self.errors = {}
 
@@ -104,8 +103,6 @@ class TestHostedZoneLookup(unittest.TestCase):
 		self.assertEqual(client(FakeRoute53()).get_hosted_zone_id(ZONE), "Z123")
 
 	def test_a_private_zone_of_the_same_name_is_not_it(self):
-		# An account can hold both, and writing into the private one resolves for nothing outside
-		# the VPC — which reads as DNS not having propagated.
 		fake = FakeRoute53(zones=[{"Id": "/hostedzone/Zpriv", "Name": f"{ZONE}.", "Config": {"PrivateZone": True}}])
 		with self.assertRaises(Route53Error):
 			client(fake).get_hosted_zone_id(ZONE)
@@ -115,7 +112,6 @@ class TestHostedZoneLookup(unittest.TestCase):
 			client(FakeRoute53(zones=[])).get_hosted_zone_id(ZONE)
 
 	def test_it_is_looked_up_once_per_client(self):
-		# Every write does it, against a value that cannot change under a running request.
 		fake = FakeRoute53()
 		c = client(fake)
 		with patch.object(fake, "list_hosted_zones_by_name", wraps=fake.list_hosted_zones_by_name) as listed:
@@ -135,7 +131,6 @@ class TestGatewayRecords(unittest.TestCase):
 		self.arguments = gateway_arguments()
 
 	def test_both_records_go_in_one_batch(self):
-		# One call, so a box is never halfway in: named but absent from its set, or the reverse.
 		self.client.upsert_gateway_records(*self.arguments)
 		[batch] = self.fake.batches
 		self.assertEqual(batch["HostedZoneId"], "Z123")
@@ -147,21 +142,19 @@ class TestGatewayRecords(unittest.TestCase):
 		self.client.upsert_gateway_records(*self.arguments)
 		own = rows(self.fake.batches[0])[(f"gw1-ap-south-1.{ZONE}", None)]["ResourceRecordSet"]
 		self.assertEqual(own["ResourceRecords"], [{"Value": "203.0.113.7"}])
-		# Cached longer than the shared row: nothing fails over on this name.
 		self.assertEqual(own["TTL"], NAME_TTL)
 		self.assertNotIn("SetIdentifier", own)
 		self.assertNotIn("Region", own)
 		self.assertNotIn("HealthCheckId", own)
 
 	def test_a_gateway_is_one_multivalue_row_with_its_own_health_check(self):
-		# The escape from one-health-check-per-record: one record per IP, each checked on its own.
 		self.client.upsert_gateway_records(*self.arguments)
 		row = rows(self.fake.batches[0])[(GATEWAY_HOST, "gw1-ap-south-1")]["ResourceRecordSet"]
 		self.assertTrue(row["MultiValueAnswer"])
 		self.assertEqual(row["HealthCheckId"], "hc-1")
 		self.assertEqual(row["ResourceRecords"], [{"Value": "203.0.113.7"}])
 		self.assertEqual(row["TTL"], TTL)
-		# No latency policy: a row carrying both is refused outright.
+		# Route53 refuses a row carrying both MultiValueAnswer and Region.
 		self.assertNotIn("Region", row)
 
 	def test_two_gateways_are_two_rows_in_one_set(self):
@@ -179,13 +172,11 @@ class TestGatewayRecords(unittest.TestCase):
 		)
 
 	def test_a_row_without_a_health_check_carries_none_rather_than_a_blank(self):
-		# Blank is rejected outright, and absence means something: Route53 counts an unchecked row
-		# as permanently healthy.
+		"""Route53 rejects a blank HealthCheckId outright."""
 		self.client.upsert_gateway_records(*gateway_arguments(health_check_id=""))
 		self.assertNotIn("HealthCheckId", rows(self.fake.batches[0])[(GATEWAY_HOST, "gw1-ap-south-1")]["ResourceRecordSet"])
 
 	def test_a_delete_repeats_what_the_upsert_wrote(self):
-		# Route53 matches a DELETE on the whole record set, routing policy and health check included.
 		self.client.upsert_gateway_records(*self.arguments)
 		self.client.delete_gateway_records(*self.arguments)
 		created, deleted = (rows(batch) for batch in self.fake.batches)
@@ -219,15 +210,11 @@ class TestARowUnderAnotherPolicy(unittest.TestCase):
 	def test_it_is_replaced_in_the_same_batch(self):
 		[batch] = self.upsert([self.latency_row()]).batches
 		changes = batch["ChangeBatch"]["Changes"]
-		# Deleted verbatim: its TTL and Region are whatever it was written with, and a DELETE that
-		# does not match leaves it in place.
 		self.assertEqual({"Action": "DELETE", "ResourceRecordSet": self.latency_row()}, changes[0])
 		self.assertEqual("UPSERT", changes[-1]["Action"])
 		self.assertTrue(changes[-1]["ResourceRecordSet"]["MultiValueAnswer"])
 
 	def test_a_row_already_in_the_right_policy_is_left_to_the_upsert(self):
-		# Otherwise every sync would delete and recreate the row, leaving the shared name briefly
-		# without this box's address for no reason at all.
 		already = {**self.latency_row(), "MultiValueAnswer": True}
 		already.pop("Region")
 		self.assertEqual(1, len(self.upsert([already]).batches))
@@ -245,15 +232,12 @@ class TestHealthChecks(unittest.TestCase):
 		self.client = client(self.fake)
 
 	def test_a_gateway_is_checked_on_the_path_its_own_binary_answers(self):
-		# pathway serves /healthz on the plaintext listener rather than redirecting, so an HTTP
-		# check reaches the process itself and reports 503 the moment it cannot serve.
 		self.client.create_endpoint_health_check("203.0.113.7", f"gw1-ap-south-1.{ZONE}", "ref-1")
 		config = self.fake.health_checks[0]["HealthCheckConfig"]
 		self.assertEqual("HTTP", config["Type"])
 		self.assertEqual(80, config["Port"])
 		self.assertEqual("/healthz", config["ResourcePath"])
 		self.assertEqual("203.0.113.7", config["IPAddress"])
-		# So the probe arrives with a Host header the gateway knows as its own name.
 		self.assertEqual(f"gw1-ap-south-1.{ZONE}", config["FullyQualifiedDomainName"])
 
 	def test_the_failover_window_is_the_two_constants(self):
@@ -264,7 +248,7 @@ class TestHealthChecks(unittest.TestCase):
 
 	def test_a_check_already_gone_does_not_block_a_teardown(self):
 		self.fake.errors["delete_health_check"] = Route53Error("gone", "NoSuchHealthCheck")
-		self.client.delete_health_check("hc-1")  # must not raise
+		self.client.delete_health_check("hc-1")
 
 	def test_any_other_delete_failure_is_surfaced(self):
 		self.fake.errors["delete_health_check"] = Route53Error("still referenced", "HealthCheckInUse")
@@ -324,11 +308,9 @@ class TestTeardownOrder(unittest.TestCase):
 		self.assertEqual(["change_resource_record_sets", "delete_health_check"], self.remove().calls)
 
 	def test_a_row_already_gone_does_not_strand_the_doc(self):
-		# Refusing to delete would strand the Gateway Server and the Machine under it.
 		fake = FakeRoute53()
 		fake.errors["change_resource_record_sets"] = Route53Error("not found", "InvalidChangeBatch")
 		self.remove(fake=fake)
-		# And the check still goes, so a terminate does not leave one paid for behind.
 		self.assertEqual(["hc-1"], fake.deleted_health_checks)
 
 
@@ -380,8 +362,7 @@ class TestDerivedNames(unittest.TestCase):
 	`requests` verify the certificate without a line of change in the projection."""
 
 	def settings(self, zone):
-		"""The box's Geography's zone. frappe.db is a Local proxy with no site bound, so the attribute
-		is replaced whole."""
+		"""The box's Geography's zone."""
 		def get_value(doctype, name, field):
 			assert (doctype, name, field) == ("Geography", "in", "fleet_zone")
 			return zone
@@ -419,8 +400,6 @@ class TestDerivedNames(unittest.TestCase):
 		self.assertEqual(self.admin_url(""), "http://203.0.113.7/grove-admin")
 
 	def test_a_box_with_neither_keeps_whatever_was_set_by_hand(self):
-		# Pre-TLS proxies had this typed into the read-only field out of band. Blanking it
-		# would take a working gateway off the sync.
 		doc = FakeProxy(public_ip=None, admin_url="http://10.0.0.1/grove-admin")
 		with self.settings(""):
 			GatewayServer.set_admin_url(doc)

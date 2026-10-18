@@ -37,7 +37,6 @@ from grove.monitoring import (
 PLAYBOOKS = Path(__file__).parent.parent / "playbooks"
 AGENT = PLAYBOOKS / "monitoring_agent"
 INFERENCE = PLAYBOOKS / "inference_server"
-# The exporters go on every box whoever owns it, so they live in the shared roles folder.
 SHARED_ROLES = PLAYBOOKS / "roles"
 
 
@@ -89,8 +88,6 @@ class TestHostTargets(unittest.TestCase):
 		self.assertEqual(entry["labels"]["server"], "PROXY-1")
 
 	def test_a_box_is_scraped_through_its_tls_front_not_the_exporter_port(self):
-		# They still LISTEN on 9100/9400, just not from outside, so a target naming those ports
-		# could only ever be down.
 		[entry] = build_host_targets([box("PROXY-1")])
 		self.assertEqual(entry["labels"]["__scheme__"], "https")
 		self.assertNotIn(str(NODE_EXPORTER_PORT), entry["targets"][0])
@@ -103,20 +100,16 @@ class TestHostTargets(unittest.TestCase):
 		)
 
 	def test_each_exporter_on_a_box_keeps_its_own_instance(self):
-		# Both resolve to the same address now, so left to default they collapse into one
-		# `instance` and any `by (instance)` query silently merges node with GPU.
 		entries = build_host_targets([box("INF-1", has_gpu=True)])
 		self.assertEqual(
 			[e["labels"]["instance"] for e in entries], ["10.0.0.5:9100", "10.0.0.5:9400"]
 		)
 
 	def test_a_box_without_gpus_has_no_dcgm_target(self):
-		# DCGM is only installed on GPU boxes.
 		entries = build_host_targets([box("PROXY-1")])
 		self.assertEqual(len(entries), 1)
 
 	def test_a_box_with_no_address_is_skipped(self):
-		# A Machine that has not been provisioned yet has no IP to scrape.
 		self.assertEqual(build_host_targets([box("INF-1", ip="")]), [])
 
 
@@ -132,12 +125,10 @@ class TestBoxesAreScrapedPrivatelyWhereTheyCanBe(unittest.TestCase):
 		self.assertEqual(entry["targets"], ["172.31.0.9:443"])
 
 	def test_a_box_in_another_network_is_scraped_publicly(self):
-		# Same region is not enough: a different Network is a different VPC.
 		[entry] = build_host_targets([self.SAME], "NET-singapore")
 		self.assertEqual(entry["targets"], ["10.0.0.5:443"])
 
 	def test_a_box_with_no_private_address_is_scraped_publicly(self):
-		# Colo and bare metal: no private address to be reached by.
 		colo = box("INF-colo", network="NET-mumbai")
 		[entry] = build_host_targets([colo], "NET-mumbai")
 		self.assertEqual(entry["targets"], ["10.0.0.5:443"])
@@ -147,8 +138,6 @@ class TestBoxesAreScrapedPrivatelyWhereTheyCanBe(unittest.TestCase):
 		self.assertEqual(entry["targets"], ["10.0.0.5:443"])
 
 	def test_the_address_moves_but_the_series_does_not(self):
-		# `instance` is which exporter this is, not where it was reached — a box gaining a private
-		# IP would otherwise rename every series it has ever reported.
 		public = build_host_targets([self.SAME], "")
 		private = build_host_targets([self.SAME], "NET-mumbai")
 		self.assertNotEqual(public[0]["targets"], private[0]["targets"])
@@ -165,8 +154,6 @@ class TestBoxesAreScrapedPrivatelyWhereTheyCanBe(unittest.TestCase):
 		)
 
 	def test_an_engine_on_a_private_box_keeps_its_public_identity(self):
-		# `engine` joins back to the route the projection pushes, `instance` tells two engines on one
-		# box apart. Neither may follow the address.
 		entry = engine_entry(
 			"https://10.0.0.5/e/md-00007", {"deployment": "MD-00007"}, address="172.31.0.9"
 		)
@@ -176,7 +163,6 @@ class TestBoxesAreScrapedPrivatelyWhereTheyCanBe(unittest.TestCase):
 		self.assertEqual(entry["labels"]["__metrics_path__"], "/e/md-00007/metrics")
 
 	def test_a_pod_is_never_scraped_privately(self):
-		# A pod has no Machine and no Network, so there is no private address to prefer.
 		entry = engine_entry("http://1.2.3.4:8081", {"deployment": "POD-1"})
 		self.assertEqual(entry["targets"], ["1.2.3.4:8081"])
 
@@ -197,20 +183,16 @@ class TestWhichBoxesAreScraped(unittest.TestCase):
 		return captured
 
 	def test_a_terminated_inference_server_is_not_a_target(self):
-		# inference_boxes also reads GPU for the has_gpu flag, so key on the doctype.
 		filters = self.filters_for(monitoring.inference_boxes)["Inference Server"]
 		self.assertEqual(filters["status"], ("!=", "Terminated"))
 
 	def test_a_terminated_front_box_is_not_a_target_either(self):
-		# front_boxes runs the same query over both, and both leave a dead target behind.
 		captured = self.filters_for(monitoring.front_boxes)
 		for doctype in ("Gateway Server", "Ingress Server"):
 			with self.subTest(doctype):
 				self.assertEqual(captured[doctype]["status"], ("!=", "Terminated"))
 
 	def test_a_broken_box_is_still_scraped(self):
-		# Only Terminated. A Broken box still exists and its metrics say what is wrong with it, so
-		# filtering on == "Active" would blind you there.
 		for boxes, doctype in (
 			(monitoring.inference_boxes, "Inference Server"),
 			(monitoring.front_boxes, "Gateway Server"),
@@ -237,22 +219,18 @@ class TestEngineTargets(unittest.TestCase):
 		self.assertEqual(entry["labels"]["deployment"], "MD-00007")
 
 	def test_a_pod_is_still_scraped_on_its_own_port(self):
-		# A pod IS the container — no box, no front. One derivation serves both shapes, which is
-		# why nothing here hardcodes :443.
 		entry = engine_entry("http://10.0.0.9:8081", self.LABELS)
 		self.assertEqual(entry["targets"], ["10.0.0.9:8081"])
 		self.assertEqual(entry["labels"]["__metrics_path__"], "/metrics")
 		self.assertEqual(entry["labels"]["engine"], "http://10.0.0.9:8081")
 
 	def test_every_engine_on_a_box_keeps_its_own_instance(self):
-		# Two deployments on one box share an address, so a default `instance` merges them.
 		first = engine_entry("https://10.0.0.9/e/md-00007", self.LABELS)
 		second = engine_entry("https://10.0.0.9/e/md-00008", self.LABELS)
 		self.assertEqual(first["targets"], second["targets"])
 		self.assertNotEqual(first["labels"]["instance"], second["labels"]["instance"])
 
 	def test_an_engine_without_a_url_is_not_a_target(self):
-		# Mid-provision deployments and loading pods hold "" — the projection's filter too.
 		self.assertIsNone(engine_entry("", self.LABELS))
 		self.assertIsNone(engine_entry(None, self.LABELS))
 
@@ -264,13 +242,12 @@ class TestEngineTargets(unittest.TestCase):
 		self.assertEqual(entry["labels"]["__metrics_path__"], "/metrics")
 
 	def test_a_pod_carries_no_box_labels(self):
-		# A pod is not on a box we own; machine/region would name the scraper's host.
 		entry = engine_entry("http://1.2.3.4:8080", {"model": "m", "deployment": "POD-1"})
 		self.assertNotIn("machine", entry["labels"])
 		self.assertNotIn("region", entry["labels"])
 
 	def test_a_missing_label_is_empty_not_null(self):
-		# get_all hands back None for an unset Link, and vmagent rejects a non-string label.
+		"""get_all hands back None for an unset Link, and vmagent rejects a non-string label."""
 		entry = engine_entry("http://1.2.3.4:8080", {"model": None, "deployment": "POD-1"})
 		self.assertEqual(entry["labels"]["model"], "")
 
@@ -289,18 +266,14 @@ class TestExporterPortsAgree(unittest.TestCase):
 		self.assertEqual(self.role_default("node_exporter", "node_exporter_port"), NODE_EXPORTER_PORT)
 
 	def test_the_agent_is_scraped_where_it_listens(self):
-		# The agent scrapes its own /metrics, so this is both what it serves on and its target.
 		listen = self.role_default("vmagent", "vmagent_listen_address")
 		self.assertEqual(int(listen.rsplit(":", 1)[1]), VMAGENT_PORT)
 
 	def test_the_agent_box_installs_the_node_exporter_it_will_be_asked_to_scrape(self):
-		# Nothing else installs one there: the agent box carries no server doc.
 		play = yaml.safe_load((AGENT / "agent.yml").read_text())[0]
 		self.assertIn("node_exporter", play["roles"])
 
 	def test_the_exporters_are_republished_where_grove_says_they_are(self):
-		# The port stopped being the address: a box answers on 443 and the PATH picks the
-		# exporter. A mismatch scrapes a 404, which reads exactly like a box that is down.
 		self.assertEqual(
 			self.role_default("engine_proxy", "engine_proxy_node_metrics_path"), NODE_METRICS_PATH
 		)
@@ -309,8 +282,6 @@ class TestExporterPortsAgree(unittest.TestCase):
 		)
 
 	def test_the_front_forwards_to_the_ports_the_exporters_listen_on(self):
-		# engine_proxy restates the two ports because serve.yml runs it without the exporter roles.
-		# Restated, therefore asserted.
 		for key, port in (
 			("engine_proxy_node_upstream", NODE_EXPORTER_PORT),
 			("engine_proxy_gpu_upstream", DCGM_EXPORTER_PORT),
@@ -322,9 +293,6 @@ class TestExporterPortsAgree(unittest.TestCase):
 		self.assertEqual(self.role_default("engine_proxy", "engine_proxy_port"), BOX_HTTPS_PORT)
 
 	def test_the_agent_authenticates_as_the_user_the_boxes_hash(self):
-		# A constant in two roles rather than a Grove Settings field: a settable one only added a
-		# way for the two ends to disagree, and it did — the Single predated the field, so the
-		# htpasswd rendered with a blank user. Constants drift too, so they are pinned here.
 		self.assertEqual(
 			self.role_default("grove_https", "scrape_username"),
 			self.role_default("vmagent", "monitoring_scrape_username"),
@@ -351,7 +319,6 @@ class TestServiceDiscoveryAuth(unittest.TestCase):
 			monitoring.authenticate(supplied)
 
 	def test_a_signed_in_reader_needs_no_token(self):
-		# The form's Show Targets button, which sends no token and should not have to.
 		self.authenticate("", None, user="Administrator", may_read=True)
 
 	def test_a_signed_in_user_who_cannot_read_the_agent_still_needs_one(self):
@@ -370,8 +337,6 @@ class TestServiceDiscoveryAuth(unittest.TestCase):
 			self.authenticate("", "s3cr3t")
 
 	def test_the_accepted_token_charset_survives_a_url_unescaped(self):
-		# Grove Settings rejects anything else, which is what lets the scrape config interpolate
-		# the secret straight into a query string.
 		for token in ("0f3a-b21c_9d.e~4a7b", "A" * 16):
 			with self.subTest(token):
 				self.assertTrue(SD_TOKEN_PATTERN.match(token))
@@ -381,11 +346,28 @@ class TestServiceDiscoveryAuth(unittest.TestCase):
 				self.assertIsNone(SD_TOKEN_PATTERN.match(token))
 
 	def test_an_unset_token_refuses_everyone_rather_than_waving_them_through(self):
-		# The one that matters: a blank field must not become "any token matches", which is what
-		# comparing two empty strings would do.
 		for supplied in ("", "anything"):
 			with self.subTest(supplied), self.assertRaises(Exception):
 				self.authenticate(supplied, None)
+
+
+class TestTheRotationButtonCarriesTheHash(unittest.TestCase):
+	def test_update_scrape_auth_passes_the_hash_the_htpasswd_task_is_gated_on(self):
+		"""grove_https writes the htpasswd only when the hash is passed; without it the button
+		re-ran the play and rewrote nothing."""
+		machine = SimpleNamespace(name="inf1", public_ip="203.0.113.7", gpus=[])
+		settings = SimpleNamespace(scrape_auth_variables={"scrape_password_hash": "$2b$12$hash"})
+		server = SimpleNamespace(machine="inf1", run_playbook=unittest.mock.Mock())
+		with (
+			unittest.mock.patch.object(frappe, "get_doc", return_value=machine),
+			unittest.mock.patch.object(frappe, "get_single", return_value=settings),
+		):
+			monitoring.run_exporters_play(server)
+		extravars = server.run_playbook.call_args.kwargs["extravars"]
+		self.assertEqual(extravars["scrape_password_hash"], "$2b$12$hash")
+		tasks = yaml.safe_load((SHARED_ROLES / "grove_https/tasks/main.yml").read_text())
+		[htpasswd] = [task for task in tasks if "htpasswd" in task["name"]]
+		self.assertIn("scrape_password_hash", htpasswd["when"])
 
 
 class TestScrapePasswordHash(unittest.TestCase):
@@ -407,13 +389,10 @@ class TestScrapePasswordHash(unittest.TestCase):
 		self.assertFalse(bcrypt.checkpw(b"guess", hashed.encode()))
 
 	def test_the_hash_is_bcrypt_so_go_and_nginx_both_read_it(self):
-		# The gateway verifies in Go and every inference box in nginx through crypt(3). $2b$ is
-		# the prefix both accept; $2y$ is not.
+		"""$2b$ is the prefix Go's bcrypt and nginx's crypt(3) both accept; $2y$ is not."""
 		self.assertTrue(self.hash_for("sc4ape").startswith("$2b$"))
 
 	def test_a_password_too_long_for_bcrypt_is_refused(self):
-		# bcrypt truncates silently past 72 bytes, which would make two different long passwords
-		# interchangeable. Refused rather than truncated.
 		with self.assertRaises(Exception):
 			self.hash_for("x" * 73)
 
@@ -421,8 +400,6 @@ class TestScrapePasswordHash(unittest.TestCase):
 		self.assertNotIn("sc4ape", self.hash_for("sc4ape"))
 
 	def test_an_unchanged_password_keeps_the_same_hash(self):
-		# The whole reason the hash is stored rather than computed per play: bcrypt salts randomly,
-		# so re-hashing on every save would rewrite the file on every box in the fleet.
 		first = self.hash_for("sc4ape")
 		self.assertEqual(self.hash_for("sc4ape", stored=first), first)
 
@@ -431,9 +408,6 @@ class TestScrapePasswordHash(unittest.TestCase):
 		self.assertNotEqual(self.hash_for("different", stored=first), first)
 
 	def test_a_corrupt_hash_is_replaced_rather_than_raised_on(self):
-		# The field is read-only, so anything unparseable in it came from an edit that should not
-		# survive the next save. A sha256-crypt hash left over from the previous scheme lands here
-		# too, which is what makes the switch a no-op for an operator.
 		for stored in ("nonsense", "$5$rounds=535000$abc$def"):
 			with self.subTest(stored):
 				self.assertTrue(bcrypt.checkpw(b"sc4ape", self.hash_for("sc4ape", stored=stored).encode()))
@@ -457,16 +431,12 @@ class TestTheAgentPlayChecksBeforeItInstalls(unittest.TestCase):
 			"monitoring_sd_url",
 			"monitoring_sd_token",
 			"monitoring_agent",
-			# Without this the agent installs happily and is refused by every host target,
-			# which reads as a fleet that is simply down.
 			"monitoring_scrape_password",
 		):
 			with self.subTest(variable):
 				self.assertIn(variable, asserted)
 
 	def test_no_role_defers_a_check_until_after_something_is_installed(self):
-		# Every task file, not just main.yml — vmagent's config half lives in config.yml so
-		# update_config can re-run it, and a check hidden there installs just as much first.
 		for role in self.PLAY["roles"]:
 			for task_file in sorted((role_dir(role) / "tasks").glob("*.yml")):
 				with self.subTest(f"{role}/{task_file.name}"):
@@ -483,15 +453,7 @@ class TestEveryTemplateVariableHasADefault(unittest.TestCase):
 	override names `defaults/main.yml` already declares."""
 
 	def test_each_role_defaults_every_variable_its_templates_use(self):
-		# engine_proxy joins the monitoring roles here because it is what publishes them, and it
-		# is configured the same way — by its defaults, with Grove overriding names they already
-		# declare. The vllm role beside it is not: it is driven entirely by extra-vars assembled
-		# from the doctypes, and test_engine_templates.py renders it against those instead.
 		roles = [*SHARED_ROLES.iterdir(), *(AGENT / "roles").iterdir(), INFERENCE / "roles/engine_proxy"]
-		# engine_proxy's config names paths that grove_https (certificate, htpasswd) and openresty
-		# (log directory) own, and both always run ahead of it in every play that uses it.
-		# Rendering it against its own defaults alone would demand a second copy of those paths,
-		# which is the drift this test exists to prevent.
 		shared = {}
 		for owner in ("grove_https", "openresty"):
 			shared.update(yaml.safe_load((SHARED_ROLES / owner / "defaults/main.yml").read_text()) or {})
@@ -529,21 +491,14 @@ class TestScrapeConfig(unittest.TestCase):
 		self.jobs = {job["job_name"]: job for job in self.config["scrape_configs"]}
 
 	def test_every_target_is_reached_over_tls_it_cannot_verify(self):
-		# Each box fronts itself with a self-signed certificate, so a verifying scrape would fail
-		# on every target. This encrypts the hop; it authenticates nothing.
 		for job in self.jobs.values():
 			self.assertTrue(job["tls_config"]["insecure_skip_verify"])
 
 	def test_only_the_host_job_authenticates(self):
-		# /metrics/node and /metrics/gpu are behind basic auth because an exporter answers whoever
-		# reaches it. An engine's /metrics is inside its own /e/<slug>/ location, guarded by
-		# nothing — exactly as it was when the engine port itself was open.
 		self.assertEqual(self.jobs["grove-host"]["basic_auth"]["username"], "grove")
 		self.assertNotIn("basic_auth", self.jobs["grove-engine"])
 
 	def test_the_scrape_password_is_read_from_a_file_not_the_config(self):
-		# /proc/<pid>/cmdline is world-readable and Ansible records its argv on the Ansible Task
-		# doc — the same reason the remote-write token is a file.
 		auth = self.jobs["grove-host"]["basic_auth"]
 		self.assertEqual(auth["password_file"], "/etc/vmagent/scrape.password")
 		self.assertNotIn("password", auth)
@@ -570,10 +525,7 @@ class TestScrapeConfig(unittest.TestCase):
 			self.assertIn("agent=MA-1", job["http_sd_configs"][0]["url"])
 
 	def test_the_sd_blocks_hold_only_fields_vmagent_accepts(self):
-		# vmagent strict-parses this file and dies on an unknown field, then Restart=on-failure
-		# turns that into a crash loop that reads as "port refused". It rejects Prometheus's
-		# per-config refresh_interval on an http_sd_config: the interval is a unit flag,
-		# -promscrape.httpSDCheckInterval, so it must not reappear here.
+		"""vmagent rejects a per-config refresh_interval: the interval is the -promscrape.httpSDCheckInterval flag."""
 		for job in self.jobs.values():
 			[sd] = job["http_sd_configs"]
 			self.assertEqual(set(sd), {"url"})
@@ -601,13 +553,11 @@ class TestScrapeConfig(unittest.TestCase):
 			self.assertNotIn("authorization", job["http_sd_configs"][0])
 
 	def test_a_token_reaches_the_endpoint_byte_for_byte(self):
-		# Jinja's urlencode leaves '/' alone, so escaping cannot be relied on to carry an
-		# arbitrary secret — SD_TOKEN_PATTERN in Grove Settings is what keeps it URL-safe.
+		"""Jinja's urlencode leaves '/' alone, so SD_TOKEN_PATTERN is what keeps the token URL-safe."""
 		[url] = [job["http_sd_configs"][0]["url"] for job in [self.jobs["grove-host"]]]
 		self.assertEqual(parse_qs(urlparse(url).query)["token"], [self.BASE["monitoring_sd_token"]])
 
 	def test_the_file_holding_the_token_is_not_world_readable(self):
-		# The token is in this file now, so its mode is the only thing protecting it on the box.
 		tasks = yaml.safe_load((VMAGENT_ROLE / "tasks/targets.yml").read_text())
 		[write] = [task for task in tasks if task.get("ansible.builtin.template", {}).get("src") == "scrape.yml.j2"]
 		self.assertEqual(write["ansible.builtin.template"]["mode"], "0600")
@@ -639,7 +589,6 @@ class TestPushedTargets(unittest.TestCase):
 		)
 
 	def test_the_sd_token_never_reaches_a_box_that_cannot_use_it(self):
-		# file_sd fetches nothing, so shipping the shared secret here would spread it for free.
 		self.assertNotIn(self.BASE["monitoring_sd_token"], yaml.dump(self.config))
 
 	def test_the_intervals_are_the_same_either_way(self):
@@ -647,7 +596,6 @@ class TestPushedTargets(unittest.TestCase):
 		self.assertEqual(self.config["global"]["scrape_interval"], "15s")
 
 	def test_the_lists_are_written_before_the_config_that_reads_them(self):
-		# file_sd pointing at a file that is not there yet is a job that starts up down.
 		tasks = yaml.safe_load((VMAGENT_ROLE / "tasks/targets.yml").read_text())
 		names = [task["name"] for task in tasks]
 		self.assertLess(names.index("Write the pushed target lists"), names.index("Write the scrape config"))
@@ -658,8 +606,6 @@ class TestPushedTargets(unittest.TestCase):
 		self.assertIn("monitoring_static_targets", write["when"])
 
 	def test_pushing_is_a_dev_site_fallback_and_nothing_else(self):
-		# The gate is developer_mode alone — no field to tick, and no way to end up pushing
-		# stale snapshots to a production fleet that can pull fresh ones for itself.
 		from grove.grove.doctype.monitoring_agent.monitoring_agent import is_pushing_targets
 
 		with unittest.mock.patch.object(frappe, "conf", {"developer_mode": 1}):
@@ -669,8 +615,6 @@ class TestPushedTargets(unittest.TestCase):
 				self.assertFalse(is_pushing_targets())
 
 	def test_a_pushed_list_is_the_same_payload_http_sd_would_have_served(self):
-		# The whole point: file_sd and http_sd read the identical shape, so switching how the
-		# list travels cannot change what the agent scrapes.
 		entries = build_host_targets([box("INF-1", has_gpu=True)])
 		written = json.loads(json.dumps(entries))
 		self.assertEqual(written, entries)
@@ -701,7 +645,6 @@ class TestTheAgentsOwnTuningReachesItsBox(unittest.TestCase):
 				"monitoring_host_targets": [],
 				"monitoring_engine_targets": [],
 			},
-			# Every tuning field unset, the way a fresh agent arrives.
 			"scrape_interval": None,
 			"engine_scrape_interval": None,
 			"flush_interval": None,
@@ -728,15 +671,12 @@ class TestTheAgentsOwnTuningReachesItsBox(unittest.TestCase):
 		return yaml.safe_load(rendered)
 
 	def test_the_docs_interval_beats_the_role_default(self):
-		# The bug, from the operator's side: set 7s, and 7s is what the box scrapes on.
 		config = self.scrape_config(engine_scrape_interval="7s", scrape_interval="20s")
 		[engine] = [j for j in config["scrape_configs"] if j["job_name"] == "grove-engine"]
 		self.assertEqual(engine["scrape_interval"], "7s")
 		self.assertEqual(config["global"]["scrape_interval"], "20s")
 
 	def test_push_targets_carries_the_same_tuning_as_an_install(self):
-		# The play that had this wrong. Its extra-vars have to cover everything the tasks it runs
-		# render, not just the lists that give the play its name.
 		played = {}
 
 		def run_playbook(playbook, extravars=None, **kwargs):
@@ -750,7 +690,6 @@ class TestTheAgentsOwnTuningReachesItsBox(unittest.TestCase):
 
 		self.assertEqual(played["playbook"], "push_targets.yml")
 		self.assertEqual(played["extravars"]["monitoring_engine_scrape_interval"], "7s")
-		# Still the play's own reason for existing — the lists have to come through too.
 		self.assertIn("monitoring_host_targets", played["extravars"])
 
 	def test_a_blank_field_leaves_the_role_default_standing(self):
@@ -761,9 +700,6 @@ class TestTheAgentsOwnTuningReachesItsBox(unittest.TestCase):
 		)
 
 	def test_a_blank_field_is_never_passed_as_an_empty_extra_var(self):
-		# An extra-var beats a role default even when it is empty, so a blank passed through would
-		# write `scrape_interval:` with nothing after it — a config vmagent refuses to start on.
-		# This is why the fallbacks are omissions rather than defaults repeated in Python.
 		variables = self.variables()
 		for key in (
 			"monitoring_scrape_interval",

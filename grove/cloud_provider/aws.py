@@ -12,7 +12,6 @@ import time
 from grove.cloud_provider.base import CloudClient, CloudClientError
 from grove.utils import vram_gb_from_mib
 
-# EC2 states that are not a Machine status of their own.
 INSTANCE_STATUS = {
 	"pending": "Pending",
 	"running": "Active",
@@ -22,11 +21,7 @@ INSTANCE_STATUS = {
 	"terminated": "Terminated",
 }
 
-# AWS spells x86 its own way; everywhere else in Grove — manifests, playbooks, Docker platform
-# strings — it is amd64, and these are compared against those.
 ARCHITECTURE = {"x86_64": "amd64"}
-# The Machine's cpu_architecture Select. Anything else AWS reports for a type (i386, on the older
-# burstable families) is a mode nothing here builds images for.
 RUNNABLE_ARCHITECTURES = ("amd64", "arm64")
 
 
@@ -65,9 +60,7 @@ def parse_gpus(instance_type_info):
 	for entry in (instance_type_info.get("GpuInfo") or {}).get("Gpus") or []:
 		memory_mib = (entry.get("MemoryInfo") or {}).get("SizeInMiB") or 0
 		for _ in range(entry.get("Count") or 0):
-			# One name for both: the placeholder id IS the slot, and `plan_reconcile` matches on
-			# it. Two `len(gpus)` calls that must agree is a card waiting to take its
-			# neighbour's identity.
+			# The placeholder id IS the slot: `plan_reconcile` matches on it.
 			index = len(gpus)
 			gpus.append({
 				"gpu_index": index,

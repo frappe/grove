@@ -19,8 +19,6 @@ class EngineError(Exception):
 	"""Raised, never thrown: the doctype layer turns it into frappe.throw."""
 
 
-# A context length is a power of two: 128k is 131072, not 128000 — the number config.json declares
-# and the only one vLLM accepts without the long-context override.
 _CONTEXT_MULTIPLIERS = {"k": 1024, "m": 1024 * 1024}
 
 
@@ -53,8 +51,7 @@ class Engine(ABC):
 	A Pod and a Model Replica carry the same knobs, so the constructor takes them all and an engine
 	ignores the ones it has no use for."""
 
-	# A class attribute, not a property: the projection reads it off the CLASS for route rows it
-	# never builds an engine for.
+	# A class attribute, not a property: the projection reads it off the class.
 	default_concurrency: int
 
 	def __init__(
@@ -87,32 +84,22 @@ class Engine(ABC):
 		self.gpu_count = int(gpu_count or 1)
 		self.pipeline_parallel_size = int(pipeline_parallel_size or 1)
 		self.gpu_vram_gb = gpu_vram_gb
-		# The box's weakest card. 0 is "unknown" and skips the capability checks rather than
-		# failing them, the same reading a blank CPU architecture gets.
 		self.compute_capability = float(compute_capability or 0)
 		self.dtype = dtype or "auto"
 		self.kv_cache_dtype = kv_cache_dtype or "auto"
 		self.gpu_memory_utilization = gpu_memory_utilization or DEFAULT_GPU_MEMORY_UTILIZATION
-		# Bytes, learned off a profiled boot by the replica. 0 = not learned, vLLM profiles.
 		self.kv_cache_memory = int(kv_cache_memory or 0)
 		self.max_model_len = parse_context_length(max_model_len) or DEFAULT_MAX_MODEL_LEN
-		# 0 = leave it to vLLM. Not defaulted: the right number depends on chunked prefill and
-		# the model kind, and nothing reads it back the way the gateway reads the sequence cap.
 		self.max_num_batched_tokens = int(max_num_batched_tokens or 0)
-		# 0 = leave it to vLLM; the routing side then assumes default_concurrency.
 		self.max_num_seqs = int(max_num_seqs or 0)
 		self.attention_backend = attention_backend or "auto"
 		self.allow_long_max_model_len = bool(allow_long_max_model_len)
 		self.extra_serve_args = shlex.split(extra_serve_args or "")
-		# Split here, not at the placement, so both planes hand over the same raw string.
 		self.startup_command = shlex.split(startup_command or "")
-		# Off the Engine Image, not the placement: which request proves the engine serves is a
-		# fact about the image.
 		self.warmup_path = warmup_path or ""
 		self.warmup_body = json.loads(warmup_body) if warmup_body else {}
 		self.host = host
 
-	# --- Placement arithmetic and Model facts -----------------------------------
 
 	@property
 	def tensor_parallel_size(self):
@@ -131,7 +118,6 @@ class Engine(ABC):
 		and nothing needs pre-downloading."""
 		return bool(self.model.get("weights_s3_uri"))
 
-	# --- The contract -----------------------------------------------------------
 
 	@property
 	@abstractmethod

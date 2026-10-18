@@ -1,22 +1,24 @@
-"""Prices per counter, and the prepaid balance they debit.
+"""Prices per counter, and what each key has spent at them.
 
 One rate table, joined at evaluation and never snapshotted onto usage: SELL on `Model Pricing`.
 A drain is priced by the pricing id the gateway tagged each request with, so both sides price the
 same counters at the same rates.
 
-`Grove User.spent` is the running USD total the pull increments; `settle` is the one writer of
-`balance` and the `credit_exhausted` verdict."""
+`Grove API Key.spent` is the running USD total the pull increments per key; `settle` is the one
+writer of the team's `spent`. What was spent this month is never stored: `month_spent_by` sums
+it off the records and the corrections."""
 
 from decimal import Decimal
 
 import frappe
 
-from grove.grove.doctype.grove_user.grove_user import set_credit_exhausted
+from grove.utils import utc_today
 
 NANO = 10**9
+MONTH_SPENT_BY = ("team", "api_key")
 
-# Tokens per unit a rate is quoted per: USD per Mtok, or per request.
 UNITS = {"Mtok": 1_000_000, "request": 1}
+FIGURES_SECONDS = 30 * 60
 
 
 class CounterTable:
@@ -31,7 +33,9 @@ class CounterTable:
 		rows = [frappe._dict(row, name=row.get("name") or row["counter_name"]) for row in rows]
 		self.rows = sorted(rows, key=lambda r: bool(r.base_counter))
 		self.by_name = {row.name: row for row in self.rows}
-		self.variants = {(row.base_counter, row.min_prompt_tokens): row.name for row in self.rows if row.base_counter}
+		self.variants = {
+			(row.base_counter, row.min_prompt_tokens): row.name for row in self.rows if row.base_counter
+		}
 
 	@classmethod
 	def load(cls):
@@ -47,6 +51,14 @@ class CounterTable:
 	@property
 	def roots(self):
 		return [row.name for row in self.rows if not row.base_counter]
+
+	@property
+	def whole(self):
+		"""The root token counters that are not a part of another — prompt and completion once each,
+		never their cached or audio parts again — and the derived rows counted instead of them for a
+		long prompt. Their sum is a record's whole tokens."""
+		roots = [r.name for r in self.rows if r.unit == "Mtok" and not r.base_counter and not r.part_of]
+		return roots + [r.name for r in self.rows if r.base_counter in roots]
 
 	def base(self, counter):
 		return self.by_name[counter].base_counter or None
@@ -136,17 +148,20 @@ class PriceBook:
 	def load(cls):
 		book = cls()
 		book.counters = CounterTable.load()
-		# Keys, not docs: a usage bucket names the key, and a key may be several docs.
 		keys = dict(frappe.get_all("Model", fields=["name", "model_key"], as_list=True))
 		book.models = set(keys.values())
 		pricings = frappe.get_all("Model Pricing", fields=["name", "model"])
 		book.pricings = {p.name: frappe._dict(model_key=keys[p.model], rates={}) for p in pricings}
-		rates = frappe.get_all(
-			"Model Pricing Rate",
-			filters={"parent": ("in", list(book.pricings))},
-			fields=["parent", "counter", "rate"],
-			parent_doctype="Model Pricing",
-		) if pricings else []
+		rates = (
+			frappe.get_all(
+				"Model Pricing Rate",
+				filters={"parent": ("in", list(book.pricings))},
+				fields=["parent", "counter", "rate"],
+				parent_doctype="Model Pricing",
+			)
+			if pricings
+			else []
+		)
 		for row in rates:
 			book.pricings[row.parent].rates[row.counter] = Decimal(str(row.rate))
 		return book
@@ -166,37 +181,85 @@ class PriceBook:
 		return cost(counts, self.pricing(pricing_id).rates, self.counters)
 
 
-def allocated(user, lock=False):
-	"""Σ the user's Grove Credit ledger. Locked while a verdict is being decided."""
-	suffix = " for update" if lock else ""
+def lock_team(team):
+	"""The team row, held until this transaction ends. Every writer of a key's spend takes it before
+	the key, so two of them queue instead of each summing the keys without the other's charge."""
+	frappe.db.get_value("Central Team", team, "name", for_update=True)
+
+
+def spent_by_keys(team):
+	"""Σ what the team's keys have been charged, revoked ones included: a revoked key's spend is
+	still the team's. A locking read, so it sees what another writer committed a moment ago."""
 	total = frappe.db.sql(
-		f"select coalesce(sum(amount), 0) from `tabGrove Credit` where grove_user = %s{suffix}", [user]
+		"select coalesce(sum(spent), 0) from `tabGrove API Key` where team = %s for update", [team]
 	)[0][0]
 	return Decimal(str(total))
 
 
-def allocations():
-	"""{user: Σ Grove Credit} for every user with a ledger entry — the push's budget, one query."""
-	rows = frappe.db.sql("select grove_user, sum(amount) from `tabGrove Credit` group by grove_user")
-	return {user: Decimal(str(total)) for user, total in rows}
+def settle(team):
+	"""The one writer of the team's `spent`: Σ what its keys were charged. Every writer of a key's
+	spend (the pull, a correction) ends here, so this is where the team's figures go stale. → that."""
+	spent = spent_by_keys(team)
+	frappe.db.set_value("Central Team", team, "spent", float(spent), update_modified=False)
+	forget_figures(team)
+	return spent
 
 
-def settle(user):
-	"""The one writer of `balance` and the verdict: allocated − spent, written to the user, and
-	`credit_exhausted` = not free and nothing left, both directions. A negative balance stays on
-	the user until a top-up covers it. → actual balance."""
-	doc = frappe.db.get_value("Grove User", user, ["free", "spent"], as_dict=True, for_update=True)
-	actual = allocated(user, lock=True) - Decimal(str(doc.spent or 0))
-	frappe.db.set_value("Grove User", user, "balance", float(actual), update_modified=False)
-	set_credit_exhausted(user, int(not doc.free and actual <= 0))
-	return actual
+def usd(amount):
+	"""An amount for a message: as many decimals as it has, up to nano, so a cap of a few cents or a
+	few millionths reads as itself rather than as 0.00."""
+	return f"{float(amount):.9f}".rstrip("0").rstrip(".") or "0"
 
 
-def credit_summary(user):
-	"""{allocated, spent, remaining}, summed live rather than read off `balance`."""
-	spent = Decimal(str(frappe.db.get_value("Grove User", user, "spent") or 0))
-	total = allocated(user)
-	return {"allocated": total, "spent": spent, "remaining": total - spent}
+def committed(team, caps=None, lock=True, pending=None):
+	"""USD of the team's spend limit the month has spoken for: each live key's cap or what it spent
+	this month, whichever is more, plus what its revoked keys spent — a revoke frees a cap, never
+	the spend. `caps` are proposed caps by key name, over the live keys' own; one for a key with no
+	row yet counts as given. `pending` is what the boxes hold per key that no record has yet
+	(`usage.peek_team`), on top of the records. `lock` reads the keys FOR UPDATE, so two raises
+	serialized on the team row see each other's caps rather than the snapshot taken before the
+	lock."""
+	keys = frappe.db.sql(
+		"select name, cap, status from `tabGrove API Key` where team = %s" + (" for update" if lock else ""),
+		[team],
+		as_dict=True,
+	)
+	spent = month_spent_by("api_key", [k.name for k in keys])
+	caps = dict(caps or {})
+	total = Decimal(0)
+	for k in keys:
+		month = spent.get(k.name, Decimal(0)) + Decimal(str((pending or {}).get(k.name, 0)))
+		cap = Decimal(str(caps.pop(k.name, k.cap) or 0)) if k.status == "active" else Decimal(0)
+		total += max(cap, month)
+	total += sum((Decimal(str(cap or 0)) for cap in caps.values()), Decimal(0))
+	return float(round(total, 9))
+
+
+def month_spent_by(field, names):
+	"""{name: USD spent this month} by `field` (team or api_key): Σ the Usage Records served
+	on a day of this UTC month — the gateway's own day, so the month its `spent:<month>` counts —
+	plus the Usage Corrections Grove made on one. A revoked key counts: what it spent is still
+	the team's. Two grouped queries however many names."""
+	if field not in MONTH_SPENT_BY:
+		raise ValueError(f"month_spent_by sums by one of {MONTH_SPENT_BY}, not {field!r}")
+	if not names:
+		return {}
+	first = utc_today().replace(day=1)
+	spent = dict(
+		frappe.db.sql(
+			f"""select `{field}`, sum(cost) from `tabUsage Record`
+		where `{field}` in %(names)s and day >= %(first)s group by `{field}`""",
+			{"names": names, "first": first},
+		)
+	)
+	corrected = frappe.db.sql(
+		f"""select `{field}`, sum(cost) from `tabUsage Correction`
+		where `{field}` in %(names)s and day >= %(first)s group by `{field}`""",
+		{"names": names, "first": first},
+	)
+	for name, correction in corrected:
+		spent[name] = (spent.get(name) or 0) + correction
+	return {name: Decimal(str(total)) for name, total in spent.items()}
 
 
 def validate_price_rows(rows, key):
@@ -211,3 +274,25 @@ def validate_price_rows(rows, key):
 		if k in seen:
 			frappe.throw(f"Row {row.idx} repeats {k} — one rate per counter per date.")
 		seen.add(k)
+
+
+def remembered_figures(team, read):
+	"""`read()` for `team`, kept until something moves its figures (`forget_figures`) and
+	FIGURES_SECONDS at most: spend, keys and this month's usage read together, so every page
+	shows one moment. The UTC day travels with them: a new day, so a new month, reads afresh.
+	Read past the per-request memo, so a bust earlier in this request shows."""
+	key = f"figures:{team}"
+	figures = frappe.cache.get_value(key, use_local_cache=False)
+	if not figures or figures["day"] != str(utc_today()):
+		figures = {"day": str(utc_today()), **read()}
+		frappe.cache.set_value(key, figures, expires_in_sec=FIGURES_SECONDS)
+	return figures
+
+
+def forget_figures(team):
+	"""Every writer that moves a team's figures calls this: a record landed or removed, a Grove
+	correction, a key or the team saved, its tier edited. Now, and again once this transaction
+	commits, since a read in between would keep the old rows."""
+	key = f"figures:{team}"
+	frappe.cache.delete_value(key)
+	frappe.db.after_commit.add(lambda: frappe.cache.delete_value(key))

@@ -1,6 +1,4 @@
-# Rewrite config.json and SIGUSR1 — nothing else. No binary, no agent.env, no restart: the tunables
-# (maintenance among them) move under live streams.
-#
+# Rewrite config.json and SIGUSR1, nothing else: the tunables move under live streams.
 # extra-vars: whatever config.json.j2 reads (PathwayHost.config_variables in grove/fleet.py).
 - hosts: all
   become: true

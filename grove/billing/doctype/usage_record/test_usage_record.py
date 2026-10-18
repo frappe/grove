@@ -1,22 +1,56 @@
-# Copyright (c) 2026, developers@frappe.io and Contributors
+# Copyright (c) 2026, Frappe and contributors
 # See license.txt
+"""Log Settings purges records past the retention a chunk at a time and keeps the ones a Credit
+Discrepancy names, and the ones that landed within it however old their day."""
 
-# import frappe
+import unittest.mock
+
+import frappe
+from frappe.core.doctype.log_settings.log_settings import _supports_log_clearing
 from frappe.tests import IntegrationTestCase
+from frappe.utils import add_days
+
+from grove.billing.doctype.usage_record import usage_record
+from grove.billing.doctype.usage_record.usage_record import UsageRecord
+from grove.utils import utc_today
 
 
-# On IntegrationTestCase, the doctype test records and all
-# link-field test record dependencies are recursively loaded
-# Use these module variables to add/remove to/from that list
-EXTRA_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
-IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
+def a_record(day, drain_id, landed=None):
+	"""A bare row served on `day` and landed on `landed` (the same day unless said): the purge reads
+	those two and nothing else, so no key or team has to exist."""
+	doc = frappe.get_doc({
+		"doctype": "Usage Record", "api_key": "k", "team": "t", "day": day, "drain_id": drain_id,
+		"request_count": 1, "cost": 0, "gateway_cost": 0, "usage": "[]",
+	})
+	doc.flags.ignore_links = True
+	name = doc.insert(ignore_permissions=True).name
+	frappe.db.set_value("Usage Record", name, "creation", landed or day, update_modified=False)
+	return name
 
 
+class TestOldRecordsArePurged(IntegrationTestCase):
+	def test_log_settings_clears_past_the_retention_and_keeps_evidence(self):
+		self.assertTrue(_supports_log_clearing("Usage Record"))
+		# A retention no real record on the site predates, so only these rows are in range.
+		days = 9000
+		cutoff = add_days(utc_today(), -days)
+		old = add_days(cutoff, -1)
+		gone = [a_record(old, "d-gone-1"), a_record(old, "d-gone-2")]
+		evidence = a_record(old, "d-evidence")
+		kept = a_record(cutoff, "d-kept")
+		late = a_record(old, "d-late", landed=utc_today())
+		frappe.get_doc({"doctype": "Credit Discrepancy", "usage_record": evidence}).insert(ignore_permissions=True)
 
-class IntegrationTestUsageRecord(IntegrationTestCase):
-	"""
-	Integration tests for UsageRecord.
-	Use this class for testing interactions between multiple components.
-	"""
+		# The commit between chunks is patched out so the test's rows roll back with it.
+		with (
+			unittest.mock.patch.object(usage_record, "PURGE_CHUNK", 1),
+			unittest.mock.patch.object(frappe.db, "commit"),
+			unittest.mock.patch.object(frappe.db, "delete", wraps=frappe.db.delete) as delete,
+		):
+			UsageRecord.clear_old_logs(days=days)
 
-	pass
+		self.assertFalse(any(frappe.db.exists("Usage Record", name) for name in gone))
+		self.assertTrue(frappe.db.exists("Usage Record", evidence))
+		self.assertTrue(frappe.db.exists("Usage Record", kept))
+		self.assertTrue(frappe.db.exists("Usage Record", late), "landed within the retention, however old its day")
+		self.assertEqual(delete.call_count, 2)

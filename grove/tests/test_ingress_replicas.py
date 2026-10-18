@@ -33,7 +33,6 @@ class TestPrivateURL(unittest.TestCase):
 		)
 
 	def test_the_scheme_comes_from_the_url_not_from_here(self):
-		# After phase 4 the box serves plain http on :80. This function does not decide that.
 		self.assertEqual(
 			private_url("http://203.0.113.7/e/md-00007", "10.0.1.4"),
 			"http://10.0.1.4/e/md-00007",
@@ -45,8 +44,6 @@ class TestPrivateURL(unittest.TestCase):
 		)
 
 	def test_no_private_address_means_no_url(self):
-		# The caller drops the replica on this; falling back to the public address is the failure
-		# this design exists to prevent.
 		for blank in ("", None):
 			self.assertEqual(private_url("https://203.0.113.7/e/md-00007", blank), "")
 
@@ -132,36 +129,28 @@ class TestReplicasForIngress(unittest.TestCase):
 		self.assertEqual(route["capacity"], 8)
 
 	def test_a_row_carries_only_what_the_ingress_reads(self):
-		# Every field here is read by pickReplica or handlePick. `server` is not: the ingress
-		# already has the box's address in engine_url.
+		"""Every field is read by pathway's pickReplica or handlePick; `server` is not."""
 		[route] = self.routes()["qwen3-35b"]
 		self.assertEqual(
 			set(route), {"engine_url", "internal_key", "healthy", "capacity", "deployment"}
 		)
 
 	def test_a_box_owned_by_another_ingress_is_not_in_this_table(self):
-		# Same Network, different owner: two holders each count half the traffic, and the replica
-		# runs at twice its --max-num-seqs.
 		urls = [r["engine_url"] for routes in self.routes().values() for r in routes]
 		self.assertNotIn("https://10.1.1.4/e/md-2", urls)
 		self.assertFalse([u for u in urls if "203.0.113.8" in u])
 
 	def test_a_box_that_names_no_ingress_is_nobodys(self):
-		# It stays on the gateway's direct path, so no ingress may claim it.
 		for ingress in ("ING-1", "ING-2"):
 			with self.subTest(ingress):
 				urls = [r["engine_url"] for routes in self.routes(ingress).values() for r in routes]
 				self.assertFalse([u for u in urls if "10.0.1.9" in u], urls)
 
 	def test_a_local_replica_with_no_private_address_is_excluded_not_dialled_publicly(self):
-		# Fail closed: the model reads unavailable and someone syncs the Machine, rather than
-		# traffic crossing the internet to a box meant to be private.
 		urls = [r["engine_url"] for routes in self.routes().values() for r in routes]
 		self.assertFalse([u for u in urls if "203.0.113.9" in u], urls)
 
 	def test_a_model_with_nothing_local_is_not_sent_at_all(self):
-		# Not named, rather than named with an empty list. The push is the whole table and
-		# absence prunes (see TestIngressSnapshot), which is what makes omitting it safe.
 		self.assertNotIn("llama-70b", self.routes())
 
 	def test_only_active_deployments_are_routed(self):
@@ -169,13 +158,9 @@ class TestReplicasForIngress(unittest.TestCase):
 		self.assertNotIn("MD-4", deployments)
 
 	def test_an_ingress_that_owns_nothing_sends_an_empty_table(self):
-		# And prune turns that into "delete everything you hold", which is what retires the last
-		# model on an ingress whose boxes were all reassigned.
 		self.assertEqual(self.routes(ingress="ING-unused"), {})
 
 	def test_only_the_models_it_can_serve_are_sent(self):
-		# The catalogue runs to hundreds and an ingress fronts a handful. Naming every model, one
-		# empty list each, was nearly the whole payload on every sync.
 		self.assertEqual(list(self.routes()), ["qwen3-35b"])
 
 
@@ -236,9 +221,6 @@ class TestTheIngressGateResolvesThroughTheDeployment(unittest.TestCase):
 		self.assertEqual(self.capacity(32, 256), 32)
 
 	def test_the_two_planes_agree_on_the_same_replica(self):
-		# The property that matters: whatever number the gateway advertises for a replica is the
-		# number the ingress will hold it to. Both read capacity off a deployment-resolved row, so
-		# this asserts they cannot drift apart.
 		from grove.pathway import routes
 
 		row = {"model_deployment": "T1", "max_num_seqs": 0}

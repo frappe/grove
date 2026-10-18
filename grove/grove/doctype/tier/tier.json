@@ -1,0 +1,76 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "Prompt",
+ "creation": "2026-10-12 00:00:00",
+ "description": "Named by Central's trust tier label (Growth). What a team on it may do: live keys, monthly spend across its keys' caps, and the rate limits its keys run under when they carry none of their own. Central names a team's tier and renames it when the label changes; the values here are Grove's to edit.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "max_keys",
+  "spend_limit",
+  "limits"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "description": "Live keys a team on this tier may hold; 0 is no limit. Rate limits are per key, so this is what bounds a team's throughput.",
+   "fieldname": "max_keys",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Max Keys"
+  },
+  {
+   "default": "0",
+   "description": "What a team's live keys may spend in a month together: \u03a3 the keys' caps stays within it. 0 lets no cap be set. Lowering it stops no key; it only refuses a raise or a new cap until the caps fit again.",
+   "fieldname": "spend_limit",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Spend Limit (USD / month)",
+   "precision": "9"
+  },
+  {
+   "description": "Counted on the gateway per key, per Gateway Store; a window resets on the UTC clock. One row per metric and window. No rows: the tier's keys are uncapped. A change here reaches every unpinned key of every team on the tier on the next sync.",
+   "fieldname": "limits",
+   "fieldtype": "Table",
+   "label": "Limits",
+   "options": "Model Limit"
+  }
+ ],
+ "links": [
+  {
+   "group": "Teams",
+   "link_doctype": "Central Team",
+   "link_fieldname": "tier"
+  }
+ ],
+ "modified": "2026-10-13 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Grove",
+ "name": "Tier",
+ "naming_rule": "Set by user",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Grove Control"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

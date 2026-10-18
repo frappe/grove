@@ -27,9 +27,8 @@ OVERRIDABLE = (
 	"attention_backend",
 	"max_model_len",
 )
-# Taken off the deployment alone: these decide the shape the replicas share and what the compile
-# cache is keyed on. A Check cannot express "inherit", which is why allow_long_max_model_len is
-# here too.
+# Taken off the deployment alone: they decide the shape the replicas share. A Check cannot
+# express "inherit", which is why allow_long_max_model_len is here too.
 DEPLOYMENT_ONLY = (
 	"pipeline_parallel_size",
 	"allow_long_max_model_len",
@@ -90,8 +89,7 @@ class ModelDeployment(Document):
 		engine = self.engine_for()
 		if errors := engine.placement_errors:
 			frappe.throw("<br>".join(errors))
-		# Store what actually reaches --max-model-len; the suffix is input sugar. Blank stays
-		# blank — that is how a deployment asks for the engine default.
+		# Blank stays blank: that is how a deployment asks for the engine default.
 		if self.max_model_len:
 			self.max_model_len = str(engine.max_model_len)
 		self.tensor_parallel_size = engine.tensor_parallel_size
@@ -205,7 +203,6 @@ class ModelDeployment(Document):
 
 	def _candidate(self, box, claim, box_architecture, image_architecture, siblings, per_region):
 		free = fitting_gpus(claim.free_gpus, self.gpu_type, self.min_vram_gb)
-		# Cards a placement in flight has announced, which no committed row shows yet.
 		busy = lease.leased(free)
 		free = tuple(card for card in free if card not in busy)
 		return Candidate(
@@ -213,7 +210,6 @@ class ModelDeployment(Document):
 			region=box.region or "",
 			fitting_gpus=free,
 			surplus=len(free) - self.gpus_per_replica,
-			# A model streamed from S3 is fetched the same way everywhere, so no box is warmer.
 			has_local_weights=box.name in siblings and not self.streams_weights,
 			active_replicas=claim.replicas,
 			replicas_in_region=per_region.get(box.region or "", 0),
@@ -222,11 +218,8 @@ class ModelDeployment(Document):
 
 	def _rejection(self, claim, free, box_architecture, image_architecture):
 		"""Why this box cannot take a replica, or "" if it can."""
-		# No architecture recorded means on-prem: nothing to check against.
 		if box_architecture and image_architecture and box_architecture != image_architecture:
 			return f"runs {box_architecture}, and {self.engine_image} is {image_architecture}"
-		# An unpinned replica claims no cards but uses them, so every card here READS free while
-		# some are busy. Placing would double-book VRAM.
 		if claim.unpinned:
 			return f"{claim.unpinned} replica(s) here pin no cards, so what is free cannot be known"
 		if len(free) < self.gpus_per_replica:
@@ -234,12 +227,8 @@ class ModelDeployment(Document):
 				f"{len(free)} free card(s) match this shape, and it needs {self.gpus_per_replica}"
 				f"{f' of {self.gpu_type}' if self.gpu_type else ''}"
 			)
-		# The engine's own arithmetic against the cards this box would really give it — stricter
-		# than the declared min_vram_gb, and it catches weights that do not fit before a play.
 		taking = free[: self.gpus_per_replica]
 		vram = min(claim.vram_by_card[card] for card in taking)
-		# The weakest card decides both: a mixed box runs at its smallest VRAM and its oldest
-		# silicon. 0 from an unscanned card is unknown, and an unknown skips the check.
 		capability = min(claim.capability_by_card[card] for card in taking)
 		if errors := self.engine_for(
 			gpu_vram_gb=vram, compute_capability=capability
@@ -295,7 +284,7 @@ class ModelDeployment(Document):
 					list(candidate.fitting_gpus[: self.gpus_per_replica]),
 				)
 			except GPUUnavailable:
-				continue  # a sibling won these cards; the next box is already ranked
+				continue
 		frappe.throw(
 			f"Every box that could take a replica of {self.name} lost its cards to another "
 			"placement while this one was being made. Try again."
@@ -327,8 +316,7 @@ class ModelDeployment(Document):
 			frappe.db.rollback(save_point="place_replica")
 			lease.release(gpus)
 			raise
-		# Published before anything slow: until this commits a rival blocks on the locked row for
-		# however long the rest of the request takes, and setup() enqueues a play.
+		# Published before anything slow: a rival blocks on the locked row until this commits.
 		frappe.db.commit()
 		replica.setup()
 		return replica.name
@@ -340,8 +328,6 @@ def _claims_by_box(boxes):
 	disagree about what is free."""
 	machines = sorted({box.machine for box in boxes if box.machine})
 	cards = cards_on(machines)
-	# A replica pinning no cards holds none, so it cannot be counted from the cards — and that is
-	# exactly the case that makes a box look emptier than it is.
 	replicas = frappe.get_all(
 		"Model Replica",
 		filters={"inference_server": ("in", [box.name for box in boxes]),

@@ -18,9 +18,8 @@ BF16 = ("bfloat16", "torch.bfloat16", "bf16")
 class VllmEngine(Engine):
 	"""An image whose entrypoint takes `vllm serve` arguments."""
 
-	# What the routing side assumes when the placement states nothing — never passed to vLLM, so
-	# the two can drift as the image tag moves. Drift only costs accuracy in the capacity gate;
-	# set max_num_seqs to pin both sides.
+	# Never handed to vLLM: what routing assumes when max_num_seqs is blank, so the two can drift as
+	# the image tag moves; set max_num_seqs to pin both sides.
 	default_concurrency = 1024
 
 	@property
@@ -78,8 +77,6 @@ class VllmEngine(Engine):
 				f"tensor-parallel size {self.tensor_parallel_size} — vLLM needs an even split. "
 				f"Use a GPU count whose tensor-parallel size divides {heads}."
 			)
-		# Capability, not capacity: a card can have room for the weights and still be unable to
-		# represent them. An unknown on either side skips the check.
 		if (
 			self.compute_capability
 			and self.weight_dtype.lower() in BF16
@@ -118,7 +115,6 @@ class VllmEngine(Engine):
 		/v1/completions, not chat: chat needs a tokenizer template, and a base repo without one
 		answers 400 on an engine that serves fine. Both paths run the same pipeline."""
 		if "transcription" in self.model.get("output_modalities", ()):
-			# Transcription wants a base64 audio file. Not worth carrying to prove one forward pass.
 			return {}
 		if self.is_embedding:
 			return {"path": "/v1/embeddings", "body": {"model": self.model_name, "input": "ping"}}
@@ -137,36 +133,26 @@ class VllmEngine(Engine):
 			"--tensor-parallel-size", str(self.tensor_parallel_size),
 			"--gpu-memory-utilization", str(self.gpu_memory_utilization),
 			"--max-model-len", str(self.max_model_len),
-			# Surfaces cached_tokens so billing can credit prefix-cache hits. Reporting-only.
+			# Surfaces cached_tokens, which billing credits.
 			"--enable-prompt-tokens-details",
-			# vLLM adopts the forwarded X-Request-Id as its request_id, so this logs it and the
-			# body carries it. NOT --enable-request-id-headers: the gateway sets the response
-			# header, and that flag would echo a duplicate.
+			# NOT --enable-request-id-headers: the gateway sets the response header and that flag would
+			# echo a duplicate. This logs the forwarded X-Request-Id, which vLLM adopts as request_id.
 			"--enable-log-requests",
-			# Generated text, at INFO — so the completion is on the box without DEBUG.
 			"--enable-log-outputs",
-			# Default leaks the exact vLLM build on every response and SSE frame. Stripped here;
-			# the gateway alternative rewrites the streaming hot path.
 			"--fingerprint-mode", "none",
 		]
-		# Learned off a profiled boot; vLLM then skips profiling and sizes the cache to this.
-		# --gpu-memory-utilization stays: vLLM ignores it for the cache when this is set, and the
+		# --gpu-memory-utilization stays: vLLM ignores it for the cache when this is set, but the
 		# placement arithmetic (usable_vram_gb) still reads it.
 		if self.kv_cache_memory:
 			args += ["--kv-cache-memory", str(self.kv_cache_memory)]
 		if self.pipeline_parallel_size > 1:
 			args += ["--pipeline-parallel-size", str(self.pipeline_parallel_size)]
-		# Left to vLLM until a card cannot run what the repo asks for. `--dtype float16` is the
-		# remedy placement_errors names for a pre-Ampere card.
 		if self.dtype != "auto":
 			args += ["--dtype", self.dtype]
-		# fp8 halves the KV cache and buys context on a card short of it.
 		if self.kv_cache_dtype != "auto":
 			args += ["--kv-cache-dtype", self.kv_cache_dtype]
 		if self.max_num_batched_tokens:
 			args += ["--max-num-batched-tokens", str(self.max_num_batched_tokens)]
-		# Unset means vLLM sizes it off the model and the KV cache it ends up with, which beats
-		# any number imposed here. See default_concurrency for what routing assumes then.
 		if self.max_num_seqs:
 			args += ["--max-num-seqs", str(self.max_num_seqs)]
 		# A flag, not VLLM_ATTENTION_BACKEND: that env var is gone in 0.24 and setting it
@@ -214,7 +200,6 @@ class VllmEngine(Engine):
 			"VLLM_LOGGING_LEVEL": "INFO",
 			# Safe on every image: a plain env lookup in every hub version, unlike hf_transfer.
 			"HF_HUB_DISABLE_TELEMETRY": "1",
-			# vLLM phones home on startup unless told not to.
 			"VLLM_NO_USAGE_STATS": "1",
 			"SAFETENSORS_LOAD_STRATEGY": "prefetch",
 		}
@@ -224,13 +209,10 @@ class VllmEngine(Engine):
 			env["HF_TOKEN"] = hf_token
 		if self.allow_long_max_model_len:
 			env["VLLM_ALLOW_LONG_MAX_MODEL_LEN"] = "1"
-		# Only when the engine gets its own cache. Ansible pre-downloads on a box, so the
-		# container never fetches and the fast-transfer knob is moot.
 		if hf_home:
 			env["HF_HOME"] = hf_home
 			env["HF_XET_HIGH_PERFORMANCE"] = "1"
 		if cache_root:
-			# Compile caches on the placement's durable path so a restart skips torch.compile.
 			env["VLLM_CACHE_ROOT"] = cache_root
 			env["TRITON_CACHE_DIR"] = f"{cache_root}/triton"
 			env["TORCHINDUCTOR_CACHE_DIR"] = f"{cache_root}/torchinductor"

@@ -40,7 +40,6 @@ class TestModelPricing(IntegrationTestCase):
 		self.assertEqual(doc.enabled_on, utc_today())
 
 	def test_it_carries_its_models_geography(self):
-		# A vendor model is a doc per geography under one key; ours has none.
 		vendor = provider("pricing-vendor", base_url="https://api.pricing.test", api_key="k").insert()
 		model = vendor_model("priced-1", vendor.name).insert()
 		self.assertEqual(new_pricing(model.name, completion_tokens=1).geography, vendor.geography)
@@ -79,7 +78,6 @@ class TestModelPricing(IntegrationTestCase):
 			doc.save()
 
 	def test_a_duplicate_is_a_disabled_draft_with_its_own_window(self):
-		# What the form's Duplicate does: no_copy fields are left behind.
 		first = enabled_pricing(self.model, completion_tokens=1)
 		doc = frappe.copy_doc(first, ignore_no_copy=False).insert(ignore_permissions=True)
 		first.reload()

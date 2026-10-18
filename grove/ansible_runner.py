@@ -25,7 +25,6 @@ from frappe.database.utils import dangerously_reconnect_on_connection_abort
 
 from grove.utils import shared_roles_dir
 
-# 'ok' and 'changed' both mean the task did its job.
 TASK_STATUS = {
 	"ok": "Success",
 	"changed": "Success",
@@ -72,8 +71,6 @@ def _set_global_cli_args(remote_user, tags=None, skip_tags=None):
 		timeout=30,
 	)
 	C.HOST_KEY_CHECKING = False
-	# Searched after the playbook's own roles/ dir, so a role two doctypes share lives once in
-	# playbooks/roles and is named from either.
 	C.DEFAULT_ROLES_PATH = [shared_roles_dir()]
 	# Required (ansible-core >= 2.15) before the in-process API resolves ansible.builtin.*.
 	init_plugin_loader()
@@ -85,21 +82,18 @@ class AnsibleCallback(CallbackBase):
 	def __init__(self, runner):
 		super().__init__()
 		self.runner = runner
-		self.current_task = None  # current Ansible Task doc name
+		self.current_task = None
 		self.stopped = False
 		self.site = frappe.local.site
-		self.thread_db = None  # the results thread's own connection, if it needed one
+		self.thread_db = None
 		self.log = []
 
-	# --- play lifecycle ---
 	def v2_playbook_on_start(self, playbook):
 		self.runner.update_play({"status": "Running", "started": frappe.utils.now()})
 
 	def v2_playbook_on_task_start(self, task, is_conditional):
 		self._begin_task(task)
 
-	# Handlers are where a deploy restarts things, so they are where it fails. Without this the row
-	# is never created and the module's message — the only thing saying why — is dropped.
 	def v2_playbook_on_handler_task_start(self, task):
 		self._begin_task(task)
 
@@ -115,8 +109,7 @@ class AnsibleCallback(CallbackBase):
 			self.runner.finish_task(self.current_task, status, {})
 			self.current_task = None
 
-	# Fires on every attempt of a task with `until`/`retries`. The health gate is one task that can
-	# hold the play for 15 minutes, so this is where a stop lands for most of a serve run.
+	# Every retry of an `until` task: the health gate can hold the play 15 minutes, so a stop lands here.
 	def v2_runner_retry(self, result):
 		self._stop_if_asked()
 
@@ -148,21 +141,18 @@ class AnsibleCallback(CallbackBase):
 			self.thread_db = frappe.db
 
 	def v2_playbook_on_stats(self, stats):
-		# A play ending on a meta task, or terminated mid-task, still has a row open here.
 		self._close_orphan("skipped" if self.stopped else "ok")
 		hosts = sorted(stats.processed.keys())
 		failed = any(
 			stats.summarize(h).get("failures", 0) or stats.summarize(h).get("unreachable", 0)
 			for h in hosts
 		)
-		# A stopped play's stats can read clean; the operator's intent is what the status shows.
 		self.runner.update_play({
 			"status": "Stopped" if self.stopped else ("Failure" if failed else "Success"),
 			"ended": frappe.utils.now(),
 			"output": "\n".join(self.log)[:1000000],
 		})
 
-	# --- task results ---
 	def v2_runner_on_ok(self, result):
 		changed = bool(result._result.get("changed"))
 		self._finish_task(result, "changed" if changed else "ok")
@@ -185,8 +175,6 @@ class AnsibleCallback(CallbackBase):
 		self.runner.finish_task(self.current_task, status, result._result)
 		self.current_task = None
 
-	# Press's runner.py does the same: the user module hands back the key it generated, and the server
-	# doc is where a later play reads it from to authorise this box on another.
 	def _record_public_key(self, result):
 		if getattr(result._task, "action", "") not in ("user", "ansible.builtin.user"):
 			return
@@ -237,7 +225,6 @@ class Ansible:
 		frappe.db.commit()
 		return doc.name
 
-	# --- called from the callback ---
 	@dangerously_reconnect_on_connection_abort
 	def update_play(self, values):
 		doc = frappe.get_doc("Ansible Play", self.play_name)
@@ -301,8 +288,6 @@ class Ansible:
 			if self.callback.thread_db:
 				self.callback.thread_db.close()
 			frappe.db.commit()
-		# A stopped play unwinds with whatever rc its tasks earned, usually 0. The operator asked
-		# for it not to finish, so it is never a success.
 		if self.callback.stopped and not rc:
 			rc = 1
 		return frappe.get_doc("Ansible Play", self.play_name), rc

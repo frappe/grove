@@ -1,7 +1,4 @@
-{#
-  Rendered by the vmagent role. The token is read from a file, never the argv:
-  /proc/<pid>/cmdline is world-readable and Ansible records the argv it runs.
-#}
+{# Rendered by the vmagent role — do not edit on the box. #}
 [Unit]
 Description=vmagent — scrape this box and push to the remote VictoriaMetrics
 After=network-online.target

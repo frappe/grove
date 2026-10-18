@@ -1,10 +1,5 @@
 ---
-# The box's single public entry point: TLS on 443, engines under /e/<instance>/, exporters under
-# /metrics/*. OpenResty itself is installed by the `openresty` role, which every play lists ahead
-# of this one — same pinned build as the gateway, so one fleet, one web server.
-#
-# This role belongs to the inference plays only. Never add it to the Monitoring Agent's
-# exporters.yml — that play also runs on Gateway Servers, which serve their own config on :80.
+# Never in exporters.yml: that play also runs on Gateway Servers.
 - name: Create the per-engine config directory
   ansible.builtin.file:
     path: "{{ engine_proxy_engines_dir }}"

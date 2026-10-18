@@ -6,12 +6,11 @@ from pathlib import Path
 
 import frappe
 
-from grove.access import model_rows
+from grove.access import limit_entries, model_rows
 from grove.catalog.seed import CATALOG, get_model_key
 from grove.grove.doctype.model.model import get_modality_names
 from grove.billing.pricing import CounterTable
 
-# The one geography the catalog ships: a name, its endpoint and zone filled on the site.
 MAIN = "Main"
 PROVIDER_FIELDS = ("provider_name", "is_self_hosted", "base_url", "anthropic_base_url", "api_version")
 MODEL_FIELDS = ("model_id", "upstream_model_id")
@@ -24,9 +23,18 @@ def write(path=None):
 		"counters": get_counters(), "geographies": [{"name": MAIN}],
 		"modalities": get_modalities(),
 		"cloud_providers": get_cloud_providers(), "regions": get_regions(),
-		"providers": get_providers(), "models": models, "model_groups": get_model_groups(models),
+		"providers": get_providers(), "denied_tools": get_denied_tools(),
+		"models": models, "model_groups": get_model_groups(models),
+		"tiers": get_tiers(), "default_tier": frappe.db.get_single_value("Grove Settings", "default_tier") or "",
 	}
 	Path(path or CATALOG).write_text(json.dumps(catalog, indent=1, sort_keys=True) + "\n")
+
+
+def get_tiers():
+	"""Every tier, its caps and its rows, so a site's ladder ships with the catalog."""
+	rows = limit_entries("Tier")
+	tiers = frappe.get_all("Tier", fields=["name", "max_keys", "spend_limit"], order_by="name")
+	return [{"name": t.name, "max_keys": t.max_keys, "spend_limit": t.spend_limit, "limits": rows.get(t.name, [])} for t in tiers]
 
 
 def get_counters():
@@ -69,6 +77,11 @@ def get_providers():
 			entry["geography"] = MAIN
 		providers.setdefault(row.provider_name, entry)
 	return [providers[name] for name in sorted(providers)]
+
+
+def get_denied_tools():
+	"""Every tool a vendor would run on its own side, by vendor then tool."""
+	return frappe.get_all("Denied Tool", fields=["provider_name", "tool"], order_by="provider_name, tool")
 
 
 def get_models():

@@ -35,9 +35,9 @@ class TestEntriesFromKeys(unittest.TestCase):
 
 	def test_keys_that_do_not_parse_are_skipped_not_guessed(self):
 		entries = entries_from_keys([
-			obj("models/Qwen--Qwen3-35B/model.safetensors"),  # the weights half of the bucket
-			obj("compile-cache/deep/NVIDIA_L40S/tpX/model/a"),  # tp not a number
-			obj("compile-cache/short/key"),  # no artifact path
+			obj("models/Qwen--Qwen3-35B/model.safetensors"),
+			obj("compile-cache/deep/NVIDIA_L40S/tpX/model/a"),
+			obj("compile-cache/short/key"),
 			obj(f"{PREFIX}/a"),
 		])
 		self.assertEqual(len(entries), 1)

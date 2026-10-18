@@ -10,7 +10,6 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 TEMPLATES = Path(__file__).parent.parent / "playbooks/roles/auditd/templates"
-# Syscalls arm64 dropped for their *at forms: auditctl rejects the name outright there.
 LEGACY = {"creat", "open", "chmod", "chown", "lchown", "unlink", "rename", "stime"}
 
 

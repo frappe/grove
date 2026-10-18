@@ -3,23 +3,23 @@
 
 frappe.ui.form.on('Credit Discrepancy', {
 	refresh(frm) {
-		if (frm.doc.resolution || frm.doc.gateway_correction_pending || !frappe.user.has_role('System Manager')) return;
+		if (frm.doc.resolution || !frappe.user.has_role('System Manager')) return;
 		const figures = __('Gateway charged {0}; Grove priced {1}.', [
 			format_currency(frm.doc.gateway_value, null, 9),
 			format_currency(frm.doc.grove_value, null, 9),
 		]);
 		frm.add_custom_button(__('Grove is wrong'), () => {
 			frappe.confirm(
-				`${figures} ${__("Move {0}'s spent by {1} so Grove's balance matches the gateway's?", [
-					frm.doc.grove_user, format_currency(frm.doc.delta, null, 9),
+				`${figures} ${__("Move key {0}'s spent by {1} so Grove's balance matches the gateway's?", [
+					frm.doc.api_key, format_currency(frm.doc.delta, null, 9),
 				])}`,
 				() => frm.call('correct_grove').then(() => frm.reload_doc()),
 			);
 		}, __('Resolve'));
 		frm.add_custom_button(__('Gateway is wrong'), () => {
 			frappe.confirm(
-				`${figures} ${__("Move the gateway's spend for {0} on {1} by {2} so its balance matches Grove's? It goes out on the next sync, within a minute.", [
-					frm.doc.grove_user, frm.doc.gateway_store, format_currency(-frm.doc.delta, null, 9),
+				`${figures} ${__("Move the gateway's spend for key {0} on {1} by {2} so its balance matches Grove's? It goes out on the next sync, within a minute.", [
+					frm.doc.api_key, frm.doc.gateway_store, format_currency(-frm.doc.delta, null, 9),
 				])}`,
 				() => frm.call('correct_gateway').then(() => frm.reload_doc()),
 			);

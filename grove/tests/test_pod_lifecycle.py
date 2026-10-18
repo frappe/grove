@@ -98,7 +98,6 @@ class TestSpawnRetries(unittest.TestCase):
 		self.assertEqual(len([c for c in h.calls if c[0] == "create"]), 2)
 		self.assertEqual(h.reported.call_count, 1)
 		self.assertIn({"status": "Stopped"}, h.writes)
-		# Two attempt rows from the loop, then the terminal one from fail().
 		self.assertEqual(h.events(), [("Spawn", "Failure", 1), ("Spawn", "Failure", 2), ("Spawn", "Failure", None)])
 
 	def test_zero_retries_means_one_ask(self):
@@ -112,7 +111,7 @@ class TestSpawnRetries(unittest.TestCase):
 		result = h.run("spawn", await_ready=lambda p: (_ for _ in ()).throw(RunPodError("poll timed out")))
 		self.assertEqual(result["status"], "error")
 		self.assertEqual(len([c for c in h.calls if c[0] == "create"]), 1)
-		self.assertNotIn({"status": "Stopped"}, h.writes)  # it has a pod; reconcile owns its status
+		self.assertNotIn({"status": "Stopped"}, h.writes)
 		self.assertEqual(h.events(), [("Spawn", "Failure", None)])
 
 
@@ -196,7 +195,6 @@ class TestTheWindow(unittest.TestCase):
 		self.assertTrue(w.contains(datetime.datetime(2026, 9, 9, 5, 59)))
 		self.assertFalse(w.contains(datetime.datetime(2026, 9, 9, 6, 0)))
 		self.assertFalse(w.contains(datetime.datetime(2026, 9, 9, 12, 0)))
-		# The early-morning half belongs to the day the window opened.
 		self.assertEqual(w.started_on(datetime.datetime(2026, 9, 9, 3, 0)), datetime.date(2026, 9, 8))
 		self.assertEqual(w.started_on(datetime.datetime(2026, 9, 8, 23, 0)), datetime.date(2026, 9, 8))
 
@@ -235,7 +233,6 @@ class TestTheWindowTick(unittest.TestCase):
 			("POD-1", "Scheduled", "pod-spawn_pod_doc-POD-1", True))
 
 	def test_a_window_already_opened_today_is_not_reopened(self):
-		# Covers both a spawn that gave up and a Stop pressed by hand inside the window.
 		writes, queued, _ = self.tick([self.pod(status="Stopped", scheduled_for=datetime.date(2026, 9, 8))])
 		self.assertEqual((writes, queued), ([], []))
 

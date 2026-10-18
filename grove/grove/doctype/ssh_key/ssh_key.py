@@ -20,7 +20,6 @@ class SSHKey(Document):
 
 	def validate(self):
 		self.public_key = (self.public_key or "").strip()
-		# An OpenSSH public key starts with its type token.
 		if not self.public_key.startswith(("ssh-", "ecdsa-", "sk-")):
 			frappe.throw("Public Key must be a full OpenSSH public key line (e.g. 'ssh-rsa AAAA...').")
 

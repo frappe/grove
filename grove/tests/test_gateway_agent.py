@@ -25,7 +25,6 @@ from grove.fleet import FleetHost, gateway_agent_release, gateway_agent_version
 from grove.grove.doctype.gateway_server.gateway_server import GatewayServer
 from grove.grove.doctype.ingress_server.ingress_server import IngressServer
 
-# Anchored to this file: `bench run-tests` runs from the bench root.
 PLAYBOOKS = Path(__file__).parent.parent / "playbooks"
 TTL = "2m"
 # Deliberately not a real release: these fail if the version goes back to being hardcoded.
@@ -35,9 +34,7 @@ SETTINGS = SimpleNamespace(
 	gateway_variables={"synthetic_session_ttl": TTL, "usage_retention": "168h"},
 	scrape_auth_variables={"scrape_password_hash": "$2b$12$hash"},
 )
-# The Gateway Store a fake gateway runs on.
 STORE = SimpleNamespace(redis_variables={"redis_addr": "10.0.61.9:6379", "redis_password": "pw"})
-# What a box's Geography hands it.
 TLS = {
 	"fleet_zone": "grove.test",
 	"fleet_tls_cert": "-----BEGIN CERTIFICATE-----",
@@ -59,17 +56,13 @@ def extravars_for(doctype_class, module, doc, **kwargs):
 		return "play-1", 0
 
 	doc.run_playbook = run_playbook
-	# Recording is FleetHost's, and TestTheInstalledVersionIsRecorded holds it to account.
 	doc.record_agent_version = lambda rc: None
 	doc.record_store = lambda rc, store: None
-	# frappe.db is a Local and unbound without a site; the release is read off Grove Settings
-	# through it, so the whole thing is swapped the way test_pathway_sync reaches it.
 	with (
 		patch("frappe.get_single", return_value=SETTINGS),
 		patch.object(
 			frappe, "db", SimpleNamespace(get_single_value=lambda *args: PINNED, get_value=geography_endpoint)
 		),
-		# A gateway's Redis is its store's, read off the Gateway Store doc.
 		patch.object(frappe, "get_doc", return_value=STORE),
 	):
 		doctype_class._deploy_agent(doc, **kwargs)
@@ -172,11 +165,8 @@ class TestDeployAgentShipsBothHalves(unittest.TestCase):
 				self.assertEqual(set(), missing)
 
 	def test_it_passes_every_variable_the_tunables_file_renders(self):
-		# A tunable the button forgets renders as its Jinja default, which is not the same as the
-		# value in Grove Settings — the box would quietly run something nobody chose.
 		for plane, sent in (("gateway_server", gateway_extravars()), ("ingress_server", ingress_extravars())):
 			with self.subTest(plane):
-				# `default(...)` filters make a variable optional; only the bare ones are required.
 				required = {
 					name for name in config_json_variables(plane)
 					if not re.search(rf"{{{{\s*{name}\s*\|\s*default", (PLAYBOOKS / plane / "config.json.j2").read_text())
@@ -200,26 +190,19 @@ class TestDeployAgentShipsBothHalves(unittest.TestCase):
 		self.assertTrue(ingress_extravars()["admin_token"])
 
 	def test_an_ingress_is_given_its_data_token(self):
-		# Blank, an ingress refuses every gateway — which reads as a routing outage rather than the
-		# config fault it is.
 		self.assertTrue(ingress_extravars()["data_token"])
 
 	def test_each_box_is_told_its_own_name(self):
-		# agent.env carries the name the admin plane and the scrape answer on. Blank means the
-		# control plane can still reach the box, but only by the shared name — which reaches all of
-		# them.
 		self.assertEqual("gw-1.grove.test", gateway_extravars()["proxy_hostname"])
 		self.assertEqual("ing-1.grove.test", ingress_extravars()["ingress_hostname"])
 
 	def test_a_gateway_answers_for_its_geography(self):
-		# The endpoint lives on the Geography; a pinned user from elsewhere is refused by this name.
 		sent = gateway_extravars()
 		self.assertEqual(("eu", "eu.grove.test"), (sent["gateway_geography"], sent["gateway_host"]))
 		unplaced = gateway_extravars(geography=None)
 		self.assertEqual(("", ""), (unplaced["gateway_geography"], unplaced["gateway_host"]))
 
 	def test_a_box_named_with_its_domain_is_known_to_the_agent_by_its_label(self):
-		# The agent gets the label, not the domain: it is the box's name in its startup line.
 		self.assertEqual("gw-2", gateway_extravars(name="gw-2.eu.grove.test")["gateway_id"])
 		self.assertEqual("ing-2", ingress_extravars(name="ing-2.eu.grove.test")["ingress_id"])
 
@@ -227,9 +210,6 @@ class TestDeployAgentShipsBothHalves(unittest.TestCase):
 		self.assertEqual(TTL, gateway_extravars()["synthetic_session_ttl"])
 
 	def test_it_asks_for_the_release_the_fleet_is_pinned_to(self):
-		# The agent lives in its own repo, so this variable is the only thing that decides which
-		# binary a box ends up running — and it comes from Grove Settings, so a rollback is an edit
-		# and a Deploy Agent rather than a control-plane release.
 		self.assertEqual(PINNED, gateway_extravars()["agent_version"])
 		self.assertEqual(PINNED, ingress_extravars()["agent_version"])
 
@@ -243,9 +223,6 @@ class TestDeployAgentShipsBothHalves(unittest.TestCase):
 				gateway_agent_release()
 
 	def test_a_fleet_that_pins_nothing_is_refused_before_it_ships(self):
-		# Blank renders an empty release tag into the download URL, which 404s the play twenty
-		# minutes in. A Single doc predating the field never applies its JSON default, so this is a
-		# state a real site lands in rather than a hypothetical.
 		with (
 			patch.object(frappe, "db", SimpleNamespace(get_single_value=lambda *args: None)),
 			patch("frappe.throw", side_effect=frappe.ValidationError),
@@ -254,9 +231,6 @@ class TestDeployAgentShipsBothHalves(unittest.TestCase):
 			gateway_agent_version()
 
 	def test_the_fleet_private_key_never_rides_along(self):
-		# A config push has no business carrying it: agent.env names the certificate's PATH, and
-		# deploy_tls owns writing the material. Resolved in _deploy_agent rather than at enqueue so
-		# it never reaches the job payload in Redis either.
 		for plane, sent in (("gateway", gateway_extravars()), ("ingress", ingress_extravars())):
 			with self.subTest(plane):
 				self.assertNotIn("fleet_tls_key", sent)
@@ -272,7 +246,6 @@ class TestAGatewayIsToldWhichRedis(unittest.TestCase):
 			GatewayServer.get_agent_extravars(fake_gateway(gateway_store=None), store=None)
 
 	def test_a_deploy_never_moves_a_gateway_onto_its_networks_store(self):
-		# Moving a live gateway drains it first; a routine deploy must not do that by the way.
 		doc = fake_gateway(
 			gateway_store="s-current", network_store="s-network",
 			record_agent_version=lambda rc: None, record_store=lambda rc, store: None,
@@ -341,8 +314,6 @@ class TestTheBinaryComesOffTheInternetSafely(unittest.TestCase):
 	source tree the control plane handed it."""
 
 	def test_the_download_is_checksummed(self):
-		# Without this the play installs whatever answers the URL, which is a worse failure than
-		# the one it replaced: the old source tree at least came from the control plane's own disk.
 		download = next(task for task in install_role_tasks() if "ansible.builtin.get_url" in task)
 		self.assertTrue(download["ansible.builtin.get_url"]["checksum"].startswith("sha256:"))
 
@@ -351,8 +322,6 @@ class TestTheBinaryComesOffTheInternetSafely(unittest.TestCase):
 		self.assertIn("agent_version", yaml.safe_load(defaults.read_text())["agent_release_url"])
 
 	def test_nothing_compiles_on_the_target_any_more(self):
-		# A box that still installs Go is a box that needs a toolchain and outbound access to the
-		# module proxy — the two things this split was meant to take off the fleet.
 		self.assertNotIn("go build", yaml.dump(install_role_tasks()))
 
 
@@ -361,8 +330,6 @@ class TestTheInstalledVersionIsRecorded(unittest.TestCase):
 	it shows."""
 
 	def set_value_after(self, rc):
-		# frappe.db is a Local and unbound without a site, so the whole thing is swapped — the
-		# same way test_pathway_sync reaches it.
 		doc = SimpleNamespace(doctype="Gateway Server", name="gw-1")
 		db = Mock()
 		db.get_single_value.return_value = PINNED
@@ -376,8 +343,6 @@ class TestTheInstalledVersionIsRecorded(unittest.TestCase):
 		)
 
 	def test_a_failed_play_leaves_the_old_version_standing(self):
-		# The box is still running whatever it was running. Claiming the new one would hide exactly
-		# the skew this field exists to show.
 		self.set_value_after(1).assert_not_called()
 
 
@@ -509,7 +474,6 @@ class TestMaintenanceIsHeldInConfigJson(unittest.TestCase):
 			self.applied(box_says=True, rc=2)
 
 	def test_a_box_that_cannot_answer_is_never_put_in_maintenance(self):
-		# A pathway older than the key refuses the whole file, even at its next start.
 		import requests
 
 		doc = fake_gateway(get_in_flight=Mock(side_effect=requests.HTTPError("404")), db_set=Mock())

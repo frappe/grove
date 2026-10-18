@@ -51,7 +51,6 @@ class TestSpawnPod(unittest.TestCase):
 		self.assertEqual(body["gpu"], {"id": "NVIDIA L40S", "count": 2})
 		self.assertEqual(body["mounts"], {"persistent": {"size": 50, "path": "/data"}})
 		self.assertEqual(body["cloud"], "SECURE")
-		# args is appended to the image entrypoint (`vllm serve`), and stays a string in v2.
 		self.assertEqual(body["args"], "Qwen/Qwen3-35B --port 8080")
 
 	def test_a_pod_with_no_id_is_an_error_not_a_silent_success(self):
@@ -69,7 +68,7 @@ class TestUpdatePod(unittest.TestCase):
 		self.assertEqual(body, {"args": "repo --port 8080"})
 
 	def test_only_the_given_fields_are_sent(self):
-		# PATCH is a partial update — an omitted field must be left alone, not blanked.
+		"""PATCH is a partial update: an omitted field must be left alone, not blanked."""
 		client = FakeClient()
 		client.update_pod("pod1", image_name="vllm/vllm-openai:v0.24.0", env={"HF_HOME": "/data/hf"})
 		_method, _path, body = client.calls[0]
@@ -114,8 +113,6 @@ class TestParsePod(unittest.TestCase):
 		self.assertEqual((parsed["ssh_port"], parsed["public_ip"]), (40022, "1.2.3.4"))
 
 	def test_the_public_ip_comes_from_a_direct_tcp_mapping(self):
-		# A RunPod http proxy port reports a CGNAT address and entry order is not stable, so
-		# taking the first ip hands the gateway an unreachable host.
 		parsed = RunPodClient._parse_pod({
 			"id": "pod1",
 			"runtime": {"ports": [
@@ -128,7 +125,6 @@ class TestParsePod(unittest.TestCase):
 		self.assertEqual(parsed["port_map"]["8080"], 23506)
 
 	def test_a_pod_that_is_not_running_yet_has_no_endpoints(self):
-		# v2 nulls `runtime` until the pod runs — that must read as "not ready", not crash.
 		parsed = RunPodClient._parse_pod({"id": "pod1", "status": "PROVISIONING", "runtime": None})
 		self.assertEqual(parsed["port_map"], {})
 		self.assertIsNone(parsed["public_ip"])
@@ -137,7 +133,6 @@ class TestParsePod(unittest.TestCase):
 
 class TestListGpuTypes(unittest.TestCase):
 	def test_the_catalog_is_normalised_to_groves_own_keys(self):
-		# The cached list is read by the Cloud Provider form and Pod.gpu_vram_gb.
 		client = FakeClient(response={"gpus": [
 			{"id": "NVIDIA L40S", "name": "L40S", "memory": 48, "secure": True, "community": False}
 		]})
@@ -186,13 +181,10 @@ class TestStreamLogs(unittest.TestCase):
 		})])
 
 	def test_separators_and_keepalive_comments_tick_without_a_line(self):
-		# A quiet stream is mostly blank lines and ':' comments. They carry no log line, but each
-		# has to reach the caller — their only chance to notice Stop.
 		events, _call = self.stream(["", ": keep-alive", 'data: {"line":"a"}'])
 		self.assertEqual([line for _id, line in events], [None, None, {"line": "a"}])
 
 	def test_a_dropped_connection_ends_the_stream_instead_of_raising(self):
-		# The caller reconnects from the last event id, so mid-stream failure is not an error.
 		events, _call = self.stream([
 			'data: {"line":"a"}', requests.ConnectionError("read timed out"), 'data: {"line":"b"}',
 		])
@@ -245,8 +237,6 @@ def serving_pod(
 		model="Qwen/Qwen3-35B",
 		health_path=health_path,
 		max_model_len=max_model_len,
-		# The real class: an Engine takes a plain mapping and no site, so the pod carries the one
-		# its doctype property would have built.
 		engine=build_engine(engine_kind, "qwen3-35b", model, port=8080, max_model_len=max_model_len),
 		ports=[
 			SimpleNamespace(internal_port=22, protocol="tcp", external_port=22001),
@@ -282,8 +272,7 @@ class TestPodEnv(unittest.TestCase):
 		self.assertEqual(env["TORCHINDUCTOR_CACHE_DIR"], "/data/vllm-cache/torchinductor")
 
 	def test_a_custom_image_gets_none_of_the_vllm_vars(self):
-		# hf_transfer may not be installed, and its env var would crash huggingface_hub.
-		# Telemetry is the exception: a plain env lookup, safe on any version.
+		"""hf_transfer may not be installed and its env var would crash huggingface_hub; telemetry is a plain lookup."""
 		env = self.env(engine_kind="custom")
 		self.assertEqual(set(env), {"HF_HOME", "HF_HUB_DISABLE_TELEMETRY"})
 
@@ -292,8 +281,6 @@ class TestPodEnv(unittest.TestCase):
 		self.assertEqual(env["VLLM_CACHE_ROOT"], "/elsewhere")
 
 	def test_a_streaming_pod_gets_the_bucket_env(self):
-		# Decided by the Model carrying a mirror, not by matching "runai_streamer" in the stored
-		# command — which an operator could type into extra_serve_args.
 		env = self.env(streaming=True)
 		self.assertEqual(env["AWS_ACCESS_KEY_ID"], "AKIA")
 
@@ -305,26 +292,20 @@ class TestEngineEndpoint(unittest.TestCase):
 	"""Which address the gateway is handed for a serving pod."""
 
 	def test_an_http_port_is_reached_through_the_provider_tls_proxy(self):
-		# https, so the key is not on the wire in clear, and no certificate on the pod.
 		endpoint = PodProvisioner(serving_pod()).engine_endpoint
 		self.assertEqual(endpoint, "https://abc123-8080.proxy.runpod.net")
 
 	def test_the_proxy_address_ignores_the_mapping_that_moves_on_restart(self):
-		# Keyed on the pod id, so a restart that re-maps every direct port leaves the route
-		# valid.
 		moved = serving_pod(public_ip="9.9.9.9", external_port=50999)
 		self.assertEqual(
 			PodProvisioner(moved).engine_endpoint, "https://abc123-8080.proxy.runpod.net"
 		)
 
 	def test_a_tcp_port_keeps_its_direct_mapping(self):
-		# The escape hatch for work that cannot start streaming inside Cloudflare's 100s cap.
 		endpoint = PodProvisioner(serving_pod(protocol="tcp")).engine_endpoint
 		self.assertEqual(endpoint, "http://1.2.3.4:41234")
 
 	def test_no_address_before_the_provider_has_published_one(self):
-		# A blank endpoint keeps the pod Loading, which is what stops a route reaching a cold
-		# engine — so each half-known state has to stay blank rather than render something.
 		self.assertEqual(PodProvisioner(serving_pod(pod_id="")).engine_endpoint, "")
 		self.assertEqual(
 			PodProvisioner(serving_pod(protocol="tcp", public_ip="")).engine_endpoint, ""
@@ -346,14 +327,10 @@ class TestHealthPath(unittest.TestCase):
 		self.assertEqual(PodProvisioner(serving_pod()).health_path, "/health")
 
 	def test_a_custom_image_gates_on_the_path_it_names(self):
-		# The bug this exists for: an ASR container read Running the moment RunPod said the
-		# container was up, minutes before anything answered on the port.
 		pod = serving_pod(engine_kind="custom", health_path="/v1/health/ready")
 		self.assertEqual(PodProvisioner(pod).health_path, "/v1/health/ready")
 
 	def test_a_custom_image_that_names_none_is_not_gated(self):
-		# vLLM's /health must not be assumed onto an image that has never heard of it — that
-		# would leave the pod Loading forever.
 		self.assertEqual(PodProvisioner(serving_pod(engine_kind="custom")).health_path, "")
 
 	def test_a_vllm_pod_may_override_the_path(self):
@@ -374,8 +351,6 @@ class TestGatedStatus(unittest.TestCase):
 		self.assertEqual(self.gated("Running", serving=True), ("Running", "https://abc123-8080.proxy.runpod.net"))
 
 	def test_a_container_the_provider_calls_running_is_loading_until_it_answers(self):
-		# The bug this exists for: RunPod reports RUNNING as soon as the container starts, so a
-		# pod still pulling the image read Running with a blank route target.
 		self.assertEqual(self.gated("Running", serving=False), ("Loading", ""))
 
 	def test_a_pod_with_no_published_endpoint_is_loading(self):
@@ -394,7 +369,6 @@ class TestPodStatus(unittest.TestCase):
 		self.assertEqual(pod_status("TERMINATED"), "Terminated")
 
 	def test_a_pod_still_coming_up_is_never_stopped(self):
-		# The bug this exists for: a slow bring-up reported as Stopped, which drops its route.
 		for state in ("CREATED", "RESTARTING", "SOME_NEW_STATE", None, ""):
 			self.assertEqual(pod_status(state), "Provisioning")
 
@@ -404,7 +378,6 @@ class TestRestartBlocker(unittest.TestCase):
 		self.assertIsNone(restart_blocker(pod(), live()))
 
 	def test_a_changed_gpu_count_is_refused(self):
-		# A respawn would re-download the weights, so Restart must not silently do one.
 		reason = restart_blocker(pod(gpu_count=4), live(gpu_count=2))
 		self.assertIn("GPU count changed", reason)
 		self.assertIn("Terminate", reason)
@@ -415,7 +388,6 @@ class TestRestartBlocker(unittest.TestCase):
 		self.assertIn("Terminate", reason)
 
 	def test_a_pod_that_is_not_running_is_refused(self):
-		# An update resets a live container; it is not a way to bring a stopped pod back.
 		reason = restart_blocker(pod(), live(status="EXITED"))
 		self.assertIn("not running", reason)
 		self.assertIn("Start it first", reason)
@@ -442,9 +414,6 @@ class TestServePortIsOpened(unittest.TestCase):
 	"""A serve port the provider was never asked to open is refused at validate."""
 
 	def test_a_custom_image_is_checked_too(self):
-		# The bug this exists for: an ASR pod served on 8000 while its Serve Port stayed at the
-		# 8080 default. engine_endpoint found no row for 8080, so the health gate had nothing to
-		# poll and the pod sat Loading forever with a live container behind it.
 		unopened = serving_pod(engine_kind="custom")
 		unopened.serve_port = 8000
 		self.assertIn("8000", validate_pod(unopened).call_args.args[0])
@@ -471,7 +440,6 @@ class TestContextLengthIsStored(unittest.TestCase):
 		self.assertEqual(self.validated("131072"), "131072")
 
 	def test_blank_stays_blank(self):
-		# Writing the engine default back would make "use whatever the engine picks" unsayable.
 		self.assertIsNone(self.validated(None))
 
 
@@ -496,15 +464,12 @@ class TestPodWarmup(unittest.TestCase):
 			return self.provisioner(**kwargs).get_warmup_error(), posted
 
 	def test_it_posts_the_payload_at_the_endpoint_the_gateway_gets(self):
-		# Same address engine_url carries, so a warmup that passes proves the route's own target.
 		_, posted = self.post(SimpleNamespace(status_code=200, text="{}"))
 		url, = posted.call_args.args
 		self.assertEqual(url, "https://abc123-8080.proxy.runpod.net/v1/completions")
 		self.assertEqual(posted.call_args.kwargs["json"]["max_tokens"], 1)
 
 	def test_it_sends_the_bearer_health_never_needed(self):
-		# /health is open, but the engine runs with VLLM_API_KEY set — an unauthenticated POST is
-		# a 401 on a pod that serves perfectly well.
 		_, posted = self.post(SimpleNamespace(status_code=200, text="{}"))
 		self.assertEqual(posted.call_args.kwargs["headers"], {"Authorization": "Bearer engine-key"})
 
@@ -531,7 +496,6 @@ class TestPodWarmup(unittest.TestCase):
 			self.assertTrue(self.provisioner().is_warmup_due)
 
 	def test_a_pod_that_never_served_is_not_warmed(self):
-		# await_engine timed out — there is no engine to prove, and the failure would be noise.
 		with patch("grove.cloud_provider.provisioner.PodProvisioner.current_status", "Loading"):
 			self.assertFalse(self.provisioner().is_warmup_due)
 
@@ -564,7 +528,6 @@ class TestWarmupWithholdsTheRoute(unittest.TestCase):
 		self.assertIn("500 CUDA error", reported.call_args.args)
 
 	def test_the_published_flag_is_still_recomputed(self):
-		# A pod that failed warmup must stop counting as a live deployment for its Model.
 		calls, _ = self.await_ready("500 CUDA error")
 		self.assertTrue(calls["synced"])
 

@@ -1,5 +1,3 @@
-// The Select reads as the role ('Inference'); the doctype carries the word Server. Pinned against
-// both by test_machine_types.py.
 const SERVER_DOCTYPE = {
 	'Gateway': 'Gateway Server',
 	'Ingress': 'Ingress Server',
@@ -12,11 +10,7 @@ frappe.ui.form.on('Machine', {
 	refresh(frm) {
 		if (frm.is_new()) return;
 
-		// Bare-metal only: on a cloud box the instance type is the source of truth, and the cards
-		// are seeded from it at provision.
 		if (frm.doc.public_ip && !frm.doc.cloud_provider) {
-			// These records drive card pinning, the VRAM fit check and the Inference Server's GPU
-			// view, so nvidia-smi writes them rather than an operator.
 			frm.add_custom_button(__('Scan GPUs'), () => {
 				frappe.confirm(
 					__("Read this box's GPUs over SSH? A card still there keeps its record and whatever holds it; one that is gone is removed."),
@@ -25,13 +19,11 @@ frappe.ui.form.on('Machine', {
 			});
 		}
 
-		// Reads and never writes, so unlike Scan GPUs it is offered on cloud boxes too.
 		if ((frm.doc.gpus || []).length) {
 			frm.add_custom_button(__('GPU Memory'), () => show_gpu_memory(frm));
 		}
 
-		// Works for bare-metal too, so it sits above the AWS-only gate below. public_ip/region are
-		// fetch_from on both doctypes, so setting `machine` fills them in.
+		// Above the AWS-only gates below: a bare-metal box gets its server doc too.
 		const server_doctype = SERVER_DOCTYPE[frm.doc.machine_type];
 		if (server_doctype) {
 			frappe.db.get_value(server_doctype, {machine: frm.doc.name}, 'name').then(({message}) => {
@@ -46,7 +38,6 @@ frappe.ui.form.on('Machine', {
 		}
 
 		if (!frm.doc.cloud_provider) {
-			// Nothing to destroy at a provider: this only retires the rows.
 			if (frm.doc.status !== 'Terminated') {
 				frm.add_custom_button(__('Terminate'), () => grove.confirm_call(frm,
 					__('Retire {0}? Nothing on the box is touched — its servers and their replicas are marked Terminated and its DNS record is removed.', [frm.doc.name]),
@@ -56,8 +47,7 @@ frappe.ui.form.on('Machine', {
 		}
 
 		if (!frm.doc.instance_id) {
-			// launch() sets Pending before instance_id lands; Provision then would launch a second
-			// real EC2 instance.
+			// launch() sets Pending before instance_id lands; Provision then would launch a second instance.
 			if (frm.doc.status !== 'Pending') {
 				frm.add_custom_button(__('Provision'), () => grove.confirm_call(frm,
 					__('Launch a new EC2 instance for {0}? It is billed from the moment it starts.', [frm.doc.name]),
@@ -65,7 +55,6 @@ frappe.ui.form.on('Machine', {
 			}
 			return;
 		}
-		// Sync only reads the instance back, so it stays one click.
 		frm.add_custom_button(__('Sync'), () => frm.call('sync'), __('AWS'));
 		frm.add_custom_button(__('Stop'), () => grove.confirm_call(frm,
 			__('Stop instance {0}? Everything it serves goes down until Start, and it may come back on a new address.', [frm.doc.instance_id]),
@@ -73,7 +62,6 @@ frappe.ui.form.on('Machine', {
 		frm.add_custom_button(__('Start'), () => grove.confirm_call(frm,
 			__('Start instance {0}? It is billed from the moment it runs.', [frm.doc.instance_id]),
 			'start'), __('AWS'));
-		// The address changes either way, so both confirm.
 		if (frm.doc.static_ip_allocation_id) {
 			frm.add_custom_button(__('Release Static IP'), () => {
 				frappe.confirm(
@@ -115,8 +103,6 @@ frappe.ui.form.on('Machine', {
 	},
 });
 
-// The call SSHes to the box, so freeze while it runs — the button otherwise looks dead for the
-// ten seconds Ansible takes.
 function show_gpu_memory(frm) {
 	frappe.dom.freeze(__('Reading nvidia-smi on {0}…', [frm.doc.name]));
 	frm.call('gpu_memory')

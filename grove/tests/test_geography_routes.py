@@ -4,6 +4,7 @@
 user goes to every gateway carrying the pin the gateway enforces. Pure — the rows are faked."""
 
 import unittest
+from datetime import datetime
 from unittest.mock import patch
 
 import frappe
@@ -16,7 +17,6 @@ from grove.pathway.run import Target
 ZONE = "grove.example.com"
 MODELS = [
 	model_row("frappe/qwen3-8b", model_id="qwen3-8b"),
-	# One key, a doc per provider record: each geography's doc carries its own upstream id.
 	model_row("gpt5-in", "openai", "in", model_key="openai/gpt-5", model_id="gpt-5"),
 	model_row("gpt5-eu", "openai", "eu", model_key="openai/gpt-5", model_id="gpt-5",
 	          upstream_model_id="gpt-5-eu"),
@@ -30,9 +30,7 @@ REPLICAS = [
 INGRESSES = [{"name": "eu-i1", "region": "eu-central-1", "geography": "eu"}]
 SERVERS = [{"name": "INF-eu-behind", "ingress": "eu-i1"}]
 PODS = [placement("frappe/qwen3-8b", name="POD-1", engine_url="http://1.2.3.4:8081")]
-# Every pod serves in this one, set on Grove Settings.
 POD_GEOGRAPHY = "in"
-# One vendor, a record per geography: the ids are hashes, the name is what they share.
 PROVIDERS = {
 	"frappe": {"provider_name": "frappe", "geography": None},
 	"a1b2": {"provider_name": "openai", "base_url": "https://api.openai.com/v1", "api_key": "in-key",
@@ -100,40 +98,40 @@ class TestRoutesStayInTheirGeography(unittest.TestCase):
 		self.assertEqual(row["upstream_model"], "gpt-5")
 		[row] = routes("eu")["openai/gpt-5"]
 		self.assertEqual((row["engine_url"], row["credentials"][0]["secret"]), ("https://eu.api.openai.com/v1", "eu-key"))
-		# The eu doc's own upstream id; the in doc's never reaches this table.
 		self.assertEqual(row["upstream_model"], "gpt-5-eu")
-		# The vendor is named by its provider, not by a record id.
 		self.assertEqual(row["vendor"], "openai")
 
 	def test_a_vendor_is_dialled_only_where_it_has_a_record(self):
 		self.assertNotIn("openai/gpt-5", routes("us"))
 
 	def test_a_gateway_with_no_geography_gets_no_routes(self):
-		# Fail closed: blank must not match rows that were never given a geography.
 		self.assertEqual(routes(""), {})
 
 
-class TestEveryUserCarriesTheirPin(unittest.TestCase):
-	def users(self, rows):
+class TestEveryKeyCarriesItsPin(unittest.TestCase):
+	def keys(self, rows):
 		def get_all(doctype, **kwargs):
-			return [frappe._dict(row) for row in rows] if doctype == "Grove User" else []
+			if doctype == "Grove API Key":
+				return [frappe._dict(row) for row in rows]
+			if doctype == "Central Team":
+				return [frappe._dict(name="T-1", log_payloads=0, suspended=0)]
+			return []
 
 		with (
 			patch.object(snapshot, "model_rows", return_value={}),
 			patch.object(snapshot, "group_rows", return_value={}),
+			patch.object(snapshot, "effective_limits", return_value={}),
 			patch.object(frappe, "get_all", side_effect=get_all),
-			patch.object(snapshot, "allocations", return_value={}),
 		):
-			return {user["name"]: user for user in snapshot.effective_users()}
+			return {key["prefix"]: key for key in snapshot.effective_keys()}
 
-	def test_pinned_and_unpinned_users_both_reach_every_gateway(self):
-		users = self.users([
-			{"name": "u1", "user": "a@x.test", "credit_exhausted": 0, "log_payloads": 0, "geography": "eu"},
-			{"name": "u2", "user": "b@x.test", "credit_exhausted": 0, "log_payloads": 0, "geography": None},
+	def test_pinned_and_unpinned_keys_both_reach_every_gateway(self):
+		keys = self.keys([
+			{"name": "k1", "key_hash": "aa", "team": "T-1", "status": "active", "cap": 0, "geography": "eu"},
+			{"name": "k2", "key_hash": "bb", "team": "T-1", "status": "active", "cap": 0, "geography": None},
 		])
-		self.assertEqual(users["u1"]["geography"], "eu")
-		# Blank, never null: the gateway reads absent and "" as unpinned.
-		self.assertEqual(users["u2"]["geography"], "")
+		self.assertEqual(keys["k1"]["geography"], "eu")
+		self.assertEqual(keys["k2"]["geography"], "")
 
 
 class TestOneSnapshotPerGeography(unittest.TestCase):
@@ -144,12 +142,12 @@ class TestOneSnapshotPerGeography(unittest.TestCase):
 		built, pushed = [], []
 		geographies = {"gw-in-1": "in", "gw-in-2": "in", "gw-in-3": "in", "gw-eu-1": "eu"}
 
-		def build(geography, shared=None):
+		def build(geography, _keys):
 			built.append(geography)
-			return {"geography": geography}
+			return {"routes": {"table": geography, "hash": geography}}
 
-		def push_target(target, desired, force, _adjustments):
-			pushed.append((target.name, desired["geography"]))
+		def push_target(target, delta, _adjustments):
+			pushed.append((target.name, delta["routes"]["table"]))
 			return None
 
 		doc = unittest.mock.Mock(results=[])
@@ -158,12 +156,21 @@ class TestOneSnapshotPerGeography(unittest.TestCase):
 			patch.object(run, "new_run", return_value=doc),
 			patch.object(run, "sync_targets", return_value=[(None, [name]) for name in geographies]),
 			patch.object(projection, "active_ingresses", return_value=[]),
+			patch.object(projection, "read_hashes", side_effect=lambda targets: {t: {} for t in targets}),
+			patch.object(frappe.utils, "now_datetime", lambda: datetime(2026, 8, 16, 0, 1)),
 			patch.object(snapshot, "gateway_geography", side_effect=geographies.get),
+			patch.object(snapshot, "keys_section", return_value={"buckets": {}}),
 			patch.object(snapshot, "gateway_snapshot", side_effect=build),
 			patch.object(Target, "resolve", side_effect=lambda kind, name: Target(kind, name, "u", "t")),
 			patch.object(projection, "push_target", side_effect=push_target),
 			patch.object(projection, "pending_adjustments", return_value={}),
-			patch.object(frappe, "db", frappe._dict(commit=lambda: None)),
+			patch.object(
+				frappe, "db",
+				frappe._dict(
+					commit=lambda: None, get_single_value=lambda *a: 0,
+					get_value=lambda *a, **k: None, set_value=lambda *a, **k: None,
+				),
+			),
 		):
 			projection.sync_projection()
 		self.assertEqual(sorted(built), ["eu", "in"])

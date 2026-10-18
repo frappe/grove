@@ -6,14 +6,14 @@
  "engine": "InnoDB",
  "field_order": [
   "api_key",
-  "user",
+  "team",
   "day",
   "column_break_drain",
   "gateway_store",
   "drain_id",
   "section_totals",
-  "billed",
   "request_count",
+  "total_tokens",
   "column_break_avch",
   "gateway_cost",
   "cost",
@@ -32,15 +32,15 @@
    "reqd": 1
   },
   {
-   "fieldname": "user",
+   "fieldname": "team",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "User",
-   "options": "Grove User",
+   "label": "Team",
+   "options": "Central Team",
    "read_only": 1
   },
   {
-   "description": "The UTC day it was pulled.",
+   "description": "The UTC day the gateway served it, off the gateway's clock: the bucket it was counted in, so a day or a month here is the gateway's own. One record per key per drain per day.",
    "fieldname": "day",
    "fieldtype": "Date",
    "in_list_view": 1,
@@ -80,6 +80,13 @@
    "read_only": 1
   },
   {
+   "description": "Prompt and completion tokens of every model, once each: a cached or audio part is already inside its whole. A cheap read beside the JSON.",
+   "fieldname": "total_tokens",
+   "fieldtype": "Int",
+   "label": "Total Tokens",
+   "read_only": 1
+  },
+  {
    "description": "Grove's price of this key's usage in this drain, at every pricing the gateway charged. Charged to the user only when Billed.",
    "fieldname": "cost",
    "fieldtype": "Currency",
@@ -115,23 +122,13 @@
    "read_only": 1
   },
   {
-   "default": "0",
-   "description": "Whether this usage was charged: the gateway served it while the user was prepaid. Only billed records move the user's Spent and count as revenue; an unbilled one still shows what the usage would have cost.",
-   "fieldname": "billed",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Billed",
-   "read_only": 1
-  },
-  {
    "fieldname": "column_break_avch",
    "fieldtype": "Column Break"
   }
  ],
  "in_create": 1,
  "links": [],
- "modified": "2026-10-05 03:22:42.629764",
+ "modified": "2026-10-18 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Usage Record",

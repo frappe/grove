@@ -1,13 +1,40 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Who may call which Model. Every group a user belongs to grants, their own Allow adds, their Deny
+"""Who may call which Model. Every group a key belongs to grants, its own Allow adds, its Deny
 removes, and nothing else is reachable.
 
-The precedence is NOT applied here: Grove pushes each group, each user and each key as separate
-Redis records, and the GATEWAY resolves the three at request time. That is what stops a one-row edit
-on a group from invalidating every key beneath it."""
+The precedence is NOT applied here: Grove pushes each group and each key as separate Redis
+records, and the GATEWAY resolves the two at request time. That is what stops a one-row edit on a
+group from invalidating every key beneath it."""
 
 import frappe
+from frappe.utils import flt
+
+DEFAULT_LIMITS = (
+	{"metric": "requests", "window": "1m", "value": 20},
+	{"metric": "total_tokens", "window": "1m", "value": 100_000},
+)
+
+
+def default_tier():
+	"""The Tier a team with none runs under, and the one an unseen name is cloned from; None when
+	Grove Settings names none."""
+	return frappe.db.get_single_value("Grove Settings", "default_tier") or None
+
+
+def team_limits(team, for_update=False):
+	"""What gates `team`'s keys: `suspended`, its `tier`, and the tier's `max_keys` /
+	`spend_limit` (the default tier's when it has none; without either, 0 and 0: no key limit, and
+	no cap can be set). `max_keys` is the team's own under Override Max Keys. `for_update` locks
+	the team row for a cap check."""
+	fields = ["suspended", "tier", "override_max_keys", "max_keys"]
+	row = frappe.db.get_value("Central Team", team, fields, as_dict=True, for_update=for_update) or frappe._dict()
+	tier = row.tier or default_tier()
+	limits = (tier and frappe.db.get_value("Tier", tier, ["max_keys", "spend_limit"], as_dict=True)) or frappe._dict()
+	if not row.override_max_keys:
+		row.max_keys = limits.max_keys
+	row.max_keys, row.spend_limit = row.max_keys or 0, flt(limits.spend_limit)
+	return row
 
 
 def model_rows(parenttype, parents=None):
@@ -29,7 +56,8 @@ def model_rows(parenttype, parents=None):
 
 
 def group_rows(parents=None):
-	filters = {"parenttype": "Grove User"}
+	"""{Grove API Key: [group, ...]}, sorted."""
+	filters = {"parenttype": "Grove API Key"}
 	if parents is not None:
 		filters["parent"] = ("in", list(parents))
 	rows = frappe.get_all("Model Group Row", filters=filters, fields=["parent", "model_group"])
@@ -39,22 +67,59 @@ def group_rows(parents=None):
 	return {parent: sorted(names) for parent, names in grouped.items()}
 
 
-def limit_rows():
-	"""{Grove User: ["requests:1m:200", ...]}, sorted: each entry as the gateway reads it."""
-	rows = frappe.get_all(
-		"Model Limit", filters={"parenttype": "Grove User"}, fields=["parent", "metric", "window", "value"]
-	)
+def limit_entries(parenttype, parents=None):
+	"""{parent: [{metric, window, value}, ...]} of the Model Limit rows on every `parenttype` doc, or
+	on `parents`, each list sorted by metric and window."""
+	filters = {"parenttype": parenttype}
+	if parents is not None:
+		filters["parent"] = ("in", list(parents))
+	rows = frappe.get_all("Model Limit", filters=filters, fields=["parent", "metric", "window", "value"])
 	grouped = {}
 	for row in rows:
-		grouped.setdefault(row.parent, []).append(f"{row.metric}:{row.window}:{row.value}")
-	return {parent: sorted(entries) for parent, entries in grouped.items()}
+		grouped.setdefault(row.parent, []).append({"metric": row.metric, "window": row.window, "value": row.value})
+	return {parent: sorted_limits(entries) for parent, entries in grouped.items()}
 
 
-def get_reachable_models(grove_user):
-	"""What one user may call, resolved the way the gateway does it: every group's grant and their
-	own Allow, less their Deny. For showing a person their models; the gateway never reads this."""
-	own = model_rows("Grove User", [grove_user]).get(grove_user, {})
-	groups = group_rows([grove_user]).get(grove_user, [])
+def effective_limits(keys, own, tiers):
+	"""{key: [{metric, window, value}, ...]} for `keys` (rows with `name` and `team`), as the gateway
+	is to count them: the key's own rows (`own`, from `limit_entries`), else the rows of its team's
+	Tier (`tiers`: {team: tier}; blank is the default tier; a tier with no rows is uncapped), else
+	DEFAULT_LIMITS."""
+	by_tier = limit_entries("Tier")
+	fallback = default_tier()
+	default = sorted_limits(DEFAULT_LIMITS)
+	resolved = {}
+	for key in keys:
+		if key.name in own:
+			resolved[key.name] = own[key.name]
+		elif tier := tiers.get(key.team) or fallback:
+			resolved[key.name] = by_tier.get(tier, [])
+		else:
+			resolved[key.name] = default
+	return resolved
+
+
+def sorted_limits(rows):
+	return sorted(({"metric": r["metric"], "window": r["window"], "value": r["value"]} for r in rows), key=lambda r: (r["metric"], r["window"]))
+
+
+def validate_limit_rows(rows):
+	"""One limit per metric and window, each above zero; the gateway refuses a push carrying one it
+	cannot read. The same rule on a key's own rows and on a Tier's."""
+	seen = set()
+	for row in rows:
+		if (row.value or 0) <= 0:
+			frappe.throw(f"Limit row {row.idx}: the value must be above zero.")
+		if (row.metric, row.window) in seen:
+			frappe.throw(f"Two limits on {row.metric} per {row.window}.")
+		seen.add((row.metric, row.window))
+
+
+def get_reachable_models(api_key):
+	"""What one key may call, resolved the way the gateway does it: every group's grant and its
+	own Allow, less its Deny. For showing a person their models; the gateway never reads this."""
+	own = model_rows("Grove API Key", [api_key]).get(api_key, {})
+	groups = group_rows([api_key]).get(api_key, [])
 	granted = set(own.get("allow", []))
 	for group in model_rows("Model Group", groups).values() if groups else ():
 		granted.update(group.get("models", []))

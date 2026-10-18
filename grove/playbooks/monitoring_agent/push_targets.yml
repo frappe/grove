@@ -1,13 +1,6 @@
 ---
-# Write one agent's scrape targets straight to its box, for a Grove it cannot reach — a local
-# dev site, where http_sd would resolve to a laptop the box has no route to. Run by
-# monitoring_agent.push_targets.
-#
-# Only the target files and the scrape config: vmagent itself is already installed by
-# agent.yml, and a fleet change should not cost a reinstall to show up.
-#
-# The lists are a snapshot. Nothing on the box re-fetches them, so a deploy or a new box is
-# invisible here until this runs again — unlike http_sd, which re-asks on its own.
+# Write one agent's scrape target lists onto its box, for a Grove it cannot reach
+# (monitoring_agent.push_targets). extra-vars: the same as agent.yml.
 - name: Push scrape targets
   hosts: all
   become: true

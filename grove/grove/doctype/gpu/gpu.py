@@ -80,7 +80,7 @@ def release_if_stale(gpu):
 	if not holder:
 		return False
 	if frappe.db.get_value("Model Replica", holder, "status") in CLAIM_HOLDING_STATUSES:
-		return False  # genuinely held — real contention, not drift
+		return False
 	release(gpu, holder)
 	return True
 

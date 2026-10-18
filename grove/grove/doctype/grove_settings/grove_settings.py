@@ -10,8 +10,7 @@ from frappe.model.document import Document
 from frappe.utils import get_url
 
 
-# The SD token rides in a query string, so it is restricted to URL-unreserved characters: a `&`
-# or `#` in it would truncate the value the endpoint compares against.
+# The SD token rides in a query string: URL-unreserved characters only.
 SD_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._~-]{16,}$")
 
 
@@ -61,8 +60,7 @@ class GroveSettings(Document):
 		if url and not url.startswith(("http://", "https://")):
 			frappe.throw("Metrics Remote Write URL must start with http:// or https://.")
 		if url.startswith("http://"):
-			# Warned, not refused: the ingestion service is plain HTTP today, and blocking it here
-			# would only get the URL faked.
+			# Warned, not refused: the ingestion service is plain HTTP today.
 			frappe.msgprint(
 				"Metrics Remote Write URL is plain HTTP — the bearer token crosses the network "
 				"in cleartext on every push. Ask the ingestion team for an HTTPS endpoint.",
@@ -79,18 +77,24 @@ class GroveSettings(Document):
 			if not isinstance(labels, dict):
 				frappe.throw('Extra Labels must be a JSON object, e.g. {"env": "prod"}.')
 
-	def validate_sd_token(self):
-		"""The only guard on an endpoint that returns the fleet's inventory.
+	def on_update(self):
+		"""A new default tier moves the limits of every team that names none."""
+		from grove.billing.pricing import forget_figures
 
-		ponytail: parked — the check below is commented out."""
+		before = self.get_doc_before_save()
+		if before and before.default_tier != self.default_tier:
+			for team in frappe.get_all("Central Team", {"tier": ("is", "not set")}, pluck="name"):
+				forget_figures(team)
+
+	def validate_sd_token(self):
+		"""The only guard on an endpoint that returns the fleet's inventory. Checked as it is set:
+		a site holding an older token keeps saving until someone replaces it."""
 		token = self.get_password("sd_token", raise_exception=False) or ""
-		if not token:
-			return
-		# if not SD_TOKEN_PATTERN.match(token):
-		# 	frappe.throw(
-		# 		"Service Discovery Token must be at least 16 characters of letters, digits, "
-		# 		"'-', '_', '.' or '~'. Generate one with: openssl rand -hex 32"
-		# 	)
+		if token and self.has_value_changed("sd_token") and not SD_TOKEN_PATTERN.match(token):
+			frappe.throw(
+				"Service Discovery Token must be at least 16 characters of letters, digits, "
+				"'-', '_', '.' or '~'. Generate one with: openssl rand -hex 32"
+			)
 
 	def set_scrape_password_hash(self):
 		"""The hash each box writes into its htpasswd file, derived here so the password never
@@ -154,8 +158,7 @@ class GroveSettings(Document):
 
 	@property
 	def weights_s3_write_environment(self):
-		"""Env for the mirror job and the store backup — the pair that may write under models/* and
-		gateway-store/*."""
+		"""Env for the mirror job — the pair that may write under models/*."""
 		if not (self.weights_bucket and self.weights_s3_write_access_key_id):
 			return {}
 		return {

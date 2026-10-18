@@ -17,15 +17,12 @@ import frappe
 
 TIMEOUT = 10
 MAX_PARALLEL = 8
-ERROR_LIMIT = 2000  # Pathway Sync Row.error is Small Text
+ERROR_LIMIT = 2000
 NO_WRITER = "No Active Gateway Store Writer — mark one of this store's gateways, or nothing updates it."
 
-# Redacted before a payload is written to a Pathway Sync Row, which anyone who can open the Desk
-# can read.
 SECRET_KEYS = frozenset(
 	{"internal_key", "credentials", "key_hash", "admin_token", "data_token", "api_secret"}
 )
-# A log row, not an archive: a fleet-sized route table is megabytes.
 PAYLOAD_LIMIT = 8000
 
 
@@ -71,8 +68,8 @@ class Target:
 		response.raise_for_status()
 		return response.json()
 
-	def post(self, path, body):
-		response = requests.post(f"{self.admin_url}/{path}", json=body, headers=self.headers, timeout=TIMEOUT)
+	def post(self, path, body, timeout=TIMEOUT):
+		response = requests.post(f"{self.admin_url}/{path}", json=body, headers=self.headers, timeout=timeout)
 		response.raise_for_status()
 		return response.json()
 
@@ -138,10 +135,14 @@ def sync_targets(geography=None):
 
 
 def gateway_units(gateways=None, geography=None):
-	"""One Unit per gateway Redis. A named gateway is dialled itself, whatever store it is on: that
-	is an operator's button. None means every Active box — `is None` and not truthiness, because
-	an empty list is a caller saying "no gateway work" — or every Active box of `geography`."""
-	groups = sync_targets(geography) if gateways is None else [(None, [gateway]) for gateway in gateways]
+	"""One Unit per gateway Redis. A named gateway is dialled itself, under its own store, so what
+	the store is owed or holds lands with it: that is an operator's button. None means every Active
+	box — `is None` and not truthiness, because an empty list is a caller saying "no gateway work"
+	— or every Active box of `geography`."""
+	if gateways is None:
+		groups = sync_targets(geography)
+	else:
+		groups = [(frappe.db.get_value("Gateway Server", gateway, "gateway_store"), [gateway]) for gateway in gateways]
 	return [
 		Unit(store, tuple(Target.resolve("Gateway Server", gateway) for gateway in group))
 		for store, group in groups
@@ -235,21 +236,29 @@ class SyncRun:
 	order asked, and finalizes only when a row was left."""
 
 	sync_type = ""
+	pause_field = ""
 
 	def __init__(self, trigger="Scheduled", wait=0):
 		self.trigger = trigger
 		self.wait = wait
 		self.doc = None
+		self.skipped = None
 
 	def run(self):
 		"""→ the Pathway Sync name, or None when nothing was logged: a run already in flight, no
-		boxes to dial, or a fleet already in sync."""
+		boxes to dial, a fleet already in sync, or a scheduled run Grove Settings pauses. `skipped`
+		says which, for a caller that has to tell a quiet fleet from one it could not reach."""
+		if self.trigger == "Scheduled" and frappe.db.get_single_value("Grove Settings", self.pause_field):
+			self.skipped = "paused"
+			return None
 		self.doc = new_run(self.sync_type, self.trigger)
-		if not self.doc.acquire_lock(wait=self.wait):  # scheduled → skip if a run is in flight; forced → queue
+		if not self.doc.acquire_lock(wait=self.wait):
+			self.skipped = "locked"
 			return None
 		try:
 			units = self.units()
 			if not units:
+				self.skipped = "nothing"
 				return None
 			answers = {}
 			for index, result in each_in_parallel(units, self.work):

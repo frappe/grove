@@ -1,5 +1,15 @@
 [pre_model_sync]
 # Patches added in this section will be executed before doctypes are migrated
+grove.patches.v1_0.merge_free_usage_records
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
+grove.patches.v1_0.move_grove_users_to_central_teams
+grove.patches.v1_0.drop_grove_credit
+grove.patches.v1_0.rate_limit_tiers
+grove.patches.v1_0.title_provider_keys
+grove.patches.v1_0.fill_total_tokens
+grove.patches.v1_0.move_grove_corrections
+grove.patches.v1_0.move_gateway_adjustments
+grove.patches.v1_0.fill_total_tokens #2026-10-18 a long prompt's tokens count
+grove.patches.v1_0.drop_free_columns

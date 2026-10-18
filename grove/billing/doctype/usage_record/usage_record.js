@@ -1,15 +1,11 @@
 // Copyright (c) 2026, Frappe and contributors
 // For license information, please see license.txt
 
-// The entry's own keys first; the counters follow in table order, labelled by the Usage Counter.
 const HEAD_COLUMNS = [['model', 'Model'], ['pricing', 'Pricing'], ['requests', 'Requests']];
-// In the detail for the reports to sum, not shown: the record's Cost is the figure to read.
 const HIDDEN = ['grove_cost'];
-// Columns whose value names a document: shown as a link to it. `model` is a key, not a doc name —
-// one key may be a doc per geography — so it stays text.
+// `model` is a key, not a doc name — one key may be a doc per geography — so it stays text.
 const LINKS = { pricing: 'Model Pricing' };
 const CELL = 'white-space: nowrap;';
-// The first column stays in view while the rest scrolls under it.
 const PINNED = `${CELL} position: sticky; left: 0; background: var(--fg-color);`;
 
 async function counter_columns() {
@@ -18,7 +14,7 @@ async function counter_columns() {
 }
 
 function usage_columns(rows, counters) {
-	// A key the entries carry that the table does not list is a counter since removed: shown under its own name.
+	// A key no listed counter owns is one since removed: shown under its own name.
 	const listed = [...HEAD_COLUMNS, ...counters];
 	const known = [...listed.map(([key]) => key), ...HIDDEN];
 	const added = [...new Set(rows.flatMap((row) => Object.keys(row)))].filter((key) => !known.includes(key));

@@ -93,15 +93,12 @@ def partition(name, size, parent, fstype="ext4", mountpoint=None):
 	}
 
 
-# The T4 box as lsblk reports it: root on a partition, so the disk carries no filesystem and no
-# mountpoint, and pkname is the only thing that gives it away.
+# Root on a partition: the disk itself carries no fstype or mountpoint, only pkname gives it away.
 ROOT_PART = partition("nvme0n1p1", 7515127296, "nvme0n1", mountpoint="/")
 ROOT_DISK = disk("nvme0n1", 8589934592, model=EBS)
 SPARE = disk("nvme1n1", 125000000000, model=EBS)
-# Local NVMe: blank, unmounted and the biggest disk, so every other rule here would hand it the
-# weights — and it is wiped on stop.
+# Blank, unmounted and the biggest disk: every other rule here would pick it.
 EPHEMERAL = disk("nvme2n1", 1009317314560, model=INSTANCE_STORE)
-# Root on a bare disk: no pkname points at it, only its own mountpoint.
 WHOLE_ROOT = disk("sda", 480103981056, fstype="ext4", mountpoint="/")
 
 
@@ -191,11 +188,9 @@ class TestInstanceStoreScript(unittest.TestCase):
 		self.assertLess(self.script.index("findmnt"), self.script.index("mkfs"))
 
 	def test_a_filesystem_that_survived_a_reboot_is_not_reformatted(self):
-		# The store keeps its data across a reboot; only a stop wipes it.
 		self.assertIn('blkid -s TYPE -o value "$DEVICE" >/dev/null 2>&1 || mkfs.ext4', self.script)
 
 	def test_the_unit_mounts_before_docker(self):
-		# A late mount hands the container an empty directory that shadows the cache.
 		unit = (ROLE / "templates/grove-instance-store.service.j2").read_text()
 		self.assertIn("Before=docker.service", unit)
 

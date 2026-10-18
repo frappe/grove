@@ -16,14 +16,8 @@ from grove.net import reachable_ip
 
 NODE_EXPORTER_PORT = 9100
 DCGM_EXPORTER_PORT = 9400
-# vmagent's own /metrics — its -httpListenAddr in the vmagent role.
 VMAGENT_PORT = 8429
 
-# Every box answers on one port and the exporters are re-published as paths behind it, so a box
-# needs nothing open but 22 and this. They still listen on their own ports, just not from outside.
-#
-# An inference box is moving from 443 to 80: nothing verified its self-signed certificate and the
-# hop is inside the fleet. A proxy box keeps 443 — it faces customers and holds a real one.
 BOX_HTTP_PORT = 80
 BOX_HTTPS_PORT = 443
 NODE_METRICS_PATH = "/metrics/node"
@@ -38,11 +32,13 @@ def run_exporters_play(server):
 	machine = frappe.get_doc("Machine", server.machine)
 	if not machine.public_ip:
 		frappe.throw(f"Machine {machine.name} has no public IP — nothing to connect to.")
-	# The play lives with the agent's: it is a monitoring play whoever owns the box.
 	return server.run_playbook(
 		"exporters.yml",
 		project="Monitoring Agent",
-		extravars={"monitoring_has_gpu": bool(machine.gpus)},
+		extravars={
+			"monitoring_has_gpu": bool(machine.gpus),
+			**frappe.get_single("Grove Settings").scrape_auth_variables,
+		},
 	)
 
 
@@ -147,7 +143,6 @@ def engine_targets(agent):
 		)
 		for deployment in deployments
 	]
-	# Pods carry no machine/region: they are not on a box we own.
 	entries += [
 		engine_entry(pod.engine_url, {"model": pod.model_key, "deployment": pod.name})
 		for pod in frappe.get_all(
@@ -159,9 +154,6 @@ def engine_targets(agent):
 	return [entry for entry in entries if entry]
 
 
-# A box that still exists is worth scraping whatever state it is in — Broken most of all. Only
-# Terminated means the machine is gone, and a permanently-down target reads exactly like a box
-# that just died.
 _GONE_STATUS = "Terminated"
 
 
@@ -280,13 +272,11 @@ def engine_entry(engine_url, labels, address=None):
 	return {
 		"targets": [f"{address or parsed.hostname}:{port}"],
 		"labels": {
-			# Verbatim: the exact string the projection pushes as this engine's route target.
-			# Reformatted, the series can no longer be joined to the route it describes.
+			# Verbatim: the route target the projection pushes, or the series cannot be joined to it.
 			"engine": engine_url,
 			"__scheme__": parsed.scheme or "http",
 			"__metrics_path__": f"{parsed.path.rstrip('/')}/metrics",
-			# Unique by construction. Every engine on a box shares one address now, so the
-			# default would name the box and merge them.
+			# Every engine on a box shares one address, so the default instance would merge them.
 			"instance": engine_url,
 			**{key: value or "" for key, value in labels.items()},
 		},

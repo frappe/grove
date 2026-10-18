@@ -1,0 +1,57 @@
+{
+ "actions": [],
+ "autoname": "format:{provider_name}:{tool}",
+ "creation": "2026-10-09 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "provider_name",
+  "tool"
+ ],
+ "fields": [
+  {
+   "description": "The vendor's Provider Name, as every record of it carries it. Not a link: the list belongs to the vendor, and one gateway in every geography reads it.",
+   "fieldname": "provider_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Provider Name",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "description": "A `tools[].type` value (web_search_20250305), or a top-level request field (web_search_options), that asks the vendor to run a tool it bills outside the token counts. Only a priced tool belongs here: one priced in tokens alone goes through. A request that names it is a 400 at the gateway, before the vendor is dialled.",
+   "fieldname": "tool",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Tool",
+   "reqd": 1,
+   "set_only_once": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-09 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Grove",
+ "name": "Denied Tool",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "search_fields": "provider_name,tool",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

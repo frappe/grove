@@ -26,7 +26,7 @@ def make_test_geography(name="test"):
 			"fleet_zone": f"{name}.grove.localhost", "endpoint": f"api.{name}.grove.localhost",
 		}
 		frappe.get_doc(geography).insert(ignore_permissions=True)
-	# A Grove User needs a geography; on a site with no default, the test one is it.
+	# A Grove API Key needs a geography; on a site with no default, the test one is it.
 	if not frappe.db.exists("Geography", {"is_default": 1}):
 		frappe.db.set_value("Geography", name, "is_default", 1)
 	return name
@@ -53,23 +53,21 @@ class TestItsNames(unittest.TestCase):
 		self.assertEqual((doc.endpoint, doc.fleet_zone), ("eu.grove.example.com", "grove.example.com"))
 
 	def test_a_url_is_not_a_hostname(self):
-		for endpoint in ("https://eu.grove.example.com", "eu.grove.example.com/v1", "eu.grove.example.com:443", ""):
+		for endpoint in ("https://eu.grove.example.com", "eu.grove.example.com/v1", "eu.grove.example.com:443"):
 			with self.subTest(endpoint), self.assertRaises(frappe.ValidationError):
 				validate(endpoint)
 		with self.assertRaises(frappe.ValidationError):
 			validate("eu.grove.example.com", zone="https://grove.example.com")
 
-	def test_a_name_its_wildcard_cannot_cover_is_refused(self):
-		for endpoint in ("grove.example.com", "api.eu.grove.example.com", "eu.other.example.com"):
-			with self.subTest(endpoint), self.assertRaises(frappe.ValidationError):
-				validate(endpoint)
+	def test_the_zone_apex_and_a_blank_endpoint_pass(self):
+		"""Only the shape is checked: the catalog seeds a geography blank, and the certificate covers the apex."""
+		validate("grove.example.com")
+		validate("")
 
 	def test_with_no_zone_any_hostname_passes(self):
-		# No certificate yet: a geography that has not moved to TLS.
 		validate("api.eu.grove.example.com", zone="")
 
 	def test_neither_moves_while_a_gateway_answers_at_it(self):
-		# Its DNS rows and its own name sit in the old values.
 		live = ["gw1-eu-central-1"]
 		for before, endpoint, zone in (
 			(saved(), "eu2.grove.example.com", ZONE),
@@ -98,7 +96,6 @@ class TestTlsVariables(unittest.TestCase):
 		self.assertEqual(self.variables(), {"fleet_zone": ZONE, "fleet_tls_cert": "cert-pem", "fleet_tls_key": "key-pem"})
 
 	def test_nothing_is_none(self):
-		# These land in a Jinja template, where None renders as the string "None" into a server_name.
 		blank = self.variables(fleet_zone=None, fleet_tls_cert=None, get_password=lambda field, raise_exception=True: None)
 		self.assertEqual(set(blank.values()), {""})
 
@@ -115,7 +112,6 @@ class TestARegionsGeography(unittest.TestCase):
 			Region.validate(doc)
 
 	def test_it_is_fixed_once_a_box_is_in_the_region(self):
-		# Every box copied the old value on its last save; moving the region would leave them lying.
 		for doctype in ("Network", "Machine"):
 			with self.subTest(doctype), self.assertRaises(frappe.ValidationError):
 				self.validate(boxes=[doctype])
@@ -127,7 +123,7 @@ class TestARegionsGeography(unittest.TestCase):
 
 class TestWhoCarriesAGeography(unittest.TestCase):
 	def test_a_machine_takes_its_regions_after_the_network_sets_it(self):
-		# Link fetching runs before validate, so fetch_from would read the region from before the save.
+		"""Link fetching runs before validate, so fetch_from would read the region from before the save."""
 		values = {("Network", "net-1", "region"): "eu-central-1", ("Region", "eu-central-1", "geography"): "eu"}
 		doc = SimpleNamespace(network="net-1", region=None, geography=None)
 		doc.set_region_from_network = lambda: Machine.set_region_from_network(doc)
@@ -140,18 +136,18 @@ class TestWhoCarriesAGeography(unittest.TestCase):
 			doc = SimpleNamespace(**{
 				"name": "a1b2", "provider_name": "openai", "base_url": None, "anthropic_base_url": None,
 				"geography": None, "is_self_hosted": 0,
-				"validate_self_hosted": lambda: None, "validate_siblings": lambda: None, **fields,
+				"validate_self_hosted": lambda: None, "validate_siblings": lambda: None,
+				"validate_key_titles": lambda: None, **fields,
 			})
 			with patch("frappe.throw", side_effect=frappe.ValidationError):
 				ModelProvider.validate(doc)
 
 		with self.assertRaises(frappe.ValidationError):
 			validate(anthropic_base_url="https://bedrock-runtime.eu-central-1.amazonaws.com/anthropic")
-		# A record is one geography's, so a vendor names one before it has a URL.
 		with self.assertRaises(frappe.ValidationError):
 			validate()
 		validate(base_url="https://eu.api.openai.com/v1", geography="eu")
-		validate(is_self_hosted=1)  # our own engines take theirs from wherever they run
+		validate(is_self_hosted=1)
 
 
 class TestAServerNamedWithItsDomain(unittest.TestCase):
@@ -173,13 +169,11 @@ class TestAServerNamedWithItsDomain(unittest.TestCase):
 		self.insert(f"gw2-ap-south-1.{ZONE}")
 
 	def test_any_other_domain_is_refused(self):
-		# hostname is built from the first label and the zone, so a name elsewhere would lie about it.
 		for name, zone in ((f"gw2.other.example.com", ZONE), (f"gw2.{ZONE}", ""), (f"gw_2.{ZONE}", ZONE)):
 			with self.subTest(name), self.assertRaises(frappe.ValidationError):
 				self.insert(name, zone=zone)
 
 	def test_a_name_generated_off_the_machine_is_gated_once_it_exists(self):
-		# The store the rollout creates: no name given, the Machine's taken.
 		self.assertEqual(self.insert(machine=f"store1-ap-south-1.{ZONE}"), f"store1-ap-south-1.{ZONE}")
 		with self.assertRaises(frappe.ValidationError):
 			self.insert(machine="store1.other.example.com")

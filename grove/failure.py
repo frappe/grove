@@ -23,9 +23,6 @@ import functools
 import frappe
 from frappe.desk.doctype.notification_log.notification_log import enqueue_create_notification
 
-# Statuses a doc is only ever in while a job is working on it, and the only ones a failure may
-# overwrite: a box torn down mid-play is Terminated, and one already Active before a config push
-# failed has not stopped being Active.
 IN_PROGRESS = ("Installing", "Provisioning")
 
 
@@ -37,7 +34,6 @@ def report(doctype, name, title, detail, *, mark_broken=False):
 	next week is the Error Log and the doc's own Ansible Plays.
 	"""
 	if not doctype or not name:
-		# Nothing to link a notification to; the job's Error Log is the record.
 		return
 	frappe.local.grove_failure_reported = True
 
@@ -62,9 +58,6 @@ def reports_failure(mark_broken=False, doctype=None):
 			try:
 				return method(*args, **kwargs)
 			except Exception as error:
-				# A failed play already reported through AnsiblePlay.on_update, and a caller raising
-				# on the same failure is one event, not two. Same worker, same job, so frappe.local
-				# still remembers.
 				if not getattr(frappe.local, "grove_failure_reported", False):
 					failed = args[0] if args else None
 					report(

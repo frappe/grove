@@ -1,5 +1,4 @@
-{#- Press's twelve rule files in one. arm64 has no legacy syscalls (open, chmod, unlink...) and a
-    name auditctl does not know aborts the whole load, so those are x86_64 only, as is b32. -#}
+{#- arm64 has no legacy syscalls (open, chmod, unlink), and a name auditctl does not know aborts the whole load. -#}
 {%- set x86 = ansible_architecture == 'x86_64' -%}
 {%- set user = '-F auid>=1000 -F auid!=4294967295' -%}
 {%- set access = ['openat', 'truncate', 'ftruncate'] + (['creat', 'open'] if x86 else []) -%}

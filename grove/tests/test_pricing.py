@@ -57,7 +57,6 @@ class TestPriceBook(unittest.TestCase):
 		priced = book(pricings={"p1": ("anthropic/claude", self.RATES | {"prompt_tokens_above_272k": "6"})})
 		short = {"prompt_tokens": 100_000, "cached_tokens": 60_000, "cache_write_1h_tokens": 10_000,
 		         "completion_tokens": 1000}
-		# 320k prompt: its 10k hour writes are counted with the base prompt, the rest above 272k.
 		long = {"prompt_tokens": 10_000, "cache_write_1h_tokens": 10_000, "prompt_tokens_above_272k": 310_000,
 		        "cached_tokens_above_272k": 280_000, "cache_write_tokens_above_272k": 20_000,
 		        "completion_tokens_above_272k": 1000}
@@ -131,14 +130,12 @@ class TestCounterTable(unittest.TestCase):
 		rates = {"prompt_tokens": "2", "cached_tokens": "0.2", "prompt_tokens_above_272k": "4",
 		         "cached_tokens_above_272k": "0.4", "prompt_tokens_above_500k": "8"}
 		priced = book(pricings={"p1": ("m", rates)}, counters=table(*self.BRACKET))
-		# 600k prompt, 100k of it cached: cached falls back to its base's rate, cached_tokens.
 		counts = {"prompt_tokens_above_500k": 600_000, "cached_tokens_above_500k": 100_000}
 		self.assertEqual(priced.pricing_cost("p1", counts), D("4") + D("0.02"))
 
 	def test_a_part_bracketed_unlike_its_container_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):
 			table(self.BRACKET[1]).validate()
-		# Bracketed at the container's thresholds and no others: fine, whichever order the rows come.
 		table(*reversed(self.BRACKET)).validate()
 
 	def test_the_push_carries_only_what_is_set(self):

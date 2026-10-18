@@ -1,19 +1,7 @@
 #!/bin/sh
 {#
-  Rendered by the vllm role — do not edit on the box. Edit the Model Replica and hit
-  Update Engine Config; this file is re-rendered and re-run.
-
-  Docker owns the container's lifecycle: --restart unless-stopped survives a crash, a
-  reboot and a dockerd restart, so nothing supervises it. Re-running this script is how
-  config changes land — stop (SIGTERM, then SIGKILL after the grace period), remove, run
-  with the current argv. That makes the script itself the config: Ansible's template task
-  reports changed exactly when the argv moved, which is what triggers the replace.
-
-  --ipc=host is mandatory for tensor-parallel > 1 (torch needs host shared memory).
-  The port is the same inside and out — the serve args already set --port, and engine_url
-  is derived from the host port. HF_HOME stays the image default, which the mount fills.
-  The cache mount keeps torch.compile/Triton artifacts across container replaces — the
-  env file points TRITON_CACHE_DIR/TORCHINDUCTOR_CACHE_DIR inside it.
+  Rendered by the vllm role — do not edit on the box; Update Engine Config re-renders and re-runs it.
+  --ipc=host: tensor-parallel > 1 needs host shared memory.
 #}
 set -eu
 

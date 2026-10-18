@@ -15,24 +15,17 @@ PROXY_INGRESS_RULES = [
 	{"protocol": "tcp", "from_port": 80, "to_port": 80, "cidr": "0.0.0.0/0"},
 	{"protocol": "tcp", "from_port": 443, "to_port": 443, "cidr": "0.0.0.0/0"},
 ]
-# 443 is NOT here: it carries the engine proxy, which only the gateway and the metrics agent
-# dial, so its sources are computed per box — see sync_inference_ingress.
+# 443 is NOT here: it carries the engine proxy, so its sources are computed per box.
 INFERENCE_BASE_INGRESS_RULES = [
 	{"protocol": "tcp", "from_port": 22, "to_port": 22, "cidr": "0.0.0.0/0"},
 ]
 
-# /16s never collide, so any two Networks can be peered later without an overlap.
 CIDR_POOL = ipaddress.ip_network("10.0.0.0/8")
 CIDR_PREFIX = 16
-# One public subnet per Network, carved off the front of its /16.
 SUBNET_PREFIX = 24
 
-# Both reconciled to the same sources. 80 is where the front is going — plain HTTP, reachable
-# only from inside the fleet, so the box needs no certificate — and 443 is where it still is.
-# 443 comes out once every box has moved.
 FRONT_PORTS = (BOX_HTTP_PORT, BOX_HTTPS_PORT)
 
-# A box in this state no longer exists, so its address is not one to keep a hole open for.
 GONE_STATUS = "Terminated"
 
 
@@ -175,7 +168,6 @@ class Network(Document):
 			self.db_set("store_security_group_ids", store_sg_id)
 
 		frappe.msgprint(f"Security groups created for {self.name}.", alert=True)
-		# Straight after creation, so a new group is never briefly open to the world.
 		self.sync_inference_ingress()
 
 	@frappe.whitelist()

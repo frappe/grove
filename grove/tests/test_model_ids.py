@@ -40,13 +40,11 @@ class TestTheIdIsAlwaysPrefixed(IntegrationTestCase):
 	def test_our_own_models_are_keyed_under_the_self_hosted_provider(self):
 		doc = self.model("Ponytail Probe 7B")
 		self.assertEqual(f"{self_hosted_provider()}/ponytail-probe-7b", doc.model_key)
-		# The doc name is a hash: the key is inside every route and grant, the name is nowhere.
 		self.assertNotIn("/", doc.name)
 		self.assertEqual("ponytail-probe-7b", doc.model_id)
 		self.assertEqual(self_hosted_provider(), doc.provider)
 
 	def test_a_third_party_model_is_keyed_under_its_vendor(self):
-		# Under the vendor's name, not its record: the record id is a hash nobody could type.
 		vendor = provider("probe-anthropic").insert()
 		doc = self.model("Claude Sonnet 4.5", provider=vendor.name)
 		self.assertEqual("probe-anthropic/claude-sonnet-4.5", doc.model_key)
@@ -60,14 +58,10 @@ class TestTheIdIsAlwaysPrefixed(IntegrationTestCase):
 		self.assertEqual("probe-unstored", frappe.get_doc("Model", doc.name).provider_name)
 
 	def test_a_blank_provider_still_gets_a_prefix(self):
-		# The prefix IS the id: without it the route key would not match what /v1/models
-		# advertises.
 		doc = self.model("No Provider Named", provider="")
 		self.assertTrue(doc.model_key.startswith(f"{self_hosted_provider()}/"))
 
 	def test_the_id_cannot_be_edited_afterwards(self):
-		# `set_only_once` refuses the edit rather than leaving the doc keyed one thing and
-		# labelled another.
 		doc = self.model("Before Rename 7B")
 		doc.model_id = "after-rename-7b"
 		with self.assertRaises(frappe.CannotChangeConstantError):
@@ -80,8 +74,6 @@ class TestTheIdIsAlwaysPrefixed(IntegrationTestCase):
 			doc.save()
 
 	def test_one_key_is_a_doc_per_provider_record(self):
-		# The same vendor model in two geographies: two docs under one key, each its own
-		# upstream id. A third under a record that already holds the id is refused.
 		first = provider("probe-twice").insert()
 		second = provider("probe-twice", geography=make_test_geography("test-2")).insert()
 		here = self.model("Twice 7B", provider=first.name)
@@ -102,15 +94,12 @@ class TestTheIdIsAlwaysPrefixed(IntegrationTestCase):
 			self.model("   ")
 
 	def test_a_slash_in_the_id_is_refused(self):
-		# slugify passes a slash through, so `Meta/Llama 3` would name `frappe/meta/llama-3` and
-		# read as a provider nobody registered.
 		with self.assertRaises(frappe.ValidationError):
 			self.model("Meta/Llama 3")
 
 
 class TestAModelSaysWhereItsWeightsCome(IntegrationTestCase):
 	def test_a_model_with_no_repo_is_refused(self):
-		# Every serving path reads the repo, so a Model without one cannot start an engine.
 		doc = frappe.get_doc({"doctype": "Model", "model_id": "no-repo-7b"})
 		with self.assertRaises(frappe.MandatoryError):
 			doc.insert()
@@ -130,7 +119,6 @@ class TestProviderNames(IntegrationTestCase):
 		self.assertEqual("probe-vertex-ai", doc.provider_name)
 
 	def test_the_self_hosted_provider_ships_with_the_app(self):
-		# A fixture flags it, so it exists before the first Model is inserted — every Model defaults to it.
 		self.assertTrue(self_hosted_provider())
 
 

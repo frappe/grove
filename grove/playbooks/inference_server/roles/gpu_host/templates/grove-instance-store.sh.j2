@@ -1,9 +1,5 @@
 #!/bin/sh
-{#
-  Boot-time oneshot (grove-instance-store.service). The instance store is blank after every
-  stop/start, so this reformats and remounts on each boot; the weight pre-download re-hydrates
-  the cache on the next deploy. Only the HF cache lives here — never images or Docker.
-#}
+{# Boot-time oneshot: the instance store is blank after every stop/start, so each boot reformats and remounts. #}
 set -eu
 
 MOUNT={{ gpu_instance_store_mount }}

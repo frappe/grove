@@ -1,27 +1,13 @@
 ---
-# One vmagent, for a whole fleet. Run by monitoring_agent.provision via ansible_runner
-# against a single-host inventory (hosts: all).
-#
-# It holds no target list of its own: it asks Grove (grove.monitoring.targets) for the boxes,
-# engines and pods that name this agent, and re-asks on the http_sd interval — so a deploy or
-# a new box appears here with nothing to re-run.
-#
-# node_exporter comes with it: this box is not an Inference or Gateway Server, so nothing else
-# would ever install one here, and an agent whose own disk fills has no way to say so. Grove
-# hands it back its own node_exporter and vmagent as localhost targets.
+# Install one fleet's vmagent and its own node_exporter (monitoring_agent.provision). extra-vars:
+# Monitoring Agent.ansible_variables (the monitoring_* and vmagent_* the vmagent role reads).
 - name: Install the metrics agent
   hosts: all
   become: true
   gather_facts: true
   vars:
     monitoring_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
-    # This box scrapes itself, so its exporter never leaves localhost — unlike the fleet's,
-    # which must be reachable from here.
     node_exporter_bind: 127.0.0.1
-  # Monitoring Agent.preflight checks all of this before the play is queued, and actually
-  # fetches the target list rather than measuring a string. Repeated here for a hand-run play,
-  # in pre_tasks because node_exporter installs first: checked inside the vmagent role, a
-  # missing setting left node_exporter on a box that never got an agent.
   pre_tasks:
     - name: Check where to push
       ansible.builtin.assert:
@@ -34,8 +20,6 @@
           Write URL on this agent's Region (or the fleet-wide one in Grove Settings) and a
           Metrics Token on the agent itself before installing it.
 
-    # Checked whichever way the targets arrive: the credential is for the boxes, not for Grove.
-    # Only the password — the username is a role constant that cannot be unset.
     - name: Check what to scrape the boxes as
       ansible.builtin.assert:
         that:
@@ -45,8 +29,6 @@
           basic auth, so without it this agent installs and is then refused by every host
           target it has — set Metrics Scrape Password in Grove Settings.
 
-    # Skipped when Grove pushes the lists instead: file_sd reads neither, and demanding an SD
-    # token would block the one case that exists because the box cannot reach Grove at all.
     - name: Check where to ask what to scrape
       when: not (monitoring_static_targets | bool)
       ansible.builtin.assert:

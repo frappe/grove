@@ -1,0 +1,112 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-10-18 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "credit_discrepancy",
+  "team",
+  "api_key",
+  "column_break_what",
+  "model",
+  "pricing",
+  "day",
+  "cost"
+ ],
+ "fields": [
+  {
+   "description": "The decision this money came from: the Credit Discrepancy a System Manager resolved as Grove's error. One correction per decision.",
+   "fieldname": "credit_discrepancy",
+   "fieldtype": "Link",
+   "label": "Credit Discrepancy",
+   "options": "Credit Discrepancy",
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Team",
+   "options": "Central Team",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "api_key",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "API Key",
+   "options": "Grove API Key",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_what",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The model key the pricing names, so a money read groups this under it. Blank for a discrepancy from before pricings were tagged.",
+   "fieldname": "model",
+   "fieldtype": "Data",
+   "label": "Model",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pricing",
+   "fieldtype": "Link",
+   "label": "Pricing",
+   "options": "Model Pricing",
+   "read_only": 1
+  },
+  {
+   "description": "The UTC day this counts on, like a record's Day: the day it was resolved.",
+   "fieldname": "day",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Day (UTC)",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "USD the key's charge moved by: positive where Grove had undercharged, negative where it had overcharged.",
+   "fieldname": "cost",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Cost",
+   "precision": "9",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Usage Correction",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1
+  },
+  {
+   "read": 1,
+   "role": "Grove Control"
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "team,api_key",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

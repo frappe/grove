@@ -1,15 +1,11 @@
 ---
-# Grow the root partition and its filesystem onto a root volume the provider has already
-# enlarged. Run by machine.grow_root after the cloud client's resize returns — EBS growing the
-# volume is invisible to the OS until the partition table and the filesystem follow it. Online:
-# no reboot, no unmount, so a box that is serving keeps serving. Idempotent — re-running on an
-# already-grown disk changes nothing.
+# Grow the root partition and filesystem onto a volume the provider already enlarged
+# (machine.grow_root). Online, idempotent.
 - name: Grow the root filesystem
   hosts: all
   become: true
   gather_facts: false
   tasks:
-    # growpart ships in cloud-guest-utils, which Ubuntu cloud images already carry.
     - name: Install growpart
       ansible.builtin.apt:
         name: cloud-guest-utils
@@ -27,9 +23,7 @@
       register: root_disk
       changed_when: false
 
-    # growpart takes the disk and the partition number as separate arguments, and exits 1 with
-    # NOCHANGE when the partition already fills the disk — which is the idempotent case, not a
-    # failure.
+    # growpart exits 1 with NOCHANGE when the partition already fills the disk.
     - name: Grow the root partition
       ansible.builtin.command: >-
         growpart /dev/{{ root_disk.stdout | trim }}

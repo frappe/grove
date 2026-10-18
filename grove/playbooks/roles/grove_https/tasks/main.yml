@@ -8,9 +8,6 @@
     - "{{ grove_tls_dir }}"
     - "{{ grove_metrics_htpasswd | dirname }}"
 
-# creates: — one certificate per box, kept across re-runs. Reissuing on every play would hand out
-# a new key for free and leave the old one trusted by nothing, while changing no behaviour: no
-# consumer verifies this certificate.
 - name: Generate the self-signed certificate
   when: grove_tls_selfsigned | bool
   ansible.builtin.command: >-
@@ -26,14 +23,8 @@
     path: "{{ grove_tls_key }}"
     mode: "0600"
 
-# 0644 because the unprivileged nginx worker reads it on every /metrics request — nginx does not
-# cache this file, so a changed hash takes effect with no reload. It holds a hash, not a password.
-#
-# Skipped when no hash was passed, rather than writing a line nothing can match: a config push
-# is run by hand, and a play invoked without the Grove Settings vars would otherwise replace a
-# working file with one that locks the agent out of a box nobody is looking at. A box that has
-# never been given a hash has no file at all, so nginx refuses /metrics outright — still shut,
-# just not silently.
+# 0644: the unprivileged nginx worker reads it. Skipped without a hash, so a hand-run play
+# without the Grove Settings vars cannot overwrite a working file.
 - name: Write the metrics htpasswd file
   ansible.builtin.template:
     src: metrics.htpasswd.j2

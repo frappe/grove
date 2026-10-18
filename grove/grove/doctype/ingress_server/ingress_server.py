@@ -40,9 +40,6 @@ class IngressServer(PathwayHost, Document):
 	# end: auto-generated types
 
 	def before_insert(self):
-		# Generated rather than typed: both fields are read-only, and the agent refuses to start
-		# without a token. Two separate secrets, never one — admin_token is the control plane's
-		# credential, data_token is what every gateway holds.
 		if not self.admin_token:
 			self.admin_token = frappe.generate_hash(length=48)
 		if not self.data_token:
@@ -56,7 +53,6 @@ class IngressServer(PathwayHost, Document):
 			self.remove_dns_records()
 
 	def on_trash(self):
-		# While its name still says which records are its own.
 		self.remove_dns_records()
 
 	@property
@@ -107,8 +103,6 @@ class IngressServer(PathwayHost, Document):
 		settings = frappe.get_single("Grove Settings")
 		play_name, rc = self.run_playbook("ingress.yml", extravars=self.provision_variables(settings))
 
-		# admin_url is derived at validate, and a zone set since this box was last saved leaves it
-		# naming the old address.
 		self.set_admin_url()
 		frappe.db.set_value(
 			"Ingress Server",
@@ -119,8 +113,6 @@ class IngressServer(PathwayHost, Document):
 		frappe.db.commit()
 
 		if rc == 0:
-			# Its own name has to resolve before the tick pushes to admin_url, which is that name
-			# the moment a zone is set.
 			self.sync_dns_records()
 		return play_name, rc
 
@@ -133,11 +125,7 @@ class IngressServer(PathwayHost, Document):
 			**gateway_agent_release(),
 			"ingress_id": self.short_name,
 			"ingress_hostname": self.hostname,
-			# nginx.conf declares a metrics server on :443 — grove_https puts the certificate and
-			# the htpasswd it reads on the box before OpenResty is asked to start.
 			**settings.scrape_auth_variables,
-			# The names this box answers to and its geography's wildcard. Blank zone renders the
-			# pre-TLS config, exactly as it does for a gateway.
 			**self.tls_variables,
 			**self.config_variables,
 			**self.memory_variables,

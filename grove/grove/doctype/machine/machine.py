@@ -16,12 +16,10 @@ from grove.grove.doctype.ssh_key.ssh_key import injected_public_keys
 from grove.naming import GeneratedName, next_machine_name
 from grove.utils import vram_gb_from_mib
 
-# Task names in scan_gpus.yml: the nvidia-smi CSV, and the `topo -m` matrix.
+# Task names in scan_gpus.yml.
 SCAN_TASK = "query nvidia-smi"
 TOPO_TASK = "query nvidia-smi topo"
 
-# The start of a box's name, by what it backs: `inf1-ap-south-1`. The server doc on it takes the
-# whole name.
 NAME_PREFIX = {
 	"Gateway": "gw", "Ingress": "ing", "Inference": "inf", "Monitoring Agent": "mon", "Gateway Store": "store",
 }
@@ -134,8 +132,6 @@ class Machine(GeneratedName, AnsibleHost, Document):
 				f"nvidia-smi said: {_scan_message(result)}"
 			)
 		return parse_gpu_memory(result.get("stdout"))
-
-	# ── Cloud provisioning ────────────────────────────────────────────────────
 
 	@property
 	def cloud_client(self):
@@ -250,11 +246,9 @@ class Machine(GeneratedName, AnsibleHost, Document):
 				ssh_public_keys=injected_public_keys(),
 			)
 		except Exception:
-			# Draft, not Broken: an instance that never launched is as un-launched as before.
 			self.db_set("status", "Draft", commit=True)
 			raise
-		# Committed before the poll: a timeout below must not roll this back and leave a billed
-		# instance Grove has no record of.
+		# Committed before the poll, or a timeout below rolls back the id of a billed instance.
 		self.db_set("instance_id", instance["instance_id"], commit=True)
 		ready = client.poll_instance_ready(instance["instance_id"], timeout_sec=self.boot_timeout_sec)
 		self.db_set({
@@ -509,7 +503,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 					yield None
 					continue
 				line = process.stdout.readline()
-				if not line:  # EOF — the remote command ended
+				if not line:
 					return
 				yield line.rstrip("\r\n")  # the pty ends lines \r\n
 		finally:
@@ -597,7 +591,6 @@ def reconcile_gpus(machine, scanned):
 	from grove.grove.doctype.gpu.gpu import cards_on
 
 	existing = cards_on([machine])
-	# A rented box identifies its cards by SLOT — see plan_reconcile.
 	slot_is_identity = bool(frappe.db.get_value("Machine", machine, "cloud_provider"))
 	upgrades, inserts, stale = plan_reconcile(existing, scanned, slot_is_identity)
 
@@ -618,7 +611,6 @@ def reconcile_gpus(machine, scanned):
 			}
 		).insert(ignore_permissions=True)
 	for card in stale:
-		# The row takes the claim with it, which is the point of the claim being a column.
 		frappe.delete_doc("GPU", card.name, ignore_permissions=True, force=True)
 
 	_refresh_from_types(machine)
@@ -716,11 +708,7 @@ def parse_nvidia_smi(stdout):
 			"gpu_index": int(index),
 			"gpu_model": name,
 			"vram_gb": vram_gb_from_mib(int(memory_mib)) if memory_mib.isdigit() else 0,
-			# What `docker run --gpus` is given. The UUID when the box reported one, so the card
-			# keeps its identity across a reseat; the index only as a fallback.
 			"device_id": uuid or str(int(index)),
-			# Blank on a driver too old to report it, which reads as "unknown" and skips the
-			# bfloat16 check rather than failing it.
 			"compute_capability": float(compute_cap) if _is_number(compute_cap) else 0,
 		})
 	return gpus

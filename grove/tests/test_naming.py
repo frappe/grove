@@ -49,8 +49,6 @@ class TestServerNaming(unittest.TestCase):
 		)
 
 	def test_each_region_counts_on_its_own(self):
-		# A single counter would give gw1-ap-south-1 then gw2-us-east-1, and the number would stop
-		# meaning anything local.
 		self.assertEqual(name(self.series, region="ap-south-1"), "gw1-ap-south-1")
 		self.assertEqual(name(self.series, region="us-east-1"), "gw1-us-east-1")
 		self.assertEqual(name(self.series, region="ap-south-1"), "gw2-ap-south-1")
@@ -62,7 +60,6 @@ class TestServerNaming(unittest.TestCase):
 		self.assertEqual(name(self.series, prefix="inf"), "inf1-ap-south-1")
 
 	def test_a_box_with_no_region_gets_no_suffix(self):
-		# A colo machine is in no Network and has no region, which is what the name should say.
 		self.assertEqual(name(self.series, region=""), "gw1")
 		self.assertEqual(name(self.series, region=""), "gw2")
 
@@ -71,10 +68,8 @@ class TestServerNaming(unittest.TestCase):
 		self.assertEqual(name(self.series), "gw1-ap-south-1")
 
 	def test_the_number_is_asked_for_not_derived_from_what_exists(self):
-		# The series climbs whether or not the doc that took the number is still there, where a
-		# max-plus-one would reuse a retired name.
 		self.assertEqual(name(self.series), "gw1-ap-south-1")
-		self.series.current["gw-ap-south-1-"] = 7  # as if 2..7 were taken and then deleted
+		self.series.current["gw-ap-south-1-"] = 7
 		self.assertEqual(name(self.series), "gw8-ap-south-1")
 
 	def test_the_series_key_is_scoped_and_looks_like_frappes_own(self):
@@ -86,15 +81,12 @@ class TestServerNaming(unittest.TestCase):
 			with self.subTest(prefix):
 				generated = name(FakeSeries(), prefix=prefix)
 				self.assertTrue(generated.startswith(prefix))
-				# It has to be a DNS label...
 				self.assertTrue(is_label(generated), generated)
 
 	def test_a_region_that_is_not_a_label_is_slugged_into_one(self):
-		# Region doc names are AWS codes today, but nothing forces that.
 		self.assertEqual(name(self.series, region="AP South 1"), "gw1-ap-south-1")
 
 	def test_a_box_in_a_zone_is_named_for_its_whole_hostname(self):
-		# The domain shows which geography it is in at a glance; the count stays per region.
 		self.assertEqual(next_machine_name("gw", "ap-south-1", ZONE, counter=self.series), f"gw1-ap-south-1.{ZONE}")
 		self.assertEqual(name(self.series), "gw2-ap-south-1")
 
@@ -141,17 +133,14 @@ class TestDeploymentNaming(unittest.TestCase):
 		self.assertEqual(self.name(), "qwen3-8b-ap-south-1-inf3-00001")
 
 	def test_the_provider_prefix_is_not_repeated(self):
-		# Every model of ours is `frappe/...` — the prefix separates nothing inside a deployment.
 		self.assertEqual(self.name(model="acme/llama-3.1-8b"), "llama-3.1-8b-ap-south-1-inf3-00001")
 
 	def test_the_box_keeps_only_its_own_part_of_its_name(self):
-		# inf3-ap-south-1 already ends in the region, which the name carries once already.
 		self.assertEqual(
 			self.name(server="inf12-us-east-1", region="us-east-1"), "qwen3-8b-us-east-1-inf12-00001"
 		)
 
 	def test_a_region_code_goes_in_as_the_provider_writes_it(self):
-		# No shortening rule: one fitted to AWS turns `asia-south1` into noise.
 		for region in ("asia-south1", "southeastasia", "EU-RO-1"):
 			with self.subTest(region):
 				self.assertIn(slugify(region), self.name(region=region))
@@ -160,21 +149,17 @@ class TestDeploymentNaming(unittest.TestCase):
 		self.assertEqual(self.name(server="inf1", region=None), "qwen3-8b-inf1-00001")
 
 	def test_the_number_is_what_keeps_two_of_the_same_apart(self):
-		# One model twice on one box is legitimate — a second engine, its own port and cards.
 		self.assertEqual(
 			[self.name(), self.name()],
 			["qwen3-8b-ap-south-1-inf3-00001", "qwen3-8b-ap-south-1-inf3-00002"],
 		)
 
-	def test_one_counter_serves_every_deployment(self):
-		# Keyed as the old `MD-{#####}` format was, so the numbers carry on.
+	def test_every_deployment_counts_on_the_old_md_series(self):
 		self.name()
 		self.name(model="frappe/llama-70b", server="inf9-us-east-1", region="us-east-1")
 		self.assertEqual(list(self.series.current), ["MD-"])
 
 	def test_the_name_is_safe_as_a_container_name(self):
-		# It reaches Docker as `vllm-<name>` and nginx as /e/<name>, so `_instance_slug` rewriting
-		# it would have the doc name a container that is not the one running.
 		generated = self.name(model="acme/Qwen3.5 Coder")
 		self.assertEqual(generated, "qwen3.5-coder-ap-south-1-inf3-00001")
 		self.assertRegex(generated, r"^[a-z0-9._-]+$")

@@ -29,21 +29,15 @@ class TestIngressRules(unittest.TestCase):
 		return {(rule["from_port"], rule["to_port"]) for rule in rules}
 
 	def test_an_inference_box_opens_nothing_but_ssh_at_creation(self):
-		# 443 is not a fixed rule: only the gateway and the metrics agents dial the engine proxy
-		# behind it, so its sources are reconciled per Network.
 		self.assertEqual(self.ports(INFERENCE_BASE_INGRESS_RULES), {(22, 22)})
 
 	def test_no_engine_port_is_reachable_from_outside(self):
-		# The old rule was a fixed 8080-8085 range, which _assign_engine_port could outgrow — the
-		# seventh deployment provisioned green and was unreachable.
 		for rule in INFERENCE_BASE_INGRESS_RULES:
 			with self.subTest(rule["from_port"]):
 				self.assertIsInstance(rule["from_port"], int)
 				self.assertFalse(rule["from_port"] <= 8080 <= rule["to_port"])
 
 	def test_a_proxy_box_still_serves_the_client_api(self):
-		# 443 stays open here: the customer API and the admin API, neither with an address worth
-		# pinning.
 		self.assertEqual(self.ports(PROXY_INGRESS_RULES), {(22, 22), (80, 80), (443, 443)})
 
 
@@ -67,7 +61,6 @@ class TestInferenceIngressCidrs(unittest.TestCase):
 		)
 
 	def test_a_terminated_proxy_is_dropped(self):
-		# Its address goes back to AWS, and the next tenant would inherit the hole.
 		cidrs = inference_ingress_cidrs(
 			[proxy("1.1.1.1"), proxy("2.2.2.2", status="Terminated")], [], "Mumbai"
 		)
@@ -77,7 +70,6 @@ class TestInferenceIngressCidrs(unittest.TestCase):
 		self.assertEqual(inference_ingress_cidrs([proxy("")], [], "Mumbai"), [])
 
 	def test_an_agent_in_this_network_needs_no_rule_of_its_own(self):
-		# It dials privately and the VPC range covers it; a public /32 would open a hole nothing uses.
 		cidrs = inference_ingress_cidrs(
 			[], [agent("3.3.3.3", network="Mumbai", private_ip="10.0.0.7")], "Mumbai"
 		)
@@ -93,7 +85,6 @@ class TestInferenceIngressCidrs(unittest.TestCase):
 		self.assertEqual(inference_ingress_cidrs([], [agent("3.3.3.3", status="Terminated")], "M"), [])
 
 	def test_the_same_address_twice_is_one_rule(self):
-		# AWS rejects a duplicate rule outright, so a proxy and an agent on one box must collapse.
 		cidrs = inference_ingress_cidrs([proxy("1.1.1.1")], [agent("1.1.1.1")], "Mumbai")
 		self.assertEqual(cidrs, ["1.1.1.1/32"])
 
@@ -101,7 +92,6 @@ class TestInferenceIngressCidrs(unittest.TestCase):
 		self.assertEqual(inference_ingress_cidrs([], [], "Mumbai"), [])
 
 	def test_the_vpc_itself_is_always_let_in(self):
-		# Boxes in one VPC reach each other: an ingress and a same-VPC agent dial privately.
 		network = SimpleNamespace(
 			name="Mumbai", geography="India", cidr_block="10.3.0.0/16",
 			scraping_agents=[agent("3.3.3.3", network="Frankfurt")],
@@ -118,7 +108,7 @@ class TestSyncIngress(unittest.TestCase):
 
 	def client(self, permissions):
 		"""An EC2Client whose group reports `permissions`, recording what it is asked to change."""
-		client = EC2Client.__new__(EC2Client)  # no boto3, no credentials
+		client = EC2Client.__new__(EC2Client)
 		client.region = "ap-south-1"
 		client.authorized, client.revoked = [], []
 		client.ec2 = SimpleNamespace(
@@ -158,7 +148,6 @@ class TestSyncIngress(unittest.TestCase):
 				self.assertEqual(permission["FromPort"], 443)
 
 	def test_a_group_already_correct_is_left_alone(self):
-		# Called on every proxy save — an AWS write per save would be noise and a rate limit.
 		client = self.client([self.permission(443, "1.1.1.1/32", "2.2.2.2/32")])
 		result = client.sync_ingress("sg-1", 443, ["2.2.2.2/32", "1.1.1.1/32"])
 		self.assertEqual(result, {"opened": [], "closed": []})
@@ -171,8 +160,6 @@ class TestSyncIngress(unittest.TestCase):
 		self.assertEqual(result, {"opened": ["9.9.9.9/32"], "closed": ["1.1.1.1/32"]})
 
 	def test_a_group_source_on_this_port_is_revoked_too(self):
-		# The desired state is a list of addresses, so a group-to-group rule is never in it — and
-		# left behind it is a hole no /32 diff can see.
 		client = self.client([self.permission(443, source_groups=["sg-proxy"])])
 		result = client.sync_ingress("sg-1", 443, ["1.1.1.1/32"])
 		self.assertEqual(result["closed"], ["sg-proxy"])
@@ -190,8 +177,6 @@ class TestSyncIngress(unittest.TestCase):
 		self.assertEqual(client.revoked, [])
 
 	def test_one_port_is_reconciled_without_disturbing_the_other_front_port(self):
-		# Separate calls against the same group, so each must see only its own permission or every
-		# run revokes what the last one wrote.
 		client = self.client([self.permission(443, "1.1.1.1/32")])
 		result = client.sync_ingress("sg-1", 80, ["1.1.1.1/32"])
 		self.assertEqual(result, {"opened": ["1.1.1.1/32"], "closed": []})
@@ -218,7 +203,6 @@ class TestFrontPorts(unittest.TestCase):
 		)
 
 	def test_both_front_ports_are_reconciled_to_the_same_sources(self):
-		# Opened before the box listens, so none is briefly unreachable when nginx moves off 443.
 		network = self.network()
 		with patch("frappe.msgprint"):
 			Network.sync_inference_ingress(network)
@@ -228,7 +212,6 @@ class TestFrontPorts(unittest.TestCase):
 		)
 
 	def test_no_engine_or_exporter_port_is_opened(self):
-		# Reached through the box's nginx, never directly: a hole is an unauthenticated engine.
 		network = self.network()
 		with patch("frappe.msgprint"):
 			Network.sync_inference_ingress(network)
@@ -239,7 +222,6 @@ class TestFrontPorts(unittest.TestCase):
 
 class TestStoreIngressCidrs(unittest.TestCase):
 	def test_the_store_is_open_to_its_own_vpc_only(self):
-		# Redis wants its password too; the VPC is all Grove's boxes, and no gateway change moves it.
 		network = SimpleNamespace(cidr_block="10.3.0.0/16")
 		self.assertEqual(Network.store_ingress_cidrs.fget(network), ["10.3.0.0/16"])
 

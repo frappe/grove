@@ -19,8 +19,6 @@ class Server(GeneratedName, AnsibleHost):
 		"""Checked here, once the name exists: frappe runs before_insert with a generated name still
 		blank."""
 		super().autoname()
-		# Generated names are label-shaped by construction, but a Region named with a dot would slug
-		# into one that is not.
 		validate_label_name(self.doctype, self.short_name)
 		if self.short_name != self.name and self.name != f"{self.short_name}.{self.fleet_zone}":
 			frappe.throw(

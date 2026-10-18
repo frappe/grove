@@ -16,14 +16,14 @@ from grove.utils import (
 class TestSlugify(unittest.TestCase):
 	def test_slugs(self):
 		cases = {
-			"Qwen3.5 Coder": "qwen3.5-coder",  # dots kept — version digits matter
+			"Qwen3.5 Coder": "qwen3.5-coder",
 			"gpt_oss_120b": "gpt-oss-120b",
-			"Qwen3.5  Coder_Next": "qwen3.5-coder-next",  # runs collapse to one dash
+			"Qwen3.5  Coder_Next": "qwen3.5-coder-next",
 			"already-slugged": "already-slugged",
 			"  Padded Name  ": "padded-name",
-			"a - b": "a-b",  # spaced dash doesn't become '---'
+			"a - b": "a-b",
 			"-Leading-": "leading",
-			"": "",  # caller throws on empty
+			"": "",
 		}
 		for typed, want in cases.items():
 			self.assertEqual(slugify(typed), want, typed)
@@ -62,7 +62,6 @@ class TestValidateLabelName(unittest.TestCase):
 		validate_label_name("Inference Server", "inf-a")
 
 	def test_a_blank_name_is_left_to_frappe(self):
-		# Frappe raises "Name is required" straight after, and says it better than this would.
 		for blank in ("", None):
 			validate_label_name("Inference Server", blank)
 
@@ -73,7 +72,6 @@ class TestIsEnvKey(unittest.TestCase):
 			self.assertTrue(is_env_key(name), name)
 
 	def test_rejects_anything_a_shell_or_unit_file_would_reparse(self):
-		# These end up in a systemd unit and a `docker run` argv.
 		for name in ("", None, "2FOO", "FOO-BAR", "FOO BAR", "FOO=BAR", "FOO;rm -rf /", "FOO\nBAR"):
 			self.assertFalse(is_env_key(name), name)
 
@@ -84,7 +82,6 @@ class TestIsEnvValue(unittest.TestCase):
 			self.assertTrue(is_env_value(value), value)
 
 	def test_rejects_a_value_that_could_append_a_unit_directive(self):
-		# Rendered as Environment="KEY=<value>" — a newline starts a new directive.
 		self.assertFalse(is_env_value("a\nExecStart=/bin/evil"))
 		self.assertFalse(is_env_value("a\rExecStart=/bin/evil"))
 		self.assertFalse(is_env_value('ends" ExecStart=/bin/evil'))
