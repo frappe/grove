@@ -21,16 +21,16 @@ from grove.grove.doctype.model_provider.test_model_provider import our_model, pr
 from grove.pathway.snapshot import effective_keys
 
 
-def team(name, free=1, **fields):
-	"""Free unless said otherwise: a paying team's caps have to fit its spend limit. `max_keys` /
-	`spend_limit` given here go on a Tier of the team's own."""
+def team(name, **fields):
+	"""`max_keys` / `spend_limit` given here go on a Tier of the team's own; without one, no cap
+	fits, and the keys stay at 0."""
 	if frappe.db.exists("Central Team", name):
 		return name
 	if "max_keys" in fields or "spend_limit" in fields:
 		numbers = {k: fields.pop(k) for k in ("max_keys", "spend_limit") if k in fields}
 		fields["tier"] = frappe.get_doc({"doctype": "Tier", "__newname": f"{name}-tier", **numbers}).insert().name
 	return frappe.get_doc({
-		"doctype": "Central Team", "__newname": name, "free": free, **fields,
+		"doctype": "Central Team", "__newname": name, **fields,
 	}).insert(ignore_permissions=True).name
 
 
@@ -58,16 +58,16 @@ class IntegrationTestGroveAPIKey(IntegrationTestCase):
 		self.assertEqual(projected(doc.name)["group"], "key-probe-acme,key-probe-zeta")
 
 	def test_the_teams_flags_ride_on_the_key(self):
-		name = team("key-probe-flags", free=0, spend_limit=1)
+		name = team("key-probe-flags", spend_limit=1)
 		doc = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 1}).insert()
 		record = projected(doc.name)
 		self.assertEqual(
-			(record["team"], record["prepaid"], record["budget"], record["limited"], record["log_payloads"]),
-			(name, True, 1_000_000_000, False, True),
+			(record["team"], record["budget"], record["limited"], record["log_payloads"]),
+			(name, 1_000_000_000, False, True),
 		)
-		frappe.db.set_value("Central Team", name, {"free": 1, "log_payloads": 0})
+		frappe.db.set_value("Central Team", name, {"log_payloads": 0})
 		record = projected(doc.name)
-		self.assertEqual((record["prepaid"], record["budget"], record["log_payloads"]), (False, 0, False))
+		self.assertEqual((record["budget"], record["log_payloads"]), (1_000_000_000, False))
 
 	def test_a_revoked_key_is_not_projected(self):
 		doc = key("key-probe-revoked")
@@ -120,7 +120,7 @@ class IntegrationTestNewKeysStartInTheDefaultGroup(IntegrationTestCase):
 	def test_provisioning_a_key_puts_it_in_the_default_group(self):
 		from grove.api import keys, teams
 
-		teams.provision_team("key-group-provisioned", free=True)
+		teams.provision_team("key-group-provisioned")
 		minted = keys.provision_key("key-group-provisioned")
 		self.assertEqual(self.groups_of(frappe.get_doc("Grove API Key", minted["name"])), [self.default])
 
@@ -160,7 +160,7 @@ class IntegrationTestOwnGrantsAreTheKeysGeographys(IntegrationTestCase):
 	def test_provisioning_by_key_allows_the_keys_geographys_doc(self):
 		from grove.api import keys, teams
 
-		teams.provision_team("key-allow-keyed", free=True)
+		teams.provision_team("key-allow-keyed")
 		minted = keys.provision_key("key-allow-keyed", geography=self.away, models=[self.KEY])
 		allowed = frappe.get_all("Grove Model Row", filters={"parent": minted["name"], "parentfield": "allow"}, pluck="model")
 		self.assertEqual(allowed, [self.docs[self.away]])
@@ -205,7 +205,7 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 		from grove.api import keys, teams
 
 		team_id = "key-limit-provisioned"
-		teams.provision_team(team_id, free=True)
+		teams.provision_team(team_id)
 		name = keys.provision_key(team_id, limits=[{"metric": "requests", "window": "1m", "value": 5}])["name"]
 		keys.update_key(team_id, name)
 		self.assertEqual(limit_entries("Grove API Key")[name], [{"metric": "requests", "window": "1m", "value": 5}])
@@ -329,7 +329,7 @@ class IntegrationTestCapsFitTheSpendLimit(IntegrationTestCase):
 		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 
 	def test_caps_past_the_limit_are_refused_and_a_revoke_frees_its_share(self):
-		name = team("key-cap-team", free=0, spend_limit=10)
+		name = team("key-cap-team", spend_limit=10)
 		first = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 6}).insert()
 		with self.assertRaisesRegex(frappe.ValidationError, "Lower another key's cap"):
 			frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 6}).insert()
@@ -345,19 +345,16 @@ class IntegrationTestCapsFitTheSpendLimit(IntegrationTestCase):
 		second.cap = 5
 		second.save()
 
-	def test_a_key_is_minted_at_0_whatever_the_limit_and_a_free_teams_caps_are_not_checked(self):
-		name = team("key-cap-needed", free=0)
+	def test_a_key_is_minted_at_0_whatever_the_limit_and_never_below(self):
+		name = team("key-cap-needed")
 		for cap in (0, None):
 			doc = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": cap}).insert()
-			self.assertEqual((projected(doc.name)["prepaid"], projected(doc.name)["budget"]), (True, 0))
-		free = team("key-cap-free")
-		frappe.get_doc({"doctype": "Grove API Key", "team": free, "cap": 1000}).insert()
-		frappe.get_doc({"doctype": "Grove API Key", "team": free, "cap": 0}).insert()
+			self.assertEqual(projected(doc.name)["budget"], 0)
 		with self.assertRaises(frappe.ValidationError):
-			frappe.get_doc({"doctype": "Grove API Key", "team": free, "cap": -1}).insert()
+			frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": -1}).insert()
 
 	def test_a_lowered_limit_stops_no_key_and_refuses_only_a_raise(self):
-		name = team("key-cap-demoted", free=0, spend_limit=10)
+		name = team("key-cap-demoted", spend_limit=10)
 		doc = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 8}).insert()
 		tier = frappe.get_doc("Tier", frappe.db.get_value("Central Team", name, "tier"))
 		tier.spend_limit = 5
@@ -372,15 +369,6 @@ class IntegrationTestCapsFitTheSpendLimit(IntegrationTestCase):
 		doc.cap = 6
 		doc.save()
 		frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 0}).insert()
-
-	def test_turning_free_off_resets_the_caps(self):
-		free = team("key-cap-flip")
-		capped = frappe.get_doc({"doctype": "Grove API Key", "team": free, "cap": 1000}).insert()
-		team_doc = frappe.get_doc("Central Team", free)
-		team_doc.free = 0
-		team_doc.save()
-		self.assertEqual(frappe.db.get_value("Grove API Key", capped.name, "cap"), 0)
-		self.assertEqual(projected(capped.name)["budget"], 0)
 
 
 class TestTwoMintsAtTheLimitSerialize(unittest.TestCase):

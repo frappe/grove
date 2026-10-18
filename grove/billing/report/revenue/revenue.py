@@ -1,6 +1,6 @@
-"""Revenue per model, API key, team or day: what each billed drain was charged — Grove's price at
-the pricing the gateway charged — plus the Usage Corrections Grove made, summed in one grouped
-query over `money_rows`. A Free team's usage is not billed, so it is not revenue."""
+"""Revenue per model, API key, team or day: what each drain was charged — Grove's price at the
+pricing the gateway charged — plus the Usage Corrections Grove made, summed in one grouped query
+over `money_rows`."""
 
 import frappe
 
@@ -29,7 +29,7 @@ def execute(filters=None):
 	)
 	rows = frappe.db.sql(
 		f"""select {expr} as label, sum(requests) as requests, sum(cost) as revenue
-		from {table} where billed = 1 group by {expr} order by revenue desc""",
+		from {table} group by {expr} order by revenue desc""",
 		params,
 		as_dict=True,
 	)

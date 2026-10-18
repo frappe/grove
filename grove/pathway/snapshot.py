@@ -37,8 +37,7 @@ def effective_keys(names=None):
 	"""Every LIVE API Key projected for the gateway, with the whole policy the gates read: its
 	groups and own allow/deny, its geography, its rate limits (its own, else its team's tier's,
 	else the defaults) and `budget` — its monthly cap; the box counts its spend per month and
-	refuses it once this month's reaches that. What is the team's rides on each key: `prepaid`
-	(not Free; the wire says `prepaid`, not `free`, so a field absent reads as no gate),
+	refuses it once this month's reaches that. What is the team's rides on each key:
 	`log_payloads`, and `limited` — the team is suspended, which refuses every key whatever its
 	own cap says.
 
@@ -59,7 +58,7 @@ def effective_keys(names=None):
 	teams = {
 		t.name: t
 		for t in frappe.get_all(
-			"Central Team", filters=team_filter, fields=["name", "free", "log_payloads", "suspended", "tier"]
+			"Central Team", filters=team_filter, fields=["name", "log_payloads", "suspended", "tier"]
 		)
 	}
 	deltas = model_rows("Grove API Key", names)
@@ -81,8 +80,7 @@ def effective_keys(names=None):
 			"limited": bool(team.suspended),
 			"log_payloads": bool(team.log_payloads),
 			"geography": k.geography or "",
-			"prepaid": not team.free,
-			"budget": 0 if team.free else nano(k.cap or 0),
+			"budget": nano(k.cap or 0),
 			# Blank when none: the box merges fields, so leaving it out would keep a removed limit in force.
 			"limits": ",".join(f"{r['metric']}:{r['window']}:{r['value']}" for r in limits.get(k.name, [])),
 		})

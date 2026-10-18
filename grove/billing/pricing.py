@@ -230,7 +230,7 @@ def committed(team, caps=None, lock=True, pending=None):
 
 
 def month_spent_by(field, names):
-	"""{name: USD spent this month} by `field` (team or api_key): Σ the billed Usage Records served
+	"""{name: USD spent this month} by `field` (team or api_key): Σ the Usage Records served
 	on a day of this UTC month — the gateway's own day, so the month its `spent:<month>` counts —
 	plus the Usage Corrections Grove made on one. A revoked key counts: what it spent is still
 	the team's. Two grouped queries however many names."""
@@ -242,7 +242,7 @@ def month_spent_by(field, names):
 	spent = dict(
 		frappe.db.sql(
 			f"""select `{field}`, sum(cost) from `tabUsage Record`
-		where `{field}` in %(names)s and billed = 1 and day >= %(first)s group by `{field}`""",
+		where `{field}` in %(names)s and day >= %(first)s group by `{field}`""",
 			{"names": names, "first": first},
 		)
 	)

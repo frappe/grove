@@ -117,7 +117,7 @@ class GroveAPIKey(Document):
 		an hour behind and a revoked key's counter leaves the box with it; so moving a spent cap to
 		another key, or revoking and minting afresh, frees nothing. Only a raise is checked: a
 		lowered limit stops no key and a key can always be minted at 0, refused until capped."""
-		if self.status != "active" or team_limits(self.team).free:
+		if self.status != "active":
 			return
 		pending = self.flags.pending_spend
 		if pending is None:

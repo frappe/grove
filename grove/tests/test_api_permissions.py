@@ -28,7 +28,7 @@ def tier(name, **fields):
 
 
 def billed_record(key, team, day, cost, drain=""):
-	"""A pulled, billed Usage Record of `cost` served on `day`, settled as the pull settles: what
+	"""A pulled Usage Record of `cost` served on `day`, settled as the pull settles: what
 	month_spent reads."""
 	frappe.get_doc(
 		{
@@ -37,7 +37,6 @@ def billed_record(key, team, day, cost, drain=""):
 			"team": team,
 			"day": day,
 			"drain_id": f"probe-{key}-{day}{drain}",
-			"billed": 1,
 			"request_count": 1,
 			"cost": cost,
 			"usage": "[]",
@@ -112,7 +111,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			}
 		).insert(ignore_permissions=True)
 		team = "probe-reach"
-		teams.provision_team(team, free=True)
+		teams.provision_team(team)
 		key = frappe.get_doc("Grove API Key", keys.provision_key(team)["name"])
 		key.model_groups = []
 		key.save()
@@ -164,7 +163,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 
 	def test_a_keys_rate_limits_are_readable(self):
 		team = "probe-limits"
-		teams.provision_team(team, free=True)
+		teams.provision_team(team)
 		name = keys.provision_key(team, limits=[{"metric": "requests", "window": "1m", "value": 200}])["name"]
 		self.assertEqual(keys.limits(team, name), [{"metric": "requests", "window": "1m", "value": 200}])
 		with self.assertRaises(frappe.DoesNotExistError):
@@ -177,11 +176,10 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 
 	def test_provisioning_again_keeps_the_team_and_its_keys(self):
 		team = "TEAM-PROBE"
-		self.assertEqual(teams.provision_team(team, free=True), {"team": team, "max_keys": 0})
+		self.assertEqual(teams.provision_team(team), {"team": team, "max_keys": 0})
 		key = keys.provision_key(team)["api_key"]
 		self.assertEqual(teams.provision_team(team), {"team": team, "max_keys": 0})
 		self.assertEqual(frappe.db.get_value("Grove API Key", {"key_hash": hash_secret(key)}, "team"), team)
-		self.assertEqual(frappe.db.get_value("Central Team", team, "free"), 1)
 		with self.assertRaises(frappe.ValidationError):
 			teams.provision_team("")
 
@@ -190,7 +188,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError, msg="a key does not create its team"):
 			keys.provision_key(team, title="laptop")
 
-		teams.provision_team(team, free=True)
+		teams.provision_team(team)
 		here, away = make_test_geography(), make_test_geography("probe-away")
 		result = keys.provision_key(team, title="laptop", geography=here)
 		self.assertTrue(result["api_key"].startswith(KEY_PREFIX))
@@ -212,7 +210,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			teams.update_team(team, tier="probe-cap-tier"),
 			{
 				"team": team,
-				"free": 0,
 				"suspended": 0,
 				"tier": "probe-cap-tier",
 				"override_max_keys": 0,
@@ -261,7 +258,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		with self.assertRaises(frappe.DoesNotExistError):
 			keys.update_caps(team, {stranger: 1})
 
-	def test_a_keys_month_spent_is_its_billed_records_this_month_revoked_or_not(self):
+	def test_a_keys_month_spent_is_its_records_this_month_revoked_or_not(self):
 		team = "probe-month"
 		teams.provision_team(team)
 		key = keys.provision_key(team, title="monthly")["name"]
@@ -275,16 +272,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		frappe.db.set_value("Grove API Key", key, "status", "revoked")
 		self.assertEqual(usage.figures(team)["spend"]["month_spent"], 2)
 		self.assertTrue(teams.update_team(team, suspended=True)["suspended"])
-
-	def test_central_sets_free_and_turning_it_off_resets_the_caps(self):
-		team = "probe-free"
-		teams.provision_team(team, free=True)
-		teams.update_team(team, tier=tier("probe-free-tier", spend_limit=5))
-		key = keys.provision_key(team, title="generous", cap=7)["name"]
-		self.assertTrue(frappe.db.get_value("Central Team", team, "free"))
-		self.assertEqual(teams.update_team(team, free=False)["free"], 0)
-		self.assertEqual(frappe.db.get_value("Grove API Key", key, "cap"), 0)
-		self.assertEqual(teams.update_team(team, free=True)["free"], 1)
 
 	def test_a_teams_tier_sets_the_limits_of_its_unpinned_keys(self):
 		team = "probe-tier"
@@ -320,7 +307,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 
 	def test_a_minted_key_is_unique_by_its_hash(self):
 		team = "probe-unique"
-		teams.provision_team(team, free=True)
+		teams.provision_team(team)
 		same_bits = unittest.mock.patch(
 			"grove.grove.doctype.grove_api_key.grove_api_key.secrets.token_hex", return_value="0" * 48
 		)
@@ -331,7 +318,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 
 	def test_a_teams_keys_are_listed_without_their_secret(self):
 		team = "probe-listed"
-		teams.provision_team(team, free=True)
+		teams.provision_team(team)
 		minted = keys.provision_key(team, title="laptop", cap=0)
 
 		[listed] = usage.figures(team)["keys"]
@@ -353,7 +340,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 	def test_a_key_is_revoked_by_name_only_for_the_team_holding_it(self):
 		team, other = "probe-revoker", "probe-revoker-other"
 		for each in (team, other):
-			teams.provision_team(each, free=True)
+			teams.provision_team(each)
 		key = keys.provision_key(team, title="ci")["name"]
 
 		with self.assertRaises(frappe.DoesNotExistError):

@@ -19,7 +19,7 @@ def a_record(day, drain_id):
 	"""A bare row: the purge reads `day` and nothing else, so no key or team has to exist."""
 	doc = frappe.get_doc({
 		"doctype": "Usage Record", "api_key": "k", "team": "t", "day": day, "drain_id": drain_id,
-		"billed": 1, "request_count": 1, "cost": 0, "gateway_cost": 0, "usage": "[]",
+		"request_count": 1, "cost": 0, "gateway_cost": 0, "usage": "[]",
 	})
 	doc.flags.ignore_links = True
 	return doc.insert(ignore_permissions=True).name

@@ -58,7 +58,7 @@ class TestUsageCounter(IntegrationTestCase):
 		doc = counter("web_search_requests", unit="request")
 		record = frappe.get_doc({
 			"doctype": "Usage Record", "api_key": "k", "team": "t", "day": "2026-10-02", "drain_id": "d",
-			"billed": 1, "request_count": 1, "cost": 0, "gateway_cost": 0,
+			"request_count": 1, "cost": 0, "gateway_cost": 0,
 			"usage": '[{"model": "m", "web_search_requests": 2}]',
 		})
 		record.flags.ignore_links = True

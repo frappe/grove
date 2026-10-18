@@ -1,4 +1,4 @@
-"""Revenue is what each billed drain was charged, summed by the database over the records'
+"""Revenue is what each drain was charged, summed by the database over the records'
 per-model detail, cut by model, key, team or day."""
 
 from datetime import timedelta
@@ -23,21 +23,19 @@ class TestRevenue(IntegrationTestCase):
 			{"doctype": "Model", "model_id": "revenue-7b", "hf_repo": "org/revenue-7b"}
 		).insert(ignore_permissions=True).name
 		cls.team = frappe.get_doc(
-			{"doctype": "Central Team", "__newname": "revenue", "free": 1}
+			{"doctype": "Central Team", "__newname": "revenue"}
 		).insert(ignore_permissions=True).name
 		cls.key = frappe.get_doc({"doctype": "Grove API Key", "team": cls.team}).insert(ignore_permissions=True).name
 		cls.other_key = frappe.get_doc({"doctype": "Grove API Key", "team": cls.team}).insert(ignore_permissions=True).name
 		cls.record(cls.key, cls.today, cost=1, requests=2)
 		cls.record(cls.key, cls.today - timedelta(days=40), cost=2, requests=1)
-		# Usage while the team was Free: recorded with its cost, never charged, so not revenue.
-		cls.record(cls.key, cls.today, cost=5, requests=9, billed=0)
 
 	@classmethod
-	def record(cls, key, day, cost, requests, billed=1):
+	def record(cls, key, day, cost, requests):
 		entry = {"model": cls.model, "pricing": None, "requests": requests, "completion_tokens": 999, "grove_cost": cost}
 		frappe.get_doc({
 			"doctype": "Usage Record", "api_key": key, "team": cls.team, "day": day,
-			"drain_id": f"revenue-{day}-{billed}", "billed": billed,
+			"drain_id": f"revenue-{day}",
 			"request_count": requests, "cost": cost, "usage": frappe.as_json([entry]),
 		}).insert(ignore_permissions=True)
 

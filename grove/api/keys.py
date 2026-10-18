@@ -23,9 +23,8 @@ def provision_key(
 	"""Mint a key for `team` in `geography` — the default one when none is given; every other
 	geography's gateway refuses it. `title` labels the key, to tell a team's keys apart. `cap` is
 	what it may spend a month, refused when the team's caps would pass its spend limit; left out,
-	the key is minted at 0 and its gateway refuses it until `update_key(cap=)` gives it one. A
-	Free team's caps are not checked. The key starts in its geography's default Model Group;
-	`models` are its own on top. `limits` pin its rate limits, rows of `metric` (requests,
+	the key is minted at 0 and its gateway refuses it until `update_key(cap=)` gives it one. The
+	key starts in its geography's default Model Group; `models` are its own on top. `limits` pin its rate limits, rows of `metric` (requests,
 	total_tokens), `window` (1m, 1h, 1d, 1M) and `value`; given none it runs under its team's
 	Tier (`update_team`), else the default tier's, else 20 requests and 100 000 tokens a minute. →
 	the key's name, its geography and the endpoint it calls, and the secret — shown here and
@@ -83,10 +82,10 @@ def update_caps(team: str, caps: dict[str, float]):
 	if revoked := [doc.name for doc in docs if doc.status != "active"]:
 		frappe.throw(f"{', '.join(revoked)} is revoked.")
 	raised = any(flt(caps[doc.name]) > flt(doc.cap) for doc in docs)
-	pending = peek_team(team) if raised and not team_limits(team).free else {}
+	pending = peek_team(team) if raised else {}
 	team_doc = team_limits(team, for_update=True)
 	total = committed(team, {doc.name: flt(caps[doc.name]) for doc in docs}, pending=pending)
-	if not team_doc.free and raised and total > flt(team_doc.spend_limit, 9):
+	if raised and total > flt(team_doc.spend_limit, 9):
 		frappe.throw(
 			f"This month's spend and caps would add up to {usd(total)} of a spend limit of {usd(team_doc.spend_limit)}."
 		)

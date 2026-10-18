@@ -38,7 +38,7 @@ class TestVendorReconciliation(IntegrationTestCase):
 			}
 		).insert()
 		cls.team = (
-			frappe.get_doc({"doctype": "Central Team", "__newname": "reconcile", "free": 1})
+			frappe.get_doc({"doctype": "Central Team", "__newname": "reconcile"})
 			.insert(ignore_permissions=True)
 			.name
 		)
@@ -49,10 +49,10 @@ class TestVendorReconciliation(IntegrationTestCase):
 		)
 		cls.record(cls.yesterday, requests=2, prompt=1000, cached=400, completion=100, cost=0.5)
 		cls.record(cls.earlier, requests=3, prompt=3000, cached=0, completion=300, cost=1.0)
-		cls.record(cls.earlier, requests=1, prompt=10, cached=0, completion=1, cost=0.01, billed=0)
+		cls.record(cls.earlier, requests=1, prompt=10, cached=0, completion=1, cost=0.01, drain="-small")
 
 	@classmethod
-	def record(cls, day, requests, prompt, cached, completion, cost, billed=1):
+	def record(cls, day, requests, prompt, cached, completion, cost, drain=""):
 		entry = {
 			"model": cls.model.model_key,
 			"pricing": None,
@@ -68,8 +68,7 @@ class TestVendorReconciliation(IntegrationTestCase):
 				"api_key": cls.key,
 				"team": cls.team,
 				"day": day,
-				"drain_id": f"reconcile-{day}-{billed}",
-				"billed": billed,
+				"drain_id": f"reconcile-{day}{drain}",
 				"request_count": requests,
 				"cost": cost,
 				"usage": frappe.as_json([entry]),
@@ -170,18 +169,18 @@ class TestVendorReconciliation(IntegrationTestCase):
 		self.assertEqual((row["cached_grove"], row["cached_vendor"]), (400, 400))
 		self.assertEqual((row["output_grove"], row["output_vendor"]), (100, 100))
 		self.assertEqual(
-			(row["charged"], row["free"], row["vendor_billed"], row["margin"]), (0.5, 0, 0.4, 0.1)
+			(row["charged"], row["vendor_billed"], row["margin"]), (0.5, 0.4, 0.1)
 		)
 		self.assertEqual([call[0] for call in calls], ["usage", "usage", "model_apis"])
 		self.assertEqual(calls[1][1], {"cursor": "page-2"})
 
-	def test_a_day_the_vendor_saw_more_and_free_usage(self):
+	def test_a_day_the_vendor_saw_more(self):
 		rows, _ = self.report()
 		row = rows[(self.earlier, self.model.model_key)]
 		self.assertEqual((row["requests_grove"], row["requests_vendor"]), (4, 5))
 		self.assertEqual((row["input_grove"], row["input_vendor"]), (3010, 3010))
 		self.assertEqual(
-			(row["charged"], row["free"], row["vendor_billed"], row["margin"]), (1.0, 0.01, 0.9, 0.1)
+			(row["charged"], row["vendor_billed"], row["margin"]), (1.01, 0.9, 0.11)
 		)
 
 	def test_a_model_only_the_vendor_saw(self):
@@ -198,7 +197,7 @@ class TestVendorReconciliation(IntegrationTestCase):
 		self.assertEqual((row["requests_grove"], row["requests_vendor"]), (6, 7))
 		self.assertEqual((row["input_grove"], row["input_vendor"]), (4010, 4010))
 		self.assertEqual(
-			(row["charged"], row["free"], row["vendor_billed"], row["margin"]), (1.5, 0.01, 1.3, 0.2)
+			(row["charged"], row["vendor_billed"], row["margin"]), (1.51, 1.3, 0.21)
 		)
 		self.assertEqual(rows[(None, VENDOR_ONLY)]["requests_vendor"], 7)
 

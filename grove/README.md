@@ -44,7 +44,7 @@ gateways cannot jointly overrun one replica.
 |---|---|
 | `pathway/run.py` | What every run shares: `Target` (one box's admin API), `SyncRun` (lock, parallel dial, rows in the order asked). Every path that reaches a box goes through it. |
 | `pathway/projection.py` | `Projection`: every push to every box. A push that left no Pathway Sync row did not happen. |
-| `pathway/usage.py` | `Usage`: each store's drain (or one team's keys) into one Usage Record per key (two when it holds both billed and free usage), then the ack of what landed. `reconcile.py` lands each touched team: records, `spent` moved by Grove's price, the gateway's charge audited, the team settled. |
+| `pathway/usage.py` | `Usage`: each store's drain (or one team's keys) into one Usage Record per key, then the ack of what landed. `reconcile.py` lands each touched team: records, `spent` moved by Grove's price, the gateway's charge audited, the team settled. |
 | `billing/` | Usage counters, sell prices, monthly caps, usage records, the Revenue report and the Vendor Reconciliation report — its own Frappe module, [`billing/README.md`](billing/README.md). |
 | `catalog/` | What a site starts with: `catalog.json` (geographies, providers, vendor models and their rates, model groups; no secret, no `published`), `seed.insert_missing` (after install and after every migrate), `export.write` (by hand). |
 | `pathway/snapshot.py` | The desired state a box is pushed, and the hash gate that decides which sections travel. |
@@ -105,11 +105,11 @@ fleet gets re-pushed over row order. Order means nothing on the wire; it exists 
 
 | Redis key | Written by | Holds |
 |---|---|---|
-| `key:<sha256(secret)>` | state push (keys) + the agent | the whole policy: `team`, `group` (comma list), own `allow`/`deny`, `geography`, `limits` (the key's own, else its team's Tier's, else the default tier's, else the defaults), `prepaid`, `budget` (its monthly cap), `limited`, `log_payloads`; the agent's own `spent:<YYYY-MM>`, this month's spend |
+| `key:<sha256(secret)>` | state push (keys) + the agent | the whole policy: `team`, `group` (comma list), own `allow`/`deny`, `geography`, `limits` (the key's own, else its team's Tier's, else the default tier's, else the defaults), `budget` (its monthly cap), `limited`, `log_payloads`; the agent's own `spent:<YYYY-MM>`, this month's spend |
 | `model_group:<name>` | state push (groups) | the model grant for everyone in it |
 | `deploy:<model>` | state push (routes) | every placement of one model |
 | `grove:state_hash` | state push | per-section/bucket hashes of what the box holds |
-| `usage:<prefix>:<YYYY-MM-DD>` | the agent | a key's live counters for one UTC day it was served, the `day` its Usage Record carries: `m:<metric>:<model>` for reports, `p:<pricing>:<counter>` and `p:<pricing>:cost` for billing, the same under `f:` for what was served free |
+| `usage:<prefix>:<YYYY-MM-DD>` | the agent | a key's live counters for one UTC day it was served, the `day` its Usage Record carries: `m:<metric>:<model>` for reports, `p:<pricing>:<counter>` and `p:<pricing>:cost` for billing |
 | `drained:<drain>:<prefix>:<day>`, `drain:unacked` | the agent's drain | a key's day bucket set aside under a drain id, re-sent until Grove acks that pair; kept for `usage_retention` after |
 | `sticky:<session>` | the agent | session → engine, for prefix-cache reuse |
 | `inflight:<engine>` | the agent | what is running right now |
@@ -118,7 +118,7 @@ fleet gets re-pushed over row order. Order means nothing on the wire; it exists 
 Access is pushed as **two** records: a group edit is one record however many members, and the key
 carries everything else — the agent resolves the two at request time, unioning every group the key
 names before applying its own allow/deny. The team is not a record on the box: what is the team's
-(Free, payload logging, suspension) is stamped on each of its keys, so suspending the team is one
+(payload logging, suspension) is stamped on each of its keys, so suspending the team is one
 field per key.
 
 A model id is always `<provider>/<name>` (`frappe/qwen3.5-4b`) — the Model's **key**, not its doc

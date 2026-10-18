@@ -1,7 +1,7 @@
 # `billing/` — what a call cost
 
 Usage is counted under Usage Counters, priced by the Model Pricing the gateway charged, landed as Usage
-Records by the drain (`../pathway/usage.py`, `reconcile.py` next to it) and moves a billed key's
+Records by the drain (`../pathway/usage.py`, `reconcile.py` next to it) and moves the key's
 `spent`. Counting never reads pricing; `pricing.settle` is the one writer of a team's `spent`. The pushes
 and the drain are in [`../README.md`](../README.md).
 
@@ -21,7 +21,7 @@ and the drain are in [`../README.md`](../README.md).
 | `Usage Counter` | One counter usage is counted and priced under, named by its key. A root row has a unit (Mtok or request) and may be a part of a container root; a derived row is a root plus `min_prompt_tokens`, counted instead of its base when the whole prompt exceeds it and billed at the base's rate when a pricing holds none. Never edited after insert; never deleted while a Usage Record names it. Shipped in the catalog; pushed inside every pricing. Grove Control reads. |
 | `Model Pricing` | A model's SELL price: one Enabled doc per model, one rate per counter. Enabling one disables the last; the next push carries it to every gateway, which tags each request with the id it charged. A Disabled draft is editable; once enabled it is never edited, disabled by hand or re-enabled, and its form is read only. Duplicate starts a new Disabled draft with its own window. A counter with no row bills 0, except a derived counter, which then bills at its base counter's row; a derived row needs that base row. A model cannot be published without one, so free on purpose is a pricing with rates 0; enabling one never publishes. The Model form shows a banner while no pricing is enabled. Carries its model's Geography, fetched, so the pricings of one key — a doc per geography — tell apart in the list. |
 | `Model Pricing Rate` | One counter's sell rate (child). |
-| `Usage Record` | One key's usage in one drain of one store on one UTC day — the day the gateway served it, off the gateway's clock, so a day or a month here is the gateway's own — billed and free apart (unique on drain id + key + `day` + `billed`), inserted by the pull and never updated: the key and its team, the store (Link), the drain id, the day, requests, `total_tokens` (prompt and completion once each, no part again: a cheap read beside the JSON), `cost` (Grove's price), `gateway_cost`, and `billed` — whether it was charged, which is whether the gateway served it while the team was not Free (it tags each request `p:` or `f:`, so a drain that spans a flip lands as two records). Only billed records move the key's `spent`, are audited and count as revenue. The per-model detail — pricing, requests, counters and Grove's cost — is one hidden JSON field (`usage`) the form renders as a table, so a record is one row however many models it touched. A name Grove holds as a Model (published or not) gets an entry; the gateway's deployment-keyed metrics do not. |
+| `Usage Record` | One key's usage in one drain of one store on one UTC day — the day the gateway served it, off the gateway's clock, so a day or a month here is the gateway's own (unique on drain id + key + `day`), inserted by the pull and never updated: the key and its team, the store (Link), the drain id, the day, requests, `total_tokens` (prompt and completion once each, no part again: a cheap read beside the JSON), `cost` (Grove's price) and `gateway_cost`. Every record moves the key's `spent`, is audited and counts as revenue; a model served without a pricing is in it at no cost. The per-model detail — pricing, requests, counters and Grove's cost — is one hidden JSON field (`usage`) the form renders as a table, so a record is one row however many models it touched. A name Grove holds as a Model (published or not) gets an entry; the gateway's deployment-keyed metrics do not. |
 | `Stuck Usage` | Usage on one store the pull keeps failing to record. For a team: the gateway holds the usage and re-sends it every pull; this row says which keys, since when, how many attempts, the last error and payload — one open row per (team, store), resolved by the pull that lands it; **Pull Now** pulls just that team. For a dead line (`dead_line` set, team blank when unreadable): the gateway has dropped it and this row is the only copy; **Mark Resolved** closes it. An open row is never deleted; Log Settings clears resolved ones after 90 days. |
 | `Credit Discrepancy` | One Usage Record and pricing where the gateway's cost differs from Grove's price of the same counters. Logged by the pull, never acted on by it: **Grove is wrong** moves the key's `spent` by the delta and settles the team; **Gateway is wrong** writes a Pending `Gateway Spend Adjustment`, and the projection tick moves the gateway's `spent` for that key on that store by minus the delta (`/spend-adjust` through the store's writers, once per discrepancy). Either way the row keeps the decision alone: `resolution` and `resolved_on` (site time); blank is open. The money is a record of its own, a `Usage Correction` for Grove's side and a `Gateway Spend Adjustment` for the gateway's, and the Usage Record is never changed. System Manager only. |
 | `Usage Correction` | The money of a Credit Discrepancy resolved as Grove's error: the team, the key, the pricing and its model key, the UTC day it was resolved, and the USD the key's charge moved by. One per decision (unique on the Credit Discrepancy), written by **Grove is wrong** and never changed; every money read (`usage_record.money_rows`, `pricing.month_spent_by`) sums it beside the Usage Records. System Manager and Grove Control read; nobody edits or deletes. |
@@ -105,9 +105,9 @@ variant whose parts do not subtract it.
 A new bracket or a new vendor fee is rows, not a release: a derived counter is a doc; a new root
 is a doc plus the one parser line in pathway that fills its bucket from the response.
 
-**Revenue and usage reads.** The `Revenue` report (Desk) sums what each billed drain was charged —
-Grove's cost in each record's per-model detail, records of Free teams left out — plus the Usage Corrections Grove made, grouped by model, API key, team or day over a date range,
-with a total row; export from the report toolbar. The `Vendor Reconciliation` report (Desk, prepared: it runs in the background and the latest run is shown) takes a vendor (a select of those with a billing read: Baseten) and a UTC day range that ends yesterday at the latest (today's figures still move on both sides) and shows, per model or per day and model (Group By), Grove's requests, input, cached and output tokens, charged and free cost beside the vendor's own requests, tokens and billed subtotal, with the margin and a total row; a vendor cell that disagrees with Grove's reads red. The vendor side is read live from the vendor's billing API by `vendor.py`, once per distinct key across the vendor's Model Provider records (Baseten only so far, at most 90 days a range, the retention here); the Grove side is one grouped query over the records' per-model detail, corrections left out. A model only the vendor saw gets a row under its upstream id. `api.usage.usage(teams, from_date, to_date | period | month | pulled_after, pulled_until, key_hash)` (read-only: on the replica when the site sets `read_from_replica`) gives a control client requests and cost (what was charged: usage while Free adds requests, no cost; a Grove correction adds its cost under its model on the day it was resolved)
+**Revenue and usage reads.** The `Revenue` report (Desk) sums what each drain was charged —
+Grove's cost in each record's per-model detail — plus the Usage Corrections Grove made, grouped by model, API key, team or day over a date range,
+with a total row; export from the report toolbar. The `Vendor Reconciliation` report (Desk, prepared: it runs in the background and the latest run is shown) takes a vendor (a select of those with a billing read: Baseten) and a UTC day range that ends yesterday at the latest (today's figures still move on both sides) and shows, per model or per day and model (Group By), Grove's requests, input, cached and output tokens and charged cost beside the vendor's own requests, tokens and billed subtotal, with the margin and a total row; a vendor cell that disagrees with Grove's reads red. The vendor side is read live from the vendor's billing API by `vendor.py`, once per distinct key across the vendor's Model Provider records (Baseten only so far, at most 90 days a range, the retention here); the Grove side is one grouped query over the records' per-model detail, corrections left out. A model only the vendor saw gets a row under its upstream id. `api.usage.usage(teams, from_date, to_date | period | month | pulled_after, pulled_until, key_hash)` (read-only: on the replica when the site sets `read_from_replica`) gives a control client requests and cost (what was charged; a Grove correction adds its cost under its model on the day it was resolved)
 per team and model (periods: Today, Yesterday, Last 7 Days, Last 30 Days, This Month, Last Month),
 and the per-model summary again per UTC day (`daily_summary`, for a chart; a day with no usage has no entry),
 with `as_of` = when the newest usage in the range was pulled. `pulled_after`/`pulled_until` (RFC 3339 UTC, until exclusive) read by when a record or a correction landed (`creation`) instead of by day: Central's invoice is every record landed since its last one, so a drain that lands late goes on the next invoice and nothing is billed twice. Each is one grouped SQL statement
@@ -145,18 +145,12 @@ it holds no money that must not run out. What gates is:
   A team with no tier runs under the default tier (Grove Settings), and a tier Central names
   before Grove has one is created as a copy of it. **Override Max Keys** on the team pins its own
   key count instead (`access.team_limits` resolves which apply).
-  Central also sets **`free`** and **`suspended`**.
+  Central also sets **`suspended`**.
 - **`suspended`**, set by Central when an invoice goes unpaid, pushed as `limited` on every key
   of the team (402 whatever the cap says).
 
-A **Free** team is never charged and never gated: its usage lands as Usage Records with what it
-would have cost, marked not `billed`, and `spent` does not move on Grove or on the gateway. The
-gateway decides per request: Free takes effect when the push reaches it (the next sync), and the
-pull bills what it tagged `p:`, never the team's flag at the time of the pull. Turning Free off
-resets every live key's cap to 0, since a Free team's caps are never checked.
-
 **What Central reads.** `api.usage.figures(team)`: `spend` (`spent`; `month_spent`, this UTC month's
-billed records of every key the team held, revoked ones too, plus what Grove corrected, nothing
+records of every key the team held, revoked ones too, plus what Grove corrected, nothing
 stored; `capped`, Σ live caps; `committed`, what the month has spoken for, the figure a raise is
 checked against; `spend_limit`, `max_keys`, `suspended`), `keys` (each with its cap, `month_spent`
 and effective limits) and `usage` (this month, every key), read together and kept in the site
@@ -179,9 +173,8 @@ UTC day it served the key, named off the clock that names the key's `spent:<mont
 `/usage`: the gateway sets every live bucket aside under a new drain id and returns it with every
 earlier one Grove has not acknowledged, as `{drain id: {key: {day: hash}}}` (`?keys=` narrows both
 to one team's keys). Grove inserts one Usage Record per key per day, on the hash's day — so a day
-or a month in Grove is the gateway's own, however late the pull — two when the hash holds both
-charged (`p:`) and free (`f:`) usage of it; unique on drain id + key + `day` + `billed`. It bills
-the charged one to the key, commits, then POSTs `/usage/ack` with the (drain id, key, days) of every
+or a month in Grove is the gateway's own, however late the pull — unique on drain id + key +
+`day`. It bills the record to the key, commits, then POSTs `/usage/ack` with the (drain id, key, days) of every
 team that landed. Every other one comes back next pull; a re-sent one records nothing twice. A day
 of `""` (a gateway from before it bucketed by day) lands today. The acked counters are kept
 for Grove Settings' **Usage Retention** (rendered into each gateway's `config.json`, default

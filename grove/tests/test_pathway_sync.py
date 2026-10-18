@@ -226,11 +226,11 @@ class TestEffectiveGroups(unittest.TestCase):
 
 class TestEffectiveKeys(unittest.TestCase):
 	"""key:<hash> — the one record the gateway reads: the credential and the whole policy behind
-	it, with what is the team's (free, payload logging, suspension) riding on each key."""
+	it, with what is the team's (payload logging, suspension) riding on each key."""
 
 	def keys(self, keys=(), rows=(), groups=(), limits=(), teams=None, default_tier=None, names=None):
 		self.calls, seen = {}, {}
-		teams = [frappe._dict(name="T-1", free=0, log_payloads=0, suspended=0)] if teams is None else teams
+		teams = [frappe._dict(name="T-1", log_payloads=0, suspended=0)] if teams is None else teams
 
 		def get_all(doctype, filters=None, **kwargs):
 			self.calls[doctype] = self.calls.get(doctype, 0) + 1
@@ -266,14 +266,14 @@ class TestEffectiveKeys(unittest.TestCase):
 				frappe._dict(parent="KEY-1", model_key="qwen3-35b", parentfield="deny"),
 			],
 			[frappe._dict(parent="KEY-1", model_group="acme")],
-			teams=[frappe._dict(name="T-1", free=0, log_payloads=1, suspended=1)],
+			teams=[frappe._dict(name="T-1", log_payloads=1, suspended=1)],
 		)
 		self.assertEqual(
 			key,
 			{
 				"key_hash": "abc", "prefix": "KEY-1", "team": "T-1", "status": "active", "group": "acme",
 				"allow": "qwen3-4b", "deny": "qwen3-35b", "limited": True, "log_payloads": True,
-				"geography": "in", "prepaid": True, "budget": 0, "limits": "requests:1m:20,total_tokens:1m:100000",
+				"geography": "in", "budget": 0, "limits": "requests:1m:20,total_tokens:1m:100000",
 			},
 		)
 
@@ -309,7 +309,7 @@ class TestEffectiveKeys(unittest.TestCase):
 		self.assertIs(key["limited"], False)
 		self.assertIs(key["log_payloads"], False)
 		self.assertEqual(key["limits"], "requests:1m:20,total_tokens:1m:100000")
-		open_tier = frappe._dict(name="T-1", free=0, log_payloads=0, suspended=0, tier="Open")
+		open_tier = frappe._dict(name="T-1", log_payloads=0, suspended=0, tier="Open")
 		[key] = self.keys([self.key()], teams=[open_tier])
 		self.assertEqual(key["limits"], "")
 
@@ -352,17 +352,17 @@ class TestEffectiveKeys(unittest.TestCase):
 
 	def test_a_key_carries_its_cap_in_nano_usd(self):
 		[key] = self.keys([self.key(cap=Decimal("7.5"))])
-		self.assertEqual((key["prepaid"], key["budget"]), (True, 7_500_000_000))
+		self.assertEqual(key["budget"], 7_500_000_000)
 
 	def test_limits_are_the_keys_own_else_its_tiers_else_the_defaults(self):
-		tiered = frappe._dict(name="T-2", free=0, log_payloads=0, suspended=0, tier="Growth")
+		tiered = frappe._dict(name="T-2", log_payloads=0, suspended=0, tier="Growth")
 		keys = self.keys(
 			[self.key("KEY-1", "abc"), self.key("KEY-2", "abd", team="T-2"), self.key("KEY-3", "abe", team="T-2")],
 			limits=[
 				frappe._dict(parenttype="Grove API Key", parent="KEY-3", metric="requests", window="1m", value=5),
 				frappe._dict(parenttype="Tier", parent="Growth", metric="requests", window="1m", value=60),
 			],
-			teams=[frappe._dict(name="T-1", free=0, log_payloads=0, suspended=0), tiered],
+			teams=[frappe._dict(name="T-1", log_payloads=0, suspended=0), tiered],
 		)
 		self.assertEqual(
 			[k["limits"] for k in keys], ["requests:1m:20,total_tokens:1m:100000", "requests:1m:60", "requests:1m:5"]
@@ -372,10 +372,6 @@ class TestEffectiveKeys(unittest.TestCase):
 		growth = frappe._dict(parenttype="Tier", parent="Growth", metric="requests", window="1m", value=60)
 		[key] = self.keys([self.key()], limits=[growth], default_tier="Growth")
 		self.assertEqual(key["limits"], "requests:1m:60")
-
-	def test_a_free_teams_key_carries_no_ceiling(self):
-		[key] = self.keys([self.key(cap=Decimal("2.5"))], teams=[frappe._dict(name="T-1", free=1, log_payloads=0, suspended=0)])
-		self.assertEqual((key["prepaid"], key["budget"]), (False, 0))
 
 	def test_every_key_carries_its_pin(self):
 		keys = self.keys([self.key("KEY-1", "abc", geography="eu"), self.key("KEY-2", "abd", geography=None)])

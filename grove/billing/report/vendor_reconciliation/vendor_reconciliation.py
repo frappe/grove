@@ -1,6 +1,6 @@
 """What Grove charged users for a vendor's models against what the vendor billed Grove, per model or
-per UTC day and model: requests and tokens from both sides, Grove's charged and free cost, the
-vendor's subtotal and the margin. The vendor is read live (`billing/vendor.py`); the Grove side is one
+per UTC day and model: requests and tokens from both sides, what Grove charged, the vendor's
+subtotal and the margin. The vendor is read live (`billing/vendor.py`); the Grove side is one
 grouped query over the records' per-model detail. Yesterday is the latest day: today's figures still
 move on both sides. A prepared report: it runs in the background and the latest run is shown."""
 
@@ -24,7 +24,6 @@ COLUMNS = [
 	("output_grove", "Output (Grove)", "Int", 120),
 	("output_vendor", "Output (Vendor)", "Int", 120),
 	("charged", "Charged users (USD)", "Currency", 140),
-	("free", "Served free (USD)", "Currency", 130),
 	("vendor_billed", "Vendor billed (USD)", "Currency", 140),
 	("margin", "Margin (USD)", "Currency", 120),
 ]
@@ -79,9 +78,9 @@ def model_keys(providers):
 
 
 def grove_rows(model_keys, from_date, to_date):
-	"""{(day, model key): requests, input_tokens, cached_tokens, output_tokens, charged, free} off the
-	records' per-model detail, charged and free apart. A derived counter (a long prompt's tokens) is
-	summed into its base, as the vendor counts it."""
+	"""{(day, model key): requests, input_tokens, cached_tokens, output_tokens, charged} off the
+	records' per-model detail. A derived counter (a long prompt's tokens) is summed into its base,
+	as the vendor counts it."""
 	# ponytail: resolved Credit Discrepancy corrections are left out (~1e-6 USD on vendor models);
 	# the Revenue report has them.
 	if not model_keys:
@@ -95,7 +94,7 @@ def grove_rows(model_keys, from_date, to_date):
 	)
 	rows = frappe.db.sql(
 		f"""select r.day, u.model, sum(u.requests) as requests, {sums},
-		sum(if(r.billed, u.grove_cost, 0)) as charged, sum(if(r.billed, 0, u.grove_cost)) as free
+		sum(u.grove_cost) as charged
 		from `tabUsage Record` r, {usage_table()}
 		where r.day between %(from_date)s and %(to_date)s and u.model in %(models)s
 		group by r.day, u.model""",
@@ -126,7 +125,6 @@ def joined(keys, grove, vendor, by_day):
 		for figure in FIGURES:
 			add(r, figure.removesuffix("_tokens") + "_grove", int(g[figure] or 0))
 		add(r, "charged", float(g.charged or 0))
-		add(r, "free", float(g.free or 0))
 	for (day, upstream), v in vendor.items():
 		r = row(day, upstream)
 		for figure in FIGURES:

@@ -19,11 +19,11 @@ RELINK = (
 def execute():
 	if not frappe.db.exists("DocType", "Grove User") or not frappe.db.table_exists("Grove User"):
 		return
-	users = frappe.db.sql("select name, reference, email, free, log_payloads, geography from `tabGrove User`", as_dict=1)
+	users = frappe.db.sql("select name, reference, email, log_payloads, geography from `tabGrove User`", as_dict=1)
 	teams = {u.name: make_team(u) for u in users}
 	for key in frappe.db.sql("select name, user, status from `tabGrove API Key` where user is not null", as_dict=1):
 		move_key(key, next(u for u in users if u.name == key.user), teams[key.user])
-	for row in frappe.db.sql("select api_key, sum(cost) spent from `tabUsage Record` where billed = 1 group by api_key", as_dict=1):
+	for row in frappe.db.sql("select api_key, sum(cost) spent from `tabUsage Record` group by api_key", as_dict=1):
 		frappe.db.set_value("Grove API Key", row.api_key, "spent", row.spent, update_modified=False)
 	for doctype, field in RELINK:
 		if frappe.db.has_column(doctype, field):
@@ -45,8 +45,7 @@ def make_team(user):
 	if frappe.db.exists("Central Team", name):
 		return name
 	return frappe.get_doc({
-		"doctype": "Central Team", "__newname": name,
-		"free": user.free, "log_payloads": user.log_payloads,
+		"doctype": "Central Team", "__newname": name, "log_payloads": user.log_payloads,
 	}).insert(ignore_permissions=True).name
 
 

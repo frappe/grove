@@ -26,7 +26,6 @@ class UsageRecord(Document):
 		from frappe.types import DF
 
 		api_key: DF.Link
-		billed: DF.Check
 		cost: DF.Currency
 		day: DF.Date
 		drain_id: DF.Data | None
@@ -55,17 +54,12 @@ class UsageRecord(Document):
 
 
 def on_doctype_update():
-	"""A drain is re-sent until acknowledged: the unique makes landing a bucket twice impossible —
-	a key's billed and free usage of one day in one drain are two records. Every read filters a
-	team or a key over a day range."""
-	for narrower in ("unique_drain_key", "unique_drain_key_billed"):
-		if frappe.db.has_index("tabUsage Record", narrower):
-			frappe.db.sql_ddl(f"alter table `tabUsage Record` drop index {narrower}")
-	frappe.db.add_unique(
-		"Usage Record",
-		["drain_id", "api_key", "day", "billed"],
-		constraint_name="unique_drain_key_day_billed",
-	)
+	"""A drain is re-sent until acknowledged: the unique makes landing a bucket twice impossible.
+	Every read filters a team or a key over a day range."""
+	for older in ("unique_drain_key", "unique_drain_key_billed", "unique_drain_key_day_billed"):
+		if frappe.db.has_index("tabUsage Record", older):
+			frappe.db.sql_ddl(f"alter table `tabUsage Record` drop index {older}")
+	frappe.db.add_unique("Usage Record", ["drain_id", "api_key", "day"], constraint_name="unique_drain_key_day")
 	frappe.db.add_index("Usage Record", ["team", "day"])
 	frappe.db.add_index("Usage Record", ["api_key", "day"])
 
@@ -79,7 +73,7 @@ def tokens_expression(alias="u"):
 
 def money_rows(filters, from_date=None, to_date=None, since=None, until=None):
 	"""The derived table `x` every money read sums over: one row per model entry of a record
-	(team, api_key, model, day, pulled_at, billed, requests, tokens, cost) and one per Usage
+	(team, api_key, model, day, pulled_at, requests, tokens, cost) and one per Usage
 	Correction — cost alone, under its model key, on its day — so a correction counts wherever
 	usage does, and no record is ever changed. Narrowed by `filters` ({team, api_key, model}: a
 	value or a list; None is skipped) and either a UTC day range or a landing window on when a
@@ -102,11 +96,11 @@ def money_rows(filters, from_date=None, to_date=None, since=None, until=None):
 	# JSON_TABLE's strings carry the JSON column's utf8mb4_bin, so the correction's model is collated
 	# to match; one with no model lands under '' rather than being dropped.
 	return (
-		f"""(select r.team, r.api_key, u.model, r.day, r.creation as pulled_at, r.billed,
-		u.requests, {tokens_expression()} as tokens, if(r.billed, u.grove_cost, 0) as cost
+		f"""(select r.team, r.api_key, u.model, r.day, r.creation as pulled_at,
+		u.requests, {tokens_expression()} as tokens, u.grove_cost as cost
 		from `tabUsage Record` r, {usage_table()} where {where(RECORD_COLUMNS, "r.day", "r.creation")}
 		union all
-		select c.team, c.api_key, coalesce(c.model, '') collate utf8mb4_bin, c.day, c.creation, 1, 0, 0, c.cost
+		select c.team, c.api_key, coalesce(c.model, '') collate utf8mb4_bin, c.day, c.creation, 0, 0, c.cost
 		from `tabUsage Correction` c where {where(CORRECTION_COLUMNS, "c.day", "c.creation")}) x""",
 		params,
 	)

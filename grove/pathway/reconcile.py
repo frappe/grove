@@ -3,11 +3,7 @@
 Grove bills its own price: each pricing the gateway tagged a request with is priced here at that
 pricing's rates, and the key's `spent` moves by the sum, then the team settles. The gateway's own
 cost sits beside it; where the two differ beyond the gateway's truncation, a Credit Discrepancy
-says so.
-
-What the gateway served free (tagged `f:`, not `p:`) is recorded and priced the same, in a record
-of its own, but not billed: `spent` does not move and nothing is audited, since no money changed
-hands on either side. The gateway decides per request, so a drain that spans a flip lands as both."""
+says so. A model the gateway served without a pricing lands in the same record at no cost."""
 
 from decimal import Decimal
 
@@ -20,7 +16,7 @@ from grove.billing.pricing import NANO, settle
 NANO_USD = Decimal(1) / NANO
 FIELDS = (
 	"name", "creation", "modified", "owner", "modified_by", "api_key", "team", "day", "gateway_store",
-	"drain_id", "billed", "request_count", "total_tokens", "cost", "gateway_cost", "usage",
+	"drain_id", "request_count", "total_tokens", "cost", "gateway_cost", "usage",
 )
 
 
@@ -44,38 +40,26 @@ class Reconciler:
 		drain already landed for the day is skipped, so a re-sent drain bills nothing twice. The rows
 		go in as one statement however many keys: a store's hourly drain is a lakh of them."""
 		rows = [
-			row for prefix, drain in drains.items() if not self.has_landed(prefix)
-			for row in self.rows(team, prefix, drain)
+			self.row(team, prefix, self.priced(drain.pricings) + self.unpriced(drain), drain.requests)
+			for prefix, drain in drains.items()
+			if not self.has_landed(prefix)
 		]
 		frappe.db.bulk_insert("Usage Record", FIELDS, [[row[field] for field in FIELDS] for row in rows])
 		for row in rows:
-			if row.billed:
-				self.bill(row)
+			self.bill(row)
 		settle(team)
-
-	def rows(self, team, prefix, drain):
-		"""One key's share as up to two rows: what the gateway charged, and what it served free or
-		unpriced. Their request counts sum to the key's."""
-		charged, free = self.priced(drain.pricings), self.priced(drain.free) + self.unpriced(drain)
-		if not charged:
-			return [self.row(team, prefix, 0, free, drain.requests)]
-		requests = sum(entry["requests"] for entry in charged) if free else drain.requests
-		rows = [self.row(team, prefix, 1, charged, requests)]
-		if free:
-			rows.append(self.row(team, prefix, 0, free, drain.requests - requests))
-		return rows
 
 	def bill(self, row):
 		"""The key's spend moves by Grove's price of what the gateway charged it."""
 		charged = sum((entry["grove_cost"] for entry in row.entries), Decimal(0))
-		# ponytail: one update per billed key, ~40 s an hour at a lakh; a CASE update per team if the pull nears the hour.
+		# ponytail: one update per key, ~40 s an hour at a lakh; a CASE update per team if the pull nears the hour.
 		frappe.db.sql("update `tabGrove API Key` set spent = spent + %s where name = %s", [charged, row.api_key])
 		self.audit(row)
 
 	def has_landed(self, prefix):
 		return (self.drain_id, prefix, str(self.day)) in self.landed
 
-	def row(self, team, prefix, billed, entries, requests):
+	def row(self, team, prefix, entries, requests):
 		"""A record as the table takes it, named and stamped as the ORM would have; `entries` ride
 		along for `bill` and `audit`."""
 		now = frappe.utils.now()
@@ -83,7 +67,7 @@ class Reconciler:
 			name=make_autoname("hash", "Usage Record"), creation=now, modified=now,
 			owner=frappe.session.user, modified_by=frappe.session.user,
 			api_key=prefix, team=team, day=self.day, gateway_store=self.gateway_store, drain_id=self.drain_id,
-			billed=billed, request_count=requests,
+			request_count=requests,
 			total_tokens=sum(e[counter] for e in entries for counter in self.book.counters.whole),
 			cost=sum((e["grove_cost"] for e in entries), Decimal(0)),
 			gateway_cost=sum((e["gateway_cost"] for e in entries), Decimal(0)),
@@ -104,7 +88,7 @@ class Reconciler:
 
 	def unpriced(self, drain):
 		"""One entry per model key Grove knows that the gateway served without a pricing."""
-		priced = {self.book.pricing(pricing).model_key for pricing in (*drain.pricings, *drain.free)}
+		priced = {self.book.pricing(pricing).model_key for pricing in drain.pricings}
 		return [
 			self.entry(model, None, counts, Decimal(0), Decimal(0))
 			for model, counts in drain.counters.items()

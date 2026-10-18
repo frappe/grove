@@ -61,7 +61,7 @@ class PullCase(IntegrationTestCase):
 	@classmethod
 	def central_team(cls, email):
 		return frappe.get_doc({
-			"doctype": "Central Team", "__newname": email, "free": 1, "override_max_keys": 1, "max_keys": 0,
+			"doctype": "Central Team", "__newname": email, "override_max_keys": 1, "max_keys": 0,
 		}).insert(ignore_permissions=True).name
 
 	def key(self, team=None):

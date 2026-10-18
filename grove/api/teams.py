@@ -18,7 +18,7 @@ CONTROL_KEY_HEADER = "X-Grove-Control-Key"
 
 
 @frappe.whitelist()
-def provision_team(team: str, free: bool = False):
+def provision_team(team: str):
 	frappe.only_for(ALLOWED_ROLES)
 	if not team:
 		frappe.throw("A team needs an id.")
@@ -26,8 +26,6 @@ def provision_team(team: str, free: bool = False):
 		doc = frappe.get_doc("Central Team", team)
 	else:
 		doc = frappe.get_doc({"doctype": "Central Team", "__newname": team})
-	if free:
-		doc.free = 1
 	doc.save()
 	return {"team": doc.name, "max_keys": team_limits(doc.name).max_keys}
 
@@ -36,7 +34,6 @@ def provision_team(team: str, free: bool = False):
 def update_team(
 	team: str,
 	suspended: bool | None = None,
-	free: bool | None = None,
 	tier: str | None = None,
 	observed_at: str | None = None,
 ):
@@ -48,7 +45,7 @@ def update_team(
 		return {"team": doc.name, "ignored": "not newer", **team_limits(doc.name)}
 	if tier:
 		ensure(tier)
-	fields = (("free", free), ("suspended", suspended), ("tier", tier), ("last_reported_at", observed_at))
+	fields = (("suspended", suspended), ("tier", tier), ("last_reported_at", observed_at))
 	for field, value in fields:
 		if value is not None:
 			doc.set(field, value)

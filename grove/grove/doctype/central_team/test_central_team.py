@@ -40,7 +40,7 @@ class IntegrationTestCentralTeam(IntegrationTestCase):
 			frappe.get_doc({"doctype": "Central Team"}).insert()
 
 	def test_a_team_holds_at_most_max_keys_live_keys(self):
-		doc = team("team-probe-count", max_keys=2, free=1)
+		doc = team("team-probe-count", max_keys=2)
 		keys = [frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert() for _ in range(2)]
 		with self.assertRaisesRegex(frappe.ValidationError, "already holds 2 live keys"):
 			frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert()
@@ -49,7 +49,7 @@ class IntegrationTestCentralTeam(IntegrationTestCase):
 		self.assertEqual(doc.reload().active_keys, 2)
 
 	def test_max_keys_0_is_no_limit_and_a_negative_one_is_refused(self):
-		doc = team("team-probe-unbounded", max_keys=0, free=1)
+		doc = team("team-probe-unbounded", max_keys=0)
 		for _ in range(2):
 			frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert()
 		with self.assertRaises(frappe.ValidationError):
@@ -74,19 +74,3 @@ class IntegrationTestCentralTeam(IntegrationTestCase):
 	def test_a_spend_limit_cannot_be_negative(self):
 		with self.assertRaises(frappe.ValidationError):
 			team("team-probe-negative", spend_limit=-1)
-
-	def test_the_button_flips_free_and_hands_out_the_caps_in_one_go(self):
-		doc = team("team-probe-flip", free=1, spend_limit=10)
-		keys = [frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert().name for _ in range(2)]
-		with self.assertRaisesRegex(frappe.ValidationError, "spend limit of 10"):
-			doc.set_free(0, caps=[{"key": keys[0], "cap": 6}, {"key": keys[1], "cap": 6}])
-		self.assertEqual(frappe.db.get_value("Central Team", doc.name, "free"), 1)
-		doc.set_free(0, caps=[{"key": keys[0], "cap": 6}, {"key": keys[1], "cap": 4}])
-		self.assertEqual(frappe.db.get_value("Central Team", doc.name, "free"), 0)
-		self.assertEqual([frappe.db.get_value("Grove API Key", k, "cap") for k in keys], [6, 4])
-		doc.reload()
-		doc.set_free(1)
-		self.assertEqual(frappe.db.get_value("Central Team", doc.name, "free"), 1)
-		doc.reload()
-		doc.set_free(0, caps=[{"key": keys[0], "cap": 4}])
-		self.assertEqual([frappe.db.get_value("Grove API Key", k, "cap") for k in keys], [4, 0])

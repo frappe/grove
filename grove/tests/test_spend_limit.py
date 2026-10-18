@@ -42,10 +42,10 @@ class SpendLimitCase(IntegrationTestCase):
 		self.peek.reset_mock()
 		self.peek.return_value, self.peek.side_effect = {}, None
 
-	def team(self, spend_limit=10, free=False):
+	def team(self, spend_limit=10):
 		SpendLimitCase.counter += 1
 		name = f"spend-{SpendLimitCase.counter}"
-		teams.provision_team(name, free=free)
+		teams.provision_team(name)
 		teams.update_team(name, tier=tier(f"{name}-tier", spend_limit=spend_limit))
 		return name
 
@@ -145,30 +145,6 @@ class TestWhereTheCheckRuns(SpendLimitCase):
 			lambda: keys.update_caps(team, {first: 3, second: 8}), "add up to 11 of a spend limit of 10"
 		)
 		self.assertEqual({row.name: row.cap for row in usage.figures(team)["keys"]}, {first: 3, second: 7})
-
-	def test_mark_paid_asks_once_and_refuses_before_anything_is_written(self):
-		team = self.team(spend_limit=10, free=True)
-		first, second = self.key(team, cap=50), self.key(team)
-		self.peek.reset_mock()
-		self.peek.return_value = {first: Decimal("4")}
-		doc = frappe.get_doc("Central Team", team)
-		over = [{"key": first, "cap": 4}, {"key": second, "cap": 7}]
-		self.refused(lambda: doc.set_free(0, caps=over), "add up to 11")
-		self.assertTrue(frappe.db.get_value("Central Team", team, "free"))
-		self.assertEqual(frappe.db.get_value("Grove API Key", first, "cap"), 50)
-		frappe.get_doc("Central Team", team).set_free(
-			0, caps=[{"key": first, "cap": 4}, {"key": second, "cap": 6}]
-		)
-		self.assertEqual(self.peek.call_count, 2)
-		self.assertEqual({row.name: row.cap for row in usage.figures(team)["keys"]}, {first: 4, second: 6})
-
-	def test_a_free_team_is_never_checked_and_never_asks(self):
-		team = self.team(spend_limit=5, free=True)
-		first = self.key(team, cap=7)
-		billed_record(first, team, utc_today(), 9)
-		keys.update_key(team, first, cap=70)
-		keys.update_caps(team, {first: 700})
-		self.peek.assert_not_called()
 
 	def test_a_pull_that_lands_during_the_check_is_not_overwritten_by_the_save(self):
 		team = self.team(spend_limit=10)

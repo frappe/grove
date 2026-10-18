@@ -6,7 +6,6 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "free",
   "log_payloads",
   "tier",
   "override_max_keys",
@@ -17,15 +16,6 @@
   "spent"
  ],
  "fields": [
-  {
-   "default": "0",
-   "description": "Never charged and never gated: usage is still recorded, with what it would have cost, but Spent does not move and no key's cap applies. Flip it with Mark Paid / Mark Free.",
-   "fieldname": "free",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Free",
-   "read_only": 1
-  },
   {
    "default": "1",
    "description": "Store the prompts and model outputs of this team's keys in the gateway's payload log (short retention, support queries).",
@@ -79,7 +69,7 @@
    "read_only": 1
   },
   {
-   "description": "\u03a3 what the team's keys have been charged: priced by the pull from each billed drain, plus any correction from a resolved Credit Discrepancy. Does not move while the team is Free.",
+   "description": "\u03a3 what the team's keys have been charged: priced by the pull from each billed drain, plus any correction from a resolved Credit Discrepancy.",
    "fieldname": "spent",
    "fieldtype": "Currency",
    "in_list_view": 1,
@@ -110,7 +100,7 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-10-13 14:30:00.000000",
+ "modified": "2026-10-18 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Central Team",

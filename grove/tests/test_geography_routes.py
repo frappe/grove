@@ -114,7 +114,7 @@ class TestEveryKeyCarriesItsPin(unittest.TestCase):
 			if doctype == "Grove API Key":
 				return [frappe._dict(row) for row in rows]
 			if doctype == "Central Team":
-				return [frappe._dict(name="T-1", free=0, log_payloads=0, suspended=0)]
+				return [frappe._dict(name="T-1", log_payloads=0, suspended=0)]
 			return []
 
 		with (
