@@ -181,12 +181,18 @@ class PriceBook:
 		return cost(counts, self.pricing(pricing_id).rates, self.counters)
 
 
+def lock_team(team):
+	"""The team row, held until this transaction ends. Every writer of a key's spend takes it before
+	the key, so two of them queue instead of each summing the keys without the other's charge."""
+	frappe.db.get_value("Central Team", team, "name", for_update=True)
+
+
 def spent_by_keys(team):
 	"""Σ what the team's keys have been charged, revoked ones included: a revoked key's spend is
-	still the team's."""
-	total = frappe.db.sql("select coalesce(sum(spent), 0) from `tabGrove API Key` where team = %s", [team])[
-		0
-	][0]
+	still the team's. A locking read, so it sees what another writer committed a moment ago."""
+	total = frappe.db.sql(
+		"select coalesce(sum(spent), 0) from `tabGrove API Key` where team = %s for update", [team]
+	)[0][0]
 	return Decimal(str(total))
 
 

@@ -11,7 +11,7 @@ import frappe
 from frappe.model.naming import make_autoname
 
 from grove.billing.doctype.credit_discrepancy.credit_discrepancy import record
-from grove.billing.pricing import NANO, settle
+from grove.billing.pricing import NANO, lock_team, settle
 
 NANO_USD = Decimal(1) / NANO
 FIELDS = (
@@ -39,6 +39,7 @@ class Reconciler:
 		"""`drains`: {API key: parsed hash} for `team`'s keys in this drain on this day. A key this
 		drain already landed for the day is skipped, so a re-sent drain bills nothing twice. The rows
 		go in as one statement however many keys: a store's hourly drain is a lakh of them."""
+		lock_team(team)
 		rows = [
 			self.row(team, prefix, self.priced(drain.pricings) + self.unpriced(drain), drain.requests)
 			for prefix, drain in drains.items()

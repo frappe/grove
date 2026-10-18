@@ -95,6 +95,13 @@ class TestADrainIsOneRecordPerKey(PullCase):
 		[entry] = self.detail(doc)
 		self.assertEqual((entry["model"], entry["pricing"], entry["requests"], entry["completion_tokens"]), (self.model, None, 2, 10))
 
+	def test_a_blank_day_lands_on_the_drains_own_day_and_never_twice(self):
+		key = self.key()
+		for _ in range(2):
+			self.pull({key: {"request_count": "1"}}, drain_id="20250101T000000Z-abcd", day="")
+		[doc] = self.records(key)
+		self.assertEqual((doc.day, doc.request_count), (getdate("2025-01-01"), 1))
+
 	def test_total_tokens_counts_prompt_and_completion_once_and_no_part_again(self):
 		key = self.key()
 		counters = {"prompt_tokens": "100", "cached_tokens": "60", "completion_tokens": "7"}
@@ -556,9 +563,43 @@ class TestACapCheckPeeksAtTheBoxes(unittest.TestCase):
 			],
 		}]
 		landed = [frappe._dict(drain_id="d1", api_key="k2", day="2026-10-12")]
-		with unittest.mock.patch.object(frappe, "get_all", return_value=landed) as get_all:
+		with (
+			unittest.mock.patch.object(frappe, "get_all", return_value=landed) as get_all,
+			unittest.mock.patch.object(usage, "utc_today", return_value=getdate("2026-10-13")),
+		):
 			self.assertEqual(usage.pending_spend(rows), {"k1": 140, "k2": 3})
 		self.assertEqual(get_all.call_args.kwargs["filters"], {"drain_id": ("in", ["d1"])})
+
+	def test_another_months_bucket_is_not_this_months_spend(self):
+		rows = [{
+			"success": 1,
+			"drains": {
+				"": {"k1": {"2026-09-30": {"cost": "100"}, "2026-10-01": {"cost": "5"}, "": {"cost": "1"}}},
+				"d0": {"k1": {"2026-09-29": {"cost": "40"}}},
+			},
+			"dead": [
+				{"id": "r8", "line": json.dumps({"prefix": "k1", "at": "2026-09-30T23:59:00Z", "fields": {"cost": 7}})},
+				{"id": "r9", "line": json.dumps({"prefix": "k1", "fields": {"cost": 2}})},
+			],
+		}]
+		with (
+			unittest.mock.patch.object(frappe, "get_all", return_value=[]),
+			unittest.mock.patch.object(usage, "utc_today", return_value=getdate("2026-10-13")),
+		):
+			self.assertEqual(usage.pending_spend(rows), {"k1": 8})
+
+	def test_a_store_answers_through_whichever_writer_got_through(self):
+		failed = {"success": 0, "error": "down"}
+		answered = {"success": 1, "drains": {"": {"k1": {"2026-10-13": {"cost": "9"}}}}, "dead": []}
+		peek = usage.Peek.__new__(usage.Peek)
+		with (
+			unittest.mock.patch.object(frappe, "get_all", return_value=[]),
+			unittest.mock.patch.object(usage, "utc_today", return_value=getdate("2026-10-13")),
+		):
+			self.assertEqual(
+				peek.record([None], {0: (True, [failed, answered])}), {"ok": True, "pending": {"k1": 9}}
+			)
+			self.assertEqual(peek.record([None], {0: (False, [failed])}), {"ok": False, "pending": {}})
 
 	def test_a_peek_asks_without_setting_aside(self):
 		asked = []

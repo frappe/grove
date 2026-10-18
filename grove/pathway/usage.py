@@ -30,6 +30,7 @@ main thread."""
 import hashlib
 import json
 import time
+from datetime import datetime
 from decimal import Decimal
 
 import frappe
@@ -92,11 +93,11 @@ class Peek(Usage):
 		return super(Usage, self).settle(unit, result)
 
 	def record(self, units, answers):
-		"""→ {"ok": every store answered, "pending": nano-USD per prefix of what the boxes hold
-		that no Usage Record has yet}."""
-		rows = [row for _outcome, unit_rows in answers.values() for row in unit_rows]
-		reached = all(outcome is not False for outcome, _rows in answers.values())
-		ok = reached and all(row.get("success") for row in rows)
+		"""→ {"ok": every store answered through one of its writers, "pending": nano-USD per prefix
+		of what the boxes hold that no Usage Record has yet}. A writer that failed before the next
+		one answered leaves its row, which says nothing about the store."""
+		ok = all(outcome is True for outcome, _rows in answers.values())
+		rows = [row for _outcome, unit_rows in answers.values() for row in unit_rows if row.get("success")]
 		return {"ok": ok, "pending": pending_spend(rows) if ok else {}}
 
 
@@ -131,14 +132,18 @@ def peek_team(team):
 
 
 def pending_spend(rows):
-	"""Nano-USD per prefix of what peeked boxes hold that no Usage Record has yet: every live
-	bucket, every set-aside one whose (drain id, key, day) has not landed — ack or not — and every
-	dead line, which is only acknowledged once it lands."""
+	"""Nano-USD per prefix of what peeked boxes hold of this UTC month that no Usage Record has
+	yet: every live bucket, every set-aside one whose (drain id, key, day) has not landed — ack or
+	not — and every dead line, which is only acknowledged once it lands. Another month's bucket is
+	that month's spend, not this one's; a blank day lands today, so it counts."""
+	month = f"{utc_today():%Y-%m}"
 	pending, aside = {}, {}
 	for row in rows:
 		for drain_id, keys in (row.get("drains") or {}).items():
 			for prefix, days in keys.items():
 				for day, h in days.items():
+					if day and not day.startswith(month):
+						continue
 					if drain_id:
 						aside[(drain_id, prefix, day)] = int(h.get("cost") or 0)
 					else:
@@ -146,6 +151,9 @@ def pending_spend(rows):
 		for line in row.get("dead") or []:
 			try:
 				accrual = json.loads(line["line"])
+				served = accrual.get("at") or ""
+				if served and not served.startswith(month):
+					continue
 				pending[accrual["prefix"]] = pending.get(accrual["prefix"], 0) + int(accrual["fields"].get("cost") or 0)
 			except Exception:
 				continue  # unreadable: the pull keeps it as Stuck Usage, and it prices nothing
@@ -255,7 +263,7 @@ def record_drains(proxy_name, drains, dead=(), gateway_store=None):
 		try:
 			for drain_id, keys in shares.items():
 				for day, hashes in by_day(keys).items():
-					Reconciler(book, served_on(day), gateway_store, drain_id, landed).team(
+					Reconciler(book, served_on(day, drain_id), gateway_store, drain_id, landed).team(
 						team, {k: parse_drain(h, book.counters) for k, h in hashes.items()}
 					)
 			resolve_stuck(team, gateway_store)
@@ -293,10 +301,16 @@ def by_day(keys):
 	return days
 
 
-def served_on(day):
+def served_on(day, drain_id=""):
 	"""The UTC day a hash was served, as the gateway named it. Blank is a counter from before the
-	gateway bucketed by day: it lands today, as every record did until then."""
-	return getdate(day) if day else utc_today()
+	gateway bucketed by day: it lands on the day its drain started, which the drain id carries
+	(`20060102T150405Z-…`), so a re-send across midnight meets the record it already left."""
+	if day:
+		return getdate(day)
+	stamp = drain_id[:8]
+	# ponytail: a dead line's id is a request id with no stamp, so a blank-day dead line re-sent
+	# across midnight could land twice; boxes that spool blank days are gone before that matters.
+	return datetime.strptime(stamp, "%Y%m%d").date() if stamp.isdigit() else utc_today()
 
 
 def read_dead_line(line, gateway_store):

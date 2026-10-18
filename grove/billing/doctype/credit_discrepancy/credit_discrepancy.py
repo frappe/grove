@@ -39,9 +39,10 @@ class CreditDiscrepancy(Document):
 	def correct_grove(self):
 		"""Grove priced it wrong: the key's `spent` moves by the delta and the team is settled, so
 		Grove's balance meets the gateway's. The money lands as a Usage Correction, dated today."""
-		from grove.billing.pricing import settle
+		from grove.billing.pricing import lock_team, settle
 
 		self.check_open()
+		lock_team(self.team)
 		delta = Decimal(str(self.delta))
 		frappe.db.sql(
 			"update `tabGrove API Key` set spent = spent + %s where name = %s", [delta, self.api_key]
