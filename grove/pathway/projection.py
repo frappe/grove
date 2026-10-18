@@ -33,7 +33,7 @@ from grove.billing.doctype.gateway_spend_adjustment.gateway_spend_adjustment imp
 	pending_adjustments,
 )
 from grove.pathway import snapshot
-from grove.pathway.run import InSync, SyncRun, Target, Unit, each_in_parallel, gateway_units, in_turn, redact
+from grove.pathway.run import InSync, SyncRun, Target, Unit, gateway_units, guarded, in_turn, redact
 
 LOOKBACK = 120  # seconds behind a stamp a save is still read: one stamped before the read commits after it
 FULL_EVERY = 10
@@ -61,7 +61,7 @@ class Projection(SyncRun):
 	def units(self):
 		"""Both kinds default to every Active box. `is None` and not truthiness: an empty list is a
 		caller saying "no boxes of this kind", which is how an ingress-only run asks for no gateway
-		work. Everything a pool thread will need is decided here: what each box is sent."""
+		work. What each box is sent is decided here, before any is dialled."""
 		ingresses = self.ingresses
 		if ingresses is None:
 			ingresses = [] if self.proxies else active_ingresses()
@@ -155,9 +155,8 @@ def is_full_tick(at):
 
 
 def snapshots_for(targets, labels=None):
-	"""{target: its desired state}, read on the main thread — a gateway snapshot once per
-	geography over one `keys` section (the buckets in `labels`, all when None), an ingress its
-	own replica table."""
+	"""{target: its desired state} — a gateway snapshot once per geography over one `keys` section
+	(the buckets in `labels`, all when None), an ingress its own replica table."""
 	per_geography, snapshots, keys = {}, {}, None
 	for target in targets:
 		if target.server_type == "Ingress Server":
@@ -173,19 +172,17 @@ def snapshots_for(targets, labels=None):
 
 
 def read_hashes(targets):
-	"""Every box's state hashes, read side by side on the pool: plain requests, no frappe. A box
-	that did not answer keeps its exception, which its dial raises so the row reads as the
-	failure it was. A box that could not be resolved is not asked."""
-	asked = list(dict.fromkeys(target for target in targets if not target.error))
-	answers = dict(each_in_parallel(asked, Target.remote_hashes))
-	return {target: answers[index] for index, target in enumerate(asked)}
+	"""Every box's state hashes, each read once. A box that did not answer keeps its exception,
+	which its dial raises so the row reads as the failure it was. A box that could not be resolved
+	is not asked."""
+	asked = (target for target in dict.fromkeys(targets) if not target.error)
+	return {target: guarded(Target.remote_hashes, target) for target in asked}
 
 
 def push_target(target, delta, adjustments=()):
-	"""Send one box `delta` — decided on the main thread, or the exception its hash read ended in —
-	then the spend adjustments its store is owed. None when it holds the state and is owed nothing:
-	nothing pushed, nothing to log. Runs on a pool thread: no frappe here, and the payload and the
-	answers come back raw."""
+	"""Send one box `delta` — decided in `units()`, or the exception its hash read ended in — then
+	the spend adjustments its store is owed. None when it holds the state and is owed nothing:
+	nothing pushed, nothing to log. The payload and the answers come back raw."""
 
 	def push(row):
 		if isinstance(delta, Exception):
