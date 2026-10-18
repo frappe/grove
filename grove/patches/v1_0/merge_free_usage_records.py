@@ -10,13 +10,13 @@ def execute():
 	if not frappe.db.has_column("Usage Record", "billed"):
 		return
 	pairs = frappe.db.sql(
-		"""select drain_id, api_key, day from `tabUsage Record`
+		"""select drain_id, api_key, day from `tabUsage Record` where drain_id is not null
 		group by drain_id, api_key, day having count(*) > 1""",
 		as_dict=True,
 	)
 	for pair in pairs:
 		rows = frappe.db.sql(
-			"""select name, request_count, total_tokens, cost, gateway_cost, usage from `tabUsage Record`
+			"""select name, request_count, total_tokens, cost, gateway_cost, `usage` from `tabUsage Record`
 			where drain_id = %(drain_id)s and api_key = %(api_key)s and day = %(day)s
 			order by billed desc, creation""",
 			pair,
