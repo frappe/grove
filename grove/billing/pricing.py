@@ -56,7 +56,9 @@ class CounterTable:
 	def whole(self):
 		"""The root token counters that are not a part of another: prompt and completion once each,
 		never their cached or audio parts again. Their sum is a record's whole tokens."""
-		return [row.name for row in self.rows if row.unit == "Mtok" and not row.base_counter and not row.part_of]
+		return [
+			row.name for row in self.rows if row.unit == "Mtok" and not row.base_counter and not row.part_of
+		]
 
 	def base(self, counter):
 		return self.by_name[counter].base_counter or None
@@ -230,8 +232,8 @@ def committed(team, caps=None, lock=True, pending=None):
 def month_spent_by(field, names):
 	"""{name: USD spent this month} by `field` (team or api_key): Σ the billed Usage Records served
 	on a day of this UTC month — the gateway's own day, so the month its `spent:<month>` counts —
-	plus the corrections of discrepancies Grove resolved on one. A revoked key counts: what it
-	spent is still the team's. Two grouped queries however many names."""
+	plus the Usage Corrections Grove made on one. A revoked key counts: what it spent is still
+	the team's. Two grouped queries however many names."""
 	if field not in MONTH_SPENT_BY:
 		raise ValueError(f"month_spent_by sums by one of {MONTH_SPENT_BY}, not {field!r}")
 	if not names:
@@ -245,8 +247,8 @@ def month_spent_by(field, names):
 		)
 	)
 	corrected = frappe.db.sql(
-		f"""select `{field}`, sum(correction) from `tabCredit Discrepancy`
-		where `{field}` in %(names)s and resolution = 'Grove corrected' and resolved_day >= %(first)s group by `{field}`""",
+		f"""select `{field}`, sum(cost) from `tabUsage Correction`
+		where `{field}` in %(names)s and day >= %(first)s group by `{field}`""",
 		{"names": names, "first": first},
 	)
 	for name, correction in corrected:

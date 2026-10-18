@@ -9,9 +9,9 @@ from grove.utils import utc_today
 class CreditDiscrepancy(Document):
 	"""The gateway charged a drain differently from Grove's price of the same counters at the same
 	pricing. Logged by the pull and never acted on by it: a person decides which side is wrong and
-	corrects that side's spend, which brings the two balances back together. The row is the
-	correction's record too: one Grove made is folded into every money read (`money_rows`,
-	`month_spent_by`) on `resolved_day`, so the Usage Record it corrects is never changed."""
+	corrects that side's spend, which brings the two balances back together. The row keeps the
+	decision; the money of a Grove correction is a Usage Correction of its own, which every money
+	read sums beside the records, so the Usage Record it corrects is never changed."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -32,7 +32,6 @@ class CreditDiscrepancy(Document):
 		note: DF.SmallText | None
 		pricing: DF.Link | None
 		resolution: DF.Literal["", "Grove corrected", "Gateway corrected"]
-		resolved_day: DF.Date | None
 		resolved_on: DF.Datetime | None
 		team: DF.Link | None
 		usage_record: DF.Link | None
@@ -41,7 +40,7 @@ class CreditDiscrepancy(Document):
 	@frappe.whitelist()
 	def correct_grove(self):
 		"""Grove priced it wrong: the key's `spent` moves by the delta and the team is settled, so
-		Grove's balance meets the gateway's."""
+		Grove's balance meets the gateway's. The money lands as a Usage Correction, dated today."""
 		from grove.billing.pricing import settle
 
 		self.check_open()
@@ -49,8 +48,22 @@ class CreditDiscrepancy(Document):
 		frappe.db.sql(
 			"update `tabGrove API Key` set spent = spent + %s where name = %s", [delta, self.api_key]
 		)
+		frappe.get_doc(
+			{
+				"doctype": "Usage Correction",
+				"credit_discrepancy": self.name,
+				"team": self.team,
+				"api_key": self.api_key,
+				"model": model_key_of(self.pricing),
+				"pricing": self.pricing,
+				"day": utc_today(),
+				"cost": float(delta),
+			}
+		).insert()
 		settle(self.team)
-		self.db_set({"correction": delta, "resolution": "Grove corrected", **resolved_now()})
+		self.db_set(
+			{"correction": delta, "resolution": "Grove corrected", "resolved_on": frappe.utils.now_datetime()}
+		)
 
 	@frappe.whitelist()
 	def correct_gateway(self):
@@ -112,25 +125,21 @@ def mark_corrected(spent_by_row):
 				"resolution": "Gateway corrected",
 				"gateway_spent": Decimal(spent) / NANO,
 				"gateway_correction_pending": 0,
-				**resolved_now(),
+				"resolved_on": frappe.utils.now_datetime(),
 			},
 		)
 
 
-def resolved_now():
-	"""When a side was corrected: the moment (site time, what a landing window reads) and the UTC
-	day (what a day range and `month_spent` read, like a record's `day`)."""
-	return {"resolved_on": frappe.utils.now_datetime(), "resolved_day": utc_today()}
+def model_key_of(pricing):
+	"""The model key a pricing prices, what a money read groups its correction under. "" for a row
+	that names none: a discrepancy from before pricings were tagged."""
+	if not pricing:
+		return ""
+	model = frappe.db.get_value("Model Pricing", pricing, "model")
+	return frappe.db.get_value("Model", model, "model_key") or ""
 
 
 def record(**facts):
 	"""The one writer: one row per (Usage Record, pricing) the gateway charged differently."""
 	facts = {k: float(v) if isinstance(v, Decimal) else v for k, v in facts.items()}
 	return frappe.get_doc({"doctype": "Credit Discrepancy", **facts}).insert(ignore_permissions=True).name
-
-
-def on_doctype_update():
-	"""Every money read folds in the corrections of a team or a key since a moment, like it reads
-	the records by day."""
-	frappe.db.add_index("Credit Discrepancy", ["team", "resolved_day"])
-	frappe.db.add_index("Credit Discrepancy", ["api_key", "resolved_day"])

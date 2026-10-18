@@ -352,7 +352,9 @@ class TestTheUsageApiSumsInTheDatabase(CreditsCase):
 			],
 		)
 		self.assertTrue(result["as_of"].endswith("Z"))
-		self.assertEqual(usage_api.usage([team], period="Yesterday")[team], {"requests": 0, "tokens": 0, "cost": 0})
+		self.assertEqual(
+			usage_api.usage([team], period="Yesterday")[team], {"requests": 0, "tokens": 0, "cost": 0}
+		)
 
 	def test_a_key_hash_narrows_it_to_that_key(self):
 		team, key = self.team(cap=3)
@@ -427,15 +429,31 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		row.reload()
 		self.assertEqual(self.state(team)[0], D("0.6"))
 		self.assertEqual((row.resolution, D(str(row.correction))), ("Grove corrected", D("0.1")))
-		self.assertEqual(row.resolved_day, usage.utc_today())
 		self.assertEqual(self.money(team), (0.6, 0.6, 0.6))
 		self.assertEqual(D(str(frappe.db.get_value("Usage Record", row.usage_record, "cost"))), D("0.5"))
-		# A row from before pricings were tagged: its money still counts, under no model.
-		frappe.db.set_value("Credit Discrepancy", row.name, "pricing", None)
-		self.assertEqual(self.money(team), (0.6, 0.6, 0.6))
-		self.assertIn("", [entry["model"] for entry in usage_api.usage([team], period="Today")["model_summary"]])
+		[correction] = frappe.get_all(
+			"Usage Correction",
+			filters={"credit_discrepancy": row.name},
+			fields=["team", "api_key", "model", "pricing", "day", "cost"],
+		)
+		self.assertEqual(
+			(correction.team, correction.api_key, correction.model, correction.pricing, correction.day),
+			(team, row.api_key, self.model_key, self.pricing, usage.utc_today()),
+		)
+		self.assertEqual(D(str(correction.cost)), D("0.1"))
 		with self.assertRaises(frappe.ValidationError):
 			row.correct_grove()
+
+	def test_a_row_with_no_pricing_counts_under_no_model(self):
+		"""A discrepancy from before pricings were tagged: its money still counts, under no model."""
+		team, row = self.discrepancy()
+		frappe.db.set_value("Credit Discrepancy", row.name, "pricing", None)
+		row.reload()
+		row.correct_grove()
+		self.assertEqual(self.money(team), (0.6, 0.6, 0.6))
+		self.assertIn(
+			"", [entry["model"] for entry in usage_api.usage([team], period="Today")["model_summary"]]
+		)
 
 	def test_gateway_is_wrong_marks_the_row_pending_and_dials_nothing(self):
 		team, row = self.discrepancy()
@@ -486,6 +504,7 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		self.assertNotIn(row.name, self.owed_ids())
 		self.assertEqual(self.state(team)[0], D("0.5"), "Grove's own spend is untouched")
 		self.assertEqual(self.money(team), (0.5, 0.5, 0.5), "and so is every money read")
+		self.assertFalse(frappe.db.exists("Usage Correction", {"credit_discrepancy": row.name}))
 
 	def owed_ids(self):
 		return [body["id"] for body in pending_adjustments().get(self.store, [])]

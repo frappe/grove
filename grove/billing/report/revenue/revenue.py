@@ -1,6 +1,6 @@
 """Revenue per model, API key, team or day: what each billed drain was charged — Grove's price at
-the pricing the gateway charged — plus the corrections of discrepancies Grove resolved, summed in
-one grouped query over `money_rows`. A Free team's usage is not billed, so it is not revenue."""
+the pricing the gateway charged — plus the Usage Corrections Grove made, summed in one grouped
+query over `money_rows`. A Free team's usage is not billed, so it is not revenue."""
 
 import frappe
 

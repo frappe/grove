@@ -14,7 +14,6 @@
   "resolution",
   "gateway_correction_pending",
   "resolved_on",
-  "resolved_day",
   "section_values",
   "gateway_value",
   "grove_value",
@@ -87,17 +86,10 @@
    "read_only": 1
   },
   {
-   "description": "When a side was corrected (site time); blank while open. A landing window reads a Grove correction by it.",
+   "description": "When a side was corrected (site time); blank while open.",
    "fieldname": "resolved_on",
    "fieldtype": "Datetime",
    "label": "Resolved On",
-   "read_only": 1
-  },
-  {
-   "description": "The UTC day a Grove correction counts on, like a record's Day: the usage API, the Revenue report and this month's spend read it.",
-   "fieldname": "resolved_day",
-   "fieldtype": "Date",
-   "label": "Resolved Day",
    "read_only": 1
   },
   {
@@ -135,7 +127,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "What the resolving side's spend moved by.",
+   "description": "What the resolving side's spend moved by. A Grove correction is also its own Usage Correction, the row every money read sums.",
    "fieldname": "correction",
    "fieldtype": "Currency",
    "label": "Correction",
@@ -156,8 +148,13 @@
    "label": "Note"
   }
  ],
- "links": [],
- "modified": "2026-10-12 00:00:00.000000",
+ "links": [
+  {
+   "link_doctype": "Usage Correction",
+   "link_fieldname": "credit_discrepancy"
+  }
+ ],
+ "modified": "2026-10-18 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Credit Discrepancy",
