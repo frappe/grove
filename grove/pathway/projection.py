@@ -21,14 +21,17 @@ own Geography's routes, an INGRESS takes only the replica table for the boxes it
 `sync_projection` is the cron tick and the ONLY automatic path: nothing pushes inline; state moves,
 and the next tick carries it. `full_sync` is the operator buttons: force-push, skipping the gate.
 
-The tick also carries each store the spend adjustments it is owed (a Credit Discrepancy decided
-against the gateway): not state, so not hashed — sent after it, every tick until the box answers."""
+The tick also carries each store the spend adjustments it is owed (a Gateway Spend Adjustment still
+Pending): not state, so not hashed — sent after it, every tick until the box answers."""
 
 from datetime import timedelta
 
 import frappe
 
-from grove.billing.doctype.credit_discrepancy.credit_discrepancy import mark_corrected, pending_adjustments
+from grove.billing.doctype.gateway_spend_adjustment.gateway_spend_adjustment import (
+	mark_corrected,
+	pending_adjustments,
+)
 from grove.pathway import snapshot
 from grove.pathway.run import InSync, SyncRun, Target, Unit, each_in_parallel, gateway_units, in_turn, redact
 

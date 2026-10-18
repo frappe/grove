@@ -3,7 +3,7 @@
 
 frappe.ui.form.on('Credit Discrepancy', {
 	refresh(frm) {
-		if (frm.doc.resolution || frm.doc.gateway_correction_pending || !frappe.user.has_role('System Manager')) return;
+		if (frm.doc.resolution || !frappe.user.has_role('System Manager')) return;
 		const figures = __('Gateway charged {0}; Grove priced {1}.', [
 			format_currency(frm.doc.gateway_value, null, 9),
 			format_currency(frm.doc.grove_value, null, 9),

@@ -9,9 +9,10 @@ from grove.utils import utc_today
 class CreditDiscrepancy(Document):
 	"""The gateway charged a drain differently from Grove's price of the same counters at the same
 	pricing. Logged by the pull and never acted on by it: a person decides which side is wrong and
-	corrects that side's spend, which brings the two balances back together. The row keeps the
-	decision; the money of a Grove correction is a Usage Correction of its own, which every money
-	read sums beside the records, so the Usage Record it corrects is never changed."""
+	corrects that side's spend, which brings the two balances back together. The row keeps the two
+	figures and the decision; the money is a record of its own — a Usage Correction when Grove was
+	wrong, a Gateway Spend Adjustment when the gateway was — so the Usage Record it names is never
+	changed."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -22,10 +23,7 @@ class CreditDiscrepancy(Document):
 		from frappe.types import DF
 
 		api_key: DF.Link | None
-		correction: DF.Currency
 		delta: DF.Currency
-		gateway_correction_pending: DF.Check
-		gateway_spent: DF.Currency
 		gateway_store: DF.Link | None
 		gateway_value: DF.Currency
 		grove_value: DF.Currency
@@ -61,73 +59,35 @@ class CreditDiscrepancy(Document):
 			}
 		).insert()
 		settle(self.team)
-		self.db_set(
-			{"correction": delta, "resolution": "Grove corrected", "resolved_on": frappe.utils.now_datetime()}
-		)
+		self.decide("Grove corrected")
 
 	@frappe.whitelist()
 	def correct_gateway(self):
 		"""The gateway charged it wrong: its spend counter for the key on that store is owed minus
-		the delta. Only recorded here — the next projection tick sends it, and every tick after until
-		the box answers. Grove's side can no longer be corrected."""
+		the delta. Only recorded here, as a Pending Gateway Spend Adjustment — the next projection
+		tick sends it, and every tick after until the box answers. Grove's side does not move."""
 		self.check_open()
 		if not self.gateway_store:
 			frappe.throw("This drain names no store, so there is nothing to send the correction through.")
-		self.db_set("gateway_correction_pending", 1)
+		frappe.get_doc(
+			{
+				"doctype": "Gateway Spend Adjustment",
+				"credit_discrepancy": self.name,
+				"team": self.team,
+				"api_key": self.api_key,
+				"gateway_store": self.gateway_store,
+				"adjustment": -float(self.delta),
+			}
+		).insert()
+		self.decide("Gateway corrected")
 
 	def check_open(self):
 		frappe.only_for("System Manager")
-		if self.resolution or self.gateway_correction_pending:
-			frappe.throw(
-				f"This discrepancy is already decided: {self.resolution or 'waiting on the gateway'}."
-			)
+		if self.resolution:
+			frappe.throw(f"This discrepancy is already decided: {self.resolution}.")
 
-
-def pending_adjustments():
-	"""{store: [spend-adjust body]} for every correction no gateway has answered. The box applies
-	each once under the row's name, so sending again is safe."""
-	from grove.billing.pricing import nano
-
-	# ponytail: the box forgets an id after 7 days, so a row pending longer could apply twice.
-	# Keep ids forever in pathway if one ever does.
-	rows = frappe.get_all(
-		"Credit Discrepancy",
-		filters={"gateway_correction_pending": 1},
-		fields=["name", "api_key", "gateway_store", "delta"],
-		order_by="creation asc",
-	)
-	hashes = dict(
-		frappe.get_all(
-			"Grove API Key",
-			{"name": ("in", [r.api_key for r in rows] or [""])},
-			["name", "key_hash"],
-			as_list=True,
-		)
-	)
-	owed = {}
-	for row in rows:
-		body = {"key": hashes.get(row.api_key, ""), "delta": -nano(row.delta), "id": row.name}
-		owed.setdefault(row.gateway_store, []).append(body)
-	return owed
-
-
-def mark_corrected(spent_by_row):
-	"""What a box answered: {row name: its spend counter for the key after, in nano-USD}."""
-	from grove.billing.pricing import NANO
-
-	for name, spent in spent_by_row.items():
-		delta = frappe.db.get_value("Credit Discrepancy", name, "delta")
-		frappe.db.set_value(
-			"Credit Discrepancy",
-			name,
-			{
-				"correction": -delta,
-				"resolution": "Gateway corrected",
-				"gateway_spent": Decimal(spent) / NANO,
-				"gateway_correction_pending": 0,
-				"resolved_on": frappe.utils.now_datetime(),
-			},
-		)
+	def decide(self, resolution):
+		self.db_set({"resolution": resolution, "resolved_on": frappe.utils.now_datetime()})
 
 
 def model_key_of(pricing):

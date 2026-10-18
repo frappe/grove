@@ -12,15 +12,12 @@
   "column_break_where",
   "gateway_store",
   "resolution",
-  "gateway_correction_pending",
   "resolved_on",
   "section_values",
   "gateway_value",
   "grove_value",
   "delta",
   "column_break_fix",
-  "correction",
-  "gateway_spent",
   "note"
  ],
  "fields": [
@@ -60,7 +57,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "The store drained; a gateway correction goes to its writers.",
+   "description": "The store drained; a gateway adjustment goes through its writers.",
    "fieldname": "gateway_store",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -69,7 +66,7 @@
    "read_only": 1
   },
   {
-   "description": "Blank while open; set by whichever side was corrected.",
+   "description": "Which side a System Manager chose to correct; blank while open. The money is a Usage Correction (Grove) or a Gateway Spend Adjustment (gateway).",
    "fieldname": "resolution",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -78,15 +75,7 @@
    "read_only": 1
   },
   {
-   "default": "0",
-   "description": "The gateway was chosen and has not answered yet. The projection tick sends the correction until it does.",
-   "fieldname": "gateway_correction_pending",
-   "fieldtype": "Check",
-   "label": "Gateway Correction Pending",
-   "read_only": 1
-  },
-  {
-   "description": "When a side was corrected (site time); blank while open.",
+   "description": "When the decision was made (site time); blank while open.",
    "fieldname": "resolved_on",
    "fieldtype": "Datetime",
    "label": "Resolved On",
@@ -127,22 +116,6 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "What the resolving side's spend moved by. A Grove correction is also its own Usage Correction, the row every money read sums.",
-   "fieldname": "correction",
-   "fieldtype": "Currency",
-   "label": "Correction",
-   "precision": "9",
-   "read_only": 1
-  },
-  {
-   "description": "The gateway's spend counter for the user after a gateway correction.",
-   "fieldname": "gateway_spent",
-   "fieldtype": "Currency",
-   "label": "Gateway Spent After",
-   "precision": "9",
-   "read_only": 1
-  },
-  {
    "fieldname": "note",
    "fieldtype": "Small Text",
    "label": "Note"
@@ -151,6 +124,10 @@
  "links": [
   {
    "link_doctype": "Usage Correction",
+   "link_fieldname": "credit_discrepancy"
+  },
+  {
+   "link_doctype": "Gateway Spend Adjustment",
    "link_fieldname": "credit_discrepancy"
   }
  ],

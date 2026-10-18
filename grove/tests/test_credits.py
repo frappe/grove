@@ -12,7 +12,10 @@ from frappe.tests import IntegrationTestCase
 
 from grove.api import usage as usage_api
 from grove.billing import pricing
-from grove.billing.doctype.credit_discrepancy.credit_discrepancy import mark_corrected, pending_adjustments
+from grove.billing.doctype.gateway_spend_adjustment.gateway_spend_adjustment import (
+	mark_corrected,
+	pending_adjustments,
+)
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing, new_pricing
 from grove.billing.report.revenue.revenue import execute as revenue
@@ -428,7 +431,7 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		row.correct_grove()
 		row.reload()
 		self.assertEqual(self.state(team)[0], D("0.6"))
-		self.assertEqual((row.resolution, D(str(row.correction))), ("Grove corrected", D("0.1")))
+		self.assertEqual(row.resolution, "Grove corrected")
 		self.assertEqual(self.money(team), (0.6, 0.6, 0.6))
 		self.assertEqual(D(str(frappe.db.get_value("Usage Record", row.usage_record, "cost"))), D("0.5"))
 		[correction] = frappe.get_all(
@@ -455,16 +458,28 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 			"", [entry["model"] for entry in usage_api.usage([team], period="Today")["model_summary"]]
 		)
 
-	def test_gateway_is_wrong_marks_the_row_pending_and_dials_nothing(self):
+	def test_gateway_is_wrong_writes_a_pending_adjustment_and_dials_nothing(self):
 		team, row = self.discrepancy()
 		with unittest.mock.patch.object(Target, "post") as post:
 			row.correct_gateway()
 		post.assert_not_called()
 		row.reload()
-		self.assertEqual((row.gateway_correction_pending, row.resolution or ""), (1, ""))
+		self.assertEqual(row.resolution, "Gateway corrected")
+		self.assertIsNotNone(row.resolved_on)
+		[adjustment] = frappe.get_all(
+			"Gateway Spend Adjustment",
+			filters={"credit_discrepancy": row.name},
+			fields=["team", "api_key", "gateway_store", "adjustment", "status"],
+		)
+		self.assertEqual(
+			(adjustment.team, adjustment.api_key, adjustment.gateway_store, adjustment.status),
+			(team, row.api_key, self.store, "Pending"),
+		)
+		self.assertEqual(D(str(adjustment.adjustment)), D("-0.1"))
 		self.assertEqual(self.state(team)[0], D("0.5"), "Grove's own spend is untouched")
+		self.assertFalse(frappe.db.exists("Usage Correction", {"credit_discrepancy": row.name}))
 
-	def test_a_pending_row_takes_neither_button(self):
+	def test_a_decided_row_takes_neither_button(self):
 		_team, row = self.discrepancy()
 		row.correct_gateway()
 		for press in (row.correct_grove, row.correct_gateway):
@@ -476,9 +491,10 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		row.gateway_store = None
 		with self.assertRaises(frappe.ValidationError):
 			row.correct_gateway()
-		self.assertFalse(frappe.db.get_value("Credit Discrepancy", row.name, "gateway_correction_pending"))
+		self.assertFalse(frappe.db.exists("Gateway Spend Adjustment", {"credit_discrepancy": row.name}))
+		self.assertFalse(frappe.db.get_value("Credit Discrepancy", row.name, "resolution"))
 
-	def test_the_tick_is_handed_a_pending_row_under_its_store_and_name(self):
+	def test_the_tick_is_handed_a_pending_adjustment_under_its_store_and_the_discrepancys_name(self):
 		_team, row = self.discrepancy()
 		self.assertNotIn(row.name, self.owed_ids())
 		row.correct_gateway()
@@ -487,20 +503,18 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 			{"key": key_hash, "delta": -100_000_000, "id": row.name}, pending_adjustments()[self.store]
 		)
 
-	def test_the_boxs_answer_marks_the_row_corrected_and_it_is_owed_no_more(self):
+	def test_the_boxs_answer_marks_the_adjustment_applied_and_it_is_owed_no_more(self):
 		team, row = self.discrepancy()
 		row.correct_gateway()
 		mark_corrected({row.name: 500_000_000})
-		row.reload()
-		self.assertEqual(
-			(
-				row.resolution,
-				row.gateway_correction_pending,
-				D(str(row.correction)),
-				D(str(row.gateway_spent)),
-			),
-			("Gateway corrected", 0, D("-0.1"), D("0.5")),
+		adjustment = frappe.db.get_value(
+			"Gateway Spend Adjustment",
+			{"credit_discrepancy": row.name},
+			["status", "gateway_spent", "applied_on"],
+			as_dict=True,
 		)
+		self.assertEqual((adjustment.status, D(str(adjustment.gateway_spent))), ("Applied", D("0.5")))
+		self.assertIsNotNone(adjustment.applied_on)
 		self.assertNotIn(row.name, self.owed_ids())
 		self.assertEqual(self.state(team)[0], D("0.5"), "Grove's own spend is untouched")
 		self.assertEqual(self.money(team), (0.5, 0.5, 0.5), "and so is every money read")
