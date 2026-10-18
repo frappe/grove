@@ -60,6 +60,11 @@ These rules are mandatory for agents changing this repo:
 - Don't ignore_permissions, `frappe.get_all` in a whitelisted (`@frappe.whitelist`) function.
 - Update the relevant `Readme.md` when changing the relevant code behaviour.
 
+## Commits
+
+- Use a short Conventional Commit subject: `type(scope): lower case`.
+- Do not add an AI co-author, session data, or agent data to a commit or a pull request.
+
 ## Docs
 
 Keep docs concise and current. Human readers should find the workflow quickly. LLMs should find the source of truth, object boundaries, and safe edit locations without scanning long prose.
