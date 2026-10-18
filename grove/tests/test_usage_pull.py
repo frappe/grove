@@ -103,11 +103,19 @@ class TestADrainIsOneRecordPerKey(PullCase):
 		self.assertEqual((doc.day, doc.request_count), (getdate("2025-01-01"), 1))
 
 	def test_total_tokens_counts_prompt_and_completion_once_and_no_part_again(self):
+		"""A long prompt's tokens are counted under the derived counter instead of the root, so
+		they count too; a cached part's derived counter is a part still."""
 		key = self.key()
-		counters = {"prompt_tokens": "100", "cached_tokens": "60", "completion_tokens": "7"}
+		counters = {
+			"prompt_tokens": "100",
+			"cached_tokens": "60",
+			"completion_tokens": "7",
+			"prompt_tokens_above_272k": "300000",
+			"cached_tokens_above_272k": "1000",
+		}
 		self.pull({key: {"request_count": "1", **{f"m:{c}:{self.model}": v for c, v in counters.items()}}})
 		[doc] = self.records(key)
-		self.assertEqual(doc.total_tokens, 107)
+		self.assertEqual(doc.total_tokens, 300107)
 
 	def test_the_gateways_own_view_of_the_key_is_ignored(self):
 		key = self.key()

@@ -356,6 +356,29 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		keys.revoke_key(team, key)
 		self.assertEqual(frappe.db.get_value("Grove API Key", key, "status"), "revoked")
 
+	def test_the_default_tier_moves_the_figures_of_a_team_that_names_none(self):
+		from grove.billing.pricing import forget_figures
+
+		# The tier and the settings are the operator's to edit; the cache is what is under test.
+		frappe.set_user("Administrator")
+		was = frappe.db.get_single_value("Grove Settings", "default_tier")
+		self.addCleanup(frappe.db.set_single_value, "Grove Settings", "default_tier", was)
+		default = frappe.get_doc("Tier", tier("probe-default", spend_limit=30))
+		frappe.db.set_single_value("Grove Settings", "default_tier", default.name)
+		team = "probe-default-tier"
+		teams.provision_team(team)
+		self.addCleanup(forget_figures, team)
+		self.assertEqual(usage.figures(team)["spend"]["spend_limit"], 30)
+
+		default.spend_limit = 37
+		default.save()
+		self.assertEqual(usage.figures(team)["spend"]["spend_limit"], 37, "the default tier edited")
+
+		settings = frappe.get_doc("Grove Settings")
+		settings.default_tier = tier("probe-other-default", spend_limit=50)
+		settings.save()
+		self.assertEqual(usage.figures(team)["spend"]["spend_limit"], 50, "another tier made default")
+
 	def test_the_figures_are_one_read_kept_until_something_moves_them(self):
 		from grove.billing.pricing import forget_figures
 

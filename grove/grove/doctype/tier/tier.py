@@ -30,11 +30,11 @@ class Tier(Document):
 	# end: auto-generated types
 
 	def on_update(self):
-		for team in frappe.get_all("Central Team", {"tier": self.name}, pluck="name"):
+		for team in teams_under(self.name):
 			forget_figures(team)
 
 	def after_rename(self, old, new, merge=False):
-		for team in frappe.get_all("Central Team", {"tier": new}, pluck="name"):
+		for team in teams_under(new):
 			forget_figures(team)
 
 	def validate(self):
@@ -43,6 +43,15 @@ class Tier(Document):
 		if flt(self.spend_limit) < 0:
 			frappe.throw("A spend limit cannot be negative.")
 		validate_limit_rows(self.limits)
+
+
+def teams_under(tier):
+	"""The teams whose limits `tier` sets: those that name it, and every team that names none when
+	it is the default."""
+	names = frappe.get_all("Central Team", {"tier": tier}, pluck="name")
+	if tier == default_tier():
+		names += frappe.get_all("Central Team", {"tier": ("is", "not set")}, pluck="name")
+	return names
 
 
 def ensure(name):

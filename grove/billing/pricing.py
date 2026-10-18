@@ -54,11 +54,11 @@ class CounterTable:
 
 	@property
 	def whole(self):
-		"""The root token counters that are not a part of another: prompt and completion once each,
-		never their cached or audio parts again. Their sum is a record's whole tokens."""
-		return [
-			row.name for row in self.rows if row.unit == "Mtok" and not row.base_counter and not row.part_of
-		]
+		"""The root token counters that are not a part of another — prompt and completion once each,
+		never their cached or audio parts again — and the derived rows counted instead of them for a
+		long prompt. Their sum is a record's whole tokens."""
+		roots = [r.name for r in self.rows if r.unit == "Mtok" and not r.base_counter and not r.part_of]
+		return roots + [r.name for r in self.rows if r.base_counter in roots]
 
 	def base(self, counter):
 		return self.by_name[counter].base_counter or None

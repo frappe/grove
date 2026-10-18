@@ -10,3 +10,4 @@ grove.patches.v1_0.title_provider_keys
 grove.patches.v1_0.fill_total_tokens
 grove.patches.v1_0.move_grove_corrections
 grove.patches.v1_0.move_gateway_adjustments
+grove.patches.v1_0.fill_total_tokens #2026-10-18 a long prompt's tokens count

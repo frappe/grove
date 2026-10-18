@@ -77,6 +77,15 @@ class GroveSettings(Document):
 			if not isinstance(labels, dict):
 				frappe.throw('Extra Labels must be a JSON object, e.g. {"env": "prod"}.')
 
+	def on_update(self):
+		"""A new default tier moves the limits of every team that names none."""
+		from grove.billing.pricing import forget_figures
+
+		before = self.get_doc_before_save()
+		if before and before.default_tier != self.default_tier:
+			for team in frappe.get_all("Central Team", {"tier": ("is", "not set")}, pluck="name"):
+				forget_figures(team)
+
 	def validate_sd_token(self):
 		"""The only guard on an endpoint that returns the fleet's inventory. Checked as it is set:
 		a site holding an older token keeps saving until someone replaces it."""
