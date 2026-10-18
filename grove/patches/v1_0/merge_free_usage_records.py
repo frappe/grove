@@ -1,14 +1,13 @@
 """Every Usage Record is charged now, so a key's day in a drain is one record. A drain that
 spanned a Free flip left a free row beside the charged one; it is folded into the charged row,
 cost and all, before the unique on (drain id, key, day) goes in at the doctype sync. Runs before
-the sync, while `billed` still exists."""
+the sync; once `billed` is gone it still folds whatever duplicates are left."""
 
 import frappe
 
 
 def execute():
-	if not frappe.db.has_column("Usage Record", "billed"):
-		return
+	charged_first = "billed desc, " if frappe.db.has_column("Usage Record", "billed") else ""
 	pairs = frappe.db.sql(
 		"""select drain_id, api_key, day from `tabUsage Record` where drain_id is not null
 		group by drain_id, api_key, day having count(*) > 1""",
@@ -16,9 +15,9 @@ def execute():
 	)
 	for pair in pairs:
 		rows = frappe.db.sql(
-			"""select name, request_count, total_tokens, cost, gateway_cost, `usage` from `tabUsage Record`
+			f"""select name, request_count, total_tokens, cost, gateway_cost, `usage` from `tabUsage Record`
 			where drain_id = %(drain_id)s and api_key = %(api_key)s and day = %(day)s
-			order by billed desc, creation""",
+			order by {charged_first}creation""",
 			pair,
 			as_dict=True,
 		)
