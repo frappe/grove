@@ -6,12 +6,14 @@ from frappe.model.document import Document
 from frappe.utils import flt
 
 from grove.access import DEFAULT_LIMITS, default_tier, validate_limit_rows
+from grove.billing.pricing import forget_figures
 
 
 class Tier(Document):
 	"""What a team on it may do, named by Central's trust tier label (`Growth`): live keys, monthly
 	spend across its keys' caps, and the rate limits its unpinned keys run under (no rows: uncapped).
-	Central names a team's tier; the values are Grove's. A tier a team names cannot be deleted."""
+	Central names a team's tier, and renames it when the label changes (`api.teams.rename_tier`);
+	the values are Grove's. A tier a team names cannot be deleted."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -27,6 +29,14 @@ class Tier(Document):
 		spend_limit: DF.Currency
 	# end: auto-generated types
 
+	def on_update(self):
+		for team in frappe.get_all("Central Team", {"tier": self.name}, pluck="name"):
+			forget_figures(team)
+
+	def after_rename(self, old, new, merge=False):
+		for team in frappe.get_all("Central Team", {"tier": new}, pluck="name"):
+			forget_figures(team)
+
 	def validate(self):
 		if (self.max_keys or 0) < 0:
 			frappe.throw("Max Keys cannot be negative; 0 is no limit.")
@@ -39,10 +49,21 @@ def ensure(name):
 	"""`name`, inserted as a copy of the default tier when Grove has not seen it: Central names a
 	team's tier and the sync never refuses one; the operator tunes the new tier in Desk."""
 	if not frappe.db.exists("Tier", name):
-		source = frappe.get_doc("Tier", default) if (default := default_tier()) else frappe._dict(limits=DEFAULT_LIMITS)
-		frappe.get_doc({
-			"doctype": "Tier", "__newname": name,
-			"max_keys": source.get("max_keys") or 0, "spend_limit": flt(source.get("spend_limit")),
-			"limits": [{"metric": r.get("metric"), "window": r.get("window"), "value": r.get("value")} for r in source.limits],
-		}).insert()
+		source = (
+			frappe.get_doc("Tier", default)
+			if (default := default_tier())
+			else frappe._dict(limits=DEFAULT_LIMITS)
+		)
+		frappe.get_doc(
+			{
+				"doctype": "Tier",
+				"__newname": name,
+				"max_keys": source.get("max_keys") or 0,
+				"spend_limit": flt(source.get("spend_limit")),
+				"limits": [
+					{"metric": r.get("metric"), "window": r.get("window"), "value": r.get("value")}
+					for r in source.limits
+				],
+			}
+		).insert()
 	return name

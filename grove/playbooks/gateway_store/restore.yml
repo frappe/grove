@@ -79,8 +79,18 @@
           environment: "{{ live_env }}"
 
         - name: drop live counters a later drain already billed
-          ansible.builtin.command: redis-cli DEL usage:{{ item }}
+          ansible.builtin.shell: redis-cli --scan --pattern 'usage:{{ item }}:*' | xargs -r redis-cli DEL
           loop: "{{ drop_prefixes | default([]) }}"
+          environment: "{{ live_env }}"
+
+        - name: this month's spend on each live key is at least what the control plane has billed it
+          ansible.builtin.shell: |
+            set -eu
+            have=$(redis-cli HGET '{{ item.key }}' '{{ item.field }}')
+            if [ -z "$have" ] || [ "$have" -lt {{ item.value }} ]; then
+              redis-cli HSET '{{ item.key }}' '{{ item.field }}' {{ item.value }}
+            fi
+          loop: "{{ spent_seeds | default([]) }}"
           environment: "{{ live_env }}"
 
         - name: drop transient state — never worth restoring

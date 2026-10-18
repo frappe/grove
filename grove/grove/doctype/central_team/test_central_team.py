@@ -5,6 +5,8 @@
 An id per test: IntegrationTestCase rolls back once when the class is done, not between tests, so
 anything registered here is still there for the next one."""
 
+import unittest.mock
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -26,6 +28,7 @@ class IntegrationTestCentralTeam(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
+		cls.enterClassContext(unittest.mock.patch("grove.pathway.usage.peek_team", return_value={}))
 		make_test_geography()
 		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 

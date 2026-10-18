@@ -78,9 +78,8 @@ class GroveSettings(Document):
 				frappe.throw('Extra Labels must be a JSON object, e.g. {"env": "prod"}.')
 
 	def validate_sd_token(self):
-		"""The only guard on an endpoint that returns the fleet's inventory.
-
-		ponytail: parked — the check below is commented out."""
+		"""The only guard on an endpoint that returns the fleet's inventory. Checked as it is set:
+		a site holding an older token keeps saving until someone replaces it."""
 		token = self.get_password("sd_token", raise_exception=False) or ""
 		if token and self.has_value_changed("sd_token") and not SD_TOKEN_PATTERN.match(token):
 			frappe.throw(
@@ -150,8 +149,7 @@ class GroveSettings(Document):
 
 	@property
 	def weights_s3_write_environment(self):
-		"""Env for the mirror job and the store backup — the pair that may write under models/* and
-		gateway-store/*."""
+		"""Env for the mirror job — the pair that may write under models/*."""
 		if not (self.weights_bucket and self.weights_s3_write_access_key_id):
 			return {}
 		return {

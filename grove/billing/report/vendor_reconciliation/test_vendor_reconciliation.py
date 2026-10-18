@@ -25,6 +25,7 @@ class TestVendorReconciliation(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
+		cls.enterClassContext(patch("grove.pathway.usage.peek_team", return_value={}))
 		cls.yesterday = utc_today() - timedelta(days=1)
 		cls.earlier = cls.yesterday - timedelta(days=1)
 		cls.vendor = provider("baseten", base_url="https://inference.baseten.co", api_key="k").insert()

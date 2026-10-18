@@ -1,21 +1,8 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
+
 """One wildcard certificate per Geography, for its zone: issued here on the control plane, stored
-on the Geography, pushed to that geography's boxes by Ansible.
-
-DNS-01, not HTTP-01, and that is the whole point. A geography's endpoint resolves to several
-gateways, so no single box can answer a challenge for it — and with one wildcard for `*.<zone>`,
-the same certificate also covers each box's own `<name>.<zone>`, which is what /grove-admin and
-/metrics are reached on. One issuance per zone, one key, N deliveries.
-
-certbot is the ACME client; Grove never speaks ACME. It runs unprivileged with its config, work
-and log directories inside the site, so nothing here needs root and the private key never sits in
-a world-readable /etc on this host.
-
-Two prerequisites on the control plane, both outside this app: `certbot` and its route53 plugin
-(`apt install certbot python3-certbot-dns-route53`, or the pip equivalent in the bench env), and a
-DNS Provider whose IAM user holds route53:ChangeResourceRecordSets, route53:ListHostedZonesByName
-and route53:GetChange for every zone."""
+on the Geography, pushed to that geography's boxes by Ansible."""
 
 import os
 import subprocess
@@ -82,7 +69,7 @@ def push_to_proxies(geography):
 		("Ingress Server", {}),
 		("Inference Server", {"is_standalone": 1}),
 	):
-		filters = {"status": "Active", "geography": geography, **filters}
+		filters = {"status": ("!=", "Terminated"), "geography": geography, **filters}
 		for name in frappe.get_all(doctype, filters=filters, pluck="name"):
 			frappe.enqueue_doc(doctype, name, "deploy_tls", queue="long", timeout=600)
 

@@ -46,4 +46,5 @@ default_log_clearing_doctypes = {
 	"Pod Activity": 60,
 	"Provider Key Stats": 60,
 	"Stuck Usage": 90,
+	"Usage Record": 90,
 }

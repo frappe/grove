@@ -16,7 +16,13 @@
   "fleet_tls_last_run",
   "fleet_tls_cert",
   "fleet_tls_key",
-  "fleet_tls_last_output"
+  "fleet_tls_last_output",
+  "store_backup_tab",
+  "backup_bucket",
+  "backup_region",
+  "column_break_backup",
+  "backup_access_key_id",
+  "backup_secret_access_key"
  ],
  "fields": [
   {
@@ -97,6 +103,37 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Is Default"
+  },
+  {
+   "fieldname": "store_backup_tab",
+   "fieldtype": "Tab Break",
+   "label": "Store Backups"
+  },
+  {
+   "description": "s3://bucket, no trailing slash, in this geography. Every Active Gateway Store here lands an RDB under gateway-store/<store>/ every 5 minutes. Blank turns this geography's backups off. Prune with a bucket lifecycle rule.",
+   "fieldname": "backup_bucket",
+   "fieldtype": "Data",
+   "label": "Backup Bucket"
+  },
+  {
+   "fieldname": "backup_region",
+   "fieldtype": "Data",
+   "label": "Region"
+  },
+  {
+   "fieldname": "column_break_backup",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Control plane only: Put+GetObject on gateway-store/* in the bucket. Never reaches a box.",
+   "fieldname": "backup_access_key_id",
+   "fieldtype": "Data",
+   "label": "Access Key ID"
+  },
+  {
+   "fieldname": "backup_secret_access_key",
+   "fieldtype": "Password",
+   "label": "Secret Access Key"
   }
  ],
  "links": [
@@ -116,7 +153,7 @@
    "link_fieldname": "geography"
   }
  ],
- "modified": "2026-09-28 20:00:00.000000",
+ "modified": "2026-10-14 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Geography",

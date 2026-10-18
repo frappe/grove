@@ -6,6 +6,7 @@ from frappe.model.document import Document
 from frappe.utils import flt
 
 from grove.access import team_limits
+from grove.billing.pricing import forget_figures
 
 
 class CentralTeam(Document):
@@ -27,6 +28,7 @@ class CentralTeam(Document):
 		from frappe.types import DF
 
 		free: DF.Check
+		last_reported_at: DF.Datetime | None
 		log_payloads: DF.Check
 		max_keys: DF.Int
 		override_max_keys: DF.Check
@@ -42,6 +44,7 @@ class CentralTeam(Document):
 			self.spent = frappe.db.get_value("Central Team", self.name, "spent", for_update=True)
 
 	def on_update(self):
+		forget_figures(self.name)
 		before = self.get_doc_before_save()
 		if before and before.free and not self.free:
 			self.reset_caps()
@@ -67,20 +70,29 @@ class CentralTeam(Document):
 			self.save()
 			return
 		caps = {row["key"]: flt(row.get("cap")) for row in (caps or [])}
-		self.check_caps(caps)
+		pending = self.check_caps(caps)
 		self.save()
 		for key in self.live_keys:
 			doc = frappe.get_doc("Grove API Key", key)
 			doc.cap = caps.get(key, 0)
+			doc.flags.pending_spend = pending
 			doc.save()
 
 	def check_caps(self, caps):
-		"""The caps together within the spend limit — what each key's own validate will insist on,
-		said once up front."""
+		"""The caps and this month's spend together within the spend limit (`pricing.committed`,
+		with what the boxes hold this moment) — what each key's own validate will insist on, said
+		once up front. → what the boxes hold, for those saves."""
+		from grove.billing.pricing import committed, usd
+		from grove.pathway.usage import peek_team
+
+		pending = peek_team(self.name)
 		spend_limit = flt(team_limits(self.name).spend_limit, 9)
-		total = flt(sum(caps.get(key, 0) for key in self.live_keys), 9)
+		total = committed(self.name, {key: caps.get(key, 0) for key in self.live_keys}, pending=pending)
 		if total > spend_limit:
-			frappe.throw(f"These caps add up to {total:.2f} a month of a spend limit of {spend_limit:.2f}.")
+			frappe.throw(
+				f"This month's spend and these caps add up to {usd(total)} of a spend limit of {usd(spend_limit)}."
+			)
+		return pending
 
 	@property
 	def active_keys(self):

@@ -130,8 +130,6 @@ class GatewayStore(NamedHost, Document):
 		"""A point-in-time RDB off the live Redis into its geography's backup bucket, and the doc points at it.
 		run_command merges stderr and never raises, so the RDB magic is the check: NOAUTH, a dead
 		box or a warning-only answer all fail here, loudly. → the object key."""
-		from grove.grove.doctype.compile_cache.compile_cache import bucket_and_client
-
 		output = frappe.get_doc("Machine", self.machine).run_command(["sh", "-c", DUMP], timeout=120)
 		try:
 			data = base64.b64decode(output.split()[-1]) if output else b""
@@ -140,7 +138,7 @@ class GatewayStore(NamedHost, Document):
 		if not data.startswith(RDB_MAGIC):
 			frappe.throw(f"{self.name}: no RDB came back: {output[-200:]!r}")
 		# ponytail: the whole RDB rides base64 through one SSH read; stream to a file past ~100 MB.
-		bucket, client = bucket_and_client()
+		bucket, client = frappe.get_doc("Geography", self.geography).get_backup_bucket_and_client()
 		key = backup_key(self.name)
 		client.put_object(Bucket=bucket, Key=key, Body=data)
 		frappe.db.set_value(
@@ -154,7 +152,9 @@ class GatewayStore(NamedHost, Document):
 		Terminated store this box replaces. Resolved here, before the insurance backup in the
 		worker moves this store's own pointer."""
 		source = source or self.name
-		key = frappe.db.get_value("Gateway Store", source, "last_backup_key")
+		key, geography = frappe.db.get_value("Gateway Store", source, ["last_backup_key", "geography"])
+		if geography != self.geography:
+			frappe.throw(f"{source} is in {geography}, not {self.geography}: a snapshot never leaves its geography.")
 		if not key:
 			frappe.throw(f"{source} has no backup yet.")
 		frappe.enqueue_doc(self.doctype, self.name, "restore_from", source=source, key=key, queue="long", timeout=900)
@@ -163,11 +163,11 @@ class GatewayStore(NamedHost, Document):
 	@failure.reports_failure()
 	def restore_from(self, source, key):
 		"""Worker: this store's own snapshot first, then `key` loaded through a side Redis (see
-		restore.yml). Live counters a later drain already billed are dropped on the box."""
-		from grove.grove.doctype.compile_cache.compile_cache import bucket_and_client
-
+		restore.yml). Live counters a later drain already billed are dropped on the box, and this
+		month's spend on each live key is raised to what Grove has billed it where the snapshot has
+		less. `restore` held `source` to this geography, so its bucket is this one."""
 		self.backup()
-		bucket, client = bucket_and_client()
+		bucket, client = frappe.get_doc("Geography", self.geography).get_backup_bucket_and_client()
 		path = os.path.abspath(frappe.get_site_path("private", "gateway-store", f"{self.name}.rdb"))
 		os.makedirs(os.path.dirname(path), exist_ok=True)
 		client.download_file(bucket, key, path)
@@ -178,6 +178,7 @@ class GatewayStore(NamedHost, Document):
 					"restore_file": path,
 					"redis_password": self.get_password("redis_password"),
 					"drop_prefixes": landed_since(source, key),
+					"spent_seeds": spent_seeds(self.name),
 				},
 			)
 		finally:
@@ -215,8 +216,8 @@ def backup_key(store, at=None):
 
 
 def landed_since(store, key):
-	"""The API-key prefixes a drain AFTER the snapshot in `key` landed: their live counters in it
-	are billed already, so a restore drops them. Drain ids are minted on the box at the rename in
+	"""The API-key prefixes a drain AFTER the snapshot in `key` landed: their live buckets in it
+	are billed already (a drain takes every bucket of a key), so a restore drops them. Drain ids are minted on the box at the rename in
 	the stamp's format, so strings order them; a blank id (a pre-ack gateway) never matches."""
 	stamp = key.rsplit("/", 1)[-1].removesuffix(".rdb")
 	return frappe.get_all(
@@ -226,12 +227,38 @@ def landed_since(store, key):
 	)
 
 
+def spent_seeds(store):
+	"""What this month's counter on each live key record of `store` must read at least, in
+	nano-USD off Grove's billed records: a snapshot older than the last pull would hand every key
+	the difference of its cap again. [{key, field, value}] for the active keys of the geographies
+	this store's Active gateways serve; a key with nothing billed this month needs no seed."""
+	from grove.billing.pricing import NANO, month_spent_by
+	from grove.utils import utc_today
+
+	geographies = frappe.get_all(
+		"Gateway Server", filters={"gateway_store": store, "status": "Active"}, pluck="geography", distinct=True
+	)
+	if not geographies:
+		return []
+	keys = frappe.get_all(
+		"Grove API Key", filters={"status": "active", "geography": ("in", geographies)}, fields=["name", "key_hash"]
+	)
+	spent = month_spent_by("api_key", [k.name for k in keys])
+	field = f"spent:{utc_today():%Y-%m}"
+	return [
+		{"key": f"key:{k.key_hash}", "field": field, "value": round(spent[k.name] * NANO)}
+		for k in keys if spent.get(k.name)
+	]
+
+
 def backup_all():
-	"""Every 5 minutes: each Active store's RDB to the bucket, one after another. Off until the
-	bucket and Mirror keys are set. One store failing does not stop the next."""
-	if not frappe.get_single("Grove Settings").weights_s3_write_environment:
+	"""Every 5 minutes: each Active store's RDB to its geography's bucket, one after another. A
+	geography without a backup bucket is skipped. One store failing does not stop the next."""
+	geographies = frappe.get_all("Geography", filters={"backup_bucket": ("is", "set")}, pluck="name")
+	if not geographies:
 		return
-	for name in frappe.get_all("Gateway Store", filters={"status": "Active"}, pluck="name"):
+	stores = frappe.get_all("Gateway Store", filters={"status": "Active", "geography": ("in", geographies)}, pluck="name")
+	for name in stores:
 		try:
 			frappe.get_doc("Gateway Store", name).backup()
 			frappe.db.commit()

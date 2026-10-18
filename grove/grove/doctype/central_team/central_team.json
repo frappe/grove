@@ -13,6 +13,7 @@
   "max_keys",
   "column_break_head",
   "suspended",
+  "last_reported_at",
   "spent"
  ],
  "fields": [
@@ -68,6 +69,13 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Suspended",
+   "read_only": 1
+  },
+  {
+   "description": "When Central read the tier and standing it last sent (api.teams.team_webhook); a body not newer than this is a retried or reordered delivery and is ignored.",
+   "fieldname": "last_reported_at",
+   "fieldtype": "Datetime",
+   "label": "Last Reported At",
    "read_only": 1
   },
   {

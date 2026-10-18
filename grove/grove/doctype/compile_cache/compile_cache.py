@@ -66,15 +66,19 @@ def bucket_and_client():
 	env = settings.weights_s3_write_environment
 	if not env:
 		frappe.throw("Set Weights Bucket and the Mirror keys in Grove Settings first.")
-	import boto3  # lazy, matching cloud_provider/aws.py — most requests never touch S3
+	return settings.weights_bucket.removeprefix("s3://").strip("/"), s3_client(env)
 
-	client = boto3.client(
+
+def s3_client(env):
+	"""An S3 client on an AWS_* env dict."""
+	import boto3
+
+	return boto3.client(
 		"s3",
 		region_name=env.get("AWS_DEFAULT_REGION") or None,
 		aws_access_key_id=env["AWS_ACCESS_KEY_ID"],
 		aws_secret_access_key=env["AWS_SECRET_ACCESS_KEY"],
 	)
-	return settings.weights_bucket.removeprefix("s3://").strip("/"), client
 
 
 def list_keys(client, bucket, prefix):

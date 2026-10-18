@@ -7,17 +7,23 @@ import base64
 import os
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
 
 from grove import failure
-from grove.grove.doctype.compile_cache import compile_cache
 from grove.grove.doctype.gateway_server.gateway_server import GatewayServer
 from grove.grove.doctype.gateway_store import gateway_store
-from grove.grove.doctype.gateway_store.gateway_store import GatewayStore, backup_all, backup_key, landed_since
+from grove.grove.doctype.gateway_store.gateway_store import (
+	GatewayStore,
+	backup_all,
+	backup_key,
+	landed_since,
+	spent_seeds,
+)
 
 
 class Refused(Exception):
@@ -128,6 +134,11 @@ class FakeS3:
 			f.write(self.body)
 
 
+def bucket_of(s3):
+	"""A Geography stub whose backup bucket is `b` on `s3`."""
+	return SimpleNamespace(get_backup_bucket_and_client=lambda: ("b", s3))
+
+
 class TestBackup(unittest.TestCase):
 	"""One RDB per store every 5 minutes into the weights bucket, the doc pointing at the newest."""
 
@@ -138,13 +149,13 @@ class TestBackup(unittest.TestCase):
 	def backup(self, answer):
 		s3, written, argv = FakeS3(), {}, []
 		machine = SimpleNamespace(run_command=lambda command, timeout: argv.append(command) or answer)
-		store = SimpleNamespace(name="store1", doctype="Gateway Store", machine="m1")
+		store = SimpleNamespace(name="store1", doctype="Gateway Store", machine="m1", geography="in")
+		docs = {("Machine", "m1"): machine, ("Geography", "in"): bucket_of(s3)}
 		with (
-			patch.object(frappe, "get_doc", return_value=machine),
+			patch.object(frappe, "get_doc", side_effect=lambda dt, name: docs[(dt, name)]),
 			patch.object(frappe, "db", SimpleNamespace(set_value=lambda dt, dn, values: written.update(values))),
 			patch.object(frappe, "throw", side_effect=Refused),
 			patch.object(frappe.utils, "now_datetime", lambda: datetime(2026, 9, 28, 3, 0)),
-			patch.object(compile_cache, "bucket_and_client", return_value=("b", s3)),
 		):
 			key = GatewayStore.backup(store)
 		return key, s3, written, argv
@@ -163,12 +174,19 @@ class TestBackup(unittest.TestCase):
 			with self.assertRaises(Refused):
 				self.backup(answer)
 
-	def backup_all(self, env, stores, failing=()):
+	def backup_all(self, geographies, stores, failing=()):
 		backed, reported = [], []
 		docs = {name: SimpleNamespace(backup=(lambda n=name: (_ for _ in ()).throw(RuntimeError(n))) if name in failing else (lambda n=name: backed.append(n))) for name in stores}
+
+		def get_all(doctype, filters, pluck):
+			if doctype == "Geography":
+				self.assertEqual(filters, {"backup_bucket": ("is", "set")})
+				return geographies
+			self.assertEqual(filters, {"status": "Active", "geography": ("in", geographies)})
+			return stores
+
 		with (
-			patch.object(frappe, "get_single", return_value=SimpleNamespace(weights_s3_write_environment=env)),
-			patch.object(frappe, "get_all", return_value=stores),
+			patch.object(frappe, "get_all", get_all),
 			patch.object(frappe, "get_doc", side_effect=lambda dt, name: docs[name]),
 			patch.object(frappe, "db", SimpleNamespace(commit=lambda: None, rollback=lambda: None)),
 			patch.object(frappe, "log_error", lambda *a, **k: None),
@@ -177,11 +195,11 @@ class TestBackup(unittest.TestCase):
 			backup_all()
 		return backed, reported
 
-	def test_backup_all_is_off_until_the_bucket_is_configured(self):
-		self.assertEqual(self.backup_all({}, ["store1"]), ([], []))
+	def test_backup_all_is_off_until_a_geography_has_a_backup_bucket(self):
+		self.assertEqual(self.backup_all([], ["store1"]), ([], []))
 
 	def test_backup_all_survives_one_failing_store(self):
-		backed, reported = self.backup_all({"AWS_ACCESS_KEY_ID": "k"}, ["store1", "store2"], failing={"store1"})
+		backed, reported = self.backup_all(["in"], ["store1", "store2"], failing={"store1"})
 		self.assertEqual((backed, reported), (["store2"], ["store1"]))
 
 
@@ -203,26 +221,54 @@ class TestRestore(unittest.TestCase):
 		self.assertLess("20260928T095959Z-1a2b3c4d", stamp)
 		self.assertLess("", stamp)
 
-	def test_restore_refuses_a_source_with_no_backup(self):
-		store = SimpleNamespace(name="store2", doctype="Gateway Store")
+	def test_a_restore_seeds_this_months_spend_of_the_stores_live_keys(self):
+		"""Off Grove's records, nano-USD, keys with nothing billed left out: the play raises each
+		counter only where the snapshot has less."""
+		import grove.billing.pricing as pricing
+		import grove.utils as utils
+
+		def get_all(doctype, **kwargs):
+			if doctype == "Gateway Server":
+				self.assertEqual(kwargs["filters"], {"gateway_store": "store2", "status": "Active"})
+				return ["in"]
+			self.assertEqual(kwargs["filters"], {"status": "active", "geography": ("in", ["in"])})
+			return [SimpleNamespace(name="k1", key_hash="h1"), SimpleNamespace(name="k2", key_hash="h2")]
+
 		with (
-			patch.object(frappe, "db", SimpleNamespace(get_value=lambda *a: None)),
+			patch.object(frappe, "get_all", get_all),
+			patch.object(pricing, "month_spent_by", lambda field, names: {"k1": Decimal("0.0000155")}),
+			patch.object(utils, "utc_today", lambda: date(2026, 10, 13)),
+		):
+			self.assertEqual(spent_seeds("store2"), [{"key": "key:h1", "field": "spent:2026-10", "value": 15500}])
+
+	def restore(self, key, geography):
+		store = SimpleNamespace(name="store2", doctype="Gateway Store", geography="in")
+		with (
+			patch.object(frappe, "db", SimpleNamespace(get_value=lambda *a: (key, geography))),
 			patch.object(frappe, "throw", side_effect=Refused),
 			self.assertRaises(Refused),
 		):
 			GatewayStore.restore(store, source="store1")
 
+	def test_restore_refuses_a_source_with_no_backup(self):
+		self.restore(None, "in")
+
+	def test_restore_refuses_a_source_in_another_geography(self):
+		self.restore("gateway-store/store1/20260928T100000Z.rdb", "eu")
+
 	def test_restore_from_ships_the_landed_prefixes_and_fails_on_a_bad_play(self):
 		plays, site = [], tempfile.mkdtemp()
+		seed = {"key": "key:h1", "field": "spent:2026-10", "value": 5}
 		self.addCleanup(lambda: __import__("shutil").rmtree(site, True))
 		store = SimpleNamespace(
-			name="store2", doctype="Gateway Store", get_password=lambda field: "pw", backup=lambda: "insurance",
+			name="store2", doctype="Gateway Store", geography="in", get_password=lambda field: "pw", backup=lambda: "insurance",
 			run_playbook=lambda playbook, **kwargs: plays.append((playbook, kwargs, os.path.exists(kwargs["extravars"]["restore_file"]))) or ("play-1", 2),
 		)
 		with (
-			patch.object(compile_cache, "bucket_and_client", return_value=("b", FakeS3())),
+			patch.object(frappe, "get_doc", lambda dt, name: bucket_of(FakeS3())),
 			patch.object(frappe, "get_site_path", lambda *parts: os.path.join(site, *parts)),
 			patch.object(gateway_store, "landed_since", lambda store, key: ["k1"]),
+			patch.object(gateway_store, "spent_seeds", lambda store: [seed]),
 			patch.object(frappe, "local", SimpleNamespace(grove_failure_reported=True)),
 			patch.object(frappe, "throw", side_effect=Refused),
 			self.assertRaises(Refused),
@@ -231,6 +277,7 @@ class TestRestore(unittest.TestCase):
 		playbook, kwargs, file_was_there = plays[0]
 		self.assertEqual(playbook, "restore.yml")
 		self.assertEqual(kwargs["extravars"]["drop_prefixes"], ["k1"])
+		self.assertEqual(kwargs["extravars"]["spent_seeds"], [seed])
 		self.assertEqual(kwargs["extravars"]["redis_password"], "pw")
 		self.assertTrue(file_was_there)
 		self.assertFalse(os.path.exists(kwargs["extravars"]["restore_file"]))

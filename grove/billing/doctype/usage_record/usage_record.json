@@ -41,7 +41,7 @@
    "read_only": 1
   },
   {
-   "description": "The UTC day it was pulled.",
+   "description": "The UTC day the gateway served it, off the gateway's clock: the bucket it was counted in, so a day or a month here is the gateway's own. One record per key per drain per day.",
    "fieldname": "day",
    "fieldtype": "Date",
    "in_list_view": 1,

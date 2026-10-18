@@ -13,8 +13,12 @@ KEY_FIELDS = ["name", "title", "status", "creation", "key_hash", "geography", "c
 
 @frappe.whitelist()
 def provision_key(
-	team: str, title: str | None = None, geography: str | None = None, cap: float | None = None,
-	models: list[str] | None = None, limits: list[dict] | None = None,
+	team: str,
+	title: str | None = None,
+	geography: str | None = None,
+	cap: float | None = None,
+	models: list[str] | None = None,
+	limits: list[dict] | None = None,
 ):
 	"""Mint a key for `team` in `geography` — the default one when none is given; every other
 	geography's gateway refuses it. `title` labels the key, to tell a team's keys apart. `cap` is
@@ -45,7 +49,13 @@ def provision_key(
 
 
 @frappe.whitelist()
-def update_key(team: str, key: str, cap: float | None = None, models: list[str] | None = None, limits: list[dict] | None = None):
+def update_key(
+	team: str,
+	key: str,
+	cap: float | None = None,
+	models: list[str] | None = None,
+	limits: list[dict] | None = None,
+):
 	"""Change what a key of `team` may spend or call: `cap`, `models` (replacing its own Allow)
 	and `limits` (replacing its own rate limits; `[]` puts it back under its team's tier), each
 	kept when not given. Its geography never changes — mint another key for that. → the key as
@@ -61,36 +71,30 @@ def update_key(team: str, key: str, cap: float | None = None, models: list[str] 
 def update_caps(team: str, caps: dict[str, float]):
 	"""Set several monthly caps of `team`'s live keys at once, {key: USD}. Lowered caps are saved
 	first, so moving a cap from one key to another fits the spend limit midway as well; any
-	refusal leaves every cap as it was. → the keys as `keys` lists them."""
+	refusal leaves every cap as it was. What the limit holds is this month's spend and the caps
+	together (`pricing.committed`), with what the boxes hold read first: a cap a key already
+	spent frees nothing when moved. → the keys as `keys` lists them."""
 	frappe.only_for(ALLOWED_ROLES)
-	from grove.grove.doctype.grove_api_key.grove_api_key import capped
+	from grove.billing.pricing import committed, usd
+	from grove.pathway.usage import peek_team
 
 	team = get_team(team)
 	docs = [get_api_key(team, key) for key in caps]
 	if revoked := [doc.name for doc in docs if doc.status != "active"]:
 		frappe.throw(f"{', '.join(revoked)} is revoked.")
-	team_doc = team_limits(team, for_update=True)
-	total = flt(capped(team) + sum(flt(caps[doc.name]) - flt(doc.cap) for doc in docs), 9)
-	# Lowers go first, so the total only climbs to this: checked once, before anything is saved.
 	raised = any(flt(caps[doc.name]) > flt(doc.cap) for doc in docs)
+	pending = peek_team(team) if raised and not team_limits(team).free else {}
+	team_doc = team_limits(team, for_update=True)
+	total = committed(team, {doc.name: flt(caps[doc.name]) for doc in docs}, pending=pending)
 	if not team_doc.free and raised and total > flt(team_doc.spend_limit, 9):
-		frappe.throw(f"Caps would add up to {total:.2f} a month of a spend limit of {flt(team_doc.spend_limit):.2f}.")
+		frappe.throw(
+			f"This month's spend and caps would add up to {usd(total)} of a spend limit of {usd(team_doc.spend_limit)}."
+		)
 	for doc in sorted(docs, key=lambda doc: flt(caps[doc.name]) - flt(doc.cap)):
 		doc.cap = flt(caps[doc.name])
+		doc.flags.pending_spend = pending
 		doc.save()
 	return key_rows([doc.name for doc in docs])
-
-
-@frappe.whitelist()
-def keys(team: str):
-	"""The keys of `team`, newest first, never with their secret: that is shown once, by
-	`provision_key`. Each with its geography and the endpoint it calls, its monthly cap and what
-	it has spent this month (`month_spent`, off the records) and in all (`spent`), its rate limits
-	as the gateway counts them (its own, else its team's tier's, else the defaults), `key_hash`
-	(narrows `usage` to it) and `revocable_at` (UTC): when `revoke_key` stops refusing a new key,
-	so a caller need not ask before then. Nothing for a team Grove does not know."""
-	frappe.only_for(ALLOWED_ROLES)
-	return key_rows(frappe.get_list("Grove API Key", filters={"team": team or ""}, order_by="creation desc", pluck="name"))
 
 
 @frappe.whitelist()
@@ -137,7 +141,14 @@ def set_key_policy(doc, cap=None, models=None, limits=None):
 
 		doc.allow = []
 		for model in models:
-			doc.append("allow", {"model": model_doc(model, doc.geography or frappe.db.get_value("Geography", {"is_default": 1}))})
+			doc.append(
+				"allow",
+				{
+					"model": model_doc(
+						model, doc.geography or frappe.db.get_value("Geography", {"is_default": 1})
+					)
+				},
+			)
 	if limits is not None:
 		doc.set("limits", limits)
 
@@ -153,13 +164,14 @@ def key_rows(names):
 
 	if not names:
 		return []
-	rows = frappe.get_list("Grove API Key", filters={"name": ("in", names)}, fields=KEY_FIELDS, order_by="creation desc")
+	rows = frappe.get_list(
+		"Grove API Key", filters={"name": ("in", names)}, fields=KEY_FIELDS, order_by="creation desc"
+	)
 	limits = limit_rows_of(names)
 	month = month_spent_by("api_key", names)
 	for row in rows:
 		secret = get_decrypted_password("Grove API Key", row.name, "api_secret")
-		# The prefix and four characters: enough to tell keys apart, nothing of the end.
-		row["masked"] = f"{secret[:len(KEY_PREFIX) + 4]}…"
+		row["masked"] = f"{secret[: len(KEY_PREFIX) + 4]}…"
 		row["gateway_url"] = get_gateway_url(row.geography)
 		row["limits"] = limits.get(row.name, [])
 		row["revocable_at"] = utc_timestamp(frappe.utils.add_to_date(row.creation, hours=REVOKE_AFTER_HOURS))
@@ -173,5 +185,7 @@ def limit_rows_of(names):
 	from grove.access import effective_limits, limit_entries
 
 	keys = frappe.get_list("Grove API Key", filters={"name": ("in", names)}, fields=["name", "team"])
-	tiers = frappe.get_list("Central Team", filters={"name": ("in", [k.team for k in keys] or [""])}, fields=["name", "tier"])
+	tiers = frappe.get_list(
+		"Central Team", filters={"name": ("in", [k.team for k in keys] or [""])}, fields=["name", "tier"]
+	)
 	return effective_limits(keys, limit_entries("Grove API Key", names), {t.name: t.tier for t in tiers})

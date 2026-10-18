@@ -9,6 +9,7 @@ from frappe.model.document import Document
 from frappe.utils import flt
 
 from grove.access import team_limits, validate_limit_rows, validate_model_geography
+from grove.billing.pricing import committed, forget_figures, usd
 
 KEY_PREFIX = "gr_"
 REVOKE_AFTER_HOURS = 6
@@ -89,38 +90,46 @@ class GroveAPIKey(Document):
 		if not self.geography:
 			frappe.throw("Mark one Geography as default, or pick a geography for this key.")
 
+	def on_update(self):
+		forget_figures(self.team)
+
 	def validate(self):
 		validate_model_geography([*self.allow, *self.deny], self.geography)
 		both = {row.model_key for row in self.allow} & {row.model_key for row in self.deny}
 		if both:
 			frappe.throw(f"{', '.join(sorted(both))} is in both Allow and Deny")
 		validate_limit_rows(self.limits)
-		before = self.get_doc_before_save()
-		if before:
-			# Its counters and spend live on the geography's store: a key does not move. Mint another.
-			if before.geography != self.geography:
-				frappe.throw("A key's geography is set once. Mint a new key for another geography.")
-			# save() writes every column and the pull writes this one behind the form's back.
-			self.spent = frappe.db.get_value("Grove API Key", self.name, "spent", for_update=True)
 		if flt(self.cap) < 0:
 			frappe.throw("A cap cannot be negative.")
+		before = self.get_doc_before_save()
 		if before and before.status == "revoked" and self.status != "revoked":
 			frappe.throw("A revoked key stays revoked. Mint a new one.")
 		if flt(self.cap, 9) > flt(before.cap if before else 0, 9):
 			self.validate_cap()
+		if before:
+			# save() writes every column and the pull writes this one behind the form's back.
+			self.spent = frappe.db.get_value("Grove API Key", self.name, "spent", for_update=True)
 
 	def validate_cap(self):
-		"""A raise keeps the team's live caps within its monthly spend limit: every store gates its
-		key exactly, so the keys together never outspend the limit. Only a raise is checked, so a
+		"""A raise or a mint keeps what the month binds of the team's spend limit within it: each live key's cap or what it spent this month, whichever is more, plus what revoked
+		keys spent (`pricing.committed`), with what the boxes hold this moment on top of the
+		records (`usage.peek_team`, or what the caller just read), since the hourly pull is up to
+		an hour behind and a revoked key's counter leaves the box with it; so moving a spent cap to
+		another key, or revoking and minting afresh, frees nothing. Only a raise is checked: a
 		lowered limit stops no key and a key can always be minted at 0, refused until capped."""
-		team = team_limits(self.team, for_update=True)
-		if team.free or self.status != "active":
+		if self.status != "active" or team_limits(self.team).free:
 			return
-		total = flt(capped(self.team, except_key=self.name) + flt(self.cap), 9)
+		pending = self.flags.pending_spend
+		if pending is None:
+			from grove.pathway.usage import peek_team
+
+			pending = peek_team(self.team)
+		team = team_limits(self.team, for_update=True)
+		total = committed(self.team, {self.name: self.cap}, pending=pending)
 		if total > flt(team.spend_limit, 9):
 			frappe.throw(
-				f"Caps would add up to {total:.2f} a month of a spend limit of {flt(team.spend_limit):.2f}. "
-				"Lower another key's cap first."
+				f"This month's spend and caps would add up to {usd(total)} of a spend limit of "
+				f"{usd(team.spend_limit)}. Lower another key's cap first."
 			)
 
 	@property

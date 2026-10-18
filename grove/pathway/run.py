@@ -68,8 +68,8 @@ class Target:
 		response.raise_for_status()
 		return response.json()
 
-	def post(self, path, body):
-		response = requests.post(f"{self.admin_url}/{path}", json=body, headers=self.headers, timeout=TIMEOUT)
+	def post(self, path, body, timeout=TIMEOUT):
+		response = requests.post(f"{self.admin_url}/{path}", json=body, headers=self.headers, timeout=timeout)
 		response.raise_for_status()
 		return response.json()
 
@@ -242,18 +242,23 @@ class SyncRun:
 		self.trigger = trigger
 		self.wait = wait
 		self.doc = None
+		self.skipped = None
 
 	def run(self):
 		"""→ the Pathway Sync name, or None when nothing was logged: a run already in flight, no
-		boxes to dial, a fleet already in sync, or a scheduled run Grove Settings pauses."""
+		boxes to dial, a fleet already in sync, or a scheduled run Grove Settings pauses. `skipped`
+		says which, for a caller that has to tell a quiet fleet from one it could not reach."""
 		if self.trigger == "Scheduled" and frappe.db.get_single_value("Grove Settings", self.pause_field):
+			self.skipped = "paused"
 			return None
 		self.doc = new_run(self.sync_type, self.trigger)
-		if not self.doc.acquire_lock(wait=self.wait):  # scheduled → skip if a run is in flight; forced → queue
+		if not self.doc.acquire_lock(wait=self.wait):
+			self.skipped = "locked"
 			return None
 		try:
 			units = self.units()
 			if not units:
+				self.skipped = "nothing"
 				return None
 			answers = {}
 			for index, result in each_in_parallel(units, self.work):

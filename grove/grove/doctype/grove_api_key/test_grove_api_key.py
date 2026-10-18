@@ -268,7 +268,7 @@ class IntegrationTestOneGeographyPerKey(IntegrationTestCase):
 		doc = key("key-geo-picked", geography=other)
 		self.assertEqual(doc.geography, other)
 		doc.geography = self.default
-		with self.assertRaisesRegex(frappe.ValidationError, "set once"):
+		with self.assertRaises(frappe.CannotChangeConstantError):
 			doc.save()
 
 	def test_with_no_default_a_key_without_one_is_refused(self):
@@ -324,6 +324,7 @@ class IntegrationTestCapsFitTheSpendLimit(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
+		cls.enterClassContext(unittest.mock.patch("grove.pathway.usage.peek_team", return_value={}))
 		make_test_geography()
 		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 

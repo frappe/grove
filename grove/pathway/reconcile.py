@@ -12,11 +12,16 @@ hands on either side. The gateway decides per request, so a drain that spans a f
 from decimal import Decimal
 
 import frappe
+from frappe.model.naming import make_autoname
 
 from grove.billing.doctype.credit_discrepancy.credit_discrepancy import record
 from grove.billing.pricing import NANO, settle
 
 NANO_USD = Decimal(1) / NANO
+FIELDS = (
+	"name", "creation", "modified", "owner", "modified_by", "api_key", "team", "day", "gateway_store",
+	"drain_id", "billed", "request_count", "total_tokens", "cost", "gateway_cost", "usage",
+)
 
 
 def usd(nano_usd):
@@ -24,61 +29,67 @@ def usd(nano_usd):
 
 
 class Reconciler:
-	"""One per drain: the price book, the day, which store, under which drain id."""
+	"""One per drain and day: the price book, the day the gateway served the buckets, which store,
+	under which drain id, and `landed`, the (drain id, key, day) triples a record already holds."""
 
-	def __init__(self, book, day, gateway_store, drain_id):
+	def __init__(self, book, day, gateway_store, drain_id, landed=frozenset()):
 		self.book = book
 		self.day = day
 		self.gateway_store = gateway_store
 		self.drain_id = drain_id
+		self.landed = landed
 
 	def team(self, team, drains):
-		"""`drains`: {API key: parsed hash} for `team`'s keys in this drain. A key this drain already
-		landed is skipped, so a re-sent drain bills nothing twice."""
-		records = [
-			doc for prefix, drain in drains.items() if not self.landed(prefix)
-			for doc in self.records(team, prefix, drain)
+		"""`drains`: {API key: parsed hash} for `team`'s keys in this drain on this day. A key this
+		drain already landed for the day is skipped, so a re-sent drain bills nothing twice. The rows
+		go in as one statement however many keys: a store's hourly drain is a lakh of them."""
+		rows = [
+			row for prefix, drain in drains.items() if not self.has_landed(prefix)
+			for row in self.rows(team, prefix, drain)
 		]
-		for doc in records:
-			if doc.billed:
-				self.bill(doc)
+		frappe.db.bulk_insert("Usage Record", FIELDS, [[row[field] for field in FIELDS] for row in rows])
+		for row in rows:
+			if row.billed:
+				self.bill(row)
 		settle(team)
 
-	def records(self, team, prefix, drain):
-		"""One key's share as up to two records: what the gateway charged, and what it served free
-		or unpriced. Their request counts sum to the key's."""
+	def rows(self, team, prefix, drain):
+		"""One key's share as up to two rows: what the gateway charged, and what it served free or
+		unpriced. Their request counts sum to the key's."""
 		charged, free = self.priced(drain.pricings), self.priced(drain.free) + self.unpriced(drain)
 		if not charged:
-			return [self.insert(team, prefix, 0, free, drain.requests)]
+			return [self.row(team, prefix, 0, free, drain.requests)]
 		requests = sum(entry["requests"] for entry in charged) if free else drain.requests
-		records = [self.insert(team, prefix, 1, charged, requests)]
+		rows = [self.row(team, prefix, 1, charged, requests)]
 		if free:
-			records.append(self.insert(team, prefix, 0, free, drain.requests - requests))
-		return records
+			rows.append(self.row(team, prefix, 0, free, drain.requests - requests))
+		return rows
 
-	def bill(self, doc):
+	def bill(self, row):
 		"""The key's spend moves by Grove's price of what the gateway charged it."""
-		charged = sum((entry["grove_cost"] for entry in doc.entries), Decimal(0))
-		frappe.db.sql("update `tabGrove API Key` set spent = spent + %s where name = %s", [charged, doc.api_key])
-		self.audit(doc)
+		charged = sum((entry["grove_cost"] for entry in row.entries), Decimal(0))
+		# ponytail: one update per billed key, ~40 s an hour at a lakh; a CASE update per team if the pull nears the hour.
+		frappe.db.sql("update `tabGrove API Key` set spent = spent + %s where name = %s", [charged, row.api_key])
+		self.audit(row)
 
-	def landed(self, prefix):
-		return frappe.db.exists("Usage Record", {"drain_id": self.drain_id, "api_key": prefix})
+	def has_landed(self, prefix):
+		return (self.drain_id, prefix, str(self.day)) in self.landed
 
-	def insert(self, team, prefix, billed, entries, requests):
-		doc = frappe.get_doc({
-			"doctype": "Usage Record", "api_key": prefix, "team": team, "day": self.day,
-			"gateway_store": self.gateway_store, "drain_id": self.drain_id,
-			"billed": billed, "request_count": requests,
-			"total_tokens": sum(e[counter] for e in entries for counter in self.book.counters.whole),
-			"cost": sum((e["grove_cost"] for e in entries), Decimal(0)),
-			"gateway_cost": sum((e["gateway_cost"] for e in entries), Decimal(0)),
-			# The gateway's cost is kept as the header total only; per pricing it is compared, not stored.
-			"usage": frappe.as_json([{k: v for k, v in e.items() if k != "gateway_cost"} for e in entries], indent=None),
-		})
-		doc.insert(ignore_permissions=True)
-		doc.entries = entries
-		return doc
+	def row(self, team, prefix, billed, entries, requests):
+		"""A record as the table takes it, named and stamped as the ORM would have; `entries` ride
+		along for `bill` and `audit`."""
+		now = frappe.utils.now()
+		return frappe._dict(
+			name=make_autoname("hash", "Usage Record"), creation=now, modified=now,
+			owner=frappe.session.user, modified_by=frappe.session.user,
+			api_key=prefix, team=team, day=self.day, gateway_store=self.gateway_store, drain_id=self.drain_id,
+			billed=billed, request_count=requests,
+			total_tokens=sum(e[counter] for e in entries for counter in self.book.counters.whole),
+			cost=sum((e["grove_cost"] for e in entries), Decimal(0)),
+			gateway_cost=sum((e["gateway_cost"] for e in entries), Decimal(0)),
+			usage=frappe.as_json([{k: v for k, v in e.items() if k != "gateway_cost"} for e in entries], indent=None),
+			entries=entries,
+		)
 
 	def priced(self, pricings):
 		"""One entry per pricing the gateway priced at. Costs are rounded to the nano, so the header
@@ -108,12 +119,12 @@ class Reconciler:
 			"gateway_cost": gateway_cost.quantize(NANO_USD), "grove_cost": grove_cost.quantize(NANO_USD),
 		}
 
-	def audit(self, doc):
+	def audit(self, row):
 		"""The gateway undercharges by at most its truncation; anything else is a discrepancy."""
-		for entry in doc.entries:
+		for entry in row.entries:
 			gateway, grove = entry["gateway_cost"], entry["grove_cost"]
 			if entry["pricing"] and abs(gateway - grove) > self.book.counters.tolerance(entry["requests"]):
 				record(
-					usage_record=doc.name, team=doc.team, api_key=doc.api_key, pricing=entry["pricing"],
+					usage_record=row.name, team=row.team, api_key=row.api_key, pricing=entry["pricing"],
 					gateway_store=self.gateway_store, gateway_value=gateway, grove_value=grove, delta=gateway - grove,
 				)

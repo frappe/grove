@@ -1,8 +1,9 @@
 {
  "actions": [],
+ "allow_rename": 1,
  "autoname": "Prompt",
  "creation": "2026-10-12 00:00:00",
- "description": "Named by Central's trust tier label (Growth). What a team on it may do: live keys, monthly spend across its keys' caps, and the rate limits its keys run under when they carry none of their own. Central names a team's tier; the values here are Grove's to edit.",
+ "description": "Named by Central's trust tier label (Growth). What a team on it may do: live keys, monthly spend across its keys' caps, and the rate limits its keys run under when they carry none of their own. Central names a team's tier and renames it when the label changes; the values here are Grove's to edit.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [

@@ -57,7 +57,7 @@ gateways cannot jointly overrun one replica.
 | `tls.py` | Each Geography's zone wildcard: issue over DNS-01, renew, push to that geography's boxes. |
 | `monitoring.py` / `log_relay.py` | Exporters on every box, and shipping their output. |
 | `failure.py` | `@reports_failure` — a long job that dies marks its doc Broken and says why. |
-| `api/` | The whitelisted surface Central calls, one module per subject: `control` (enrollment), `teams`, `keys`, `catalog` (geographies, models), `usage` (usage, spend, pulls). |
+| `api/` | The whitelisted surface Central calls, one module per subject: `control` (enrollment), `teams`, `keys`, `catalog` (geographies, models), `usage` (usage, figures, pulls). |
 | `net.py` / `utils.py` | Addresses, slugs, paths. |
 
 ## What gets pushed, and under which key
@@ -109,8 +109,8 @@ fleet gets re-pushed over row order. Order means nothing on the wire; it exists 
 | `model_group:<name>` | state push (groups) | the model grant for everyone in it |
 | `deploy:<model>` | state push (routes) | every placement of one model |
 | `grove:state_hash` | state push | per-section/bucket hashes of what the box holds |
-| `usage:<prefix>` | the agent | live counters: `m:<metric>:<model>` for reports, `p:<pricing>:<counter>` and `p:<pricing>:cost` for billing, the same under `f:` for what was served free |
-| `drained:<drain>:<prefix>`, `drain:unacked` | the agent's drain | a key's counters set aside under a drain id, re-sent until Grove acks that pair; kept for `usage_retention` after |
+| `usage:<prefix>:<YYYY-MM-DD>` | the agent | a key's live counters for one UTC day it was served, the `day` its Usage Record carries: `m:<metric>:<model>` for reports, `p:<pricing>:<counter>` and `p:<pricing>:cost` for billing, the same under `f:` for what was served free |
+| `drained:<drain>:<prefix>:<day>`, `drain:unacked` | the agent's drain | a key's day bucket set aside under a drain id, re-sent until Grove acks that pair; kept for `usage_retention` after |
 | `sticky:<session>` | the agent | session → engine, for prefix-cache reuse |
 | `inflight:<engine>` | the agent | what is running right now |
 | `health:<target>` | the agent | consecutive failures behind passive ejection (60s TTL) |
@@ -235,8 +235,8 @@ prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south
 | `*/1` | `pathway.projection.sync_projection` | stamp-bounded and hash-gated: rebuilds only the key buckets a save moved since the stores' `last_synced_at`, reads every box's hashes, pushes each box only what it does not already hold; a fleet in sync logs nothing and builds no key record. Every 10th minute every bucket is rebuilt. Also sends each store the spend adjustments it is owed (pending `Credit Discrepancy` rows) |
 | `*/2` | `cloud_provider.reconcile.sync_all` | the provider owns whether a pod is up; this closes the drift |
 | `0 */6` | `pathway.key_stats.pull_all` | one Provider Key Stats row per key per store: what it answered since the last pull, cleared on the gateway as it is read |
-| `*/5` | `gateway_store.backup_all` | one `redis-cli --rdb` snapshot per Active store, over SSH, into the weights bucket under `gateway-store/<store>/<utc stamp>.rdb`, the doc's Last Backup Key pointing at it; usage leaves a store only on the hourly pull, so this is what a lost disk costs: 5 minutes. Off until the bucket and Mirror keys are set; prune with a bucket lifecycle rule |
-| hourly | `pathway.usage.pull_all` | a store is drained once, through its first writer that answers; recorded, billed, then what landed is acked. A failed pull loses nothing: the box re-sends every unacked pair. Also Gateway Server → **Pull Usage**, Stuck Usage → **Pull Now**, and `api.usage.pull_usage(user)` for one user (3 an hour per user, counted in the site cache; the rest are not limited) |
+| `*/5` | `gateway_store.backup_all` | one `redis-cli --rdb` snapshot per Active store, over SSH, into its Geography's backup bucket (Store Backups tab) under `gateway-store/<store>/<utc stamp>.rdb`, the doc's Last Backup Key pointing at it; usage leaves a store only on the hourly pull, so this is what a lost disk costs: 5 minutes. Skipped in a Geography with no backup bucket; Restore never crosses geographies; prune with a bucket lifecycle rule |
+| hourly | `pathway.usage.pull_all` | a store is drained once, through its first writer that answers; recorded, billed, then what landed is acked. A failed pull loses nothing: the box re-sends every unacked pair. Also Gateway Server → **Pull Usage**, Stuck Usage → **Pull Now**, and `api.usage.pull_usage(team)` for one team, which answers its `figures` afresh (2 an hour per team, counted in the site cache; the rest are not limited) |
 | hourly | `tls.renew_fleet_certificate`, `cloud_provider.schedule.run_due_pods` | renew runs certbot only when it says the certificate is due, and pushes only when the certificate changed |
 
 Nothing else pushes. A doctype hook, a provision and a pod lifecycle all just write state; the
@@ -266,23 +266,6 @@ Server carries `last_synced_at`: the read time of the last tick it took a push f
 held. A stale stamp means the box is unreachable or rejecting pushes; the failed Pathway Sync rows
 say why.
 
-1. Read every box's hashes, side by side on the pool. A box that does not answer gets nothing
-   built for it; its row reads unreachable as before.
-2. Decide the key buckets in play: those a Grove API Key or Central Team save moved since the
-   oldest stamp among the gateway units that answered, less `LOOKBACK` (120 s, for a save stamped
-   before the read but committed after it). Every bucket instead under force, every `FULL_EVERY`
-   (10th) minute, for a unit with no stamp or no `keys:*` hash (new or wiped), after a Tier or
-   Grove Settings save, and past `FULL_ABOVE` (32) dirty buckets.
-3. Build those buckets once (`snapshot.keys_section`): their keys are picked by hashing every live
-   key's hash, there being no bucket column yet. Groups and routes are built whole, as always.
-4. Each box is sent what its hashes lack among the buckets in play; a held bucket outside them is
-   never pruned. A box holding everything and owed nothing is skipped, no row.
-5. Stamp each unit that took the push or held the state with the tick's read time. Never on
-   failure: the next tick that reaches it rebuilds everything saved since.
-
-A quiet minute is one GET per box and three `modified >` reads. A store restored from an RDB has a
-fresh stamp and a full map, so it heals at the next full tick, not the next minute.
-
 **A store is reached through its writers.** Each tick (and each usage pull) reaches a gateway not
 yet on a store directly, and a Gateway Store through the gateways marked **Gateway Store
 Writer**, tried in name order until one succeeds — every failed attempt still writes its row.
@@ -300,22 +283,8 @@ automatically. The first gateway set up on or moved onto a store is marked for y
   attempts, last error and payload — updated each failing pull and resolved by the pull that lands
   it. **Pull Now** on the row pulls just that user. The usage itself lives only on the gateway
   until then, so a Redis flush loses it; Log Settings clears resolved rows after 90 days.
-- **A new line in `modules.txt` needs `bench clear-cache` before `migrate`.** The module map is
-  cached in Redis; `sync_module_defs` reads the file and makes the Module Def, but `sync_for` walks
-  the cached map and never sees the new folder, so its doctypes keep their old module until the
-  next migrate. Clear first, or migrate twice.
-- **A Single doctype never applies its JSON default** if it predates the field. Blank is a state a
-  real site lands in, so a new setting either has a safe blank meaning or throws (see
-  `fleet.gateway_agent_version`).
-- **A saved `Password` field reads back truthy** — asterisks in the doc's own column, the value in
-  `__Auth`. Test through `get_password`, never `if not self.field`.
-- **`db_set` skips `validate` and fires no `on_update`**, which is why status writes use it — and why
-  a path that writes status must then do by hand whatever `on_update` would have done.
 - **Ansible swallows whatever a callback raises**, logging `Failure using method (…)` and running
   on. So a play's own docs are written best-effort: each write carries Frappe's
   `dangerously_reconnect_on_connection_abort` (Ansible forks a worker per task, and a child closing
   the inherited socket takes this process's connection with it), and the rc a caller acts on is
   Ansible's, never the doc's status.
-- **Deploy the agent before the state that needs it.** An older binary reading a newer projection
-  fails in whichever direction that field's blank means: `models` fails *closed* (403 everyone), an
-  unknown route `kind` fails *open* (wrong dial).

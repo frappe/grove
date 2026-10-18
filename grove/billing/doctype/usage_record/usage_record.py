@@ -3,18 +3,20 @@
 
 import frappe
 from frappe.model.document import Document
+from frappe.utils import add_days, cint
+
+from grove.utils import utc_today
 
 RECORD_COLUMNS = {"team": "r.team", "api_key": "r.api_key", "model": "u.model"}
 CORRECTION_COLUMNS = {"team": "d.team", "api_key": "d.api_key", "model": "m.model_key"}
 
+RETENTION_DAYS = 90
+# ponytail: chunked DELETEs, each its own transaction, so a day of a lakh keys never holds the table
+# in one statement; a table partitioned by day would drop a day at once.
+PURGE_CHUNK = 10_000
+
 
 class UsageRecord(Document):
-	"""One API key's usage in one drain of one store, billed and free apart. Inserted by the pull and
-	never updated: `cost` is Grove's price of it, charged to the key when `billed` (the gateway
-	served it while its team was prepaid); `usage` holds the per-model detail as JSON, one entry per
-	model, so a record is one row however many models it touched. A correction is never written
-	here: a Credit Discrepancy Grove resolved is folded in by `money_rows`."""
-
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -36,16 +38,34 @@ class UsageRecord(Document):
 		usage: DF.JSON | None
 	# end: auto-generated types
 
-	pass
+	@staticmethod
+	def clear_old_logs(days=RETENTION_DAYS):
+		"""Log Settings: records served more than `days` UTC days ago, a chunk at a time. One a Credit
+		Discrepancy names stays: it is that correction's evidence. No money read needs a record this
+		old — `spent` is a running total, the month is this month's, an invoice is a landing window —
+		so what goes is history: the usage API and the Revenue report stop at the retention."""
+		cutoff = add_days(utc_today(), -cint(days))
+		while names := frappe.db.sql_list(
+			"""select name from `tabUsage Record` where day < %(cutoff)s
+			and name not in (select usage_record from `tabCredit Discrepancy` where usage_record is not null)
+			order by day limit %(chunk)s""",
+			{"cutoff": cutoff, "chunk": PURGE_CHUNK},
+		):
+			frappe.db.delete("Usage Record", {"name": ("in", names)})
 
 
 def on_doctype_update():
-	"""A drain is re-sent until acknowledged: the unique triple makes landing it twice impossible.
-	Every read filters a team or a key over a day range."""
-	# The pair it replaces: a key's billed and free usage in one drain are two records.
-	if frappe.db.has_index("tabUsage Record", "unique_drain_key"):
-		frappe.db.sql_ddl("alter table `tabUsage Record` drop index unique_drain_key")
-	frappe.db.add_unique("Usage Record", ["drain_id", "api_key", "billed"], constraint_name="unique_drain_key_billed")
+	"""A drain is re-sent until acknowledged: the unique makes landing a bucket twice impossible —
+	a key's billed and free usage of one day in one drain are two records. Every read filters a
+	team or a key over a day range."""
+	for narrower in ("unique_drain_key", "unique_drain_key_billed"):
+		if frappe.db.has_index("tabUsage Record", narrower):
+			frappe.db.sql_ddl(f"alter table `tabUsage Record` drop index {narrower}")
+	frappe.db.add_unique(
+		"Usage Record",
+		["drain_id", "api_key", "day", "billed"],
+		constraint_name="unique_drain_key_day_billed",
+	)
 	frappe.db.add_index("Usage Record", ["team", "day"])
 	frappe.db.add_index("Usage Record", ["api_key", "day"])
 
@@ -69,8 +89,14 @@ def money_rows(filters, from_date=None, to_date=None, since=None, until=None):
 	params = {**given, "from_date": from_date, "to_date": to_date, "since": since, "until": until}
 
 	def where(columns, day, at):
-		parts = [f"{columns[f]} {'in' if isinstance(v, list | tuple) else '='} %({f})s" for f, v in given.items()]
-		parts.append(f"{at} >= %(since)s and {at} < %(until)s" if since else f"{day} between %(from_date)s and %(to_date)s")
+		parts = [
+			f"{columns[f]} {'in' if isinstance(v, list | tuple) else '='} %({f})s" for f, v in given.items()
+		]
+		parts.append(
+			f"{at} >= %(since)s and {at} < %(until)s"
+			if since
+			else f"{day} between %(from_date)s and %(to_date)s"
+		)
 		return " and ".join(parts)
 
 	# JSON_TABLE's strings carry the JSON column's utf8mb4_bin, so the correction side is collated to

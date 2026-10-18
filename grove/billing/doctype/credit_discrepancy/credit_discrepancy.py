@@ -31,7 +31,7 @@ class CreditDiscrepancy(Document):
 		grove_value: DF.Currency
 		note: DF.SmallText | None
 		pricing: DF.Link | None
-		resolution: DF.Literal['', 'Grove corrected', 'Gateway corrected']
+		resolution: DF.Literal["", "Grove corrected", "Gateway corrected"]
 		resolved_day: DF.Date | None
 		resolved_on: DF.Datetime | None
 		team: DF.Link | None
@@ -46,7 +46,9 @@ class CreditDiscrepancy(Document):
 
 		self.check_open()
 		delta = Decimal(str(self.delta))
-		frappe.db.sql("update `tabGrove API Key` set spent = spent + %s where name = %s", [delta, self.api_key])
+		frappe.db.sql(
+			"update `tabGrove API Key` set spent = spent + %s where name = %s", [delta, self.api_key]
+		)
 		settle(self.team)
 		self.db_set({"correction": delta, "resolution": "Grove corrected", **resolved_now()})
 
@@ -63,7 +65,9 @@ class CreditDiscrepancy(Document):
 	def check_open(self):
 		frappe.only_for("System Manager")
 		if self.resolution or self.gateway_correction_pending:
-			frappe.throw(f"This discrepancy is already decided: {self.resolution or 'waiting on the gateway'}.")
+			frappe.throw(
+				f"This discrepancy is already decided: {self.resolution or 'waiting on the gateway'}."
+			)
 
 
 def pending_adjustments():
@@ -74,11 +78,18 @@ def pending_adjustments():
 	# ponytail: the box forgets an id after 7 days, so a row pending longer could apply twice.
 	# Keep ids forever in pathway if one ever does.
 	rows = frappe.get_all(
-		"Credit Discrepancy", filters={"gateway_correction_pending": 1},
-		fields=["name", "api_key", "gateway_store", "delta"], order_by="creation asc",
+		"Credit Discrepancy",
+		filters={"gateway_correction_pending": 1},
+		fields=["name", "api_key", "gateway_store", "delta"],
+		order_by="creation asc",
 	)
 	hashes = dict(
-		frappe.get_all("Grove API Key", {"name": ("in", [r.api_key for r in rows] or [""])}, ["name", "key_hash"], as_list=True)
+		frappe.get_all(
+			"Grove API Key",
+			{"name": ("in", [r.api_key for r in rows] or [""])},
+			["name", "key_hash"],
+			as_list=True,
+		)
 	)
 	owed = {}
 	for row in rows:
@@ -93,10 +104,17 @@ def mark_corrected(spent_by_row):
 
 	for name, spent in spent_by_row.items():
 		delta = frappe.db.get_value("Credit Discrepancy", name, "delta")
-		frappe.db.set_value("Credit Discrepancy", name, {
-			"correction": -delta, "resolution": "Gateway corrected", "gateway_spent": Decimal(spent) / NANO,
-			"gateway_correction_pending": 0, **resolved_now(),
-		})
+		frappe.db.set_value(
+			"Credit Discrepancy",
+			name,
+			{
+				"correction": -delta,
+				"resolution": "Gateway corrected",
+				"gateway_spent": Decimal(spent) / NANO,
+				"gateway_correction_pending": 0,
+				**resolved_now(),
+			},
+		)
 
 
 def resolved_now():

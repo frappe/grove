@@ -40,6 +40,13 @@ hand. If a test inserts anything, check its base class first.
 The rollback is **once per class, not once per test** (`addClassCleanup`), so a doc one test inserts is
 still there for the next one — give each test its own names, or insert shared fixtures in `setUpClass`.
 
+The rollback also covers nothing the code under test commits itself. `grove.localhost` is wired to the
+dev gateway and a test key lands in its default geography, so a cap check that reached the real
+`usage.peek_team` would dial the box; the pull variant of it once committed mid-test and persisted 27
+teams, 12 tiers, a probe user and `Grove Settings.default_tier = ""`, deleted by hand. Every suite that
+mints a capped key or flips Free patches it in `setUpClass`:
+`cls.enterClassContext(unittest.mock.patch("grove.pathway.usage.peek_team", return_value={}))`.
+
 ## What a test here is for
 
 Not coverage. Each one pins a rule that something outside this repo enforces and that reading the code

@@ -33,24 +33,38 @@ class CreditsCase(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
+		cls.enterClassContext(unittest.mock.patch("grove.pathway.usage.peek_team", return_value={}))
 		make_test_geography()
 		cls.model, cls.pricing = cls.priced_model("credits-7b", cls.RATE)
 		cls.model_key = frappe.db.get_value("Model", cls.model, "model_key")
 		cls.store = a_store("credits-store")
 		gateway_module = "grove.grove.doctype.gateway_server.gateway_server"
 		with unittest.mock.patch(f"{gateway_module}.GatewayServer.set_admin_url"):
-			machine = frappe.get_doc({"doctype": "Machine", "name": "credits-box", "machine_type": "Gateway"}).insert(ignore_permissions=True)
-			cls.gateway = frappe.get_doc({
-				"doctype": "Gateway Server", "name": machine.name, "machine": machine.name,
-				"gateway_store": cls.store, "is_store_writer": 1,
-			}).insert(ignore_permissions=True, ignore_mandatory=True).name
+			machine = frappe.get_doc(
+				{"doctype": "Machine", "name": "credits-box", "machine_type": "Gateway"}
+			).insert(ignore_permissions=True)
+			cls.gateway = (
+				frappe.get_doc(
+					{
+						"doctype": "Gateway Server",
+						"name": machine.name,
+						"machine": machine.name,
+						"gateway_store": cls.store,
+						"is_store_writer": 1,
+					}
+				)
+				.insert(ignore_permissions=True, ignore_mandatory=True)
+				.name
+			)
 		frappe.db.set_value("Gateway Server", cls.gateway, "status", "Active")
 
 	@classmethod
 	def priced_model(cls, model_id, rate):
-		model = frappe.get_doc(
-			{"doctype": "Model", "model_id": model_id, "hf_repo": f"org/{model_id}"}
-		).insert(ignore_permissions=True).name
+		model = (
+			frappe.get_doc({"doctype": "Model", "model_id": model_id, "hf_repo": f"org/{model_id}"})
+			.insert(ignore_permissions=True)
+			.name
+		)
 		return model, enabled_pricing(model, completion_tokens=rate).name
 
 	def team(self, cap=1, free=0):
@@ -58,14 +72,22 @@ class CreditsCase(IntegrationTestCase):
 		CreditsCase.counter += 1
 		if not frappe.db.exists("Tier", "credits-tier"):
 			frappe.get_doc({"doctype": "Tier", "__newname": "credits-tier", "spend_limit": 100}).insert()
-		doc = frappe.get_doc({
-			"doctype": "Central Team", "__newname": f"credits-{CreditsCase.counter}",
-			"free": free, "tier": "credits-tier",
-		}).insert(ignore_permissions=True)
+		doc = frappe.get_doc(
+			{
+				"doctype": "Central Team",
+				"__newname": f"credits-{CreditsCase.counter}",
+				"free": free,
+				"tier": "credits-tier",
+			}
+		).insert(ignore_permissions=True)
 		return doc.name, self.key(doc.name, cap)
 
 	def key(self, team, cap=0):
-		return frappe.get_doc({"doctype": "Grove API Key", "team": team, "cap": cap}).insert(ignore_permissions=True).name
+		return (
+			frappe.get_doc({"doctype": "Grove API Key", "team": team, "cap": cap})
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 	def hash(self, tokens, cost=None, pricing_id=None, requests=1, charged=True):
 		"""What one key's drained hash carries: the counters, tagged with the pricing the gateway
@@ -73,15 +95,24 @@ class CreditsCase(IntegrationTestCase):
 		returns them."""
 		p = f"{'p' if charged else 'f'}:{pricing_id or self.pricing}:"
 		cost = tokens * self.RATE * 1000 if cost is None else cost
-		h = {"completion_tokens": tokens, "request_count": requests, f"m:completion_tokens:{self.model_key}": tokens,
-		     f"{p}completion_tokens": tokens, f"{p}request_count": requests, f"{p}cost": cost, "cost": cost}
+		h = {
+			"completion_tokens": tokens,
+			"request_count": requests,
+			f"m:completion_tokens:{self.model_key}": tokens,
+			f"{p}completion_tokens": tokens,
+			f"{p}request_count": requests,
+			f"{p}cost": cost,
+			"cost": cost,
+		}
 		return {k: str(v) for k, v in h.items()}
 
 	def pull(self, usages, store=None, drain_id=None):
+		"""`usages`: {key: hash}, each served today."""
 		CreditsCase.counter += 1
 		drain_id = drain_id or f"drain-{CreditsCase.counter}"
+		drains = {drain_id: {key: {str(usage.utc_today()): h} for key, h in usages.items()}}
 		with unittest.mock.patch.object(frappe.db, "commit"):
-			return usage.record_drains(self.gateway, {drain_id: usages}, gateway_store=store or self.store)
+			return usage.record_drains(self.gateway, drains, gateway_store=store or self.store)
 
 	def state(self, team):
 		row = frappe.db.get_value("Central Team", team, ["spent", "suspended"], as_dict=True)
@@ -89,7 +120,8 @@ class CreditsCase(IntegrationTestCase):
 
 	def discrepancies(self, team):
 		return frappe.get_all(
-			"Credit Discrepancy", filters={"team": team, "resolution": ("is", "not set")},
+			"Credit Discrepancy",
+			filters={"team": team, "resolution": ("is", "not set")},
 			fields=["name", "usage_record", "pricing", "gateway_value", "grove_value", "delta"],
 		)
 
@@ -100,21 +132,26 @@ class CreditsCase(IntegrationTestCase):
 		return (
 			usage_api.usage([team], period="Today")[team]["cost"],
 			sum(row["revenue"] for row in rows),
-			usage_api.spend(team)["month_spent"],
+			usage_api.figures(team)["spend"]["month_spent"],
 		)
 
 
 class TestADrainIsBilledAtGrovesPrice(CreditsCase):
 	def test_a_drain_bills_grove_price_with_both_costs_on_the_record(self):
 		team, key = self.team(cap=1)
-		"""`usages`: {key: hash}, each served today."""
 		self.pull({key: self.hash(50_000)})
 		self.assertEqual(self.state(team), (D("0.5"), 0))
 		record = frappe.get_doc("Usage Record", {"api_key": key})
 		self.assertEqual((record.cost, record.gateway_cost, record.gateway_store), (0.5, 0.5, self.store))
 		[entry] = frappe.parse_json(record.usage)
 		self.assertEqual(
-			(entry["pricing"], entry["model"], entry["requests"], entry["completion_tokens"], entry["grove_cost"]),
+			(
+				entry["pricing"],
+				entry["model"],
+				entry["requests"],
+				entry["completion_tokens"],
+				entry["grove_cost"],
+			),
 			(self.pricing, self.model_key, 1, 50_000, 0.5),
 		)
 		self.assertNotIn("gateway_cost", entry)
@@ -130,7 +167,13 @@ class TestADrainIsBilledAtGrovesPrice(CreditsCase):
 		_model, cheaper = self.priced_model("credits-switch-7b", 5)
 		team, key = self.team(cap=5)
 		h = self.hash(100_000)
-		h.update({k: v for k, v in self.hash(100_000, cost=500_000_000, pricing_id=cheaper).items() if k.startswith("p:")})
+		h.update(
+			{
+				k: v
+				for k, v in self.hash(100_000, cost=500_000_000, pricing_id=cheaper).items()
+				if k.startswith("p:")
+			}
+		)
 		self.pull({key: h})
 		self.assertEqual(self.state(team), (D("1.5"), 0))
 		self.assertEqual(self.discrepancies(team), [])
@@ -151,7 +194,12 @@ class TestADrainIsBilledAtGrovesPrice(CreditsCase):
 		self.assertEqual(self.state(team), (D("2"), 0))
 		[entry] = frappe.parse_json(frappe.db.get_value("Usage Record", {"api_key": key}, "usage"))
 		self.assertEqual(
-			(entry["pricing"], entry["completion_tokens"], entry["completion_tokens_above_272k"], entry["grove_cost"]),
+			(
+				entry["pricing"],
+				entry["completion_tokens"],
+				entry["completion_tokens_above_272k"],
+				entry["grove_cost"],
+			),
 			(pricing_id, 100_000, 50_000, 2),
 		)
 		self.assertEqual(self.discrepancies(team), [])
@@ -187,7 +235,9 @@ class TestADrainIsBilledAtGrovesPrice(CreditsCase):
 
 class TestAFreeTeamIsNeverCharged(CreditsCase):
 	def record(self, key):
-		return frappe.db.get_value("Usage Record", {"api_key": key}, ["billed", "cost", "gateway_cost"], as_dict=True)
+		return frappe.db.get_value(
+			"Usage Record", {"api_key": key}, ["billed", "cost", "gateway_cost"], as_dict=True
+		)
 
 	def test_their_usage_is_recorded_with_its_cost_but_spent_does_not_move(self):
 		free, key = self.team(cap=0, free=1)
@@ -206,7 +256,9 @@ class TestAFreeTeamIsNeverCharged(CreditsCase):
 		doc = frappe.get_doc("Central Team", team)
 		doc.free = 0
 		doc.save()
-		self.assertEqual((self.state(team), frappe.db.get_value("Grove API Key", key, "cap")), ((D("0"), 0), 0))
+		self.assertEqual(
+			(self.state(team), frappe.db.get_value("Grove API Key", key, "cap")), ((D("0"), 0), 0)
+		)
 		self.pull({key: self.hash(30_000)})
 		self.assertEqual(self.state(team), (D("0.3"), 0))
 
@@ -223,17 +275,31 @@ class TestAFreeTeamIsNeverCharged(CreditsCase):
 
 	def test_untagged_usage_of_a_known_model_is_recorded_and_bills_nothing(self):
 		team, key = self.team(cap=1)
-		self.pull({key: {"completion_tokens": "100000", "request_count": "1", f"m:completion_tokens:{self.model_key}": "100000"}})
+		self.pull(
+			{
+				key: {
+					"completion_tokens": "100000",
+					"request_count": "1",
+					f"m:completion_tokens:{self.model_key}": "100000",
+				}
+			}
+		)
 		self.assertEqual(self.state(team), (D("0"), 0))
 		[entry] = frappe.parse_json(frappe.db.get_value("Usage Record", {"api_key": key}, "usage"))
-		self.assertEqual((entry["pricing"], entry["completion_tokens"], entry["grove_cost"]), (None, 100_000, 0))
+		self.assertEqual(
+			(entry["pricing"], entry["completion_tokens"], entry["grove_cost"]), (None, 100_000, 0)
+		)
 
 	def test_a_drain_that_spans_a_flip_lands_as_a_billed_and_a_free_record(self):
 		team, key = self.team(cap=1)
 		self.pull({key: self.hash(30_000) | self.hash(50_000, charged=False) | {"request_count": "2"}})
 		self.assertEqual(self.state(team), (D("0.3"), 0), "only what the gateway charged moves spent")
 		records = frappe.get_all(
-			"Usage Record", {"api_key": key}, ["billed", "cost", "request_count"], order_by="billed desc", as_list=True
+			"Usage Record",
+			{"api_key": key},
+			["billed", "cost", "request_count"],
+			order_by="billed desc",
+			as_list=True,
 		)
 		self.assertEqual(records, ((1, 0.3, 1), (0, 0.5, 1)))
 
@@ -247,7 +313,10 @@ class TestAFreeTeamIsNeverCharged(CreditsCase):
 
 	def test_an_unknown_pricing_leaves_the_teams_share_stuck_and_unacknowledged(self):
 		team, key = self.team(cap=1)
-		self.assertEqual(self.pull({key: self.hash(10_000, pricing_id="no-such-pricing")}, drain_id="credits-unknown"), (1, {}, [], 1))
+		self.assertEqual(
+			self.pull({key: self.hash(10_000, pricing_id="no-such-pricing")}, drain_id="credits-unknown"),
+			(1, {}, [], 1),
+		)
 		self.assertEqual(self.state(team), (D("0"), 0))
 		self.assertTrue(frappe.db.exists("Stuck Usage", {"team": team, "resolved": 0}))
 
@@ -258,6 +327,7 @@ class TestAFreeTeamIsNeverCharged(CreditsCase):
 		doc.log_payloads = 1
 		doc.save()
 		self.assertEqual(self.state(team), (D("0.7"), 0))
+
 
 class TestTheUsageApiSumsInTheDatabase(CreditsCase):
 	def test_requests_and_cost_per_team_and_model_over_a_period(self):
@@ -271,12 +341,18 @@ class TestTheUsageApiSumsInTheDatabase(CreditsCase):
 		)
 		self.assertEqual(
 			result["daily_summary"],
-			[{"day": result["to_date"], "model": self.model_key, "requests": 3, "tokens": 80_000, "cost": 0.8}],
+			[
+				{
+					"day": result["to_date"],
+					"model": self.model_key,
+					"requests": 3,
+					"tokens": 80_000,
+					"cost": 0.8,
+				}
+			],
 		)
 		self.assertTrue(result["as_of"].endswith("Z"))
-		self.assertEqual(
-			usage_api.usage([team], period="Yesterday")[team], {"requests": 0, "tokens": 0, "cost": 0}
-		)
+		self.assertEqual(usage_api.usage([team], period="Yesterday")[team], {"requests": 0, "tokens": 0, "cost": 0})
 
 	def test_a_key_hash_narrows_it_to_that_key(self):
 		team, key = self.team(cap=3)
@@ -291,7 +367,15 @@ class TestTheUsageApiSumsInTheDatabase(CreditsCase):
 		)
 		self.assertEqual(
 			result["daily_summary"],
-			[{"day": result["to_date"], "model": self.model_key, "requests": 1, "tokens": 50_000, "cost": 0.5}],
+			[
+				{
+					"day": result["to_date"],
+					"model": self.model_key,
+					"requests": 1,
+					"tokens": 50_000,
+					"cost": 0.5,
+				}
+			],
 		)
 
 	def test_another_teams_key_is_refused(self):
@@ -310,7 +394,13 @@ class TestTheGatewaysChargeIsAudited(CreditsCase):
 		[row] = self.discrepancies(team)
 		record = frappe.db.get_value("Usage Record", {"api_key": key})
 		self.assertEqual(
-			(row.usage_record, row.pricing, D(str(row.gateway_value)), D(str(row.grove_value)), D(str(row.delta))),
+			(
+				row.usage_record,
+				row.pricing,
+				D(str(row.gateway_value)),
+				D(str(row.grove_value)),
+				D(str(row.delta)),
+			),
 			(record, self.pricing, D("0.6"), D("0.5"), D("0.1")),
 		)
 		self.assertEqual(self.state(team), (D("0.5"), 0))
@@ -327,7 +417,6 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 	def discrepancy(self):
 		team, key = self.team(cap=5)
 		self.pull({key: self.hash(50_000, cost=600_000_000)})
-
 		[row] = self.discrepancies(team)
 		return team, frappe.get_doc("Credit Discrepancy", row.name)
 
@@ -376,7 +465,9 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		self.assertNotIn(row.name, self.owed_ids())
 		row.correct_gateway()
 		key_hash = frappe.db.get_value("Grove API Key", row.api_key, "key_hash")
-		self.assertIn({"key": key_hash, "delta": -100_000_000, "id": row.name}, pending_adjustments()[self.store])
+		self.assertIn(
+			{"key": key_hash, "delta": -100_000_000, "id": row.name}, pending_adjustments()[self.store]
+		)
 
 	def test_the_boxs_answer_marks_the_row_corrected_and_it_is_owed_no_more(self):
 		team, row = self.discrepancy()
@@ -384,7 +475,12 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		mark_corrected({row.name: 500_000_000})
 		row.reload()
 		self.assertEqual(
-			(row.resolution, row.gateway_correction_pending, D(str(row.correction)), D(str(row.gateway_spent))),
+			(
+				row.resolution,
+				row.gateway_correction_pending,
+				D(str(row.correction)),
+				D(str(row.gateway_spent)),
+			),
 			("Gateway corrected", 0, D("-0.1"), D("0.5")),
 		)
 		self.assertNotIn(row.name, self.owed_ids())
@@ -412,7 +508,10 @@ class TestThePushCarriesTheCap(CreditsCase):
 		self.pull({key: self.hash(30_000)})
 		self.pull({key: self.hash(20_000)}, store=a_store("credits-store-2"))
 		pushed = self.keys()[key]
-		self.assertEqual((pushed["team"], pushed["prepaid"], pushed["budget"], pushed["limited"]), (team, True, 1_250_000_000, False))
+		self.assertEqual(
+			(pushed["team"], pushed["prepaid"], pushed["budget"], pushed["limited"]),
+			(team, True, 1_250_000_000, False),
+		)
 
 	def test_a_suspended_teams_keys_are_pushed_limited_and_a_free_ones_no_budget(self):
 		team, key = self.team(cap=0.5)
@@ -420,14 +519,19 @@ class TestThePushCarriesTheCap(CreditsCase):
 		frappe.db.set_value("Central Team", team, "suspended", 1)
 		_free, free_key = self.team(free=1, cap=5)
 		keys = self.keys()
-		self.assertEqual((keys[key]["limited"], keys[other]["limited"]), (True, True), "the team is suspended: every key of it")
+		self.assertEqual(
+			(keys[key]["limited"], keys[other]["limited"]),
+			(True, True),
+			"the team is suspended: every key of it",
+		)
 		self.assertEqual((keys[free_key]["prepaid"], keys[free_key]["budget"]), (False, 0))
 
 	def test_only_a_published_priced_model_is_routed_and_never_at_a_draft(self):
 		unpublished, _pricing = self.priced_model("credits-unpublished-7b", 5)
 		new_pricing(self.model, completion_tokens=12)
-		# The table is keyed by model key; the rows beside it are the docs, pricing hanging off each.
-		table = {key: [{"deployment": "d1"}] for key in (self.model_key, "frappe/unpublished", "unpriced/model")}
+		table = {
+			key: [{"deployment": "d1"}] for key in (self.model_key, "frappe/unpublished", "unpriced/model")
+		}
 		models = [
 			frappe._dict(name=self.model, model_key=self.model_key, published=1),
 			frappe._dict(name=unpublished, model_key="frappe/unpublished", published=0),
@@ -436,8 +540,25 @@ class TestThePushCarriesTheCap(CreditsCase):
 		counters = pricing.CounterTable.load().published
 		self.assertEqual(
 			routes.published_routes(table, models),
-			{self.model_key: [{"deployment": "d1", "pricing": {
-				"id": self.pricing, "rates": {"completion_tokens": 10 * NANO}, "counters": counters,
-			}}]},
+			{
+				self.model_key: [
+					{
+						"deployment": "d1",
+						"pricing": {
+							"id": self.pricing,
+							"rates": {"completion_tokens": 10 * NANO},
+							"counters": counters,
+						},
+					}
+				]
+			},
 		)
-		self.assertIn({"name": "prompt_tokens_above_272k", "divisor": 10**6, "base": "prompt_tokens", "min_prompt_tokens": 272000}, counters)
+		self.assertIn(
+			{
+				"name": "prompt_tokens_above_272k",
+				"divisor": 10**6,
+				"base": "prompt_tokens",
+				"min_prompt_tokens": 272000,
+			},
+			counters,
+		)
