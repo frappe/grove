@@ -20,7 +20,8 @@ def create_control_client(email: str):
 
 	control_user = _create_control_user(email)
 
-	# Mint directly: generate_keys() would reject a Guest caller on permission.
+	# Mint directly: generate_keys() would reject a Guest caller on permission. The caller is Guest
+	# behind the control secret, so no permitted save path exists for it; the secret is the gate.
 	api_secret = frappe.generate_hash(length=15)
 	control_user.api_key = control_user.api_key or frappe.generate_hash(length=15)
 	control_user.api_secret = api_secret
@@ -37,6 +38,7 @@ def create_control_client_key():
 	api_secret = frappe.generate_hash(length=15)
 	control_user.api_key = control_user.api_key or frappe.generate_hash(length=15)
 	control_user.api_secret = api_secret
+	# A user mints its own secret; generate_keys() and a permitted save both need System Manager.
 	control_user.save(ignore_permissions=True)
 
 	return {"api_key": control_user.api_key, "api_secret": api_secret, "user": control_user.name}

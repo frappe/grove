@@ -7,6 +7,7 @@
  "field_order": [
   "model_provider",
   "key_title",
+  "key_id",
   "gateway_store",
   "stats"
  ],
@@ -28,6 +29,14 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "description": "The key row's Title on its Model Provider."
+  },
+  {
+   "description": "The key row's id on its Model Provider, which outlives a retitle: two keys that shared a title tell apart by it. Blank on rows from before it was kept.",
+   "fieldname": "key_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Key Id",
+   "read_only": 1
   },
   {
    "fieldname": "gateway_store",

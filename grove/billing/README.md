@@ -178,7 +178,7 @@ or a month in Grove is the gateway's own, however late the pull — unique on dr
 team that landed. Every other one comes back next pull; a re-sent one records nothing twice. A day
 of `""` (a gateway from before it bucketed by day) lands today. The acked counters are kept
 for Grove Settings' **Usage Retention** (rendered into each gateway's `config.json`, default
-`168h`). A record is one row: the key, the store (a Link — a key used in several geographies gets
+`72h`). A record is one row: the key, the store (a Link — a key used in several geographies gets
 a record per store per drain), the drain id, the day, and the totals: requests, `total_tokens`
 (prompt and completion once each, `CounterTable.whole`: the cheap read, no JSON unnest), `cost`
 (what Grove billed) and `gateway_cost`; the per-model detail — pricing, requests, the

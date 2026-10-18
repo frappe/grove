@@ -98,6 +98,7 @@ def rename_tier(old: str, new: str):
 		return
 	if frappe.db.exists("Tier", new):
 		frappe.throw(f"Tier {new!r} already exists at Grove; rename or delete it first.")
+	# A rename needs write on Tier, which Grove Control must not hold over REST; only_for gates it.
 	rename_doc("Tier", old, new, ignore_permissions=True, show_alert=False)
 
 

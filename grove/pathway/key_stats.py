@@ -80,7 +80,7 @@ def record_key_stats(stats, keys, gateway_store):
 			continue
 		model_provider, title = keys[key_id]
 		frappe.get_doc({
-			"doctype": "Provider Key Stats", "model_provider": model_provider, "key_title": title,
+			"doctype": "Provider Key Stats", "model_provider": model_provider, "key_title": title, "key_id": key_id,
 			"gateway_store": gateway_store, "stats": frappe.as_json(readable(counts)),
 		}).insert(ignore_permissions=True)
 		landed += 1

@@ -109,14 +109,15 @@ class Projection(SyncRun):
 		return None if len(labels) > FULL_ABOVE else labels
 
 	def delta_for(self, target, desired):
-		"""What `target` is sent: the whole snapshot under force, else what its hashes lack among
-		the buckets in play. A read that failed is kept as is, for the dial to raise; a box never
-		resolved gets nothing, its dial fails on its own error first."""
+		"""What `target` is sent: the whole snapshot under force, even when its hashes could not be
+		read — the operator asked for a repair, and the POST may well get through — else what its
+		hashes lack among the buckets in play. A read that failed is kept as is, for the dial to
+		raise; a box never resolved gets nothing, its dial fails on its own error first."""
 		remote = self.remote.get(target)
+		if self.force and not target.error:
+			return dict(desired)
 		if target.error or isinstance(remote, Exception):
 			return remote
-		if self.force:
-			return dict(desired)
 		return snapshot.snapshot_delta(desired, remote or {}, self.labels)
 
 	def work(self, unit):

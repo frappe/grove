@@ -876,6 +876,13 @@ class TestSyncProjection(unittest.TestCase):
 		self.assertEqual(targets, [("Gateway Server", "gw1")])
 		self.assertEqual(self.deltas["gw1"], self.SNAPSHOT)
 
+	def test_a_forced_push_goes_out_when_the_hash_read_failed(self):
+		_name, _doc, targets = self.run_projection(
+			{"gw1": self.row()}, proxies=("gw1",), entry=projection.full_sync, remote={"gw1": RuntimeError("no hash")}
+		)
+		self.assertEqual(targets, [("Gateway Server", "gw1")])
+		self.assertEqual(self.deltas["gw1"], self.SNAPSHOT)
+
 	def test_a_tick_sends_a_box_only_what_its_hashes_lack(self):
 		self.run_projection({}, remote={"gw1": {"groups": "g1"}, "gw2": {"groups": "stale"}})
 		self.assertEqual(self.deltas, {"gw1": {}, "gw2": self.SNAPSHOT})
