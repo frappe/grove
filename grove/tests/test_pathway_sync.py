@@ -10,7 +10,6 @@ binary, not a tree this deploy compiles. So the shape is asserted rather than as
 contract is plan_agent_state_sync.md at the repo root.
 """
 
-import threading
 import unittest
 import unittest.mock
 from datetime import datetime
@@ -492,7 +491,7 @@ class TestDelta(unittest.TestCase):
 
 
 class TestSyncTarget(unittest.TestCase):
-	"""One box sent its delta, decided on the main thread: skipped silently when there is none,
+	"""One box sent its delta, decided before the dial: skipped silently when there is none,
 	pushed and logged when there is, and classified — down vs rejected — when the push, or the
 	hash read before it, failed."""
 
@@ -577,21 +576,12 @@ class TestAPushCarriesOwedAdjustments(unittest.TestCase):
 		self.assertEqual((row["success"], row["adjusted"]), (0, {"CD-1": 40}))
 
 
-class TestAPushNeedsNoFrappe(unittest.TestCase):
-	"""push_target and in_turn run on a pool thread, where there is no frappe.local."""
-
-	def on_a_bare_thread(self, work):
-		box = {}
-		thread = threading.Thread(target=lambda: box.update(result=work()))
-		thread.start()
-		thread.join(5)
-		return box["result"]
+class TestAPush(unittest.TestCase):
+	"""push_target through in_turn: what one box's row carries."""
 
 	def push(self, target, desired):
 		with unittest.mock.patch.object(Target, "post", return_value={}):
-			return self.on_a_bare_thread(
-				lambda: run.in_turn(Unit(None, (target,)), lambda t: projection.push_target(t, desired))
-			)
+			return run.in_turn(Unit(None, (target,)), lambda t: projection.push_target(t, desired))
 
 	def test_a_push_carries_its_own_payload(self):
 		target = Target("Gateway Server", "gw1", "http://x", "t")
@@ -829,35 +819,6 @@ class TestSyncProjection(unittest.TestCase):
 	def test_a_failed_push_marks_the_run(self):
 		_name, doc, _targets = self.run_projection({"gw1": self.row(success=0), "gw2": self.row()})
 		self.assertEqual(doc.status, "Partial")
-
-	def test_rows_land_in_the_order_asked_whichever_box_answers_first(self):
-		first_may_answer = threading.Event()
-
-		def slow(_target):
-			first_may_answer.wait(5)
-			return self.row()
-
-		def fast(_target):
-			first_may_answer.set()
-			return self.row()
-
-		_name, doc, _targets = self.run_projection({"gw1": slow, "gw2": fast})
-		self.assertEqual([row["server"] for row in doc.results], ["gw1", "gw2"])
-
-	def test_boxes_are_dialled_side_by_side(self):
-		together = threading.Barrier(2, timeout=5)
-
-		def meet(_target):
-			together.wait()
-			return self.row()
-
-		_name, doc, _targets = self.run_projection({"gw1": meet, "gw2": meet})
-		self.assertEqual((doc.targets_total, doc.targets_ok), (2, 2))
-
-	def test_one_box_needs_no_pool(self):
-		with unittest.mock.patch.object(run, "ThreadPoolExecutor", side_effect=AssertionError("pool")):
-			_name, doc, _targets = self.run_projection({"gw1": self.row()}, proxies=("gw1",))
-		self.assertEqual(doc.status, "Success")
 
 	def test_a_push_that_raises_fails_its_own_row_and_the_rest_land(self):
 		def boom(_target):

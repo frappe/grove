@@ -39,7 +39,7 @@ class KeyStats(SyncRun):
 		return in_turn(unit, lambda target: fetch_key_stats(target, list(self.keys)))
 
 	def settle(self, unit, result):
-		"""Landed the moment it arrives, on the main thread."""
+		"""Landed the moment it arrives."""
 		outcome, rows = super().settle(unit, result)
 		for row in rows:
 			stats = row.pop("stats", None) or {}
@@ -56,7 +56,7 @@ def pull_all(gateways=None, trigger="Scheduled", wait=0):
 
 
 def fetch_key_stats(target, ids):
-	"""GET /provider-keys off one gateway: {key id: its counts}. Pool thread: no frappe."""
+	"""GET /provider-keys off one gateway: {key id: its counts}."""
 
 	def work(row):
 		row["stats"] = target.get("provider-keys?ids=" + ",".join(ids))

@@ -1,14 +1,13 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""What every Pathway Sync run shares: one box's admin API, the units a run dials, the pool that
-dials them, and the rows that land on the run doc. Every path that reaches a box goes through here.
+"""What every Pathway Sync run shares: one box's admin API, the units a run dials, and the rows that
+land on the run doc. Every path that reaches a box goes through here.
 
 Runs of one type serialize on the Pathway Sync doc's advisory lock, so a slow run cannot land a
-stale write after a newer one. Boxes are dialled in parallel, a store's writers in turn, and rows
+stale write after a newer one. Boxes are dialled one at a time, a store's writers in turn, and rows
 land in the order asked."""
 
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 import requests
@@ -16,7 +15,6 @@ import requests
 import frappe
 
 TIMEOUT = 10
-MAX_PARALLEL = 8
 ERROR_LIMIT = 2000
 NO_WRITER = "No Active Gateway Store Writer — mark one of this store's gateways, or nothing updates it."
 
@@ -36,8 +34,8 @@ class InSync(Exception):
 
 @dataclass(frozen=True)
 class Target:
-	"""One box's admin API, resolved on the main thread so dialling it never touches frappe. Both
-	planes derive admin_url the same way and gate /admin on the same token."""
+	"""One box's admin API. Both planes derive admin_url the same way and gate /admin on the same
+	token."""
 
 	server_type: str
 	name: str
@@ -81,8 +79,7 @@ class Target:
 	def dial(self, work, **fields):
 		"""`work(row)` against this box, the outcome classified onto the row: reachability and
 		success are separate, so the log tells 'down' from 'rejected'. `fields` are on the row even
-		when the box could not be resolved and `work` never ran. None on InSync — nothing to log.
-		Pool thread: no frappe."""
+		when the box could not be resolved and `work` never ran. None on InSync — nothing to log."""
 		start = time.monotonic()
 		row = {"reachable": 1, "success": 0, "http_status": 0, "error": self.error, "detail": "", **fields}
 		try:
@@ -152,7 +149,7 @@ def gateway_units(gateways=None, geography=None):
 def in_turn(unit, work):
 	"""`work(target)` on each of the unit's targets until one succeeds. → (outcome, rows): True when
 	one succeeded, None when one already held the state (it leaves no row), False when none got
-	through. Touches no doc, so a pool thread can run it: the caller appends the rows."""
+	through. Touches no doc: the caller appends the rows."""
 	if not unit.targets:
 		return False, [{"server_type": "Gateway Store", "server": unit.store, "error": NO_WRITER}]
 	rows = []
@@ -166,20 +163,8 @@ def in_turn(unit, work):
 	return False, rows
 
 
-def each_in_parallel(units, work):
-	"""`work(unit)` for every unit, yielding (index, result) as each finishes. `work` runs on a pool
-	thread, which has no frappe.local — no db, no docs, no frappe.throw — so it takes resolved
-	inputs and returns plain data. One that raises anyway yields the exception as its result."""
-	if len(units) <= 1:
-		yield from ((index, guarded(work, unit)) for index, unit in enumerate(units))
-		return
-	with ThreadPoolExecutor(max_workers=min(MAX_PARALLEL, len(units))) as pool:
-		futures = {pool.submit(guarded, work, unit): index for index, unit in enumerate(units)}
-		for future in as_completed(futures):
-			yield futures[future], future.result()
-
-
 def guarded(work, unit):
+	"""`work(unit)`, or the exception it raised as its result."""
 	try:
 		return work(unit)
 	except Exception as e:
@@ -231,9 +216,9 @@ def finalize(doc, total, ok):
 
 
 class SyncRun:
-	"""One Pathway Sync run. A subclass says which units it dials, what each does on a pool thread,
-	and how an answer lands; the base takes the lock, dials in parallel, puts rows on the doc in the
-	order asked, and finalizes only when a row was left."""
+	"""One Pathway Sync run. A subclass says which units it dials, what each does, and how an answer
+	lands; the base takes the lock, dials them in turn, puts rows on the doc in the order asked, and
+	finalizes only when a row was left."""
 
 	sync_type = ""
 	pause_field = ""
@@ -260,31 +245,27 @@ class SyncRun:
 			if not units:
 				self.skipped = "nothing"
 				return None
-			answers = {}
-			for index, result in each_in_parallel(units, self.work):
-				answers[index] = self.settle(units[index], result)
-			return self.record(units, answers)
+			return self.record([self.settle(unit, guarded(self.work, unit)) for unit in units])
 		finally:
 			self.doc.release_lock()
 
 	def units(self):
-		"""Main thread: everything a pool thread will need, resolved here."""
+		"""The units this run dials, each resolved before any is dialled."""
 		raise NotImplementedError
 
 	def work(self, unit):
-		"""Pool thread — no frappe.local, no db, no docs. → (outcome, rows)."""
+		"""Dial one unit. → (outcome, rows)."""
 		raise NotImplementedError
 
 	def settle(self, unit, result):
-		"""A unit's (outcome, rows), on the main thread the moment it arrives."""
+		"""A unit's (outcome, rows), the moment it arrives."""
 		return settled(unit, result)
 
-	def record(self, units, answers):
-		"""Rows onto the run doc in the order the units were asked, whichever finished first. A unit
-		that left no row already held the state and is not a target of this run."""
+	def record(self, answers):
+		"""Rows onto the run doc in the order the units were asked. A unit that left no row already
+		held the state and is not a target of this run."""
 		total = ok = 0
-		for index, unit in enumerate(units):
-			outcome, rows = answers[index]
+		for outcome, rows in answers:
 			for row in rows:
 				if "payload" in row:
 					row["payload"] = payload_text(row["payload"])

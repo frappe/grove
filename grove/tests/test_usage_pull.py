@@ -6,7 +6,6 @@ failure records nothing twice; a team whose share cannot be recorded stays unack
 logged as Stuck Usage, and holds nobody else back."""
 
 import json
-import threading
 import unittest.mock
 from decimal import Decimal
 
@@ -461,19 +460,6 @@ class TestAStoreIsPulledThroughOneWriter(unittest.TestCase):
 		pulled, counts = self.pull([("store1", [])], succeeds=set())
 		self.assertEqual((pulled, counts), ([], (1, 0)))
 
-	def test_rows_land_in_the_order_asked_whichever_store_answers_first(self):
-		first_may_answer = threading.Event()
-
-		def fetch(target):
-			if target.name == "gw1":
-				first_may_answer.wait(5)
-			else:
-				first_may_answer.set()
-			return {"success": 1, "reachable": 1, "duration_ms": 0, "drains": {}}
-
-		self.pull([(None, ["gw1"]), (None, ["gw2"])], succeeds=set(), fetch=fetch)
-		self.assertEqual([row["server"] for row in self.doc.results], ["gw1", "gw2"])
-
 	def test_a_drain_that_cannot_be_recorded_fails_its_own_row(self):
 		def record(gateway, _drains, _dead, **_):
 			if gateway == "gw1":
@@ -493,21 +479,14 @@ class TestAStoreIsPulledThroughOneWriter(unittest.TestCase):
 		self.assertNotIn("dead", self.doc.results[0])
 
 
-class TestFetchUsageNeedsNoFrappe(unittest.TestCase):
-	"""It runs on a pool thread, where there is no frappe.local to reach for."""
-
-	def on_a_bare_thread(self, work):
-		box = {}
-		thread = threading.Thread(target=lambda: box.update(result=work()))
-		thread.start()
-		thread.join(5)
-		return box["result"]
+class TestFetchUsage(unittest.TestCase):
+	"""GET /usage off one box: the URL asked and the row it leaves."""
 
 	def fetch(self, answer, keys=None):
 		response = unittest.mock.Mock()
 		response.json.return_value = answer
 		with unittest.mock.patch("grove.pathway.run.requests.get", return_value=response) as get:
-			row = self.on_a_bare_thread(lambda: usage.fetch_usage(Target("Gateway Server", "gw", "http://x", "t"), keys))
+			row = usage.fetch_usage(Target("Gateway Server", "gw", "http://x", "t"), keys)
 		return row, get.call_args.args[0]
 
 	def test_drains_come_back_grouped_by_id(self):
@@ -525,9 +504,7 @@ class TestFetchUsageNeedsNoFrappe(unittest.TestCase):
 
 	def test_a_box_that_could_not_be_resolved_is_a_failed_row_not_a_call(self):
 		with unittest.mock.patch("grove.pathway.run.requests.get") as get:
-			row = self.on_a_bare_thread(
-				lambda: usage.fetch_usage(Target("Gateway Server", "gw", error="no admin_url"))
-			)
+			row = usage.fetch_usage(Target("Gateway Server", "gw", error="no admin_url"))
 		get.assert_not_called()
 		self.assertEqual((row["success"], row["error"]), (0, "no admin_url"))
 
@@ -604,10 +581,8 @@ class TestACapCheckPeeksAtTheBoxes(unittest.TestCase):
 			unittest.mock.patch.object(frappe, "get_all", return_value=[]),
 			unittest.mock.patch.object(usage, "utc_today", return_value=getdate("2026-10-13")),
 		):
-			self.assertEqual(
-				peek.record([None], {0: (True, [failed, answered])}), {"ok": True, "pending": {"k1": 9}}
-			)
-			self.assertEqual(peek.record([None], {0: (False, [failed])}), {"ok": False, "pending": {}})
+			self.assertEqual(peek.record([(True, [failed, answered])]), {"ok": True, "pending": {"k1": 9}})
+			self.assertEqual(peek.record([(False, [failed])]), {"ok": False, "pending": {}})
 
 	def test_a_peek_asks_without_setting_aside(self):
 		asked = []

@@ -42,7 +42,7 @@ gateways cannot jointly overrun one replica.
 
 | File | Owns |
 |---|---|
-| `pathway/run.py` | What every run shares: `Target` (one box's admin API), `SyncRun` (lock, parallel dial, rows in the order asked). Every path that reaches a box goes through it. |
+| `pathway/run.py` | What every run shares: `Target` (one box's admin API), `SyncRun` (lock, dial in turn, rows in the order asked). Every path that reaches a box goes through it. |
 | `pathway/projection.py` | `Projection`: every push to every box. A push that left no Pathway Sync row did not happen. |
 | `pathway/usage.py` | `Usage`: each store's drain (or one team's keys) into one Usage Record per key, then the ack of what landed. `reconcile.py` lands each touched team: records, `spent` moved by Grove's price, the gateway's charge audited, the team settled. |
 | `billing/` | Usage counters, sell prices, monthly caps, usage records, the Revenue report and the Vendor Reconciliation report — its own Frappe module, [`billing/README.md`](billing/README.md). |
@@ -251,13 +251,10 @@ them, which the very next tick reads as a box with no key hash and rebuilds ever
 Projection runs serialize on one MariaDB advisory lock, so a slow run cannot land a stale write
 after a newer one.
 
-**Boxes are dialled in parallel** (`MAX_PARALLEL = 8`), a store's writers in turn, so one dead box
-costs a run one timeout, not one per box. Rows land in the order asked, whichever box answered
-first. The rule for anyone adding a run (`SyncRun`): resolve on the main thread (`units()`,
-`Target.resolve`), HTTP only on the pool (`work()`: `Target.dial`, `in_turn`), record on the main
-thread (`settle()`) — a pool thread has no `frappe.local`, so no db, no docs, no `frappe.throw`. A usage drain is recorded the
-moment it arrives; one that cannot be recorded fails its own row and acks nothing, so the box sends
-it again.
+**Boxes are dialled one at a time**, a store's writers in turn, and rows land in the order asked.
+A run (`SyncRun`) resolves its units first (`units()`, `Target.resolve`), dials each (`work()`:
+`Target.dial`, `in_turn`) and records its answer the moment it arrives (`settle()`). A usage drain
+that cannot be recorded fails its own row and acks nothing, so the box sends it again.
 
 ### The projection tick
 

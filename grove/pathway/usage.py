@@ -24,8 +24,7 @@ not replay. Grove lands each like any other usage, under the drain id `dead:<req
 cannot read, or whose key it does not hold, is kept as a Stuck Usage row. Either way the box is told
 to drop it.
 
-Gateway Redises are drained in parallel and each drain is recorded the moment it arrives, on the
-main thread."""
+Gateway Redises are drained one at a time and each drain is recorded the moment it arrives."""
 
 import hashlib
 import json
@@ -92,12 +91,12 @@ class Peek(Usage):
 	def settle(self, unit, result):
 		return super(Usage, self).settle(unit, result)
 
-	def record(self, units, answers):
+	def record(self, answers):
 		"""→ {"ok": every store answered through one of its writers, "pending": nano-USD per prefix
 		of what the boxes hold that no Usage Record has yet}. A writer that failed before the next
 		one answered leaves its row, which says nothing about the store."""
-		ok = all(outcome is True for outcome, _rows in answers.values())
-		rows = [row for _outcome, unit_rows in answers.values() for row in unit_rows if row.get("success")]
+		ok = all(outcome is True for outcome, _rows in answers)
+		rows = [row for _outcome, unit_rows in answers for row in unit_rows if row.get("success")]
 		return {"ok": ok, "pending": pending_spend(rows) if ok else {}}
 
 
@@ -177,7 +176,7 @@ def landed_pairs(drain_ids):
 def fetch_usage(target, keys=None, peek=False):
 	"""GET /usage off one gateway: {drain id: {key: {day: hash}}} of everything it holds
 	unacknowledged, `keys` alone when given, and its dead lines. `peek` reads the same without
-	setting anything aside, the live buckets under the id "". Pool thread: no frappe."""
+	setting anything aside, the live buckets under the id ""."""
 
 	def drain(row):
 		parts = ([f"keys={','.join(keys)}"] if keys else []) + (["peek=1"] if peek else [])
@@ -189,7 +188,7 @@ def fetch_usage(target, keys=None, peek=False):
 
 
 def record_drain(outcome, rows, gateway_store=None):
-	"""Land what a group drained — main thread, as soon as it arrives — and acknowledge what landed.
+	"""Land what a group drained, as soon as it arrives, and acknowledge what landed.
 	A drain that cannot be recorded at all is rolled back and acknowledges nothing, so the box sends
 	it again. `gateway_store` is the store drained, or None for a gateway dialled by name."""
 	for row in rows:
