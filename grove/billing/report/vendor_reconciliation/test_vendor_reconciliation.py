@@ -212,3 +212,28 @@ class TestVendorReconciliation(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError) as unknown:
 			self.report(provider="probe-nobody")
 		self.assertIn("probe-nobody", str(unknown.exception))
+
+
+class TestABillingReadIsOncePerAccount(IntegrationTestCase):
+	"""Baseten bills per account, so `vendor_figures` reads each account its keys name once: two
+	keys of one account (a rotation) read once, two accounts in one record both read, and a key
+	that names no account is an account of its own."""
+
+	def test_each_account_the_keys_name_is_read_once(self):
+		rows = [
+			{"title": "a", "api_key": "k", "account": "acct-a"},
+			{"title": "a-rotated", "api_key": "k-rotated", "account": "acct-a"},
+			{"title": "b", "api_key": "k2", "account": "acct-b"},
+			{"title": "own", "api_key": "k3"},
+		]
+		doc = provider("baseten", base_url="https://inference.baseten.co", api_keys=rows).insert()
+		bearers = []
+
+		def get(url, headers, params, timeout):
+			bearers.append(headers["Authorization"])
+			return Mock(ok=True, status_code=200, json=lambda: NOTHING)
+
+		with patch.object(vendor.requests, "get", side_effect=get):
+			vendor.vendor_figures([doc], utc_today() - timedelta(days=2), utc_today() - timedelta(days=1))
+		self.assertEqual(sorted(set(bearers)), ["Bearer k", "Bearer k2", "Bearer k3"])
+		self.assertEqual(len(bearers), 6, "the usage and the cost endpoint, once per account")

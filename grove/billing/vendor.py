@@ -18,24 +18,27 @@ RANGE_DAYS = 90
 def vendor_figures(providers, from_date, to_date):
 	"""{(day, upstream model id): {requests, input_tokens, cached_tokens, output_tokens, billed}} for
 	every UTC day in [from_date, to_date] the vendor saw traffic under these Model Provider records'
-	keys, read once per distinct key: two geography records on one account count once. The model id
-	is the vendor's own spelling, what `Model.upstream_model_id` holds."""
+	keys. The vendor bills per account, so the read is once per account: a key row's Account, or
+	the key itself when it names none. Two keys of one account (a rotation) count once, two
+	accounts in one record both count, and the same key in two geography records counts once. The
+	model id is the vendor's own spelling, what `Model.upstream_model_id` holds."""
 	vendor = providers[0].provider_name
 	if vendor != "baseten":
 		frappe.throw(f"No billing read for {vendor} yet: only baseten is reconciled.")
 	if (to_date - from_date).days >= RANGE_DAYS:
 		frappe.throw(f"{vendor} answers at most {RANGE_DAYS} days at a time.")
 
-	secrets = set()
+	secret_by_account = {}
 	for provider in providers:
-		enabled = [row for row in provider.api_keys if not row.disabled]
-		if enabled:
-			secrets.add(enabled[0].get_password("api_key"))
-	if not secrets:
+		for row in provider.api_keys:
+			if not row.disabled:
+				secret = row.get_password("api_key")
+				secret_by_account.setdefault(row.account or secret, secret)
+	if not secret_by_account:
 		frappe.throw(f"{vendor} has no enabled key to read its billing with.")
 
 	figures = {}
-	for secret in secrets:
+	for secret in secret_by_account.values():
 		read_baseten(secret, from_date, to_date, figures)
 	return figures
 

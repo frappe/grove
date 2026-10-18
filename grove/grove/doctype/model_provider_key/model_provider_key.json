@@ -7,11 +7,12 @@
  "field_order": [
   "title",
   "api_key",
+  "account",
   "disabled"
  ],
  "fields": [
   {
-   "columns": 3,
+   "columns": 2,
    "description": "Names this key for the operator and in Provider Key Stats, one per provider; the gateway never sees it.",
    "fieldname": "title",
    "fieldtype": "Data",
@@ -20,7 +21,7 @@
    "reqd": 1
   },
   {
-   "columns": 5,
+   "columns": 4,
    "description": "One credential we hold with this vendor. Pushed to every gateway of the geography under this row's id; a customer's key never leaves us.",
    "fieldname": "api_key",
    "fieldtype": "Password",
@@ -28,6 +29,14 @@
    "label": "API Key",
    "length": 1024,
    "reqd": 1
+  },
+  {
+   "columns": 2,
+   "description": "Which vendor account this key belongs to, so a billing read (Vendor Reconciliation) happens once per account. Blank: the key is an account of its own.",
+   "fieldname": "account",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Account"
   },
   {
    "columns": 2,
