@@ -1,12 +1,11 @@
-"""Prices per counter, and what each key has spent at them.
+"""Prices per counter, and what each key spent at them this month.
 
 One rate table, joined at evaluation and never snapshotted onto usage: SELL on `Model Pricing`.
 A drain is priced by the pricing id the gateway tagged each request with, so both sides price the
 same counters at the same rates.
 
-`Grove API Key.spent` is the running USD total the pull increments per key; `settle` is the one
-writer of the team's `spent`. What was spent this month is never stored: `month_spent_by` sums
-it off the records and the corrections."""
+No spend is stored on a key or a team: `month_spent_by` sums this month off the records and the
+corrections, and whatever lands money forgets the team's figures (`forget_figures`)."""
 
 from decimal import Decimal
 
@@ -182,27 +181,10 @@ class PriceBook:
 
 
 def lock_team(team):
-	"""The team row, held until this transaction ends. Every writer of a key's spend takes it before
-	the key, so two of them queue instead of each summing the keys without the other's charge."""
+	"""The team row, held until this transaction ends. The pull and a correction take it before
+	landing money, and a cap check reads the team FOR UPDATE, so the check sees a drain landed
+	whole or not at all."""
 	frappe.db.get_value("Central Team", team, "name", for_update=True)
-
-
-def spent_by_keys(team):
-	"""Σ what the team's keys have been charged, revoked ones included: a revoked key's spend is
-	still the team's. A locking read, so it sees what another writer committed a moment ago."""
-	total = frappe.db.sql(
-		"select coalesce(sum(spent), 0) from `tabGrove API Key` where team = %s for update", [team]
-	)[0][0]
-	return Decimal(str(total))
-
-
-def settle(team):
-	"""The one writer of the team's `spent`: Σ what its keys were charged. Every writer of a key's
-	spend (the pull, a correction) ends here, so this is where the team's figures go stale. → that."""
-	spent = spent_by_keys(team)
-	frappe.db.set_value("Central Team", team, "spent", float(spent), update_modified=False)
-	forget_figures(team)
-	return spent
 
 
 def usd(amount):

@@ -50,7 +50,6 @@ class GroveAPIKey(Document):
 		key_hash: DF.Data | None
 		limits: DF.Table[ModelLimit]
 		model_groups: DF.TableMultiSelect[ModelGroupRow]
-		spent: DF.Currency
 		status: DF.Literal["active", "revoked"]
 		team: DF.Link
 		title: DF.Data | None
@@ -106,9 +105,6 @@ class GroveAPIKey(Document):
 			frappe.throw("A revoked key stays revoked. Mint a new one.")
 		if flt(self.cap, 9) > flt(before.cap if before else 0, 9):
 			self.validate_cap()
-		if before:
-			# save() writes every column and the pull writes this one behind the form's back.
-			self.spent = frappe.db.get_value("Grove API Key", self.name, "spent", for_update=True)
 
 	def validate_cap(self):
 		"""A raise or a mint keeps what the month binds of the team's spend limit within it: each live key's cap or what it spent this month, whichever is more, plus what revoked

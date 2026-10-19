@@ -12,7 +12,6 @@ from decimal import Decimal
 
 import frappe
 from frappe.tests import IntegrationTestCase
-from frappe.utils import flt
 
 from grove.api import keys, teams, usage
 from grove.billing.pricing import committed, usd
@@ -145,18 +144,6 @@ class TestWhereTheCheckRuns(SpendLimitCase):
 			lambda: keys.update_caps(team, {first: 3, second: 8}), "add up to 11 of a spend limit of 10"
 		)
 		self.assertEqual({row.name: row.cap for row in usage.figures(team)["keys"]}, {first: 3, second: 7})
-
-	def test_a_pull_that_lands_during_the_check_is_not_overwritten_by_the_save(self):
-		team = self.team(spend_limit=10)
-		first = self.key(team, cap=1)
-
-		def landing(_team):
-			frappe.db.sql("update `tabGrove API Key` set spent = spent + 0.25 where name = %s", [first])
-			return {}
-
-		self.peek.side_effect = landing
-		keys.update_key(team, first, cap=2)
-		self.assertEqual(flt(frappe.db.get_value("Grove API Key", first, "spent")), 0.25)
 
 	def test_spend_reports_the_figure_a_raise_is_checked_against(self):
 		team = self.team(spend_limit=10)

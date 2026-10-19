@@ -96,9 +96,7 @@ def spend_of(team):
 	from grove.grove.doctype.grove_api_key.grove_api_key import capped
 
 	doc = team_limits(team)
-	doc.spent = frappe.db.get_value("Central Team", team, "spent")
 	return {
-		"spent": flt(doc.spent, 9),
 		"month_spent": flt(month_spent_by("team", [team]).get(team, 0), 9),
 		"capped": capped(team),
 		"committed": committed(team, lock=False),

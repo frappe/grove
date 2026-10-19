@@ -8,7 +8,7 @@ from grove.access import team_limits
 from grove.api.control import ALLOWED_ROLES
 from grove.api.teams import get_team
 
-KEY_FIELDS = ["name", "title", "status", "creation", "key_hash", "geography", "cap", "spent"]
+KEY_FIELDS = ["name", "title", "status", "creation", "key_hash", "geography", "cap"]
 
 
 @frappe.whitelist()

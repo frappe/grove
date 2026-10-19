@@ -309,7 +309,7 @@ class IntegrationTestOneGeographyPerKey(IntegrationTestCase):
 
 
 class IntegrationTestOneTeamPerKey(IntegrationTestCase):
-	"""A key's cap and spent are counted against its team's limit; a move would carry them to a team
+	"""A key's cap and month's spend are counted against its team's limit; a move would carry them to a team
 	whose count and limit never checked them."""
 
 	@classmethod
@@ -357,8 +357,6 @@ class IntegrationTestCapsFitTheSpendLimit(IntegrationTestCase):
 			frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 6}).insert()
 		second = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 4}).insert()
 		self.assertEqual((projected(first.name)["budget"], projected(second.name)["budget"]), (6_000_000_000, 4_000_000_000))
-		# What a key spent does not free its cap: the cap is a month's worth, spent or not.
-		frappe.db.set_value("Grove API Key", first.name, "spent", 5)
 		second.cap = 5
 		with self.assertRaises(frappe.ValidationError):
 			second.save()

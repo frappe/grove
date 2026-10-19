@@ -11,9 +11,9 @@ commits, then acknowledges the (drain id, key, day) counters it recorded; the bo
 other one next pull. A pull that fails before the commit gets the same counters again, and one
 landed twice records nothing twice (unique drain id + key + day).
 
-Each touched team is landed in one step: its records, the move in each key's `spent` by Grove's
-price of what the gateway charged, a Credit Discrepancy per pricing the gateway charged
-differently, and the verdict. A team whose step fails is rolled back alone, left unacknowledged,
+Each touched team is landed in one step: its records, priced by Grove at the pricing the gateway
+tagged each request with, a Credit Discrepancy per pricing the gateway charged differently, and
+the verdict. A team whose step fails is rolled back alone, left unacknowledged,
 and logged as Stuck Usage until a later pull lands it. One bad team never holds anyone else's
 usage back.
 

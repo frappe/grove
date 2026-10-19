@@ -11,7 +11,6 @@
   "status",
   "column_break_pcmc",
   "cap",
-  "spent",
   "key_hash",
   "api_secret",
   "section_access",
@@ -72,14 +71,6 @@
    "in_list_view": 1,
    "label": "Cap (USD / month)",
    "precision": "9"
-  },
-  {
-   "description": "What this key has been charged: priced by the pull from each billed drain, plus any correction from a resolved Credit Discrepancy.",
-   "fieldname": "spent",
-   "fieldtype": "Currency",
-   "label": "Spent (USD)",
-   "precision": "9",
-   "read_only": 1
   },
   {
    "fieldname": "key_hash",
@@ -149,7 +140,7 @@
    "link_fieldname": "api_key"
   }
  ],
- "modified": "2026-10-18 12:00:00.000000",
+ "modified": "2026-10-19 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove API Key",

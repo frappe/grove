@@ -1,7 +1,7 @@
-"""One team's share of a drain, landed: the records, the bill, and the audit of the box's charge.
+"""One team's share of a drain, landed: the records and the audit of the box's charge.
 
 Grove bills its own price: each pricing the gateway tagged a request with is priced here at that
-pricing's rates, and the key's `spent` moves by the sum, then the team settles. The gateway's own
+pricing's rates, and the team's figures are forgotten so the next read sees it. The gateway's own
 cost sits beside it; where the two differ beyond the gateway's truncation, a Credit Discrepancy
 says so. A model the gateway served without a pricing lands in the same record at no cost."""
 
@@ -11,7 +11,7 @@ import frappe
 from frappe.model.naming import make_autoname
 
 from grove.billing.doctype.credit_discrepancy.credit_discrepancy import record
-from grove.billing.pricing import NANO, lock_team, settle
+from grove.billing.pricing import NANO, forget_figures, lock_team
 
 NANO_USD = Decimal(1) / NANO
 FIELDS = (
@@ -47,15 +47,8 @@ class Reconciler:
 		]
 		frappe.db.bulk_insert("Usage Record", FIELDS, [[row[field] for field in FIELDS] for row in rows])
 		for row in rows:
-			self.bill(row)
-		settle(team)
-
-	def bill(self, row):
-		"""The key's spend moves by Grove's price of what the gateway charged it."""
-		charged = sum((entry["grove_cost"] for entry in row.entries), Decimal(0))
-		# ponytail: one update per key, ~40 s an hour at a lakh; a CASE update per team if the pull nears the hour.
-		frappe.db.sql("update `tabGrove API Key` set spent = spent + %s where name = %s", [charged, row.api_key])
-		self.audit(row)
+			self.audit(row)
+		forget_figures(team)
 
 	def has_landed(self, prefix):
 		return (self.drain_id, prefix, str(self.day)) in self.landed

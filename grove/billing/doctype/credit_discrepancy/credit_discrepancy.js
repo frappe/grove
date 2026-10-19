@@ -10,7 +10,7 @@ frappe.ui.form.on('Credit Discrepancy', {
 		]);
 		frm.add_custom_button(__('Grove is wrong'), () => {
 			frappe.confirm(
-				`${figures} ${__("Move key {0}'s spent by {1} so Grove's balance matches the gateway's?", [
+				`${figures} ${__("Land a correction of {1} on key {0} so Grove's spend matches the gateway's?", [
 					frm.doc.api_key, format_currency(frm.doc.delta, null, 9),
 				])}`,
 				() => frm.call('correct_grove').then(() => frm.reload_doc()),
