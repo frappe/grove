@@ -25,8 +25,9 @@ def provision_key(
 	what it may spend a month, refused when the team's caps would pass its spend limit; left out,
 	the key is minted at 0 and its gateway refuses it until `update_key(cap=)` gives it one. The
 	key starts in its geography's default Model Group; `models` are its own on top. `limits` pin its rate limits, rows of `metric` (requests,
-	total_tokens), `window` (1m, 1h, 1d, 1M) and `value`; given none it runs under its team's
-	Tier (`update_team`), else the default tier's, else 20 requests and 100 000 tokens a minute. →
+	total_tokens), `window` (1m, 1h, 1d, 1M) and `value`: each replaces its team's Tier's rows
+	(`update_team`; else the default tier's, else 20 requests and 100 000 tokens a minute) on
+	that metric, and the tier's other metrics stay. →
 	the key's name, its geography and the endpoint it calls, and the secret — shown here and
 	never again."""
 	frappe.only_for(ALLOWED_ROLES)
@@ -56,8 +57,8 @@ def update_key(
 	limits: list[dict] | None = None,
 ):
 	"""Change what a key of `team` may spend or call: `cap`, `models` (replacing its own Allow)
-	and `limits` (replacing its own rate limits; `[]` puts it back under its team's tier), each
-	kept when not given. Its geography never changes — mint another key for that. → the key as
+	and `limits` (replacing its own rate limits; `[]` puts it back under its team's tier alone),
+	each kept when not given. Its geography never changes — mint another key for that. → the key as
 	`keys` lists it."""
 	frappe.only_for(ALLOWED_ROLES)
 	doc = get_api_key(team, key)
@@ -99,8 +100,8 @@ def update_caps(team: str, caps: dict[str, float]):
 @frappe.whitelist()
 def limits(team: str, key: str):
 	"""The rate limits of one key of `team`, rows of `metric`, `window` and `value`, as the gateway
-	counts them for that key alone: its own rows, else its team's tier's, else the defaults.
-	Refused for a key the team does not hold."""
+	counts them for that key alone: its team's tier's (else the defaults), with its own rows
+	replacing the tier's on the metrics they name. Refused for a key the team does not hold."""
 	frappe.only_for(ALLOWED_ROLES)
 	return limit_rows_of([get_api_key(team, key).name]).get(key, [])
 
@@ -179,8 +180,9 @@ def key_rows(names):
 
 
 def limit_rows_of(names):
-	"""{key: [{metric, window, value}, ...]} for these keys as the gateway counts them: their own
-	rows, else their team's Tier's, else the default tier's, else the defaults."""
+	"""{key: [{metric, window, value}, ...]} for these keys as the gateway counts them: their
+	team's Tier's (else the default tier's, else the defaults), with their own rows replacing the
+	tier's on the metrics they name."""
 	from grove.access import effective_limits, limit_entries
 
 	keys = frappe.get_list("Grove API Key", filters={"name": ("in", names)}, fields=["name", "team"])

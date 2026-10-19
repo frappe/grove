@@ -11,8 +11,8 @@ from grove.billing.pricing import forget_figures
 
 class Tier(Document):
 	"""What a team on it may do, named by Central's trust tier label (`Growth`): live keys, monthly
-	spend across its keys' caps, and the rate limits its unpinned keys run under (no rows: uncapped).
-	Central names a team's tier, and renames it when the label changes (`api.teams.rename_tier`);
+	spend across its keys' caps, and the rate limits its keys run under on every metric a key does
+	not pin itself (no rows: uncapped). Central names a team's tier, and renames it when the label changes (`api.teams.rename_tier`);
 	the values are Grove's. A tier a team names cannot be deleted."""
 
 	# begin: auto-generated types

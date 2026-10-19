@@ -35,9 +35,9 @@ def effective_groups():
 
 def effective_keys(names=None):
 	"""Every LIVE API Key projected for the gateway, with the whole policy the gates read: its
-	groups and own allow/deny, its geography, its rate limits (its own, else its team's tier's,
-	else the defaults) and `budget` — its monthly cap; the box counts its spend per month and
-	refuses it once this month's reaches that. What is the team's rides on each key:
+	groups and own allow/deny, its geography, its rate limits (its team's tier's, else the defaults,
+	with its own rows replacing the tier's on the metrics they name) and `budget` — its monthly
+	cap; the box counts its spend per month and refuses it once this month's reaches that. What is the team's rides on each key:
 	`log_payloads`, and `limited` — the team is suspended, which refuses every key whatever its
 	own cap says.
 

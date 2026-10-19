@@ -165,7 +165,13 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		team = "probe-limits"
 		teams.provision_team(team)
 		name = keys.provision_key(team, limits=[{"metric": "requests", "window": "1m", "value": 200}])["name"]
-		self.assertEqual(keys.limits(team, name), [{"metric": "requests", "window": "1m", "value": 200}])
+		self.assertEqual(
+			keys.limits(team, name),
+			[
+				{"metric": "requests", "window": "1m", "value": 200},
+				{"metric": "total_tokens", "window": "1m", "value": 100_000},
+			],
+		)
 		with self.assertRaises(frappe.DoesNotExistError):
 			keys.limits("nobody-limits", name)
 

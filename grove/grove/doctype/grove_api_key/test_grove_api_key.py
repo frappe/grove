@@ -232,6 +232,28 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 		with self.assertRaises(frappe.LinkExistsError):
 			tier.delete()
 
+	def test_a_keys_own_rows_replace_the_tiers_on_the_metrics_they_name(self):
+		tier = frappe.get_doc({
+			"doctype": "Tier", "__newname": "key-tier-merge",
+			"limits": [
+				{"metric": "requests", "window": "1m", "value": 60},
+				{"metric": "requests", "window": "1h", "value": 600},
+				{"metric": "total_tokens", "window": "1m", "value": 100_000},
+			],
+		}).insert()
+		name = team("key-limit-merged", tier=tier.name)
+		pinned = frappe.get_doc({
+			"doctype": "Grove API Key", "team": name, "limits": [{"metric": "requests", "window": "1m", "value": 5}]
+		}).insert()
+		self.assertEqual(projected(pinned.name)["limits"], "requests:1m:5,total_tokens:1m:100000")
+		frappe.db.set_single_value("Grove Settings", "default_tier", "")
+		self.assertEqual(
+			projected(frappe.get_doc({"doctype": "Grove API Key", "team": team("key-limit-untiered"), "limits": [
+				{"metric": "total_tokens", "window": "1d", "value": 7}
+			]}).insert().name)["limits"],
+			"requests:1m:20,total_tokens:1d:7",
+		)
+
 	def test_a_tier_refuses_two_limits_on_one_metric_and_window(self):
 		with self.assertRaises(frappe.ValidationError):
 			frappe.get_doc({
