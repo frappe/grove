@@ -37,16 +37,13 @@ class CreditDiscrepancy(Document):
 
 	@frappe.whitelist()
 	def correct_grove(self):
-		"""Grove priced it wrong: the key's `spent` moves by the delta and the team is settled, so
-		Grove's balance meets the gateway's. The money lands as a Usage Correction, dated today."""
-		from grove.billing.pricing import lock_team, settle
+		"""Grove priced it wrong: the money lands as a Usage Correction of the delta, dated today,
+		which every money read sums from then on, so Grove's spend meets the gateway's."""
+		from grove.billing.pricing import forget_figures, lock_team
 
 		self.check_open()
 		lock_team(self.team)
 		delta = Decimal(str(self.delta))
-		frappe.db.sql(
-			"update `tabGrove API Key` set spent = spent + %s where name = %s", [delta, self.api_key]
-		)
 		frappe.get_doc(
 			{
 				"doctype": "Usage Correction",
@@ -59,7 +56,7 @@ class CreditDiscrepancy(Document):
 				"cost": float(delta),
 			}
 		).insert()
-		settle(self.team)
+		forget_figures(self.team)
 		self.decide("Grove corrected")
 
 	@frappe.whitelist()

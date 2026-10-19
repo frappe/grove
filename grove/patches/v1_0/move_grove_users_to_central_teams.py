@@ -1,12 +1,10 @@
 """Grove User → Central Team, with the policy moved onto each key.
 
 A user becomes a team named by its Central id (its old doc name when it had none). Every key of
-the user gets the team, the user's geography, groups, allow/deny and limits, and its spend as the
-billed Usage Records say; every key starts at a cap of 0 and is capped by hand. Records, stuck rows and discrepancies move to the team. Runs once: a site with no Grove User doctype left (moved by hand) is left alone."""
+the user gets the team, the user's geography, groups, allow/deny and limits; every key starts at a cap of 0 and is capped by hand. Records, stuck rows and discrepancies move to the team. Runs once: a site with no Grove User doctype left (moved by hand) is left alone."""
 
 import frappe
 
-from grove.billing.pricing import settle
 from grove.access import DEFAULT_LIMITS
 
 CHILDREN = ("Model Group Row", "Grove Model Row", "Model Limit")
@@ -23,8 +21,6 @@ def execute():
 	teams = {u.name: make_team(u) for u in users}
 	for key in frappe.db.sql("select name, user, status from `tabGrove API Key` where user is not null", as_dict=1):
 		move_key(key, next(u for u in users if u.name == key.user), teams[key.user])
-	for row in frappe.db.sql("select api_key, sum(cost) spent from `tabUsage Record` group by api_key", as_dict=1):
-		frappe.db.set_value("Grove API Key", row.api_key, "spent", row.spent, update_modified=False)
 	for doctype, field in RELINK:
 		if frappe.db.has_column(doctype, field):
 			for old, new in teams.items():
@@ -33,8 +29,6 @@ def execute():
 		"""update `tabCredit Discrepancy` d join `tabGrove API Key` k on k.name = d.api_key
 		set d.team = k.team where ifnull(d.team, '') = ''"""
 	)
-	for team in teams.values():
-		settle(team)
 	for child in CHILDREN:
 		frappe.db.sql(f"delete from `tab{child}` where parenttype = 'Grove User'")
 	frappe.delete_doc("DocType", "Grove User", force=True, ignore_permissions=True)

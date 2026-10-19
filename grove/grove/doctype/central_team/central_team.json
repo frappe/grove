@@ -12,8 +12,7 @@
   "max_keys",
   "column_break_head",
   "suspended",
-  "last_reported_at",
-  "spent"
+  "last_reported_at"
  ],
  "fields": [
   {
@@ -67,15 +66,6 @@
    "fieldtype": "Datetime",
    "label": "Last Reported At",
    "read_only": 1
-  },
-  {
-   "description": "\u03a3 what the team's keys have been charged: priced by the pull from each billed drain, plus any correction from a resolved Credit Discrepancy.",
-   "fieldname": "spent",
-   "fieldtype": "Currency",
-   "in_list_view": 1,
-   "label": "Spent (USD)",
-   "precision": "9",
-   "read_only": 1
   }
  ],
  "links": [
@@ -100,7 +90,7 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-10-18 12:00:00.000000",
+ "modified": "2026-10-19 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Central Team",

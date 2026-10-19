@@ -42,8 +42,8 @@ class UsageRecord(Document):
 		"""Log Settings: records served more than `days` UTC days ago, and landed that long ago too, a
 		chunk at a time. One a Credit Discrepancy names stays: it is that correction's evidence. One
 		that landed late stays as long: Central invoices by when a record landed, and a drain not yet
-		acknowledged must find the record it left. No money read needs a record this old — `spent` is
-		a running total, the month is this month's, an invoice is a landing window — so what goes is
+		acknowledged must find the record it left. No money read needs a record this old — the month
+		is this month's, an invoice is a landing window — so what goes is
 		history: the usage API and the Revenue report stop at the retention."""
 		cutoff = add_days(utc_today(), -cint(days))
 		while names := frappe.db.sql_list(

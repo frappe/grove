@@ -112,8 +112,9 @@ class CreditsCase(IntegrationTestCase):
 			return usage.record_drains(self.gateway, drains, gateway_store=store or self.store)
 
 	def state(self, team):
-		row = frappe.db.get_value("Central Team", team, ["spent", "suspended"], as_dict=True)
-		return D(str(row.spent)), row.suspended
+		"""What the team was charged, off the records and corrections, and whether it is suspended."""
+		spent = pricing.month_spent_by("team", [team]).get(team, D(0))
+		return spent, frappe.db.get_value("Central Team", team, "suspended")
 
 	def discrepancies(self, team):
 		return frappe.get_all(
@@ -370,7 +371,7 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		[row] = self.discrepancies(team)
 		return team, frappe.get_doc("Credit Discrepancy", row.name)
 
-	def test_grove_is_wrong_moves_spent_by_the_delta_and_settles(self):
+	def test_grove_is_wrong_lands_a_correction_of_the_delta(self):
 		team, row = self.discrepancy()
 		self.assertEqual(self.money(team), (0.5, 0.5, 0.5))
 		row.correct_grove()

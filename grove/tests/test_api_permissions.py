@@ -14,7 +14,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from grove.api import catalog, control, keys, teams, usage
-from grove.billing.pricing import settle
+from grove.billing.pricing import forget_figures
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_api_key.grove_api_key import KEY_PREFIX, hash_secret
 from grove.pathway.routes import utc_timestamp
@@ -28,8 +28,8 @@ def tier(name, **fields):
 
 
 def billed_record(key, team, day, cost, drain=""):
-	"""A pulled Usage Record of `cost` served on `day`, settled as the pull settles: what
-	month_spent reads."""
+	"""A pulled Usage Record of `cost` served on `day`, the figures forgotten as the pull does:
+	what month_spent reads."""
 	frappe.get_doc(
 		{
 			"doctype": "Usage Record",
@@ -42,7 +42,7 @@ def billed_record(key, team, day, cost, drain=""):
 			"usage": "[]",
 		}
 	).insert(ignore_permissions=True)
-	settle(team)
+	forget_figures(team)
 
 
 def backdate(key):
@@ -230,7 +230,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertEqual(
 			usage.figures(team)["spend"],
 			{
-				"spent": 0.0,
 				"month_spent": 0.0,
 				"capped": 10.0,
 				"committed": 10.0,
@@ -268,12 +267,11 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		team = "probe-month"
 		teams.provision_team(team)
 		key = keys.provision_key(team, title="monthly")["name"]
-		frappe.db.set_value("Grove API Key", key, "spent", 5)
 		today = utc_today()
 		for day, cost in ((today, 2), (frappe.utils.add_months(today, -1), 3)):
 			billed_record(key, team, day, cost)
 		[listed] = usage.figures(team)["keys"]
-		self.assertEqual((listed["spent"], listed["month_spent"]), (5, 2))
+		self.assertEqual(listed["month_spent"], 2)
 		self.assertEqual(usage.figures(team)["spend"]["month_spent"], 2)
 		frappe.db.set_value("Grove API Key", key, "status", "revoked")
 		self.assertEqual(usage.figures(team)["spend"]["month_spent"], 2)
@@ -331,7 +329,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertEqual((listed.name, listed.title, listed.status), (minted["name"], "laptop", "active"))
 		self.assertEqual(listed.key_hash, hash_secret(minted["api_key"]))
 		self.assertEqual(
-			(listed.geography, listed.gateway_url, listed.cap, listed.spent),
+			(listed.geography, listed.gateway_url, listed.cap, listed.month_spent),
 			(minted["geography"], minted["gateway_url"], 0, 0),
 		)
 		self.assertEqual([row["metric"] for row in listed.limits], ["requests", "total_tokens"])
@@ -433,7 +431,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		with unittest.mock.patch("grove.pathway.usage.pull_all", return_value="PS-1") as pull_all:
 			for _ in range(usage.PULLS_PER_HOUR):
 				answer = usage.pull_usage(team)
-				self.assertEqual((answer["sync"], answer["figures"]["spend"]["spent"]), ("PS-1", 0))
+				self.assertEqual((answer["sync"], answer["figures"]["spend"]["month_spent"]), ("PS-1", 0))
 			pull_all.assert_called_with(trigger="Manual", wait=60, team=name)
 			with self.assertRaises(frappe.RateLimitExceededError):
 				usage.pull_usage(team)

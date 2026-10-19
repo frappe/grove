@@ -227,15 +227,15 @@ class TestAStuckTeamHoldsOnlyItselfBack(PullCase):
 	box = "usage-stuck-box"
 
 	def failing(self, bad_team):
-		real = reconcile.settle
+		real = reconcile.forget_figures
 
-		def settle(team):
+		def forget_figures(team):
 			# Runs once the team's rows are written, so the failure lands after a write the savepoint must undo.
 			if team == bad_team:
 				raise RuntimeError("disk on fire")
 			return real(team)
 
-		return unittest.mock.patch.object(reconcile, "settle", settle)
+		return unittest.mock.patch.object(reconcile, "forget_figures", forget_figures)
 
 	def stuck(self, store=None):
 		return frappe.get_doc("Stuck Usage", {"team": self.team, "gateway_store": store or self.store})

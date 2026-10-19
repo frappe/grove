@@ -1,15 +1,15 @@
 # `billing/` — what a call cost
 
 Usage is counted under Usage Counters, priced by the Model Pricing the gateway charged, landed as Usage
-Records by the drain (`../pathway/usage.py`, `reconcile.py` next to it) and moves the key's
-`spent`. Counting never reads pricing; `pricing.settle` is the one writer of a team's `spent`. The pushes
+Records by the drain (`../pathway/usage.py`, `reconcile.py` next to it). Counting never reads
+pricing; no spend is stored, every money figure is read off the records. The pushes
 and the drain are in [`../README.md`](../README.md).
 
 ## Files
 
 | File | Owns |
 |---|---|
-| `pricing.py` | The counter table (`CounterTable`: the Usage Counter rows, their units, parts and bases, validated before a push), prices per counter (`PriceBook`: by the pricing id the gateway charged), `settle` (the one writer of a team's `spent`), `month_spent_by` (this month's spend of a team or a key, off the records and the corrections; never stored). |
+| `pricing.py` | The counter table (`CounterTable`: the Usage Counter rows, their units, parts and bases, validated before a push), prices per counter (`PriceBook`: by the pricing id the gateway charged), `month_spent_by` (this month's spend of a team or a key, off the records and the corrections; never stored). |
 | `report/revenue/` | Revenue report: what each drain was billed, cut by model, API key, team or day. |
 | `report/vendor_reconciliation/` | Vendor Reconciliation report: per UTC day and model, what Grove charged users beside what the vendor billed Grove. |
 | `vendor.py` | What a vendor billed Grove, read live off its billing API (`vendor_figures`): Baseten's usage and cost APIs, paged, at most 90 days. |
@@ -21,9 +21,9 @@ and the drain are in [`../README.md`](../README.md).
 | `Usage Counter` | One counter usage is counted and priced under, named by its key. A root row has a unit (Mtok or request) and may be a part of a container root; a derived row is a root plus `min_prompt_tokens`, counted instead of its base when the whole prompt exceeds it and billed at the base's rate when a pricing holds none. Never edited after insert; never deleted while a Usage Record names it. Shipped in the catalog; pushed inside every pricing. Grove Control reads. |
 | `Model Pricing` | A model's SELL price: one Enabled doc per model, one rate per counter. Enabling one disables the last; the next push carries it to every gateway, which tags each request with the id it charged. A Disabled draft is editable; once enabled it is never edited, disabled by hand or re-enabled, and its form is read only. Duplicate starts a new Disabled draft with its own window. A counter with no row bills 0, except a derived counter, which then bills at its base counter's row; a derived row needs that base row. A model cannot be published without one, so free on purpose is a pricing with rates 0; enabling one never publishes. The Model form shows a banner while no pricing is enabled. Carries its model's Geography, fetched, so the pricings of one key — a doc per geography — tell apart in the list. |
 | `Model Pricing Rate` | One counter's sell rate (child). |
-| `Usage Record` | One key's usage in one drain of one store on one UTC day — the day the gateway served it, off the gateway's clock, so a day or a month here is the gateway's own (unique on drain id + key + `day`), inserted by the pull and never updated: the key and its team, the store (Link), the drain id, the day, requests, `total_tokens` (prompt and completion once each, no part again: a cheap read beside the JSON), `cost` (Grove's price) and `gateway_cost`. Every record moves the key's `spent`, is audited and counts as revenue; a model served without a pricing is in it at no cost. The per-model detail — pricing, requests, counters and Grove's cost — is one hidden JSON field (`usage`) the form renders as a table, so a record is one row however many models it touched. A name Grove holds as a Model (published or not) gets an entry; the gateway's deployment-keyed metrics do not. |
+| `Usage Record` | One key's usage in one drain of one store on one UTC day — the day the gateway served it, off the gateway's clock, so a day or a month here is the gateway's own (unique on drain id + key + `day`), inserted by the pull and never updated: the key and its team, the store (Link), the drain id, the day, requests, `total_tokens` (prompt and completion once each, no part again: a cheap read beside the JSON), `cost` (Grove's price) and `gateway_cost`. Every record is audited and counts as revenue; a model served without a pricing is in it at no cost. The per-model detail — pricing, requests, counters and Grove's cost — is one hidden JSON field (`usage`) the form renders as a table, so a record is one row however many models it touched. A name Grove holds as a Model (published or not) gets an entry; the gateway's deployment-keyed metrics do not. |
 | `Stuck Usage` | Usage on one store the pull keeps failing to record. For a team: the gateway holds the usage and re-sends it every pull; this row says which keys, since when, how many attempts, the last error and payload — one open row per (team, store), resolved by the pull that lands it; **Pull Now** pulls just that team. For a dead line (`dead_line` set, team blank when unreadable): the gateway has dropped it and this row is the only copy; **Mark Resolved** closes it. An open row is never deleted; Log Settings clears resolved ones after 90 days. |
-| `Credit Discrepancy` | One Usage Record and pricing where the gateway's cost differs from Grove's price of the same counters. Logged by the pull, never acted on by it: **Grove is wrong** moves the key's `spent` by the delta and settles the team; **Gateway is wrong** writes a Pending `Gateway Spend Adjustment`, and the projection tick moves the gateway's `spent` for that key on that store by minus the delta (`/spend-adjust` through the store's writers, once per discrepancy). Either way the row keeps the decision alone: `resolution` and `resolved_on` (site time); blank is open. The money is a record of its own, a `Usage Correction` for Grove's side and a `Gateway Spend Adjustment` for the gateway's, and the Usage Record is never changed. System Manager only. |
+| `Credit Discrepancy` | One Usage Record and pricing where the gateway's cost differs from Grove's price of the same counters. Logged by the pull, never acted on by it: **Grove is wrong** lands a `Usage Correction` of the delta; **Gateway is wrong** writes a Pending `Gateway Spend Adjustment`, and the projection tick moves the gateway's `spent` for that key on that store by minus the delta (`/spend-adjust` through the store's writers, once per discrepancy). Either way the row keeps the decision alone: `resolution` and `resolved_on` (site time); blank is open. The money is a record of its own, a `Usage Correction` for Grove's side and a `Gateway Spend Adjustment` for the gateway's, and the Usage Record is never changed. System Manager only. |
 | `Usage Correction` | The money of a Credit Discrepancy resolved as Grove's error: the team, the key, the pricing and its model key, the UTC day it was resolved, and the USD the key's charge moved by. One per decision (unique on the Credit Discrepancy), written by **Grove is wrong** and never changed; every money read (`usage_record.money_rows`, `pricing.month_spent_by`) sums it beside the Usage Records. System Manager and Grove Control read; nobody edits or deletes. |
 | `Gateway Spend Adjustment` | The gateway side of a Credit Discrepancy resolved as the gateway's error: the store, the key, and the USD its spend counter for the key is owed (minus the delta). Pending until a box answers the projection tick's `/spend-adjust`, then Applied with the counter the box reported and when. One per decision (unique on the Credit Discrepancy), written by **Gateway is wrong**, moved to Applied by the tick, never edited by hand. System Manager reads; nobody edits or deletes. |
 
@@ -118,7 +118,7 @@ the (team, day) and (api_key, day) indexes of both tables: nothing is summed in 
 (`tests/test_delete_permissions.py` pins the list). A key is revoked and a pricing is superseded.
 DocPerm does not bind Administrator or `ignore_permissions`. Two exceptions, both through Log Settings and never by hand: a resolved Stuck Usage row is
 history and is cleared after 90 days; a Usage Record served more than 90 days ago (its UTC `day`, `usage_record.RETENTION_DAYS`) is purged in chunks, except one a Credit Discrepancy names, which stays as that correction's evidence.
-No money read needs a record that old (`spent` is a running total, `month_spent` is this month's, an invoice is a landing window), so what goes is history: the usage API and the Revenue report stop at the retention.
+No money read needs a record that old (`month_spent` is this month's, an invoice is a landing window), so what goes is history: the usage API and the Revenue report stop at the retention.
 
 **Postpaid, under the tier.** AI is billed in arrears by Central. Grove meters, prices and gates;
 it holds no money that must not run out. What gates is:
@@ -149,7 +149,7 @@ it holds no money that must not run out. What gates is:
 - **`suspended`**, set by Central when an invoice goes unpaid, pushed as `limited` on every key
   of the team (402 whatever the cap says).
 
-**What Central reads.** `api.usage.figures(team)`: `spend` (`spent`; `month_spent`, this UTC month's
+**What Central reads.** `api.usage.figures(team)`: `spend` (`month_spent`, this UTC month's
 records of every key the team held, revoked ones too, plus what Grove corrected, nothing
 stored; `capped`, Σ live caps; `committed`, what the month has spoken for, the figure a raise is
 checked against; `spend_limit`, `max_keys`, `suspended`), `keys` (each with its cap, `month_spent`
@@ -161,8 +161,8 @@ then 429). `api.usage.usage(...)` reads any other window.
 Credit, invoices and payment are Central's: it bills what landed since its last invoice from
 `api.usage.usage(pulled_after=, pulled_until=)`, its Credit Wallet used first. Grove holds no money.
 
-**Two spends, one input.** The gateway's `spent:<month>` per key and store, and Grove's lifetime
-`spent` per key, are each priced at the same pricing id; neither side writes the other's. A key on
+**Two spends, one input.** The gateway's `spent:<month>` per key and store, and Grove's records
+per key, are each priced at the same pricing id; neither side writes the other's. A key on
 a flushed Redis starts its month's counter at 0 and so gets exactly its cap again; a restore
 (`restore.yml`) raises the counter on each live key to what Grove has billed it this month where
 the snapshot has less, and nothing else detects a flushed Redis or a drain lost inside the gateway:
@@ -202,7 +202,7 @@ A System Manager decides which side is wrong:
 
 | button | does |
 |---|---|
-| Grove is wrong | The key's `spent` moves by the delta and the team settles; Grove's spend now matches the gateway's. The row is stamped `Grove corrected` / `resolved_on`, and a `Usage Correction` lands under the pricing's model on today's UTC day, which every money read (usage API, Revenue, `month_spent`) sums from then on; the Usage Record is untouched |
+| Grove is wrong | The row is stamped `Grove corrected` / `resolved_on`, and a `Usage Correction` of the delta lands under the pricing's model on today's UTC day, which every money read (usage API, Revenue, `month_spent`) sums from then on, so Grove's spend meets the gateway's; the Usage Record is untouched |
 | Gateway is wrong | The row is stamped `Gateway corrected` / `resolved_on`, a Pending `Gateway Spend Adjustment` is written, and nothing is sent from the button. The next projection tick sends `POST /spend-adjust` through the store's writers in turn: the gateway's `spent` for that key on that store moves by minus the delta, applied once under the discrepancy's name, and the answer marks the adjustment Applied with the counter the box reported. A tick that fails leaves it Pending for the next; a decided row takes neither button |
 
 A refund or a charge the customer is owed is a credit in Central, separate from both. A drain
