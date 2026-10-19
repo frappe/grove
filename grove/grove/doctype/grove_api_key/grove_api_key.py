@@ -22,9 +22,9 @@ def hash_secret(secret: str) -> str:
 
 class GroveAPIKey(Document):
 	"""A credential and the whole policy behind it: which models (its groups, plus its own
-	Allow, less its Deny), the one geography it works in, its rate limits (its own rows, else its
-	team's Tier's), and `cap` — what it may spend a month, within its team's spend
-	limit. The gateway holds it as one record, so every gate reads the key and nothing else; a key
+	Allow, less its Deny), the one geography it works in, its rate limits (its team's Tier's, with
+	its own rows replacing the tier's on the metrics they name), and `cap` — what it may spend a
+	month, within its team's spend limit. The gateway holds it as one record, so every gate reads the key and nothing else; a key
 	lives on one geography's store, which counts its spend per month and gates its cap exactly
 	however many keys the team holds elsewhere.
 

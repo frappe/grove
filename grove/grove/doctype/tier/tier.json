@@ -30,7 +30,7 @@
    "precision": "9"
   },
   {
-   "description": "Counted on the gateway per key, per Gateway Store; a window resets on the UTC clock. One row per metric and window. No rows: the tier's keys are uncapped. A change here reaches every unpinned key of every team on the tier on the next sync.",
+   "description": "Counted on the gateway per key, per Gateway Store; a window resets on the UTC clock. One row per metric and window. No rows: the tier's keys are uncapped. A key's own rows replace these on the metrics they name. A change here reaches every key of every team on the tier on the next sync.",
    "fieldname": "limits",
    "fieldtype": "Table",
    "label": "Limits",

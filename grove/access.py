@@ -82,20 +82,21 @@ def limit_entries(parenttype, parents=None):
 
 def effective_limits(keys, own, tiers):
 	"""{key: [{metric, window, value}, ...]} for `keys` (rows with `name` and `team`), as the gateway
-	is to count them: the key's own rows (`own`, from `limit_entries`), else the rows of its team's
-	Tier (`tiers`: {team: tier}; blank is the default tier; a tier with no rows is uncapped), else
-	DEFAULT_LIMITS."""
+	is to count them: the rows of its team's Tier (`tiers`: {team: tier}; blank is the default
+	tier; a tier with no rows is uncapped), else DEFAULT_LIMITS, with the key's own rows (`own`,
+	from `limit_entries`) replacing the tier's on every metric they name."""
 	by_tier = limit_entries("Tier")
 	fallback = default_tier()
 	default = sorted_limits(DEFAULT_LIMITS)
 	resolved = {}
 	for key in keys:
-		if key.name in own:
-			resolved[key.name] = own[key.name]
-		elif tier := tiers.get(key.team) or fallback:
-			resolved[key.name] = by_tier.get(tier, [])
+		if tier := tiers.get(key.team) or fallback:
+			base = by_tier.get(tier, [])
 		else:
-			resolved[key.name] = default
+			base = default
+		pinned = own.get(key.name, [])
+		metrics = {row["metric"] for row in pinned}
+		resolved[key.name] = sorted_limits([row for row in base if row["metric"] not in metrics] + pinned)
 	return resolved
 
 

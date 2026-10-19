@@ -105,7 +105,7 @@ fleet gets re-pushed over row order. Order means nothing on the wire; it exists 
 
 | Redis key | Written by | Holds |
 |---|---|---|
-| `key:<sha256(secret)>` | state push (keys) + the agent | the whole policy: `team`, `group` (comma list), own `allow`/`deny`, `geography`, `limits` (the key's own, else its team's Tier's, else the default tier's, else the defaults), `budget` (its monthly cap), `limited`, `log_payloads`; the agent's own `spent:<YYYY-MM>`, this month's spend |
+| `key:<sha256(secret)>` | state push (keys) + the agent | the whole policy: `team`, `group` (comma list), own `allow`/`deny`, `geography`, `limits` (its team's Tier's, else the default tier's, else the defaults, with the key's own rows replacing the tier's on the metrics they name), `budget` (its monthly cap), `limited`, `log_payloads`; the agent's own `spent:<YYYY-MM>`, this month's spend |
 | `model_group:<name>` | state push (groups) | the model grant for everyone in it |
 | `deploy:<model>` | state push (routes) | every placement of one model |
 | `grove:state_hash` | state push | per-section/bucket hashes of what the box holds |
