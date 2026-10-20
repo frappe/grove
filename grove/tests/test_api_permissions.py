@@ -360,6 +360,33 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		keys.revoke_key(team, key)
 		self.assertEqual(frappe.db.get_value("Grove API Key", key, "status"), "revoked")
 
+	def test_a_teams_live_keys_are_handed_out_with_their_secrets_for_its_servers(self):
+		team, other = "probe-secrets", "probe-secrets-other"
+		for each in (team, other):
+			teams.provision_team(each)
+		older = keys.provision_key(team, title="laptop")
+		newer = keys.provision_key(team, title="ci")
+		gone = keys.provision_key(team, title="gone")["name"]
+		keys.provision_key(other, title="theirs")
+		backdate(gone)
+		keys.revoke_key(team, gone)
+
+		self.assertEqual(
+			keys.secrets(team),
+			[
+				{
+					"name": minted["name"],
+					"title": title,
+					"geography": minted["geography"],
+					"gateway_url": minted["gateway_url"],
+					"api_key": minted["api_key"],
+				}
+				for minted, title in ((newer, "ci"), (older, "laptop"))
+			],
+		)
+		with self.assertRaises(frappe.ValidationError):
+			keys.secrets("probe-secrets-nobody")
+
 	def test_the_default_tier_moves_the_figures_of_a_team_that_names_none(self):
 		from grove.billing.pricing import forget_figures
 

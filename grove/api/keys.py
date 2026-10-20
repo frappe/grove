@@ -21,15 +21,7 @@ def provision_key(
 	limits: list[dict] | None = None,
 ):
 	"""Mint a key for `team` in `geography` — the default one when none is given; every other
-	geography's gateway refuses it. `title` labels the key, to tell a team's keys apart. `cap` is
-	what it may spend a month, refused when the team's caps would pass its spend limit; left out,
-	the key is minted at 0 and its gateway refuses it until `update_key(cap=)` gives it one. The
-	key starts in its geography's default Model Group; `models` are its own on top. `limits` pin its rate limits, rows of `metric` (requests,
-	total_tokens), `window` (1m, 1h, 1d, 1M) and `value`: each replaces its team's Tier's rows
-	(`update_team`; else the default tier's, else 20 requests and 100 000 tokens a minute) on
-	that metric, and the tier's other metrics stay. →
-	the key's name, its geography and the endpoint it calls, and the secret — shown here and
-	never again."""
+	geography's gateway refuses it."""
 	frappe.only_for(ALLOWED_ROLES)
 	key = frappe.new_doc("Grove API Key")
 	key.team, key.title, key.status = get_team(team), title, "active"
@@ -108,12 +100,29 @@ def limits(team: str, key: str):
 
 @frappe.whitelist()
 def revoke_key(team: str, key: str):
-	"""Revoke a key of `team` by the name `keys` lists it under. The row stays as the record it
-	existed, its cap leaves room under the team's spend limit, and the next sync prunes it from
-	every proxy."""
 	frappe.only_for(ALLOWED_ROLES)
 	get_api_key(team, key).revoke()
 	return "Revoked. Might take some time to reflect."
+
+
+@frappe.whitelist()
+def secrets(team: str):
+	"""Every live key of `team` with its secret, for the control client to hand the team's servers:
+	`name`, `title`, `geography`, `gateway_url` and `api_key` each, newest first. A revoked key is
+	not in it. An unknown team is refused."""
+	frappe.only_for(ALLOWED_ROLES)
+	from frappe.utils.password import get_decrypted_password
+
+	rows = frappe.get_list(
+		"Grove API Key",
+		filters={"team": get_team(team), "status": "active"},
+		fields=["name", "title", "geography"],
+		order_by="creation desc",
+	)
+	for row in rows:
+		row["gateway_url"] = get_gateway_url(row.geography)
+		row["api_key"] = get_decrypted_password("Grove API Key", row.name, "api_secret")
+	return rows
 
 
 def get_gateway_url(geography):
