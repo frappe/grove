@@ -217,6 +217,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			{
 				"team": team,
 				"suspended": 0,
+				"log_payloads": 1,
 				"tier": "probe-cap-tier",
 				"override_max_keys": 0,
 				"max_keys": 5,
@@ -236,6 +237,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 				"spend_limit": 10.0,
 				"max_keys": 5,
 				"suspended": False,
+				"log_payloads": True,
 			},
 		)
 		self.assertEqual(keys.update_key(team, second, cap=2)["cap"], 2)
@@ -437,6 +439,8 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		)
 		teams.update_team(team, suspended=True)
 		self.assertTrue(usage.figures(team)["spend"]["suspended"])
+		self.assertFalse(teams.update_team(team, log_payloads=False)["log_payloads"])
+		self.assertFalse(usage.figures(team)["spend"]["log_payloads"])
 
 		tomorrow = frappe.utils.add_days(utc_today(), 1)
 		with (

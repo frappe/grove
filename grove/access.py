@@ -23,11 +23,11 @@ def default_tier():
 
 
 def team_limits(team, for_update=False):
-	"""What gates `team`'s keys: `suspended`, its `tier`, and the tier's `max_keys` /
+	"""What gates `team`'s keys: `suspended`, `log_payloads`, its `tier`, and the tier's `max_keys` /
 	`spend_limit` (the default tier's when it has none; without either, 0 and 0: no key limit, and
 	no cap can be set). `max_keys` is the team's own under Override Max Keys. `for_update` locks
 	the team row for a cap check. The tier comes off the doc cache: a save clears it."""
-	fields = ["suspended", "tier", "override_max_keys", "max_keys"]
+	fields = ["suspended", "log_payloads", "tier", "override_max_keys", "max_keys"]
 	row = (
 		frappe.db.get_value("Central Team", team, fields, as_dict=True, for_update=for_update)
 		or frappe._dict()
