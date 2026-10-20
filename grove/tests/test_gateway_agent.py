@@ -84,7 +84,11 @@ class FakeIngress(SimpleNamespace):
 
 def fake_ingress(**fields):
 	defaults = dict(
-		name="ing-1", hostname="ing-1.grove.test", is_in_maintenance=0, memory_limit_mb=0, tls_variables=dict(TLS),
+		name="ing-1",
+		hostname="ing-1.grove.test",
+		is_in_maintenance=0,
+		memory_limit_mb=0,
+		tls_variables=dict(TLS),
 		get_password=lambda field, **kwargs: f"secret-{field}",
 	)
 	return FakeIngress(**{**defaults, **fields})
@@ -107,11 +111,15 @@ def fake_gateway(**fields):
 
 
 def gateway_extravars(**fields):
-	return extravars_for(GatewayServer, "grove.grove.doctype.gateway_server.gateway_server", fake_gateway(**fields))
+	return extravars_for(
+		GatewayServer, "grove.grove.doctype.gateway_server.gateway_server", fake_gateway(**fields)
+	)
 
 
 def ingress_extravars(**fields):
-	return extravars_for(IngressServer, "grove.grove.doctype.ingress_server.ingress_server", fake_ingress(**fields))
+	return extravars_for(
+		IngressServer, "grove.grove.doctype.ingress_server.ingress_server", fake_ingress(**fields)
+	)
 
 
 def rendered_variables(play_path, task_name, field):
@@ -168,8 +176,11 @@ class TestDeployAgentShipsBothHalves(unittest.TestCase):
 		for plane, sent in (("gateway_server", gateway_extravars()), ("ingress_server", ingress_extravars())):
 			with self.subTest(plane):
 				required = {
-					name for name in config_json_variables(plane)
-					if not re.search(rf"{{{{\s*{name}\s*\|\s*default", (PLAYBOOKS / plane / "config.json.j2").read_text())
+					name
+					for name in config_json_variables(plane)
+					if not re.search(
+						rf"{{{{\s*{name}\s*\|\s*default", (PLAYBOOKS / plane / "config.json.j2").read_text()
+					)
 				}
 				self.assertEqual(set(), required - set(sent))
 
@@ -217,9 +228,14 @@ class TestDeployAgentShipsBothHalves(unittest.TestCase):
 		values = {"pathway_release": PINNED, "pathway_repo": "someone/pathway"}
 		db = SimpleNamespace(get_single_value=lambda doctype, field: values[field])
 		with patch.object(frappe, "db", db):
-			self.assertEqual({"agent_version": PINNED, "agent_repo": "someone/pathway"}, gateway_agent_release())
+			self.assertEqual(
+				{"agent_version": PINNED, "agent_repo": "someone/pathway"}, gateway_agent_release()
+			)
 			values["pathway_repo"] = None
-			with patch("frappe.throw", side_effect=frappe.ValidationError), self.assertRaises(frappe.ValidationError):
+			with (
+				patch("frappe.throw", side_effect=frappe.ValidationError),
+				self.assertRaises(frappe.ValidationError),
+			):
 				gateway_agent_release()
 
 	def test_a_fleet_that_pins_nothing_is_refused_before_it_ships(self):
@@ -242,13 +258,18 @@ class TestAGatewayIsToldWhichRedis(unittest.TestCase):
 	onto nothing. It is refused instead."""
 
 	def test_a_deploy_onto_no_store_is_refused(self):
-		with patch.object(frappe, "throw", side_effect=frappe.ValidationError), self.assertRaises(frappe.ValidationError):
+		with (
+			patch.object(frappe, "throw", side_effect=frappe.ValidationError),
+			self.assertRaises(frappe.ValidationError),
+		):
 			GatewayServer.get_agent_extravars(fake_gateway(gateway_store=None), store=None)
 
 	def test_a_deploy_never_moves_a_gateway_onto_its_networks_store(self):
 		doc = fake_gateway(
-			gateway_store="s-current", network_store="s-network",
-			record_agent_version=lambda rc: None, record_store=lambda rc, store: None,
+			gateway_store="s-current",
+			network_store="s-network",
+			record_agent_version=lambda rc: None,
+			record_store=lambda rc, store: None,
 			run_playbook=lambda play, extravars: ("play-1", 0),
 		)
 		doc.get_agent_extravars = Mock(return_value={})
@@ -259,9 +280,14 @@ class TestAGatewayIsToldWhichRedis(unittest.TestCase):
 		"""The store provision hands get_agent_extravars, for a gateway on s-current in a Network
 		whose store is s-network."""
 		doc = fake_gateway(
-			doctype="Gateway Server", agent_version=agent_version, gateway_store="s-current",
-			network_store="s-network", admin_url="", set_admin_url=lambda: None,
-			record_agent_version=lambda rc: None, record_store=lambda rc, store: None,
+			doctype="Gateway Server",
+			agent_version=agent_version,
+			gateway_store="s-current",
+			network_store="s-network",
+			admin_url="",
+			set_admin_url=lambda: None,
+			record_agent_version=lambda rc: None,
+			record_store=lambda rc, store: None,
 			run_playbook=lambda play, extravars: ("play-1", 1),
 		)
 		doc.get_agent_extravars = Mock(return_value={})
@@ -285,7 +311,9 @@ class TestAGatewayIsToldWhichRedis(unittest.TestCase):
 		db.get_value.return_value = frappe._dict(gateway_store=before[0], is_store_writer=before[1])
 		with (
 			patch.object(frappe, "db", db),
-			patch("grove.grove.doctype.gateway_server.gateway_server.store_writers", return_value=list(writers)),
+			patch(
+				"grove.grove.doctype.gateway_server.gateway_server.store_writers", return_value=list(writers)
+			),
 		):
 			GatewayServer.record_store(SimpleNamespace(doctype="Gateway Server", name="gw-1"), rc, store)
 		return db.set_value.call_args.args[2] if db.set_value.called else None
@@ -304,8 +332,17 @@ class TestAGatewayIsToldWhichRedis(unittest.TestCase):
 		self.assertEqual(recorded["is_store_writer"], 1)
 
 	def test_only_a_gateway_on_a_store_can_be_its_writer(self):
-		doc = SimpleNamespace(name="gw-1", is_store_writer=1, gateway_store=None, set_admin_url=lambda: None, set_admin_token=lambda: None)
-		with patch.object(frappe, "throw", side_effect=frappe.ValidationError), self.assertRaises(frappe.ValidationError):
+		doc = SimpleNamespace(
+			name="gw-1",
+			is_store_writer=1,
+			gateway_store=None,
+			set_admin_url=lambda: None,
+			set_admin_token=lambda: None,
+		)
+		with (
+			patch.object(frappe, "throw", side_effect=frappe.ValidationError),
+			self.assertRaises(frappe.ValidationError),
+		):
 			GatewayServer.validate(doc)
 
 
@@ -338,9 +375,7 @@ class TestTheInstalledVersionIsRecorded(unittest.TestCase):
 		return db.set_value
 
 	def test_a_finished_play_records_what_it_installed(self):
-		self.set_value_after(0).assert_called_once_with(
-			"Gateway Server", "gw-1", "agent_version", PINNED
-		)
+		self.set_value_after(0).assert_called_once_with("Gateway Server", "gw-1", "agent_version", PINNED)
 
 	def test_a_failed_play_leaves_the_old_version_standing(self):
 		self.set_value_after(1).assert_not_called()
@@ -350,7 +385,9 @@ class TestPingReachesHealthz(unittest.TestCase):
 	"""Ping tells unreachable (throws) apart from reachable-but-unhealthy (a 503 with its reason)."""
 
 	def ping(self, **get):
-		doc = SimpleNamespace(doctype="Gateway Server", name="gw-1", admin_url="https://gw-1.fleet.test/grove-admin")
+		doc = SimpleNamespace(
+			doctype="Gateway Server", name="gw-1", admin_url="https://gw-1.fleet.test/grove-admin"
+		)
 		doc.health_url = FleetHost.health_url.fget(doc)
 		with (
 			patch("grove.fleet.requests.get", **get) as request,
@@ -447,7 +484,9 @@ class TestMaintenanceIsHeldInConfigJson(unittest.TestCase):
 		self.assertIs(True, variables["gateway_maintenance"])
 
 	def applied(self, box_says, rc=0):
-		doc = fake_gateway(is_in_maintenance=1, get_in_flight=lambda: {"maintenance": box_says, "in_flight": 0})
+		doc = fake_gateway(
+			is_in_maintenance=1, get_in_flight=lambda: {"maintenance": box_says, "in_flight": 0}
+		)
 		doc.run_playbook = Mock(return_value=("play-1", rc))
 		with (
 			patch("frappe.get_single", return_value=SETTINGS),
@@ -461,7 +500,7 @@ class TestMaintenanceIsHeldInConfigJson(unittest.TestCase):
 	def test_it_writes_config_json_and_returns_once_the_box_agrees(self):
 		run_playbook, result = self.applied(box_says=True)
 		self.assertEqual(("play-1", 0), result)
-		play, = run_playbook.call_args.args
+		(play,) = run_playbook.call_args.args
 		self.assertEqual("config.yml", play)
 		self.assertIs(True, run_playbook.call_args.kwargs["extravars"]["gateway_maintenance"])
 
@@ -487,8 +526,12 @@ class TestSetupCapsMemoryAtTheDocsLimit(unittest.TestCase):
 
 	def test_a_gateway_setup_passes_the_limit(self):
 		doc = fake_gateway(
-			doctype="Gateway Server", memory_limit_mb=600, admin_url="", set_admin_url=lambda: None,
-			record_agent_version=lambda rc: None, record_store=lambda rc, store: None,
+			doctype="Gateway Server",
+			memory_limit_mb=600,
+			admin_url="",
+			set_admin_url=lambda: None,
+			record_agent_version=lambda rc: None,
+			record_store=lambda rc, store: None,
 			run_playbook=Mock(return_value=("play-1", 1)),
 		)
 		doc.get_agent_extravars = Mock(return_value={})

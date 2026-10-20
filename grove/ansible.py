@@ -88,9 +88,12 @@ class Ansible:
 		cmd = [
 			"ansible-playbook",
 			playbook_path,
-			"-i", f"{self.server},",
-			"-u", self.user,
-			"-p", str(self.port),
+			"-i",
+			f"{self.server},",
+			"-u",
+			self.user,
+			"-p",
+			str(self.port),
 		]
 		if self.variables:
 			cmd.extend(["-e", json.dumps(self.variables)])
@@ -112,7 +115,9 @@ class Ansible:
 		candidates = [
 			os.path.join(self.project_root, "playbooks", playbook_name),
 			os.path.join(self.project_root, playbook_name),
-			os.path.join(self.project_root, f"{playbook_name}.yml") if not playbook_name.endswith(".yml") else None,
+			os.path.join(self.project_root, f"{playbook_name}.yml")
+			if not playbook_name.endswith(".yml")
+			else None,
 		]
 
 		for path in candidates:
@@ -124,8 +129,17 @@ class Ansible:
 			f"Searched: playbooks/{playbook_name}, {playbook_name}, {playbook_name}.yml"
 		)
 
-
-	def run_playbook(self, playbook_name, server_type, server_name, machine_name, extravars=None, skip_tags=None, reference_doctype=None, reference_docname=None):
+	def run_playbook(
+		self,
+		playbook_name,
+		server_type,
+		server_name,
+		machine_name,
+		extravars=None,
+		skip_tags=None,
+		reference_doctype=None,
+		reference_docname=None,
+	):
 		"""Run a playbook via ansible_runner with Frappe tracking (Ansible Play/Task docs).
 		Doctype-integrated mode — requires server_type + server_name for Frappe tracking.
 

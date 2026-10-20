@@ -4,6 +4,7 @@
 and nothing to mock, which is the whole point of keeping `grove/placement/` free of frappe."""
 
 import unittest
+from typing import ClassVar
 
 from grove.placement.base import (
 	Candidate,
@@ -128,7 +129,7 @@ class TestAPolicyIsItsOrder(unittest.TestCase):
 
 class TestFittingGpus(unittest.TestCase):
 	# Neither name order nor CUDA index order is the given order, so a sort inside fitting_gpus shows.
-	CARDS = [
+	CARDS: ClassVar[list] = [
 		{"name": "aaa", "gpu_index": 2, "gpu_type": "h100", "vram_gb": 80},
 		{"name": "zzz", "gpu_index": 0, "gpu_type": "l40s", "vram_gb": 48},
 		{"name": "mmm", "gpu_index": 1, "gpu_type": "h100", "vram_gb": 80},

@@ -15,6 +15,7 @@ import unittest.mock
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import ClassVar
 
 import frappe
 
@@ -22,15 +23,19 @@ import grove
 from grove import access
 from grove.pathway import projection, routes, run, snapshot
 from grove.pathway.run import Target, Unit
-from grove.tests.model_rows import modality_rows, model_row
 from grove.serving.vllm import VllmEngine
+from grove.tests.model_rows import modality_rows, model_row
 
 
-def replica(name, model="qwen3-35b", server="INF-1", status="Active", max_num_seqs=0,
-	model_deployment=None):
+def replica(name, model="qwen3-35b", server="INF-1", status="Active", max_num_seqs=0, model_deployment=None):
 	return frappe._dict(
-		name=name, model=model, model_key=model, engine_url=f"https://10.0.0.9/e/{name.lower()}",
-		status=status, inference_server=server, max_num_seqs=max_num_seqs,
+		name=name,
+		model=model,
+		model_key=model,
+		engine_url=f"https://10.0.0.9/e/{name.lower()}",
+		status=status,
+		inference_server=server,
+		max_num_seqs=max_num_seqs,
 		model_deployment=model_deployment,
 	)
 
@@ -75,9 +80,15 @@ class TestGatewayRoutes(unittest.TestCase):
 		doc.get_password.return_value = "internal-key"
 		with (
 			unittest.mock.patch.object(frappe, "get_all", side_effect=get_all),
-			unittest.mock.patch("grove.pathway.routes.published_routes", side_effect=lambda table, models: table),
+			unittest.mock.patch(
+				"grove.pathway.routes.published_routes", side_effect=lambda table, models: table
+			),
 			unittest.mock.patch.object(
-				frappe, "db", frappe._dict(get_value=lambda *args: "grove.example.com", get_single_value=lambda *args: "in")
+				frappe,
+				"db",
+				frappe._dict(
+					get_value=lambda *args: "grove.example.com", get_single_value=lambda *args: "in"
+				),
 			),
 			unittest.mock.patch.object(frappe, "get_doc", return_value=doc),
 		):
@@ -146,9 +157,12 @@ class TestRouteModalities(unittest.TestCase):
 
 		with (
 			unittest.mock.patch.object(frappe, "get_all", get_all),
-			unittest.mock.patch("grove.pathway.routes.published_routes", side_effect=lambda table, models: table),
+			unittest.mock.patch(
+				"grove.pathway.routes.published_routes", side_effect=lambda table, models: table
+			),
 			unittest.mock.patch.object(
-				frappe, "get_doc",
+				frappe,
+				"get_doc",
 				lambda *a: frappe._dict(get_password=lambda *_a, **_k: "k"),
 			),
 			unittest.mock.patch.object(routes, "ingress_targets", lambda geography: {}),
@@ -243,7 +257,9 @@ class TestEffectiveKeys(unittest.TestCase):
 			if doctype == "Model Group Row":
 				return list(groups)
 			if doctype == "Model Limit":
-				return [row for row in limits if row.get("parenttype", "Grove API Key") == filters["parenttype"]]
+				return [
+					row for row in limits if row.get("parenttype", "Grove API Key") == filters["parenttype"]
+				]
 			raise AssertionError(f"unexpected get_all({doctype})")
 
 		with (
@@ -255,7 +271,17 @@ class TestEffectiveKeys(unittest.TestCase):
 		return projected
 
 	def key(self, name="KEY-1", key_hash="abc", team="T-1", **fields):
-		return frappe._dict({"name": name, "key_hash": key_hash, "team": team, "status": "active", "geography": "in", "cap": 0, **fields})
+		return frappe._dict(
+			{
+				"name": name,
+				"key_hash": key_hash,
+				"team": team,
+				"status": "active",
+				"geography": "in",
+				"cap": 0,
+				**fields,
+			}
+		)
 
 	def test_a_key_carries_its_groups_its_deltas_and_its_teams_verdict(self):
 		[key] = self.keys(
@@ -270,9 +296,18 @@ class TestEffectiveKeys(unittest.TestCase):
 		self.assertEqual(
 			key,
 			{
-				"key_hash": "abc", "prefix": "KEY-1", "team": "T-1", "status": "active", "group": "acme",
-				"allow": "qwen3-4b", "deny": "qwen3-35b", "limited": True, "log_payloads": True,
-				"geography": "in", "budget": 0, "limits": "requests:1m:20,total_tokens:1m:100000",
+				"key_hash": "abc",
+				"prefix": "KEY-1",
+				"team": "T-1",
+				"status": "active",
+				"group": "acme",
+				"allow": "qwen3-4b",
+				"deny": "qwen3-35b",
+				"limited": True,
+				"log_payloads": True,
+				"geography": "in",
+				"budget": 0,
+				"limits": "requests:1m:20,total_tokens:1m:100000",
 			},
 		)
 
@@ -327,7 +362,14 @@ class TestEffectiveKeys(unittest.TestCase):
 		self.assertEqual([k["allow"] for k in keys], ["m1", "m2"])
 		self.assertEqual([k["group"] for k in keys], ["acme", "beta"])
 		self.assertEqual(
-			self.calls, {"Grove API Key": 1, "Central Team": 1, "Grove Model Row": 1, "Model Group Row": 1, "Model Limit": 2}
+			self.calls,
+			{
+				"Grove API Key": 1,
+				"Central Team": 1,
+				"Grove Model Row": 1,
+				"Model Group Row": 1,
+				"Model Limit": 2,
+			},
 		)
 
 	def test_limits_are_one_sorted_comma_list(self):
@@ -356,15 +398,22 @@ class TestEffectiveKeys(unittest.TestCase):
 	def test_limits_are_the_keys_own_else_its_tiers_else_the_defaults(self):
 		tiered = frappe._dict(name="T-2", log_payloads=0, suspended=0, tier="Growth")
 		keys = self.keys(
-			[self.key("KEY-1", "abc"), self.key("KEY-2", "abd", team="T-2"), self.key("KEY-3", "abe", team="T-2")],
+			[
+				self.key("KEY-1", "abc"),
+				self.key("KEY-2", "abd", team="T-2"),
+				self.key("KEY-3", "abe", team="T-2"),
+			],
 			limits=[
-				frappe._dict(parenttype="Grove API Key", parent="KEY-3", metric="requests", window="1m", value=5),
+				frappe._dict(
+					parenttype="Grove API Key", parent="KEY-3", metric="requests", window="1m", value=5
+				),
 				frappe._dict(parenttype="Tier", parent="Growth", metric="requests", window="1m", value=60),
 			],
 			teams=[frappe._dict(name="T-1", log_payloads=0, suspended=0), tiered],
 		)
 		self.assertEqual(
-			[k["limits"] for k in keys], ["requests:1m:20,total_tokens:1m:100000", "requests:1m:60", "requests:1m:5"]
+			[k["limits"] for k in keys],
+			["requests:1m:20,total_tokens:1m:100000", "requests:1m:60", "requests:1m:5"],
 		)
 
 	def test_a_team_with_no_tier_runs_under_the_default_tier(self):
@@ -470,9 +519,7 @@ class TestDelta(unittest.TestCase):
 	def test_a_bucket_the_box_still_holds_but_no_longer_exists_is_sent_empty(self):
 		old = self.snapshot([self.key("aa")])
 		delta = snapshot.snapshot_delta(self.snapshot(), self.hashes(old))
-		self.assertEqual(
-			delta["keys"]["buckets"][snapshot.bucket_of("aa")], {"records": []}
-		)
+		self.assertEqual(delta["keys"]["buckets"][snapshot.bucket_of("aa")], {"records": []})
 
 	def test_a_partial_tick_prunes_only_among_the_buckets_it_rebuilt(self):
 		old = self.snapshot([self.key("aa"), self.key("bb")])
@@ -495,7 +542,7 @@ class TestSyncTarget(unittest.TestCase):
 	pushed and logged when there is, and classified — down vs rejected — when the push, or the
 	hash read before it, failed."""
 
-	SNAPSHOT = {"groups": {"records": [], "catalog": "", "hash": "h1"}}
+	SNAPSHOT: ClassVar[dict] = {"groups": {"records": [], "catalog": "", "hash": "h1"}}
 
 	def sync(self, delta, post=None):
 		calls = {"posted": None}
@@ -542,8 +589,11 @@ class TestSyncTarget(unittest.TestCase):
 class TestAPushCarriesOwedAdjustments(unittest.TestCase):
 	"""A store's pending spend adjustments go out after the state, each answer kept under its row."""
 
-	SNAPSHOT = {"groups": {"records": [], "catalog": "", "hash": "h1"}}
-	OWED = [{"user": "GU-1", "delta": -5, "id": "CD-1"}, {"user": "GU-2", "delta": 7, "id": "CD-2"}]
+	SNAPSHOT: ClassVar[dict] = {"groups": {"records": [], "catalog": "", "hash": "h1"}}
+	OWED: ClassVar[list] = [
+		{"user": "GU-1", "delta": -5, "id": "CD-1"},
+		{"user": "GU-2", "delta": 7, "id": "CD-2"},
+	]
 
 	def push(self, delta, refused=None, gone=None):
 		"""`gone`: {id: the body of a 404 the box answers that adjustment with}."""
@@ -566,7 +616,9 @@ class TestAPushCarriesOwedAdjustments(unittest.TestCase):
 
 	def test_state_goes_first_then_each_adjustment(self):
 		row, posted = self.push(self.SNAPSHOT)
-		self.assertEqual(posted, [("state", self.SNAPSHOT), ("spend-adjust", self.OWED[0]), ("spend-adjust", self.OWED[1])])
+		self.assertEqual(
+			posted, [("state", self.SNAPSHOT), ("spend-adjust", self.OWED[0]), ("spend-adjust", self.OWED[1])]
+		)
 		self.assertEqual((row["success"], row["adjusted"]), (1, {"CD-1": 40, "CD-2": 40}))
 		self.assertEqual([sent["push"] for sent in row["payload"]], ["state", "spend-adjust", "spend-adjust"])
 
@@ -611,7 +663,9 @@ class TestAPush(unittest.TestCase):
 		target = Target("Gateway Server", "gw1", error="ValidationError: no admin_url")
 		outcome, [row] = self.push(target, {"groups": {"hash": "h"}})
 		self.assertIs(outcome, False)
-		self.assertEqual((row["success"], row["error"], row["payload"]), (0, "ValidationError: no admin_url", []))
+		self.assertEqual(
+			(row["success"], row["error"], row["payload"]), (0, "ValidationError: no admin_url", [])
+		)
 
 	def test_a_box_with_no_admin_url_resolves_to_its_reason(self):
 		with unittest.mock.patch.object(frappe, "get_cached_doc", side_effect=ValueError("no admin_url")):
@@ -622,7 +676,7 @@ class TestAPush(unittest.TestCase):
 class TestCheckState(unittest.TestCase):
 	"""The Check State button: what a tick would push, said out loud, nothing sent."""
 
-	SNAPSHOT = {
+	SNAPSHOT: ClassVar[dict] = {
 		"groups": {"records": [], "catalog": "", "hash": "g1"},
 		"keys": {"buckets": {"3f": {"records": [{"key_hash": "aa"}], "hash": "k1"}}},
 	}
@@ -633,10 +687,13 @@ class TestCheckState(unittest.TestCase):
 			unittest.mock.patch.object(snapshot, "gateway_snapshot", return_value=self.SNAPSHOT),
 			unittest.mock.patch.object(snapshot, "gateway_geography", return_value="in"),
 			unittest.mock.patch.object(frappe, "get_doc", return_value=None),
-			unittest.mock.patch.object(Target, "of", return_value=Target("Gateway Server", "gw1", "http://x", "t")),
+			unittest.mock.patch.object(
+				Target, "of", return_value=Target("Gateway Server", "gw1", "http://x", "t")
+			),
 			unittest.mock.patch.object(Target, "remote_hashes", return_value=remote),
 			unittest.mock.patch.object(
-				Target, "post",
+				Target,
+				"post",
 				side_effect=AssertionError("check_state must never push"),
 			),
 		):
@@ -684,10 +741,12 @@ class TestSyncProjection(unittest.TestCase):
 	something was actually pushed — a fleet in sync leaves nothing behind."""
 
 	paused = ""
-	SNAPSHOT = {"groups": {"records": [], "hash": "g1"}}
+	SNAPSHOT: ClassVar[dict] = {"groups": {"records": [], "hash": "g1"}}
 	NOW = datetime(2026, 8, 16, 0, 1)
 
-	def run_projection(self, results, proxies=("gw1", "gw2"), entry=None, groups=None, owed=None, remote=None, **kwargs):
+	def run_projection(
+		self, results, proxies=("gw1", "gw2"), entry=None, groups=None, owed=None, remote=None, **kwargs
+	):
 		doc = FakeRun()
 		targets = []
 		remote = remote or {}
@@ -711,12 +770,15 @@ class TestSyncProjection(unittest.TestCase):
 		with (
 			unittest.mock.patch.object(run, "new_run", return_value=doc),
 			unittest.mock.patch.object(
-				run, "sync_targets",
+				run,
+				"sync_targets",
 				return_value=groups if groups is not None else [(None, [proxy]) for proxy in proxies],
 			),
 			unittest.mock.patch.object(projection, "active_ingresses", return_value=[]),
 			unittest.mock.patch.object(
-				projection, "read_hashes", side_effect=lambda targets: {t: remote.get(t.name, {}) for t in targets}
+				projection,
+				"read_hashes",
+				side_effect=lambda targets: {t: remote.get(t.name, {}) for t in targets},
 			),
 			unittest.mock.patch.object(snapshot, "keys_section", return_value={"buckets": {}}),
 			unittest.mock.patch.object(snapshot, "gateway_snapshot", return_value=self.SNAPSHOT),
@@ -726,10 +788,14 @@ class TestSyncProjection(unittest.TestCase):
 			unittest.mock.patch.object(projection, "pending_adjustments", return_value=owed or {}),
 			unittest.mock.patch.object(projection, "mark_corrected") as self.mark_corrected,
 			unittest.mock.patch.object(
-				frappe, "db", frappe._dict(
-					commit=lambda: None, set_value=set_value, get_value=get_value,
+				frappe,
+				"db",
+				frappe._dict(
+					commit=lambda: None,
+					set_value=set_value,
+					get_value=get_value,
 					get_single_value=lambda _doctype, field: field == self.paused,
-				)
+				),
 			),
 			unittest.mock.patch.object(frappe.utils, "now_datetime", lambda: self.NOW),
 		):
@@ -737,13 +803,22 @@ class TestSyncProjection(unittest.TestCase):
 		return name, doc, targets
 
 	def row(self, success=1):
-		return {"reachable": 1, "success": success, "http_status": 0, "error": None,
-		        "duration_ms": 1, "detail": "", "payload": ""}
+		return {
+			"reachable": 1,
+			"success": success,
+			"http_status": 0,
+			"error": None,
+			"duration_ms": 1,
+			"detail": "",
+			"payload": "",
+		}
 
 	def test_a_stores_owed_adjustments_go_with_its_push_and_the_answers_mark_the_rows(self):
 		owed = {"store1": [{"user": "GU-1", "delta": -5, "id": "CD-1"}]}
 		_name, doc, _targets = self.run_projection(
-			{"gw1": {**self.row(), "adjusted": {"CD-1": 40}}}, groups=[("store1", ["gw1"]), (None, ["gw2"])], owed=owed,
+			{"gw1": {**self.row(), "adjusted": {"CD-1": 40}}},
+			groups=[("store1", ["gw1"]), (None, ["gw2"])],
+			owed=owed,
 		)
 		self.assertEqual(self.handed, {"gw1": owed["store1"], "gw2": ()})
 		self.mark_corrected.assert_called_once_with({"CD-1": 40})
@@ -753,7 +828,8 @@ class TestSyncProjection(unittest.TestCase):
 	def test_a_named_gateway_is_pushed_what_its_store_is_owed(self):
 		owed = {"store1": [{"key": "abc", "delta": -5, "id": "CD-1"}]}
 		self.run_projection(
-			{"gw1": {**self.row(), "adjusted": {"CD-1": 40}}}, owed=owed,
+			{"gw1": {**self.row(), "adjusted": {"CD-1": 40}}},
+			owed=owed,
 			entry=lambda **kwargs: projection.sync_projection(proxies=["gw1"], **kwargs),
 		)
 		self.assertEqual(self.handed, {"gw1": owed["store1"]})
@@ -846,14 +922,20 @@ class TestSyncProjection(unittest.TestCase):
 
 	def test_full_sync_forces_every_box(self):
 		_name, _doc, targets = self.run_projection(
-			{"gw1": self.row()}, proxies=("gw1",), entry=projection.full_sync, remote={"gw1": {"groups": "g1"}}
+			{"gw1": self.row()},
+			proxies=("gw1",),
+			entry=projection.full_sync,
+			remote={"gw1": {"groups": "g1"}},
 		)
 		self.assertEqual(targets, [("Gateway Server", "gw1")])
 		self.assertEqual(self.deltas["gw1"], self.SNAPSHOT)
 
 	def test_a_forced_push_goes_out_when_the_hash_read_failed(self):
 		_name, _doc, targets = self.run_projection(
-			{"gw1": self.row()}, proxies=("gw1",), entry=projection.full_sync, remote={"gw1": RuntimeError("no hash")}
+			{"gw1": self.row()},
+			proxies=("gw1",),
+			entry=projection.full_sync,
+			remote={"gw1": RuntimeError("no hash")},
 		)
 		self.assertEqual(targets, [("Gateway Server", "gw1")])
 		self.assertEqual(self.deltas["gw1"], self.SNAPSHOT)
@@ -872,17 +954,23 @@ class TestSyncProjection(unittest.TestCase):
 		seen = []
 		with (
 			unittest.mock.patch.object(run, "new_run", return_value=doc),
-			unittest.mock.patch.object(projection, "read_hashes", side_effect=lambda targets: {t: {} for t in targets}),
+			unittest.mock.patch.object(
+				projection, "read_hashes", side_effect=lambda targets: {t: {} for t in targets}
+			),
 			unittest.mock.patch.object(snapshot, "ingress_snapshot", return_value={}),
 			unittest.mock.patch.object(Target, "resolve", side_effect=resolved),
 			unittest.mock.patch.object(
-				projection, "push_target",
+				projection,
+				"push_target",
 				side_effect=lambda target, *_: seen.append((target.server_type, target.name)) or None,
 			),
 			unittest.mock.patch.object(projection, "pending_adjustments", return_value={}),
 			unittest.mock.patch.object(
-				frappe, "db",
-				frappe._dict(commit=lambda: None, set_value=lambda *a, **k: None, get_single_value=lambda *a: 0),
+				frappe,
+				"db",
+				frappe._dict(
+					commit=lambda: None, set_value=lambda *a, **k: None, get_single_value=lambda *a: 0
+				),
 			),
 			unittest.mock.patch.object(frappe.utils, "now_datetime", lambda: datetime(2026, 8, 16, 0, 1)),
 		):
@@ -908,7 +996,10 @@ class TestSyncTargets(unittest.TestCase):
 	"""Which gateways a run reaches: each Redis once, a store only through the gateways marked to."""
 
 	def targets(self, gateways):
-		rows = [frappe._dict(name=name, gateway_store=store, is_store_writer=writer) for name, store, writer in gateways]
+		rows = [
+			frappe._dict(name=name, gateway_store=store, is_store_writer=writer)
+			for name, store, writer in gateways
+		]
 		with unittest.mock.patch.object(frappe, "get_all", return_value=rows) as get_all:
 			groups = run.sync_targets()
 		self.assertEqual(get_all.call_args.kwargs["filters"], {"status": "Active"})
@@ -933,7 +1024,7 @@ class TestTheTickIsTheOnlyAutomaticPush(unittest.TestCase):
 	"""Projection is the cron tick's job. Every other caller is an operator pressing a button —
 	an inline push in a lifecycle hook is the drift this replaced."""
 
-	BUTTONS = {
+	BUTTONS: ClassVar[dict] = {
 		"pathway/projection.py",
 		"grove/doctype/gateway_server/gateway_server.py",
 		"grove/doctype/ingress_server/ingress_server.py",
@@ -1001,9 +1092,7 @@ class TestCapacityResolvesThroughTheDeployment(unittest.TestCase):
 
 	def test_a_deployment_that_names_no_cap_still_leaves_a_number_on_the_route(self):
 		self.assertEqual(
-			self.capacity(
-				[replica("MD-00007", model_deployment="T1")], [deployment("T1")]
-			),
+			self.capacity([replica("MD-00007", model_deployment="T1")], [deployment("T1")]),
 			[VllmEngine.default_concurrency],
 		)
 
@@ -1017,7 +1106,9 @@ class TestDial(unittest.TestCase):
 			raise RuntimeError("bug")
 
 		row = Target("Gateway Server", "gw1", "http://x", "t").dial(work, payload=[])
-		self.assertEqual((row["reachable"], row["success"], row["error"], row["payload"]), (1, 0, "RuntimeError: bug", []))
+		self.assertEqual(
+			(row["reachable"], row["success"], row["error"], row["payload"]), (1, 0, "RuntimeError: bug", [])
+		)
 
 	def test_a_box_that_could_not_be_resolved_keeps_its_fields_and_is_never_dialled(self):
 		target = Target("Gateway Server", "gw1", error="no admin_url")

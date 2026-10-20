@@ -28,7 +28,7 @@ def form_script_map():
 	while the form drifted, which is the one thing this is meant to catch."""
 	script = (DOCTYPES / "machine" / "machine.js").read_text()
 	literal = re.search(r"const SERVER_DOCTYPE = \{(.*?)\n\};", script, re.S).group(1)
-	return dict(re.findall(r"'([^']+)':\s*'([^']+)'", literal))
+	return dict(re.findall(r'^\s*"?([\w ]+?)"?:\s*"([^"]+)"', literal, re.M))
 
 
 class TestMachineTypesAreCreatableDoctypes(unittest.TestCase):

@@ -14,9 +14,7 @@ LEGACY = {"creat", "open", "chmod", "chown", "lchown", "unlink", "rename", "stim
 
 
 def render(architecture):
-	environment = Environment(
-		loader=FileSystemLoader(TEMPLATES), trim_blocks=True, undefined=StrictUndefined
-	)
+	environment = Environment(loader=FileSystemLoader(TEMPLATES), trim_blocks=True, undefined=StrictUndefined)
 	scan = {"stdout_lines": ["/usr/bin/su", "/usr/bin/sudo"]}
 	return environment.get_template("grove.rules.j2").render(
 		ansible_architecture=architecture, auditd_privileged_binaries=scan

@@ -15,7 +15,6 @@ from grove.placement import lease
 from grove.placement.base import Candidate, fitting_gpus, placement_policy, sort_key
 from grove.serving.base import DEFAULT_PORT, build_engine
 
-
 # The knobs a replica may override. Blank or 0 means inherit: none of these has 0 as a legal
 # value, which is what lets one column carry both "unset" and a real number.
 OVERRIDABLE = (
@@ -47,6 +46,7 @@ class ModelDeployment(Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
+
 		from grove.grove.doctype.pod_env.pod_env import PodEnv
 
 		allow_long_max_model_len: DF.Check
@@ -135,9 +135,9 @@ class ModelDeployment(Document):
 			port=(replica.engine_port if replica else 0) or DEFAULT_PORT,
 			gpu_count=len(replica.gpus or []) if replica else self.gpus_per_replica,
 			gpu_vram_gb=gpu_vram_gb or (replica.gpu_vram_gb if replica else None) or self.min_vram_gb,
-		compute_capability=(
-			compute_capability or (replica.gpu_compute_capability if replica else None) or 0
-		),
+			compute_capability=(
+				compute_capability or (replica.gpu_compute_capability if replica else None) or 0
+			),
 			**self.resolved_config(replica),
 			**image_tuning,
 		)
@@ -196,8 +196,14 @@ class ModelDeployment(Document):
 		siblings = self._sibling_boxes()
 		per_region = self._replicas_per_region()
 		return [
-			self._candidate(box, claims[box.name], architectures.get(box.machine), image_architecture,
-			                siblings, per_region)
+			self._candidate(
+				box,
+				claims[box.name],
+				architectures.get(box.machine),
+				image_architecture,
+				siblings,
+				per_region,
+			)
 			for box in boxes
 		]
 
@@ -230,9 +236,7 @@ class ModelDeployment(Document):
 		taking = free[: self.gpus_per_replica]
 		vram = min(claim.vram_by_card[card] for card in taking)
 		capability = min(claim.capability_by_card[card] for card in taking)
-		if errors := self.engine_for(
-			gpu_vram_gb=vram, compute_capability=capability
-		).placement_errors:
+		if errors := self.engine_for(gpu_vram_gb=vram, compute_capability=capability).placement_errors:
 			return "; ".join(errors)
 		return ""
 
@@ -330,8 +334,10 @@ def _claims_by_box(boxes):
 	cards = cards_on(machines)
 	replicas = frappe.get_all(
 		"Model Replica",
-		filters={"inference_server": ("in", [box.name for box in boxes]),
-		         "status": ("in", GPU_CLAIMING_STATUSES)},
+		filters={
+			"inference_server": ("in", [box.name for box in boxes]),
+			"status": ("in", GPU_CLAIMING_STATUSES),
+		},
 		fields=["name", "inference_server"],
 	)
 	holding = {card.held_by for card in cards if card.held_by}

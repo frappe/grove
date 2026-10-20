@@ -74,9 +74,7 @@ def authenticate(token):
 
 	expected = frappe.get_cached_doc("Grove Settings").get_password("sd_token", raise_exception=False)
 	if not expected:
-		frappe.throw(
-			"No Service Discovery Token is set in Grove Settings.", frappe.AuthenticationError
-		)
+		frappe.throw("No Service Discovery Token is set in Grove Settings.", frappe.AuthenticationError)
 	if not hmac.compare_digest(str(token), str(expected)):
 		frappe.throw("Invalid Service Discovery Token.", frappe.AuthenticationError)
 
@@ -226,13 +224,9 @@ def build_host_targets(boxes, viewer_network=""):
 			"region": box.get("region") or "",
 			"server": box["name"],
 		}
-		entries.append(
-			exporter_entry(address, NODE_EXPORTER_PORT, NODE_METRICS_PATH, labels, box["ip"])
-		)
+		entries.append(exporter_entry(address, NODE_EXPORTER_PORT, NODE_METRICS_PATH, labels, box["ip"]))
 		if box.get("has_gpu"):
-			entries.append(
-				exporter_entry(address, DCGM_EXPORTER_PORT, GPU_METRICS_PATH, labels, box["ip"])
-			)
+			entries.append(exporter_entry(address, DCGM_EXPORTER_PORT, GPU_METRICS_PATH, labels, box["ip"]))
 	return entries
 
 

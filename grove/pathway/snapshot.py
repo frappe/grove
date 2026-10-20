@@ -63,27 +63,33 @@ def effective_keys(names=None):
 	}
 	deltas = model_rows("Grove API Key", names)
 	memberships = group_rows(names)
-	limits = effective_limits(keys, limit_entries("Grove API Key", names), {name: t.tier for name, t in teams.items()})
+	limits = effective_limits(
+		keys, limit_entries("Grove API Key", names), {name: t.tier for name, t in teams.items()}
+	)
 	records = []
 	for k in sorted(keys, key=lambda k: k.key_hash or ""):
 		team = teams.get(k.team)
 		if not k.key_hash or team is None:
 			continue
-		records.append({
-			"key_hash": k.key_hash,
-			"prefix": k.name,
-			"team": k.team,
-			"status": k.status or "active",
-			"group": ",".join(memberships.get(k.name, [])),
-			"allow": ",".join(deltas.get(k.name, {}).get("allow", [])),
-			"deny": ",".join(deltas.get(k.name, {}).get("deny", [])),
-			"limited": bool(team.suspended),
-			"log_payloads": bool(team.log_payloads),
-			"geography": k.geography or "",
-			"budget": nano(k.cap or 0),
-			# Blank when none: the box merges fields, so leaving it out would keep a removed limit in force.
-			"limits": ",".join(f"{r['metric']}:{r['window']}:{r['value']}" for r in limits.get(k.name, [])),
-		})
+		records.append(
+			{
+				"key_hash": k.key_hash,
+				"prefix": k.name,
+				"team": k.team,
+				"status": k.status or "active",
+				"group": ",".join(memberships.get(k.name, [])),
+				"allow": ",".join(deltas.get(k.name, {}).get("allow", [])),
+				"deny": ",".join(deltas.get(k.name, {}).get("deny", [])),
+				"limited": bool(team.suspended),
+				"log_payloads": bool(team.log_payloads),
+				"geography": k.geography or "",
+				"budget": nano(k.cap or 0),
+				# Blank when none: the box merges fields, so leaving it out would keep a removed limit in force.
+				"limits": ",".join(
+					f"{r['metric']}:{r['window']}:{r['value']}" for r in limits.get(k.name, [])
+				),
+			}
+		)
 	return records
 
 
@@ -146,10 +152,11 @@ def bucketed_section(records, id_field):
 	buckets = {}
 	for record in records:
 		buckets.setdefault(bucket_of(record[id_field]), []).append(record)
-	return {"buckets": {
-		label: {"records": rows, "hash": _hash({"records": rows})}
-		for label, rows in buckets.items()
-	}}
+	return {
+		"buckets": {
+			label: {"records": rows, "hash": _hash({"records": rows})} for label, rows in buckets.items()
+		}
+	}
 
 
 def gateway_snapshot(geography, keys):
@@ -196,7 +203,9 @@ def bucket_delta(section, buckets, remote, labels):
 	the section no longer has, so the agent prunes their members instead of holding them forever.
 	`labels` keeps the prune to the buckets a tick rebuilt: the rest it never looked at."""
 	changed = {
-		label: bucket for label, bucket in buckets.items() if remote.get(f"{section}:{label}") != bucket["hash"]
+		label: bucket
+		for label, bucket in buckets.items()
+		if remote.get(f"{section}:{label}") != bucket["hash"]
 	}
 	held = {k.split(":", 1)[1] for k in remote if k.startswith(f"{section}:")}
 	if labels is not None:

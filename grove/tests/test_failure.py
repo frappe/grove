@@ -161,7 +161,10 @@ class TestMarkingBrokenIsNarrow(unittest.TestCase):
 		meta.get_field.return_value = SimpleNamespace(options=options) if options else None
 		db = MagicMock()
 		db.get_value.return_value = current_status
-		with patch.object(failure.frappe, "get_meta", return_value=meta), patch.object(failure.frappe, "db", db):
+		with (
+			patch.object(failure.frappe, "get_meta", return_value=meta),
+			patch.object(failure.frappe, "db", db),
+		):
 			failure._mark_broken("Gateway Server", "gw-1")
 		return db.set_value.called
 

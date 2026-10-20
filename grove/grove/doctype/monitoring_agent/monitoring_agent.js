@@ -1,52 +1,76 @@
-frappe.ui.form.on('Monitoring Agent', {
+frappe.ui.form.on("Monitoring Agent", {
 	refresh(frm) {
 		if (frm.is_new()) return;
 
-		if (frm.doc.status !== 'Terminated') {
-			frm.add_custom_button(__('Archive'), () => {
-				frappe.confirm(
-					__('Archive {0}? Its Machine is terminated — the box and everything on its disk are gone — and this server leaves the fleet. Refused while anything still depends on it.', [frm.doc.name]),
-					() => frm.call('archive').then(() => frm.reload_doc()),
-				);
-			}, __('Danger'));
+		if (frm.doc.status !== "Terminated") {
+			frm.add_custom_button(
+				__("Archive"),
+				() => {
+					frappe.confirm(
+						__(
+							"Archive {0}? Its Machine is terminated — the box and everything on its disk are gone — and this server leaves the fleet. Refused while anything still depends on it.",
+							[frm.doc.name]
+						),
+						() => frm.call("archive").then(() => frm.reload_doc())
+					);
+				},
+				__("Danger")
+			);
 		}
 		if (!frm.doc.machine) return;
 
-		if (frm.doc.status === 'Active') {
-			frm.add_custom_button(__('Update Config'), () => grove.confirm_call(frm,
-				__("Rewrite {0}'s vmagent config and restart it?", [frm.doc.name]),
-				'update_config'));
-			frm.add_custom_button(__('Rotate Token'), () => {
+		if (frm.doc.status === "Active") {
+			frm.add_custom_button(__("Update Config"), () =>
+				grove.confirm_call(
+					frm,
+					__("Rewrite {0}'s vmagent config and restart it?", [frm.doc.name]),
+					"update_config"
+				)
+			);
+			frm.add_custom_button(__("Rotate Token"), () => {
 				frappe.prompt(
 					{
-						fieldname: 'token',
-						fieldtype: 'Password',
-						label: __('New Metrics Token'),
+						fieldname: "token",
+						fieldtype: "Password",
+						label: __("New Metrics Token"),
 						reqd: 1,
-						description: __('Minted by the ingestion service. Saved here and written to the box in one go — pushes fail until both match.'),
+						description: __(
+							"Minted by the ingestion service. Saved here and written to the box in one go — pushes fail until both match."
+						),
 					},
-					({token}) => frm.call('rotate_metrics_token', {token}).then(() => frm.reload_doc()),
-					__('Rotate Metrics Token'),
-					__('Rotate'),
+					({ token }) =>
+						frm.call("rotate_metrics_token", { token }).then(() => frm.reload_doc()),
+					__("Rotate Metrics Token"),
+					__("Rotate")
 				);
 			});
 		} else {
-			frm.add_custom_button(__('Install'), () => grove.confirm_call(frm,
-				__('Install the monitoring agent on {0}?', [frm.doc.name]),
-				'setup'));
+			frm.add_custom_button(__("Install"), () =>
+				grove.confirm_call(
+					frm,
+					__("Install the monitoring agent on {0}?", [frm.doc.name]),
+					"setup"
+				)
+			);
 		}
 
 		// Only a dev site needs it: the box cannot reach this Grove, so http_sd never re-fetches.
-		if (frappe.boot.developer_mode && frm.doc.status === 'Active') {
-			frm.add_custom_button(__('Push Targets'), () => grove.confirm_call(frm,
-				__("Replace {0}'s target list with this Grove's?", [frm.doc.name]),
-				'push_targets'));
+		if (frappe.boot.developer_mode && frm.doc.status === "Active") {
+			frm.add_custom_button(__("Push Targets"), () =>
+				grove.confirm_call(
+					frm,
+					__("Replace {0}'s target list with this Grove's?", [frm.doc.name]),
+					"push_targets"
+				)
+			);
 		}
 
-		frm.add_custom_button(__('Show Targets'), () => {
+		frm.add_custom_button(__("Show Targets"), () => {
 			window.open(
-				`/api/method/grove.monitoring.targets?agent=${encodeURIComponent(frm.doc.name)}&kind=engine`,
-				'_blank',
+				`/api/method/grove.monitoring.targets?agent=${encodeURIComponent(
+					frm.doc.name
+				)}&kind=engine`,
+				"_blank"
 			);
 		});
 	},

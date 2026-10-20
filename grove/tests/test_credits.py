@@ -17,9 +17,9 @@ from grove.billing.doctype.gateway_spend_adjustment.gateway_spend_adjustment imp
 	mark_corrected,
 	pending_adjustments,
 )
-from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing, new_pricing
 from grove.billing.report.revenue.revenue import execute as revenue
+from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.pathway import routes, snapshot, usage
 from grove.pathway.run import Target
 from grove.tests.test_usage_pull import a_store
@@ -255,7 +255,9 @@ class TestWhatTheGatewayDidNotCharge(CreditsCase):
 		would bill what the box never counted, so the team waits as Stuck Usage."""
 		team, key = self.team(cap=1)
 		self.assertEqual(
-			self.pull({key: self.hash(20_000) | {f"f:{self.pricing}:cost": "1"}}, drain_id="credits-unbilled"),
+			self.pull(
+				{key: self.hash(20_000) | {f"f:{self.pricing}:cost": "1"}}, drain_id="credits-unbilled"
+			),
 			(1, {}, [], 1),
 		)
 		self.assertEqual(self.state(team), (D("0"), 0))
@@ -522,7 +524,9 @@ class TestADeadLineIsOwedToTheBox(CreditsCase):
 			("Gateway corrected", D(0), D("0.5"), D("-0.5")),
 		)
 		key_hash = frappe.db.get_value("Grove API Key", key, "key_hash")
-		self.assertIn({"key": key_hash, "delta": 500_000_000, "id": row.name}, pending_adjustments()[self.store])
+		self.assertIn(
+			{"key": key_hash, "delta": 500_000_000, "id": row.name}, pending_adjustments()[self.store]
+		)
 		self.assertEqual(self.discrepancies(team), [], "nothing is left for a person to decide")
 
 	def test_a_revoked_keys_dead_line_is_billed_and_owed_nothing(self):
@@ -556,9 +560,7 @@ class TestThePushCarriesTheCap(CreditsCase):
 		self.pull({key: self.hash(30_000)})
 		self.pull({key: self.hash(20_000)}, store=a_store("credits-store-2"))
 		pushed = self.keys()[key]
-		self.assertEqual(
-			(pushed["team"], pushed["budget"], pushed["limited"]), (team, 1_250_000_000, False)
-		)
+		self.assertEqual((pushed["team"], pushed["budget"], pushed["limited"]), (team, 1_250_000_000, False))
 
 	def test_a_suspended_teams_keys_are_pushed_limited(self):
 		team, key = self.team(cap=0.5)

@@ -13,6 +13,7 @@ order is asserted here rather than discovered live.
 
 import unittest
 from types import SimpleNamespace
+from typing import ClassVar
 from unittest.mock import patch
 
 import frappe
@@ -36,9 +37,13 @@ class FakeRoute53:
 	order, and answers the zone and record listings from canned lists."""
 
 	def __init__(self, zones=None, existing=None):
-		self.zones = zones if zones is not None else [
-			{"Id": "/hostedzone/Z123", "Name": f"{ZONE}.", "Config": {"PrivateZone": False}},
-		]
+		self.zones = (
+			zones
+			if zones is not None
+			else [
+				{"Id": "/hostedzone/Z123", "Name": f"{ZONE}.", "Config": {"PrivateZone": False}},
+			]
+		)
 		self.existing = existing or []
 		self.batches = []
 		self.health_checks = []
@@ -75,7 +80,7 @@ class FakeRoute53:
 	def get_paginator(self, _operation):
 		return SimpleNamespace(paginate=lambda: [{"HealthChecks": self.existing_health_checks}])
 
-	existing_health_checks = []
+	existing_health_checks: ClassVar[list] = []
 
 
 def client(fake):
@@ -103,7 +108,9 @@ class TestHostedZoneLookup(unittest.TestCase):
 		self.assertEqual(client(FakeRoute53()).get_hosted_zone_id(ZONE), "Z123")
 
 	def test_a_private_zone_of_the_same_name_is_not_it(self):
-		fake = FakeRoute53(zones=[{"Id": "/hostedzone/Zpriv", "Name": f"{ZONE}.", "Config": {"PrivateZone": True}}])
+		fake = FakeRoute53(
+			zones=[{"Id": "/hostedzone/Zpriv", "Name": f"{ZONE}.", "Config": {"PrivateZone": True}}]
+		)
 		with self.assertRaises(Route53Error):
 			client(fake).get_hosted_zone_id(ZONE)
 
@@ -174,7 +181,9 @@ class TestGatewayRecords(unittest.TestCase):
 	def test_a_row_without_a_health_check_carries_none_rather_than_a_blank(self):
 		"""Route53 rejects a blank HealthCheckId outright."""
 		self.client.upsert_gateway_records(*gateway_arguments(health_check_id=""))
-		self.assertNotIn("HealthCheckId", rows(self.fake.batches[0])[(GATEWAY_HOST, "gw1-ap-south-1")]["ResourceRecordSet"])
+		self.assertNotIn(
+			"HealthCheckId", rows(self.fake.batches[0])[(GATEWAY_HOST, "gw1-ap-south-1")]["ResourceRecordSet"]
+		)
 
 	def test_a_delete_repeats_what_the_upsert_wrote(self):
 		self.client.upsert_gateway_records(*self.arguments)
@@ -326,7 +335,10 @@ class TestSyncingABox(unittest.TestCase):
 		fake, doc = self.sync()
 		self.assertEqual("hc-1", doc.health_check_id)
 		self.assertEqual(["create_health_check", "change_resource_record_sets"], fake.calls)
-		self.assertEqual("hc-1", rows(fake.batches[0])[(GATEWAY_HOST, "gw1-ap-south-1")]["ResourceRecordSet"]["HealthCheckId"])
+		self.assertEqual(
+			"hc-1",
+			rows(fake.batches[0])[(GATEWAY_HOST, "gw1-ap-south-1")]["ResourceRecordSet"]["HealthCheckId"],
+		)
 
 	def test_a_check_it_already_has_is_reused(self):
 		fake, _ = self.sync(health_check_id="hc-7")
@@ -363,9 +375,11 @@ class TestDerivedNames(unittest.TestCase):
 
 	def settings(self, zone):
 		"""The box's Geography's zone."""
+
 		def get_value(doctype, name, field):
 			assert (doctype, name, field) == ("Geography", "in", "fleet_zone")
 			return zone
+
 		return patch.object(frappe, "db", SimpleNamespace(get_value=get_value))
 
 	def hostname(self, zone):

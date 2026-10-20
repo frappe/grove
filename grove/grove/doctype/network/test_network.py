@@ -93,7 +93,9 @@ class TestInferenceIngressCidrs(unittest.TestCase):
 
 	def test_the_vpc_itself_is_always_let_in(self):
 		network = SimpleNamespace(
-			name="Mumbai", geography="India", cidr_block="10.3.0.0/16",
+			name="Mumbai",
+			geography="India",
+			cidr_block="10.3.0.0/16",
 			scraping_agents=[agent("3.3.3.3", network="Frankfurt")],
 		)
 		with patch("frappe.get_all", return_value=[]):
@@ -128,7 +130,9 @@ class TestSyncIngress(unittest.TestCase):
 
 	def permission(self, port, *cidrs, source_groups=()):
 		return {
-			"FromPort": port, "ToPort": port, "IpProtocol": "tcp",
+			"FromPort": port,
+			"ToPort": port,
+			"IpProtocol": "tcp",
 			"IpRanges": [{"CidrIp": cidr} for cidr in cidrs],
 			"UserIdGroupPairs": [{"GroupId": group} for group in source_groups],
 		}
@@ -164,9 +168,12 @@ class TestSyncIngress(unittest.TestCase):
 		result = client.sync_ingress("sg-1", 443, ["1.1.1.1/32"])
 		self.assertEqual(result["closed"], ["sg-proxy"])
 		self.assertEqual(
-			[pair["GroupId"] for call in client.revoked
-			 for permission in call["IpPermissions"]
-			 for pair in permission.get("UserIdGroupPairs", [])],
+			[
+				pair["GroupId"]
+				for call in client.revoked
+				for permission in call["IpPermissions"]
+				for pair in permission.get("UserIdGroupPairs", [])
+			],
 			["sg-proxy"],
 		)
 
@@ -250,8 +257,7 @@ class TestParseSecurityGroupIds(unittest.TestCase):
 		self.assertEqual(parse_security_group_ids("sg-abc,sg-def"), ["sg-abc", "sg-def"])
 
 	def test_strips_whitespace(self):
-		self.assertEqual(parse_security_group_ids("sg-abc, sg-def , sg-ghi"),
-						  ["sg-abc", "sg-def", "sg-ghi"])
+		self.assertEqual(parse_security_group_ids("sg-abc, sg-def , sg-ghi"), ["sg-abc", "sg-def", "sg-ghi"])
 
 	def test_blank_is_empty_list(self):
 		self.assertEqual(parse_security_group_ids(""), [])
@@ -272,9 +278,10 @@ class TestScheduledIngressSync(unittest.TestCase):
 
 		with (
 			patch("frappe.get_all", return_value=["NET-1", "NET-2"]),
-			patch("frappe.get_doc", lambda doctype, name: SimpleNamespace(
-				sync_inference_ingress=lambda: sync(name)
-			)),
+			patch(
+				"frappe.get_doc",
+				lambda doctype, name: SimpleNamespace(sync_inference_ingress=lambda: sync(name)),
+			),
 			patch("frappe.db.rollback"),
 			patch("frappe.log_error") as log_error,
 		):

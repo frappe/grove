@@ -28,9 +28,14 @@ def team_limits(team, for_update=False):
 	no cap can be set). `max_keys` is the team's own under Override Max Keys. `for_update` locks
 	the team row for a cap check. The tier comes off the doc cache: a save clears it."""
 	fields = ["suspended", "tier", "override_max_keys", "max_keys"]
-	row = frappe.db.get_value("Central Team", team, fields, as_dict=True, for_update=for_update) or frappe._dict()
+	row = (
+		frappe.db.get_value("Central Team", team, fields, as_dict=True, for_update=for_update)
+		or frappe._dict()
+	)
 	tier = row.tier or default_tier()
-	limits = (tier and frappe.get_cached_value("Tier", tier, ["max_keys", "spend_limit"], as_dict=True)) or frappe._dict()
+	limits = (
+		tier and frappe.get_cached_value("Tier", tier, ["max_keys", "spend_limit"], as_dict=True)
+	) or frappe._dict()
 	if not row.override_max_keys:
 		row.max_keys = limits.max_keys
 	row.max_keys, row.spend_limit = row.max_keys or 0, flt(limits.spend_limit)
@@ -43,9 +48,7 @@ def model_rows(parenttype, parents=None):
 	filters = {"parenttype": parenttype}
 	if parents is not None:
 		filters["parent"] = ("in", list(parents))
-	rows = frappe.get_all(
-		"Grove Model Row", filters=filters, fields=["parent", "model_key", "parentfield"]
-	)
+	rows = frappe.get_all("Grove Model Row", filters=filters, fields=["parent", "model_key", "parentfield"])
 	grouped = {}
 	for row in rows:
 		grouped.setdefault(row.parent, {}).setdefault(row.parentfield, []).append(row.model_key)
@@ -76,7 +79,9 @@ def limit_entries(parenttype, parents=None):
 	rows = frappe.get_all("Model Limit", filters=filters, fields=["parent", "metric", "window", "value"])
 	grouped = {}
 	for row in rows:
-		grouped.setdefault(row.parent, []).append({"metric": row.metric, "window": row.window, "value": row.value})
+		grouped.setdefault(row.parent, []).append(
+			{"metric": row.metric, "window": row.window, "value": row.value}
+		)
 	return {parent: sorted_limits(entries) for parent, entries in grouped.items()}
 
 
@@ -101,7 +106,10 @@ def effective_limits(keys, own, tiers):
 
 
 def sorted_limits(rows):
-	return sorted(({"metric": r["metric"], "window": r["window"], "value": r["value"]} for r in rows), key=lambda r: (r["metric"], r["window"]))
+	return sorted(
+		({"metric": r["metric"], "window": r["window"], "value": r["value"]} for r in rows),
+		key=lambda r: (r["metric"], r["window"]),
+	)
 
 
 def validate_limit_rows(rows):

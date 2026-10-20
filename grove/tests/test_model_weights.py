@@ -5,6 +5,7 @@ captured from the repos below, so no site or network."""
 
 import unittest
 from types import SimpleNamespace
+from typing import ClassVar
 from unittest.mock import patch
 
 import frappe
@@ -40,10 +41,7 @@ def tree(repo, shards=4):
 	return [
 		{"type": "file", "path": "config.json", "size": 1400},
 		{"type": "directory", "path": "fp8"},
-		*[
-			{"type": "file", "path": f"model-0000{i}.safetensors", "size": each}
-			for i in range(1, shards + 1)
-		],
+		*[{"type": "file", "path": f"model-0000{i}.safetensors", "size": each} for i in range(1, shards + 1)],
 	]
 
 
@@ -71,7 +69,7 @@ class TestGgufWeights(unittest.TestCase):
 	"""A GGUF repo ships every quantization of one model side by side, so `repo:QUANT` names
 	the single file that is served. Sizing has to follow that ref, not the repo."""
 
-	TREE = [
+	TREE: ClassVar[list] = [
 		{"type": "file", "path": "config.json", "size": 752},
 		{"type": "file", "path": "Qwen3-0.6B-Q4_K_M.gguf", "size": 396_705_472},
 		{"type": "file", "path": "Qwen3-0.6B-Q4_K_S.gguf", "size": 383_270_592},

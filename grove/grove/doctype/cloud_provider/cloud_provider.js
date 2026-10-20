@@ -1,9 +1,9 @@
-frappe.ui.form.on('Cloud Provider', {
+frappe.ui.form.on("Cloud Provider", {
 	refresh(frm) {
 		render_gpu_types(frm);
-		if (frm.is_new() || frm.doc.provider_type !== 'runpod') return;
-		frm.add_custom_button(__('Fetch GPU Types'), () => {
-			frm.call('fetch_gpu_types');
+		if (frm.is_new() || frm.doc.provider_type !== "runpod") return;
+		frm.add_custom_button(__("Fetch GPU Types"), () => {
+			frm.call("fetch_gpu_types");
 		});
 	},
 
@@ -19,14 +19,16 @@ function render_gpu_types(frm) {
 
 	let rows = [];
 	try {
-		rows = JSON.parse(frm.doc.gpu_types || '[]') || [];
+		rows = JSON.parse(frm.doc.gpu_types || "[]") || [];
 	} catch (e) {
 		rows = [];
 	}
 
 	if (!rows.length) {
 		wrap.html(
-			`<p class="text-muted">${__('No GPU types cached yet — click “Fetch GPU Types”, then reload.')}</p>`,
+			`<p class="text-muted">${__(
+				"No GPU types cached yet — click “Fetch GPU Types”, then reload."
+			)}</p>`
 		);
 		return;
 	}
@@ -35,25 +37,25 @@ function render_gpu_types(frm) {
 	const tbody = rows
 		.map(
 			(g) => `<tr>
-				<td><code>${esc(g.id || '')}</code></td>
-				<td>${esc(g.displayName || '')}</td>
-				<td style="text-align:right">${g.memoryInGb || ''}</td>
-				<td style="text-align:center">${g.secureCloud ? '✓' : ''}</td>
-				<td style="text-align:center">${g.communityCloud ? '✓' : ''}</td>
-			</tr>`,
+				<td><code>${esc(g.id || "")}</code></td>
+				<td>${esc(g.displayName || "")}</td>
+				<td style="text-align:right">${g.memoryInGb || ""}</td>
+				<td style="text-align:center">${g.secureCloud ? "✓" : ""}</td>
+				<td style="text-align:center">${g.communityCloud ? "✓" : ""}</td>
+			</tr>`
 		)
-		.join('');
+		.join("");
 
 	const updated = frm.doc.gpu_types_updated
-		? __('Last fetched: {0}', [frappe.datetime.str_to_user(frm.doc.gpu_types_updated)])
-		: '';
+		? __("Last fetched: {0}", [frappe.datetime.str_to_user(frm.doc.gpu_types_updated)])
+		: "";
 
 	wrap.html(`
 		<div class="text-muted" style="margin-bottom:6px">
-			${__('Put the ID into a Pod (gpu_type_id). A Machine gets its cards from a scan.')}
+			${__("Put the ID into a Pod (gpu_type_id). A Machine gets its cards from a scan.")}
 			<span style="float:right">${esc(updated)}</span>
 		</div>
-		<input class="form-control gpu-filter" placeholder="${__('Filter…')}" style="margin-bottom:8px">
+		<input class="form-control gpu-filter" placeholder="${__("Filter…")}" style="margin-bottom:8px">
 		<div style="max-height:60vh;overflow:auto">
 			<table class="table table-bordered" style="margin:0">
 				<thead><tr>
@@ -63,10 +65,10 @@ function render_gpu_types(frm) {
 			</table>
 		</div>`);
 
-	wrap.find('.gpu-filter').on('input', function () {
+	wrap.find(".gpu-filter").on("input", function () {
 		const q = this.value.toLowerCase();
-		wrap.find('tbody tr').each(function () {
-			this.style.display = this.innerText.toLowerCase().includes(q) ? '' : 'none';
+		wrap.find("tbody tr").each(function () {
+			this.style.display = this.innerText.toLowerCase().includes(q) ? "" : "none";
 		});
 	});
 }

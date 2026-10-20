@@ -19,14 +19,11 @@ from grove.grove.doctype.gpu.gpu import (
 from grove.naming import next_replica_name
 from grove.utils import is_env_key, is_env_value
 
-
 ENGINE_PORT_BASE = 8080
 _PORT_FREE_STATUSES = ("Terminated",)
 GPU_CLAIMING_STATUSES = ("Provisioning", "Active", "Broken")
 CLAIM_HOLDING_STATUSES = ("Draft", *GPU_CLAIMING_STATUSES)
-KV_CACHE_MEMORY_LINE = re.compile(
-	r"Replace gpu_memory_utilization config with `--kv-cache-memory=(\d+)`"
-)
+KV_CACHE_MEMORY_LINE = re.compile(r"Replace gpu_memory_utilization config with `--kv-cache-memory=(\d+)`")
 
 
 class ModelReplica(Document):
@@ -37,6 +34,7 @@ class ModelReplica(Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
+
 		from grove.grove.doctype.model_replica_gpu.model_replica_gpu import ModelReplicaGPU
 		from grove.grove.doctype.pod_env.pod_env import PodEnv
 
@@ -190,8 +188,7 @@ class ModelReplica(Document):
 			for r in self.gpus:
 				if r.gpu not in mine:
 					frappe.throw(
-						f"GPU {r.gpu} is not on {self.inference_server}'s machine. Pick a card "
-						"from this box."
+						f"GPU {r.gpu} is not on {self.inference_server}'s machine. Pick a card from this box."
 					)
 
 		self._validate_shape()
@@ -269,7 +266,8 @@ class ModelReplica(Document):
 		cards = {
 			card.name: card
 			for card in frappe.get_all(
-				"GPU", filters={"name": ("in", names)},
+				"GPU",
+				filters={"name": ("in", names)},
 				fields=["name", "gpu_index", "device_id", "held_by"],
 			)
 		}
@@ -355,7 +353,9 @@ class ModelReplica(Document):
 			timeout=3600,
 			model_replica=self.name,
 		)
-		frappe.msgprint(f"Deploying {self.model_key} on {self.inference_server} — watch its Ansible Plays.", alert=True)
+		frappe.msgprint(
+			f"Deploying {self.model_key} on {self.inference_server} — watch its Ansible Plays.", alert=True
+		)
 
 	@frappe.whitelist()
 	def apply_engine_config(self):
@@ -450,7 +450,10 @@ class ModelReplica(Document):
 		log_relay.keep_alive(self.doctype, self.name)
 		frappe.enqueue(
 			"grove.grove.doctype.model_replica.model_replica.stream_engine_logs",
-			queue="long", timeout=1800, job_id=f"md-logs-{self.name}", deduplicate=True,
+			queue="long",
+			timeout=1800,
+			job_id=f"md-logs-{self.name}",
+			deduplicate=True,
 			model_replica=self.name,
 		)
 
@@ -603,10 +606,7 @@ def reconfigure_deployment(model_replica):
 
 	key = md.get_password("internal_api_key", raise_exception=False)
 	if not key:
-		frappe.throw(
-			f"Model Replica {md.name} has no internal key — run a full Deploy "
-			"before reconfiguring."
-		)
+		frappe.throw(f"Model Replica {md.name} has no internal key — run a full Deploy before reconfiguring.")
 
 	extravars = _vllm_extravars(md, m, inf, key)
 

@@ -10,8 +10,8 @@ from unittest.mock import patch
 import requests
 
 from grove.cloud_provider.provisioner import PodProvisioner
-from grove.grove.doctype.pod.pod import Pod
 from grove.cloud_provider.runpod import RunPodClient, RunPodError, pod_status
+from grove.grove.doctype.pod.pod import Pod
 from grove.serving.base import build_engine
 
 
@@ -91,9 +91,7 @@ class TestUpdatePod(unittest.TestCase):
 
 class TestParsePod(unittest.TestCase):
 	def test_gpu_shape_is_read_for_the_respawn_decision(self):
-		parsed = RunPodClient._parse_pod(
-			{"id": "pod1", "gpu": {"count": 2, "id": "NVIDIA L40S"}}
-		)
+		parsed = RunPodClient._parse_pod({"id": "pod1", "gpu": {"count": 2, "id": "NVIDIA L40S"}})
 		self.assertEqual((parsed["gpu_count"], parsed["gpu_type_id"]), (2, "NVIDIA L40S"))
 
 	def test_a_pod_without_a_gpu_block_parses(self):
@@ -102,25 +100,33 @@ class TestParsePod(unittest.TestCase):
 		self.assertIsNone(parsed["gpu_type_id"])
 
 	def test_the_runtime_port_mapping_is_string_keyed(self):
-		parsed = RunPodClient._parse_pod({
-			"id": "pod1",
-			"runtime": {"ports": [
-				{"private": 22, "public": 40022, "ip": "1.2.3.4"},
-				{"private": 8080, "public": 41234, "ip": "1.2.3.4"},
-			]},
-		})
+		parsed = RunPodClient._parse_pod(
+			{
+				"id": "pod1",
+				"runtime": {
+					"ports": [
+						{"private": 22, "public": 40022, "ip": "1.2.3.4"},
+						{"private": 8080, "public": 41234, "ip": "1.2.3.4"},
+					]
+				},
+			}
+		)
 		self.assertEqual(parsed["port_map"], {"22": 40022, "8080": 41234})
 		self.assertEqual((parsed["ssh_port"], parsed["public_ip"]), (40022, "1.2.3.4"))
 
 	def test_the_public_ip_comes_from_a_direct_tcp_mapping(self):
-		parsed = RunPodClient._parse_pod({
-			"id": "pod1",
-			"runtime": {"ports": [
-				{"private": 19123, "public": 60413, "ip": "100.65.30.26", "type": "http"},
-				{"private": 22, "public": 23507, "ip": "198.13.252.35", "type": "tcp"},
-				{"private": 8080, "public": 23506, "ip": "198.13.252.35", "type": "tcp"},
-			]},
-		})
+		parsed = RunPodClient._parse_pod(
+			{
+				"id": "pod1",
+				"runtime": {
+					"ports": [
+						{"private": 19123, "public": 60413, "ip": "100.65.30.26", "type": "http"},
+						{"private": 22, "public": 23507, "ip": "198.13.252.35", "type": "tcp"},
+						{"private": 8080, "public": 23506, "ip": "198.13.252.35", "type": "tcp"},
+					]
+				},
+			}
+		)
 		self.assertEqual(parsed["public_ip"], "198.13.252.35")
 		self.assertEqual(parsed["port_map"]["8080"], 23506)
 
@@ -133,13 +139,25 @@ class TestParsePod(unittest.TestCase):
 
 class TestListGpuTypes(unittest.TestCase):
 	def test_the_catalog_is_normalised_to_groves_own_keys(self):
-		client = FakeClient(response={"gpus": [
-			{"id": "NVIDIA L40S", "name": "L40S", "memory": 48, "secure": True, "community": False}
-		]})
-		self.assertEqual(client.list_gpu_types(), [{
-			"id": "NVIDIA L40S", "displayName": "L40S", "memoryInGb": 48,
-			"secureCloud": True, "communityCloud": False,
-		}])
+		client = FakeClient(
+			response={
+				"gpus": [
+					{"id": "NVIDIA L40S", "name": "L40S", "memory": 48, "secure": True, "community": False}
+				]
+			}
+		)
+		self.assertEqual(
+			client.list_gpu_types(),
+			[
+				{
+					"id": "NVIDIA L40S",
+					"displayName": "L40S",
+					"memoryInGb": 48,
+					"secureCloud": True,
+					"communityCloud": False,
+				}
+			],
+		)
 		self.assertEqual(client.calls[0][:2], ("GET", "/catalog/gpus"))
 
 
@@ -172,22 +190,34 @@ class TestStreamLogs(unittest.TestCase):
 		return events, get.call_args
 
 	def test_id_and_data_lines_become_events(self):
-		events, _call = self.stream([
-			"id: 2026-06-01T12:02:03Z/1",
-			'data: {"ts":"2026-06-01T12:02:03Z","source":"container","line":"Model loaded."}',
-		])
-		self.assertEqual(events, [("2026-06-01T12:02:03Z/1", {
-			"ts": "2026-06-01T12:02:03Z", "source": "container", "line": "Model loaded."
-		})])
+		events, _call = self.stream(
+			[
+				"id: 2026-06-01T12:02:03Z/1",
+				'data: {"ts":"2026-06-01T12:02:03Z","source":"container","line":"Model loaded."}',
+			]
+		)
+		self.assertEqual(
+			events,
+			[
+				(
+					"2026-06-01T12:02:03Z/1",
+					{"ts": "2026-06-01T12:02:03Z", "source": "container", "line": "Model loaded."},
+				)
+			],
+		)
 
 	def test_separators_and_keepalive_comments_tick_without_a_line(self):
 		events, _call = self.stream(["", ": keep-alive", 'data: {"line":"a"}'])
 		self.assertEqual([line for _id, line in events], [None, None, {"line": "a"}])
 
 	def test_a_dropped_connection_ends_the_stream_instead_of_raising(self):
-		events, _call = self.stream([
-			'data: {"line":"a"}', requests.ConnectionError("read timed out"), 'data: {"line":"b"}',
-		])
+		events, _call = self.stream(
+			[
+				'data: {"line":"a"}',
+				requests.ConnectionError("read timed out"),
+				'data: {"line":"b"}',
+			]
+		)
 		self.assertEqual([line for _id, line in events], [{"line": "a"}])
 
 	def test_a_rejected_request_raises(self):
@@ -256,6 +286,7 @@ class TestPodEnv(unittest.TestCase):
 		pod.get_password = lambda *args, **kwargs: None
 		pod.env = [SimpleNamespace(key=k, value=v) for k, v in rows]
 		from grove.cloud_provider import provisioner
+
 		settings = SimpleNamespace(weights_s3_engine_environment={"AWS_ACCESS_KEY_ID": "AKIA"})
 		with (
 			patch.object(provisioner.frappe, "conf", {}),
@@ -297,9 +328,7 @@ class TestEngineEndpoint(unittest.TestCase):
 
 	def test_the_proxy_address_ignores_the_mapping_that_moves_on_restart(self):
 		moved = serving_pod(public_ip="9.9.9.9", external_port=50999)
-		self.assertEqual(
-			PodProvisioner(moved).engine_endpoint, "https://abc123-8080.proxy.runpod.net"
-		)
+		self.assertEqual(PodProvisioner(moved).engine_endpoint, "https://abc123-8080.proxy.runpod.net")
 
 	def test_a_tcp_port_keeps_its_direct_mapping(self):
 		endpoint = PodProvisioner(serving_pod(protocol="tcp")).engine_endpoint
@@ -307,12 +336,8 @@ class TestEngineEndpoint(unittest.TestCase):
 
 	def test_no_address_before_the_provider_has_published_one(self):
 		self.assertEqual(PodProvisioner(serving_pod(pod_id="")).engine_endpoint, "")
-		self.assertEqual(
-			PodProvisioner(serving_pod(protocol="tcp", public_ip="")).engine_endpoint, ""
-		)
-		self.assertEqual(
-			PodProvisioner(serving_pod(protocol="tcp", external_port=0)).engine_endpoint, ""
-		)
+		self.assertEqual(PodProvisioner(serving_pod(protocol="tcp", public_ip="")).engine_endpoint, "")
+		self.assertEqual(PodProvisioner(serving_pod(protocol="tcp", external_port=0)).engine_endpoint, "")
 
 	def test_a_serve_port_missing_from_the_ports_table_has_no_address(self):
 		pod = serving_pod()
@@ -348,7 +373,9 @@ class TestGatedStatus(unittest.TestCase):
 			return PodProvisioner(serving_pod(**pod_kwargs)).gated_status(state)
 
 	def test_the_gate_alone_may_write_running(self):
-		self.assertEqual(self.gated("Running", serving=True), ("Running", "https://abc123-8080.proxy.runpod.net"))
+		self.assertEqual(
+			self.gated("Running", serving=True), ("Running", "https://abc123-8080.proxy.runpod.net")
+		)
 
 	def test_a_container_the_provider_calls_running_is_loading_until_it_answers(self):
 		self.assertEqual(self.gated("Running", serving=False), ("Loading", ""))
@@ -465,7 +492,7 @@ class TestPodWarmup(unittest.TestCase):
 
 	def test_it_posts_the_payload_at_the_endpoint_the_gateway_gets(self):
 		_, posted = self.post(SimpleNamespace(status_code=200, text="{}"))
-		url, = posted.call_args.args
+		(url,) = posted.call_args.args
 		self.assertEqual(url, "https://abc123-8080.proxy.runpod.net/v1/completions")
 		self.assertEqual(posted.call_args.kwargs["json"]["max_tokens"], 1)
 

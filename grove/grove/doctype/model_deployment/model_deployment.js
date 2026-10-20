@@ -1,12 +1,12 @@
-frappe.ui.form.on('Model Deployment', {
+frappe.ui.form.on("Model Deployment", {
 	setup(frm) {
-		frm.set_query('model', () => ({ filters: { provider_is_self_hosted: 1 } }));
+		frm.set_query("model", () => ({ filters: { provider_is_self_hosted: 1 } }));
 	},
 
 	refresh(frm) {
 		if (frm.is_new()) return;
-		frm.add_custom_button(__('Place a Replica'), () => place_replica(frm));
-		frm.add_custom_button(__('Add Replica'), () => add_replica(frm));
+		frm.add_custom_button(__("Place a Replica"), () => place_replica(frm));
+		frm.add_custom_button(__("Add Replica"), () => add_replica(frm));
 		show_replicas(frm);
 	},
 });
@@ -16,46 +16,46 @@ frappe.ui.form.on('Model Deployment', {
 function place_replica(frm) {
 	frm.call({
 		doc: frm.doc,
-		method: 'add_replica',
+		method: "add_replica",
 		freeze: true,
-		freeze_message: __('Finding a box…'),
+		freeze_message: __("Finding a box…"),
 	}).then((r) => {
 		if (!r || !r.message) return;
-		frappe.show_alert({ message: __('Placed on {0}', [r.message]), indicator: 'green' });
-		frappe.set_route('Form', 'Model Replica', r.message);
+		frappe.show_alert({ message: __("Placed on {0}", [r.message]), indicator: "green" });
+		frappe.set_route("Form", "Model Replica", r.message);
 	});
 }
 
 // Any Active box is offered: a deployment is not tied to a region.
 function add_replica(frm) {
 	const dialog = new frappe.ui.Dialog({
-		title: __('Add Replica'),
+		title: __("Add Replica"),
 		fields: [
 			{
-				fieldname: 'inference_server',
-				fieldtype: 'Link',
-				label: __('Inference Server'),
-				options: 'Inference Server',
+				fieldname: "inference_server",
+				fieldtype: "Link",
+				label: __("Inference Server"),
+				options: "Inference Server",
 				reqd: 1,
-				get_query: () => ({ filters: { status: 'Active' } }),
+				get_query: () => ({ filters: { status: "Active" } }),
 				onchange: () => show_gpu_allocation(dialog),
 			},
-			{ fieldname: 'allocation', fieldtype: 'HTML', label: __('GPUs on this box') },
+			{ fieldname: "allocation", fieldtype: "HTML", label: __("GPUs on this box") },
 			{
-				fieldname: 'gpus',
-				fieldtype: 'Data',
-				label: __('GPU Indices'),
+				fieldname: "gpus",
+				fieldtype: "Data",
+				label: __("GPU Indices"),
 				description: __(
-					'CUDA indices to pin, comma separated — {0} of them. Blank means single-GPU, unpinned.',
+					"CUDA indices to pin, comma separated — {0} of them. Blank means single-GPU, unpinned.",
 					[frm.doc.gpus_per_replica]
 				),
 			},
 		],
-		primary_action_label: __('Add and Deploy'),
+		primary_action_label: __("Add and Deploy"),
 		primary_action({ inference_server, gpus }) {
 			dialog.hide();
-			frm.call('add_replica', { inference_server, gpus }).then((r) => {
-				if (r.message) frappe.set_route('Form', 'Model Replica', r.message);
+			frm.call("add_replica", { inference_server, gpus }).then((r) => {
+				if (r.message) frappe.set_route("Form", "Model Replica", r.message);
 			});
 		},
 	});
@@ -63,46 +63,51 @@ function add_replica(frm) {
 }
 
 function show_gpu_allocation(dialog) {
-	const server = dialog.get_value('inference_server');
-	const field = dialog.get_field('allocation');
+	const server = dialog.get_value("inference_server");
+	const field = dialog.get_field("allocation");
 	if (!server) return field.$wrapper.empty();
-	frappe.xcall('run_doc_method', {
-		dt: 'Inference Server',
-		dn: server,
-		method: 'get_gpu_allocation',
-	}).then((gpus) => {
-		const rows = (gpus || [])
-			.map((gpu) => {
-				const held = (gpu.deployments || []).map((d) => d.name).join(', ');
-				return `<tr><td>${gpu.gpu_index}</td><td>${frappe.utils.escape_html(
-					gpu.gpu_type || ''
-				)}</td><td>${gpu.vram_gb || ''}</td><td>${gpu.status}</td>
+	frappe
+		.xcall("run_doc_method", {
+			dt: "Inference Server",
+			dn: server,
+			method: "get_gpu_allocation",
+		})
+		.then((gpus) => {
+			const rows = (gpus || [])
+				.map((gpu) => {
+					const held = (gpu.deployments || []).map((d) => d.name).join(", ");
+					return `<tr><td>${gpu.gpu_index}</td><td>${frappe.utils.escape_html(
+						gpu.gpu_type || ""
+					)}</td><td>${gpu.vram_gb || ""}</td><td>${gpu.status}</td>
 				<td class="text-muted small">${frappe.utils.escape_html(held)}</td></tr>`;
-			})
-			.join('');
-		field.$wrapper.html(
-			`<table class="table table-bordered small"><thead><tr>
-			<th>${__('Index')}</th><th>${__('Type')}</th><th>${__('VRAM')}</th>
-			<th>${__('Status')}</th><th>${__('Held by')}</th></tr></thead>
+				})
+				.join("");
+			field.$wrapper.html(
+				`<table class="table table-bordered small"><thead><tr>
+			<th>${__("Index")}</th><th>${__("Type")}</th><th>${__("VRAM")}</th>
+			<th>${__("Status")}</th><th>${__("Held by")}</th></tr></thead>
 			<tbody>${rows}</tbody></table>`
-		);
-	});
+			);
+		});
 }
 
 function show_replicas(frm) {
 	frappe.db
-		.get_list('Model Replica', {
+		.get_list("Model Replica", {
 			filters: { model_deployment: frm.doc.name },
-			fields: ['name', 'inference_server', 'status'],
+			fields: ["name", "inference_server", "status"],
 			limit: 100,
 		})
 		.then((replicas) => {
-			const live = replicas.filter((r) => ['Active', 'Provisioning'].includes(r.status));
+			const live = replicas.filter((r) => ["Active", "Provisioning"].includes(r.status));
 			frm.dashboard.clear_headline();
 			frm.dashboard.set_headline(
 				replicas.length
-					? __('{0} replicas — {1} serving or provisioning', [replicas.length, live.length])
-					: __('No replicas yet. Add Replica places one on any Active box.')
+					? __("{0} replicas — {1} serving or provisioning", [
+							replicas.length,
+							live.length,
+					  ])
+					: __("No replicas yet. Add Replica places one on any Active box.")
 			);
 		});
 }

@@ -27,16 +27,12 @@ def provider(provider_name, api_key=None, **fields):
 
 def vendor_model(model_id, provider):
 	"""A model nobody hosts: no HF Repo anywhere, which is the point."""
-	return frappe.get_doc(
-		{"doctype": "Model", "model_id": model_id, "provider": provider}
-	)
+	return frappe.get_doc({"doctype": "Model", "model_id": model_id, "provider": provider})
 
 
 def our_model(model_id):
 	"""A model under the Self Hosted provider, named there by leaving the provider blank."""
-	return frappe.get_doc(
-		{"doctype": "Model", "model_id": model_id, "hf_repo": "probe/Repo"}
-	)
+	return frappe.get_doc({"doctype": "Model", "model_id": model_id, "hf_repo": "probe/Repo"})
 
 
 class TestWhatAVendorModelNeeds(IntegrationTestCase):
@@ -100,7 +96,9 @@ class TestOneProviderIsSelfHosted(IntegrationTestCase):
 
 	def test_it_dials_nothing(self):
 		with self.assertRaises(frappe.ValidationError) as caught:
-			provider("probe-dialer", is_self_hosted=1, base_url="https://api.probe.test", api_key="k").insert()
+			provider(
+				"probe-dialer", is_self_hosted=1, base_url="https://api.probe.test", api_key="k"
+			).insert()
 		self.assertIn("Self Hosted", str(caught.exception))
 
 
@@ -202,10 +200,15 @@ class TestFetchModels(IntegrationTestCase):
 	def test_an_anthropic_front_is_asked_with_its_headers_and_paged(self):
 		vendor = provider("probe-pager", anthropic_base_url="https://api.pager.test", api_key="k").insert()
 		url = "https://api.pager.test/v1/models"
-		result, calls = self.fetch(vendor, {url: [
-			{"data": [{"id": "claude-a"}], "has_more": True, "last_id": "claude-a"},
-			{"data": [{"id": "claude-b"}], "has_more": False, "last_id": "claude-b"},
-		]})
+		result, calls = self.fetch(
+			vendor,
+			{
+				url: [
+					{"data": [{"id": "claude-a"}], "has_more": True, "last_id": "claude-a"},
+					{"data": [{"id": "claude-b"}], "has_more": False, "last_id": "claude-b"},
+				]
+			},
+		)
 		headers = {"x-api-key": "k", "anthropic-version": "2023-06-01"}
 		self.assertEqual(
 			calls,
@@ -216,14 +219,20 @@ class TestFetchModels(IntegrationTestCase):
 	def test_a_dual_front_is_asked_on_its_openai_side_and_held_ids_are_set_apart(self):
 		# DeepSeek's Anthropic shim has no /v1/models; the OpenAI front lists the same vendor.
 		vendor = provider(
-			"probe-dual-list", base_url="https://api.dual.test",
-			anthropic_base_url="https://api.dual.test/anthropic", api_key="k",
+			"probe-dual-list",
+			base_url="https://api.dual.test",
+			anthropic_base_url="https://api.dual.test/anthropic",
+			api_key="k",
 		).insert()
 		vendor_model("held-plain", vendor.name).insert()
-		frappe.get_doc({
-			"doctype": "Model", "provider": vendor.name, "model_id": "held-dated",
-			"upstream_model_id": "Held-Dated-20250101",
-		}).insert()
+		frappe.get_doc(
+			{
+				"doctype": "Model",
+				"provider": vendor.name,
+				"model_id": "held-dated",
+				"upstream_model_id": "Held-Dated-20250101",
+			}
+		).insert()
 		listing = {"data": [{"id": "held-plain"}, {"id": "Held-Dated-20250101"}, {"id": "fresh"}]}
 		result, calls = self.fetch(vendor, {"https://api.dual.test/v1/models": listing})
 		self.assertEqual([url for url, _, _ in calls], ["https://api.dual.test/v1/models"])

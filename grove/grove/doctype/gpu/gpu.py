@@ -94,7 +94,6 @@ def cards_on(machines, fields=None):
 	return frappe.get_all(
 		"GPU",
 		filters={"machine": ("in", list(machines))},
-		fields=fields or ["name", "machine", "gpu_type", "device_id", "gpu_index",
-		                  "vram_gb", "held_by"],
+		fields=fields or ["name", "machine", "gpu_type", "device_id", "gpu_index", "vram_gb", "held_by"],
 		order_by="machine, gpu_index",
 	)

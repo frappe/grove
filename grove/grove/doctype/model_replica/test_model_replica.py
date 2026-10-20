@@ -13,7 +13,6 @@ from unittest.mock import patch
 
 import frappe
 
-from grove.serving.vllm import VllmEngine
 from grove.grove.doctype.gpu.gpu import GPUUnavailable
 from grove.grove.doctype.model_replica.model_replica import (
 	CLAIM_HOLDING_STATUSES,
@@ -30,6 +29,7 @@ from grove.grove.doctype.model_replica.model_replica import (
 )
 from grove.serving.base import DEFAULT_MAX_MODEL_LEN, parse_context_length
 from grove.serving.custom import CustomEngine
+from grove.serving.vllm import VllmEngine
 
 MODULE = "grove.grove.doctype.model_replica.model_replica"
 
@@ -355,6 +355,7 @@ class TestReconfigureKeepsTheModelRoutable(unittest.TestCase):
 
 	def record_play(self, rc):
 		"""A run_playbook that remembers which play it was handed."""
+
 		def run_playbook(playbook, **kwargs):
 			self.played = playbook
 			return ("PLAY-1", rc)
@@ -419,17 +420,25 @@ class TestExtraVarsFollowTheEngineKind(unittest.TestCase):
 
 	def extravars(self, engine, engine_kind="vllm"):
 		md = SimpleNamespace(
-			name="MD-00007", model="qwen3-35b", model_key="qwen3-35b", gpus=[], env=[], engine=engine,
+			name="MD-00007",
+			model="qwen3-35b",
+			model_key="qwen3-35b",
+			gpus=[],
+			env=[],
+			engine=engine,
 			deployment=deployment(engine_image="img"),
 			gpu_records=[],
 		)
 		inf = SimpleNamespace(data_path="/opt/vllm", hf_home="/opt/vllm/hf", tls_variables={})
 		settings = SimpleNamespace(
-			weights_s3_engine_environment={}, weights_bucket="grove-weights",
+			weights_s3_engine_environment={},
+			weights_bucket="grove-weights",
 			scrape_auth_variables={},
 		)
 		image = SimpleNamespace(
-			full_image="img:latest", size_gb=15.0, engine_kind=engine_kind,
+			full_image="img:latest",
+			size_gb=15.0,
+			engine_kind=engine_kind,
 			registry_credentials=None,
 		)
 		with (
@@ -611,7 +620,7 @@ class TestEveryStatusHasItsOwnColour(unittest.TestCase):
 
 	def colours(self):
 		listview = (self.HERE / "model_replica_list.js").read_text()
-		return dict(re.findall(r"\b(\w+): '([a-z-]+)',", listview))
+		return dict(re.findall(r'\b(\w+): "([a-z-]+)",', listview))
 
 	def test_every_status_it_names_is_one_the_doctype_offers(self):
 		for status in self.colours():
@@ -641,8 +650,7 @@ class TestAReplicaNamesItselfBeforeFetchFromRuns(unittest.TestCase):
 		values = {"Model Deployment": ("md-doc", "frappe/qwen3-35b"), "Inference Server": "ap-south-1"}
 		md = frappe._dict(sent)
 		with (
-			patch.object(frappe, "db", frappe._dict(
-				get_value=lambda doctype, *a, **k: values[doctype])),
+			patch.object(frappe, "db", frappe._dict(get_value=lambda doctype, *a, **k: values[doctype])),
 			patch(f"{MODULE}.next_replica_name", side_effect=lambda m, s, r: f"{m}|{r}|{s}"),
 		):
 			ModelReplica.autoname(md)

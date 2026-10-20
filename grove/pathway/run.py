@@ -10,9 +10,8 @@ land in the order asked."""
 import time
 from dataclasses import dataclass
 
-import requests
-
 import frappe
+import requests
 
 TIMEOUT = 10
 ERROR_LIMIT = 2000
@@ -140,7 +139,10 @@ def gateway_units(gateways=None, geography=None):
 	if gateways is None:
 		groups = sync_targets(geography)
 	else:
-		groups = [(frappe.db.get_value("Gateway Server", gateway, "gateway_store"), [gateway]) for gateway in gateways]
+		groups = [
+			(frappe.db.get_value("Gateway Server", gateway, "gateway_store"), [gateway])
+			for gateway in gateways
+		]
 	return [
 		Unit(store, tuple(Target.resolve("Gateway Server", gateway) for gateway in group))
 		for store, group in groups

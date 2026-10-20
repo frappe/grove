@@ -125,13 +125,15 @@ class Network(Document):
 		network = self.cloud_client.create_network(
 			self.name, self.cidr_block, self.subnet_cidr_block, self.availability_zone
 		)
-		self.db_set({
-			"vpc_id": network["vpc_id"],
-			"subnet_id": network["subnet_id"],
-			"internet_gateway_id": network["internet_gateway_id"],
-			"route_table_id": network["route_table_id"],
-			"availability_zone": network["availability_zone"],
-		})
+		self.db_set(
+			{
+				"vpc_id": network["vpc_id"],
+				"subnet_id": network["subnet_id"],
+				"internet_gateway_id": network["internet_gateway_id"],
+				"route_table_id": network["route_table_id"],
+				"availability_zone": network["availability_zone"],
+			}
+		)
 		frappe.msgprint(f"VPC and subnet created for {self.name}.", alert=True)
 		self.create_security_groups()
 
@@ -202,9 +204,13 @@ class Network(Document):
 	def inference_ingress_cidrs(self):
 		"""Who may reach an inference box on this Network's front ports, read live: anything in
 		this VPC, and from outside it only this geography's gateways and the agents scraping a box here."""
-		gateways = _with_machine(frappe.get_all(
-			"Gateway Server", filters={"geography": self.geography}, fields=["machine", "public_ip", "status"]
-		))
+		gateways = _with_machine(
+			frappe.get_all(
+				"Gateway Server",
+				filters={"geography": self.geography},
+				fields=["machine", "public_ip", "status"],
+			)
+		)
 		return [self.cidr_block, *inference_ingress_cidrs(gateways, self.scraping_agents, self.name)]
 
 	@property
@@ -214,14 +220,20 @@ class Network(Document):
 		boxes = frappe.get_all("Machine", filters={"network": self.name}, pluck="name")
 		names = boxes and frappe.get_all(
 			"Inference Server",
-			filters={"machine": ("in", boxes), "monitoring_agent": ("is", "set"), "status": ("!=", GONE_STATUS)},
+			filters={
+				"machine": ("in", boxes),
+				"monitoring_agent": ("is", "set"),
+				"status": ("!=", GONE_STATUS),
+			},
 			pluck="monitoring_agent",
 		)
 		if not names:
 			return []
-		return _with_machine(frappe.get_all(
-			"Monitoring Agent", filters={"name": ("in", names)}, fields=["machine", "public_ip", "status"]
-		))
+		return _with_machine(
+			frappe.get_all(
+				"Monitoring Agent", filters={"name": ("in", names)}, fields=["machine", "public_ip", "status"]
+			)
+		)
 
 	@property
 	def store_ingress_cidrs(self):
@@ -246,14 +258,18 @@ def reconcile_ingress(client, group_ids, ports, cidrs):
 def _with_machine(rows):
 	"""Each row's Machine joined on, read live rather than mirrored onto the server doc, where the
 	copy is only as fresh as that doc's last save."""
-	machines = {
-		machine["name"]: machine
-		for machine in frappe.get_all(
-			"Machine",
-			filters={"name": ("in", [row["machine"] for row in rows if row.get("machine")])},
-			fields=["name", "network", "public_ip", "private_ip"],
-		)
-	} if rows else {}
+	machines = (
+		{
+			machine["name"]: machine
+			for machine in frappe.get_all(
+				"Machine",
+				filters={"name": ("in", [row["machine"] for row in rows if row.get("machine")])},
+				fields=["name", "network", "public_ip", "private_ip"],
+			)
+		}
+		if rows
+		else {}
+	)
 	return [{**row, **machines.get(row.get("machine"), {})} for row in rows]
 
 

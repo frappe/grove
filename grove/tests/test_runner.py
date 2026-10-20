@@ -58,7 +58,9 @@ class TestAnsibleStep(unittest.TestCase):
 		with patch.object(runner, "frappe", fake_frappe()):
 			Handler().handle_ansible_play(step, host, "setup.yml")
 		self.assertEqual((step.status, step.job, step.job_type), (Status.Success, "PLAY-1", "Ansible Play"))
-		self.assertEqual(host.calls[0][1], {"reference_doctype": "Machine Setup", "reference_docname": "setup-1"})
+		self.assertEqual(
+			host.calls[0][1], {"reference_doctype": "Machine Setup", "reference_docname": "setup-1"}
+		)
 
 	def test_nonzero_rc_fails_the_step_and_raises(self):
 		step = FakeStep()

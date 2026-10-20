@@ -6,8 +6,8 @@ from datetime import timedelta
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.billing.report.revenue.revenue import execute
+from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.utils import utc_today
 
 
@@ -19,31 +19,61 @@ class TestRevenue(IntegrationTestCase):
 		super().setUpClass()
 		make_test_geography()
 		cls.today = utc_today()
-		cls.model = frappe.get_doc(
-			{"doctype": "Model", "model_id": "revenue-7b", "hf_repo": "org/revenue-7b"}
-		).insert(ignore_permissions=True).name
-		cls.team = frappe.get_doc(
-			{"doctype": "Central Team", "__newname": "revenue"}
-		).insert(ignore_permissions=True).name
-		cls.key = frappe.get_doc({"doctype": "Grove API Key", "team": cls.team}).insert(ignore_permissions=True).name
-		cls.other_key = frappe.get_doc({"doctype": "Grove API Key", "team": cls.team}).insert(ignore_permissions=True).name
+		cls.model = (
+			frappe.get_doc({"doctype": "Model", "model_id": "revenue-7b", "hf_repo": "org/revenue-7b"})
+			.insert(ignore_permissions=True)
+			.name
+		)
+		cls.team = (
+			frappe.get_doc({"doctype": "Central Team", "__newname": "revenue"})
+			.insert(ignore_permissions=True)
+			.name
+		)
+		cls.key = (
+			frappe.get_doc({"doctype": "Grove API Key", "team": cls.team})
+			.insert(ignore_permissions=True)
+			.name
+		)
+		cls.other_key = (
+			frappe.get_doc({"doctype": "Grove API Key", "team": cls.team})
+			.insert(ignore_permissions=True)
+			.name
+		)
 		cls.record(cls.key, cls.today, cost=1, requests=2)
 		cls.record(cls.key, cls.today - timedelta(days=40), cost=2, requests=1)
 
 	@classmethod
 	def record(cls, key, day, cost, requests):
-		entry = {"model": cls.model, "pricing": None, "requests": requests, "completion_tokens": 999, "grove_cost": cost}
-		frappe.get_doc({
-			"doctype": "Usage Record", "api_key": key, "team": cls.team, "day": day,
-			"drain_id": f"revenue-{day}",
-			"request_count": requests, "cost": cost, "usage": frappe.as_json([entry]),
-		}).insert(ignore_permissions=True)
+		entry = {
+			"model": cls.model,
+			"pricing": None,
+			"requests": requests,
+			"completion_tokens": 999,
+			"grove_cost": cost,
+		}
+		frappe.get_doc(
+			{
+				"doctype": "Usage Record",
+				"api_key": key,
+				"team": cls.team,
+				"day": day,
+				"drain_id": f"revenue-{day}",
+				"request_count": requests,
+				"cost": cost,
+				"usage": frappe.as_json([entry]),
+			}
+		).insert(ignore_permissions=True)
 
 	def report(self, group_by="Model", days=30, **filters):
-		_, rows = execute({
-			"from_date": self.today - timedelta(days=days), "to_date": self.today, "group_by": group_by,
-			"team": self.team, **filters,
-		})
+		_, rows = execute(
+			{
+				"from_date": self.today - timedelta(days=days),
+				"to_date": self.today,
+				"group_by": group_by,
+				"team": self.team,
+				**filters,
+			}
+		)
 		return [(row["label"], row["requests"], row["revenue"]) for row in rows]
 
 	def test_the_last_month_by_model(self):

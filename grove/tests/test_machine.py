@@ -86,9 +86,9 @@ class TestInstanceTypeFacts(unittest.TestCase):
 		self.assertEqual(info["cpu_architecture"], "amd64")
 
 	def test_a_virtualized_arm_type_reads_as_neither_metal_nor_amd64(self):
-		info = client(
-			types={"ProcessorInfo": {"SupportedArchitectures": ["arm64"]}}
-		).get_instance_type_info("g5g.xlarge")
+		info = client(types={"ProcessorInfo": {"SupportedArchitectures": ["arm64"]}}).get_instance_type_info(
+			"g5g.xlarge"
+		)
 		self.assertFalse(info["is_bare_metal"])
 		self.assertEqual(info["cpu_architecture"], "arm64")
 
@@ -119,14 +119,14 @@ class TestInstanceTypeFacts(unittest.TestCase):
 
 class TestImageInfo(unittest.TestCase):
 	def test_the_root_device_and_architecture_come_off_the_ami(self):
-		info = client(
-			images={"RootDeviceName": "/dev/xvda", "Architecture": "arm64"}
-		).get_image_info("ami-1")
+		info = client(images={"RootDeviceName": "/dev/xvda", "Architecture": "arm64"}).get_image_info("ami-1")
 		self.assertEqual(info, {"root_device_name": "/dev/xvda", "cpu_architecture": "arm64"})
 
 	def test_an_ami_without_a_root_device_falls_back_rather_than_launching_with_none(self):
-		self.assertEqual(client(images={"Architecture": "x86_64"}).get_image_info("ami-1"),
-			{"root_device_name": "/dev/sda1", "cpu_architecture": "amd64"})
+		self.assertEqual(
+			client(images={"Architecture": "x86_64"}).get_image_info("ami-1"),
+			{"root_device_name": "/dev/sda1", "cpu_architecture": "amd64"},
+		)
 
 
 @patch("time.sleep")
@@ -185,7 +185,8 @@ class TestRebootTimeoutIsWiredThrough(unittest.TestCase):
 
 		tasks = yaml.safe_load((GPU_HOST_ROLE / "tasks/main.yml").read_text())
 		reboots = [
-			task for task in tasks
+			task
+			for task in tasks
 			for task in ([task] + (task.get("block") or []))
 			if "ansible.builtin.reboot" in task
 		]

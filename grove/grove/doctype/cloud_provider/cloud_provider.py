@@ -42,7 +42,9 @@ class CloudProvider(Document):
 			timeout=120,
 			cloud_provider=self.name,
 		)
-		frappe.msgprint("Fetching GPU types in the background — reload the page in a few seconds.", alert=True)
+		frappe.msgprint(
+			"Fetching GPU types in the background — reload the page in a few seconds.", alert=True
+		)
 
 
 def update_gpu_types(cloud_provider):

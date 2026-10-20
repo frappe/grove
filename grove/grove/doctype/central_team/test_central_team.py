@@ -18,10 +18,16 @@ def team(name, **fields):
 	"""`max_keys` / `spend_limit` given here go on a Tier of the team's own."""
 	if "max_keys" in fields or "spend_limit" in fields:
 		numbers = {k: fields.pop(k) for k in ("max_keys", "spend_limit") if k in fields}
-		fields["tier"] = frappe.get_doc({"doctype": "Tier", "__newname": f"{name}-tier", **numbers}).insert().name
-	return frappe.get_doc({
-		"doctype": "Central Team", "__newname": name, **fields,
-	}).insert()
+		fields["tier"] = (
+			frappe.get_doc({"doctype": "Tier", "__newname": f"{name}-tier", **numbers}).insert().name
+		)
+	return frappe.get_doc(
+		{
+			"doctype": "Central Team",
+			"__newname": name,
+			**fields,
+		}
+	).insert()
 
 
 class IntegrationTestCentralTeam(IntegrationTestCase):
@@ -56,17 +62,23 @@ class IntegrationTestCentralTeam(IntegrationTestCase):
 			team("team-probe-negative-keys", max_keys=-1)
 
 	def test_a_team_takes_its_tiers_caps_and_blank_takes_the_default(self):
-		tier = frappe.get_doc({"doctype": "Tier", "__newname": "team-probe-tier", "max_keys": 1, "spend_limit": 5}).insert()
+		tier = frappe.get_doc(
+			{"doctype": "Tier", "__newname": "team-probe-tier", "max_keys": 1, "spend_limit": 5}
+		).insert()
 		doc = team("team-probe-tiered", tier=tier.name)
 		self.assertEqual((team_limits(doc.name).max_keys, team_limits(doc.name).spend_limit), (1, 5))
 		frappe.get_doc({"doctype": "Grove API Key", "team": doc.name, "cap": 5}).insert()
 		with self.assertRaisesRegex(frappe.ValidationError, "already holds 1 live keys"):
 			frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert()
 		untiered = team("team-probe-untiered")
-		self.assertEqual((team_limits(untiered.name).max_keys, team_limits(untiered.name).spend_limit), (0, 0))
+		self.assertEqual(
+			(team_limits(untiered.name).max_keys, team_limits(untiered.name).spend_limit), (0, 0)
+		)
 		frappe.db.set_single_value("Grove Settings", "default_tier", tier.name)
 		self.addCleanup(frappe.db.set_single_value, "Grove Settings", "default_tier", "")
-		self.assertEqual((team_limits(untiered.name).max_keys, team_limits(untiered.name).spend_limit), (1, 5))
+		self.assertEqual(
+			(team_limits(untiered.name).max_keys, team_limits(untiered.name).spend_limit), (1, 5)
+		)
 		frappe.db.set_value("Central Team", doc.name, {"override_max_keys": 1, "max_keys": 0})
 		self.assertEqual((team_limits(doc.name).max_keys, team_limits(doc.name).spend_limit), (0, 5))
 		frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert()

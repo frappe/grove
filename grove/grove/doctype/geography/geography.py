@@ -43,7 +43,8 @@ class Geography(Document):
 			return {}
 		return {
 			"AWS_ACCESS_KEY_ID": self.backup_access_key_id,
-			"AWS_SECRET_ACCESS_KEY": self.get_password("backup_secret_access_key", raise_exception=False) or "",
+			"AWS_SECRET_ACCESS_KEY": self.get_password("backup_secret_access_key", raise_exception=False)
+			or "",
 			"AWS_DEFAULT_REGION": self.backup_region or "",
 		}
 
@@ -70,18 +71,23 @@ class Geography(Document):
 			value = (self.get(field) or "").strip()
 			self.set(field, value)
 			if value and not is_hostname(value):
-				frappe.throw(f"{field} '{value}' is not a hostname: labels joined by dots, no scheme, path or port.")
+				frappe.throw(
+					f"{field} '{value}' is not a hostname: labels joined by dots, no scheme, path or port."
+				)
 
 	def validate_fixed_names(self):
 		"""The gateways' DNS rows and names sit in the old values. Setting a zone for the first time is
 		how a geography moves to TLS, so only changing one that was set is refused."""
 		before = self.get_doc_before_save()
 		moved = [
-			field for field in ("endpoint", "fleet_zone")
+			field
+			for field in ("endpoint", "fleet_zone")
 			if before and before.get(field) and before.get(field) != self.get(field)
 		]
 		if moved and (gateways := self.gateways()):
-			frappe.throw(f"{', '.join(gateways)} still answer at the old {' and '.join(moved)} — terminate them first.")
+			frappe.throw(
+				f"{', '.join(gateways)} still answer at the old {' and '.join(moved)} — terminate them first."
+			)
 
 	def gateways(self):
 		"""Every gateway still in this geography, by name."""
@@ -104,7 +110,9 @@ class Geography(Document):
 		"""Button: get this zone's wildcard from Let's Encrypt over DNS-01 and store it here. Does not
 		ship it — provision and the daily renewal do that."""
 		frappe.enqueue_doc(self.doctype, self.name, "_issue_fleet_certificate", queue="long", timeout=900)
-		frappe.msgprint(f"Requesting a certificate for *.{self.fleet_zone} — this takes a minute.", alert=True)
+		frappe.msgprint(
+			f"Requesting a certificate for *.{self.fleet_zone} — this takes a minute.", alert=True
+		)
 
 	@failure.reports_failure()
 	def _issue_fleet_certificate(self):

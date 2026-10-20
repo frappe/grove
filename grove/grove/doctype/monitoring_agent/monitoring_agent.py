@@ -85,9 +85,7 @@ class MonitoringAgent(Server, Document):
 			**frappe.get_single("Grove Settings").monitoring_variables,
 			**self.target_variables,
 			"monitoring_remote_write_url": self.remote_write_url,
-			"monitoring_remote_write_token": self.get_password(
-				"metrics_token", raise_exception=False
-			) or "",
+			"monitoring_remote_write_token": self.get_password("metrics_token", raise_exception=False) or "",
 			"monitoring_agent": self.name,
 			# Omitted when blank, so the role's defaults/main.yml is the one place each default
 			# is written: an extra-var beats a role default even when it is "".
@@ -150,9 +148,7 @@ class MonitoringAgent(Server, Document):
 		if not self.machine:
 			frappe.throw(f"Set a Machine on {self.name} — this agent has no box to write to.")
 		if self.status != "Active":
-			frappe.throw(
-				f"{self.name} is {self.status} — install vmagent before pushing targets to it."
-			)
+			frappe.throw(f"{self.name} is {self.status} — install vmagent before pushing targets to it.")
 		frappe.enqueue_doc(self.doctype, self.name, "write_targets", queue="short", timeout=600)
 		frappe.msgprint(f"Pushing targets to {self.name} — watch its Ansible Plays.", alert=True)
 
@@ -180,10 +176,14 @@ class MonitoringAgent(Server, Document):
 	def write_config(self):
 		"""Job: config.yml — every vmagent config task, none of the install ones."""
 		play_name, rc = self.run_playbook("config.yml", extravars=self.ansible_variables)
-		frappe.db.set_value(self.doctype, self.name, {
-			"status": "Active" if rc == 0 else "Broken",
-			"remote_write_url": self.remote_write_url,
-		})
+		frappe.db.set_value(
+			self.doctype,
+			self.name,
+			{
+				"status": "Active" if rc == 0 else "Broken",
+				"remote_write_url": self.remote_write_url,
+			},
+		)
 		return play_name, rc
 
 	@frappe.whitelist()
@@ -216,7 +216,9 @@ class MonitoringAgent(Server, Document):
 		Fetched from here, not from the agent's box: it proves the URL and the token, not that
 		the box can route to the site. That last hop still shows up as a down http_sd job."""
 		if not variables["monitoring_sd_token"]:
-			return ["Grove Settings → Service Discovery Token is empty — vmagent could not ask what to scrape."]
+			return [
+				"Grove Settings → Service Discovery Token is empty — vmagent could not ask what to scrape."
+			]
 
 		url = variables["monitoring_sd_url"]
 		try:
@@ -251,10 +253,14 @@ class MonitoringAgent(Server, Document):
 		frappe.db.commit()
 
 		play_name, rc = self.run_playbook("agent.yml", extravars=self.ansible_variables)
-		frappe.db.set_value(self.doctype, self.name, {
-			"status": "Active" if rc == 0 else "Broken",
-			"remote_write_url": self.remote_write_url,
-		})
+		frappe.db.set_value(
+			self.doctype,
+			self.name,
+			{
+				"status": "Active" if rc == 0 else "Broken",
+				"remote_write_url": self.remote_write_url,
+			},
+		)
 		return play_name, rc
 
 

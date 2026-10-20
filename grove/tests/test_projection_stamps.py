@@ -120,7 +120,9 @@ class TestBucketsInPlay(unittest.TestCase):
 			return set(dirty)
 
 		with (
-			unittest.mock.patch.object(frappe, "db", frappe._dict(get_value=lambda doctype, name, field: stamps.get(name))),
+			unittest.mock.patch.object(
+				frappe, "db", frappe._dict(get_value=lambda doctype, name, field: stamps.get(name))
+			),
 			unittest.mock.patch.object(snapshot, "dirty_buckets", side_effect=dirty_buckets),
 			unittest.mock.patch.object(snapshot, "needs_full", return_value=full),
 		):
@@ -128,7 +130,9 @@ class TestBucketsInPlay(unittest.TestCase):
 
 	def test_what_moved_since_the_stamp_less_the_lookback(self):
 		gw1 = gateway("gw1")
-		labels = self.in_play([Unit("store1", (gw1,))], {gw1: {"keys:96": "h"}}, {"store1": STAMP}, dirty={AA})
+		labels = self.in_play(
+			[Unit("store1", (gw1,))], {gw1: {"keys:96": "h"}}, {"store1": STAMP}, dirty={AA}
+		)
 		self.assertEqual(labels, {AA})
 		self.assertEqual(self.since, [STAMP - timedelta(seconds=projection.LOOKBACK)])
 
@@ -168,12 +172,16 @@ class TestBucketsInPlay(unittest.TestCase):
 
 	def test_a_tier_or_settings_save_rebuilds_everything(self):
 		gw1 = gateway("gw1")
-		self.assertIsNone(self.in_play([Unit(None, (gw1,))], {gw1: {"keys:96": "h"}}, {"gw1": STAMP}, full=True))
+		self.assertIsNone(
+			self.in_play([Unit(None, (gw1,))], {gw1: {"keys:96": "h"}}, {"gw1": STAMP}, full=True)
+		)
 
 	def test_past_the_ceiling_every_bucket_is_cheaper(self):
 		gw1 = gateway("gw1")
 		many = {f"{i:02x}" for i in range(projection.FULL_ABOVE + 1)}
-		self.assertIsNone(self.in_play([Unit(None, (gw1,))], {gw1: {"keys:96": "h"}}, {"gw1": STAMP}, dirty=many))
+		self.assertIsNone(
+			self.in_play([Unit(None, (gw1,))], {gw1: {"keys:96": "h"}}, {"gw1": STAMP}, dirty=many)
+		)
 
 	def test_an_ingress_has_no_say(self):
 		ingress = Target("Ingress Server", "ing1", "http://x", "t")
@@ -193,7 +201,9 @@ class TestStamp(unittest.TestCase):
 	def test_a_store_unit_stamps_the_store(self):
 		written, writes = self.stamp(Unit("store1", (gateway("gw1"), gateway("gw2"))), True)
 		self.assertTrue(written)
-		self.assertEqual(writes, [(("Gateway Store", "store1", "last_synced_at", AT), {"update_modified": False})])
+		self.assertEqual(
+			writes, [(("Gateway Store", "store1", "last_synced_at", AT), {"update_modified": False})]
+		)
 
 	def test_a_lone_gateway_and_an_ingress_stamp_themselves(self):
 		_written, [(args, _kwargs)] = self.stamp(Unit(None, (gateway("gw1"),)), None)

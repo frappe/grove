@@ -33,16 +33,15 @@ class CompileCache(Document):
 	# end: auto-generated types
 
 	def autoname(self):
-		self.name = "-".join([
-			self.model_slug, self.gpu_model, f"tp{self.tensor_parallel_size}", self.image_digest
-		])
+		self.name = "-".join(
+			[self.model_slug, self.gpu_model, f"tp{self.tensor_parallel_size}", self.image_digest]
+		)
 
 	@property
 	def prefix(self):
 		"""The same shape vllm-cache-sync.sh computes on the box."""
 		return (
-			f"{PREFIX}{self.image_digest}/{self.gpu_model}"
-			f"/tp{self.tensor_parallel_size}/{self.model_slug}/"
+			f"{PREFIX}{self.image_digest}/{self.gpu_model}/tp{self.tensor_parallel_size}/{self.model_slug}/"
 		)
 
 	def on_trash(self):

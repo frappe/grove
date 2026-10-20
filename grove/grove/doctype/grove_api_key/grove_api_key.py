@@ -38,6 +38,7 @@ class GroveAPIKey(Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
+
 		from grove.grove.doctype.grove_model_row.grove_model_row import GroveModelRow
 		from grove.grove.doctype.model_group_row.model_group_row import ModelGroupRow
 		from grove.grove.doctype.model_limit.model_limit import ModelLimit

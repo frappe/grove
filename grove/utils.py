@@ -4,7 +4,7 @@
 
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from zoneinfo import ZoneInfo
 
 import frappe
@@ -76,7 +76,7 @@ def is_hostname(name):
 
 def utc_today():
 	"""The billing day off OUR clock: usage days, price windows and top-ups all read it."""
-	return datetime.now(timezone.utc).date()
+	return datetime.now(UTC).date()
 
 
 def site_datetime(utc):
@@ -87,7 +87,7 @@ def site_datetime(utc):
 	elif not isinstance(utc, datetime):
 		utc = datetime.combine(utc, datetime.min.time())
 	if utc.tzinfo is None:
-		utc = utc.replace(tzinfo=timezone.utc)
+		utc = utc.replace(tzinfo=UTC)
 	return utc.astimezone(ZoneInfo(get_system_timezone())).replace(tzinfo=None)
 
 

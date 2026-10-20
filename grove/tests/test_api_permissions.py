@@ -432,7 +432,9 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		billed_record(key, team, utc_today(), 3, drain="-later")
 		self.assertEqual(usage.figures(team)["spend"]["month_spent"], 5)
 		keys.update_caps(team, {key: 6})
-		self.assertEqual((usage.figures(team)["keys"][0]["cap"], usage.figures(team)["spend"]["capped"]), (6, 6))
+		self.assertEqual(
+			(usage.figures(team)["keys"][0]["cap"], usage.figures(team)["spend"]["capped"]), (6, 6)
+		)
 		teams.update_team(team, suspended=True)
 		self.assertTrue(usage.figures(team)["spend"]["suspended"])
 

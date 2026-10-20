@@ -10,7 +10,6 @@ from frappe.tests import IntegrationTestCase
 
 from grove.grove.doctype.inference_server.inference_server import InferenceServer
 
-
 EXTRA_TEST_RECORD_DEPENDENCIES = []
 IGNORE_TEST_RECORD_DEPENDENCIES = []
 
@@ -47,7 +46,9 @@ class TestATerminatedServerTakesItsReplicasWithIt(unittest.TestCase):
 	def test_every_live_replica_is_retired_and_gives_its_port_back(self):
 		asked, written, synced = self.terminate([{"name": "r1", "model": "m1"}])
 		# Only Terminated is already gone; Inactive and Broken still hold a port.
-		self.assertEqual(asked["Model Replica"], {"inference_server": "inf-1", "status": ("!=", "Terminated")})
+		self.assertEqual(
+			asked["Model Replica"], {"inference_server": "inf-1", "status": ("!=", "Terminated")}
+		)
 		self.assertEqual(written, [("Model Replica", "r1", {"status": "Terminated", "engine_port": 0})])
 		self.assertEqual(synced, ["m1"])
 

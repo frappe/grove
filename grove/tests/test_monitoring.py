@@ -13,12 +13,13 @@ import unittest
 import unittest.mock
 from pathlib import Path
 from types import SimpleNamespace
+from typing import ClassVar
 from urllib.parse import parse_qs, quote, urlparse
 
+import bcrypt
 import frappe
 import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
-import bcrypt
 
 from grove import monitoring
 from grove.grove.doctype.grove_settings.grove_settings import SD_TOKEN_PATTERN
@@ -101,9 +102,7 @@ class TestHostTargets(unittest.TestCase):
 
 	def test_each_exporter_on_a_box_keeps_its_own_instance(self):
 		entries = build_host_targets([box("INF-1", has_gpu=True)])
-		self.assertEqual(
-			[e["labels"]["instance"] for e in entries], ["10.0.0.5:9100", "10.0.0.5:9400"]
-		)
+		self.assertEqual([e["labels"]["instance"] for e in entries], ["10.0.0.5:9100", "10.0.0.5:9400"])
 
 	def test_a_box_without_gpus_has_no_dcgm_target(self):
 		entries = build_host_targets([box("PROXY-1")])
@@ -149,14 +148,10 @@ class TestBoxesAreScrapedPrivatelyWhereTheyCanBe(unittest.TestCase):
 			[box("INF-1", has_gpu=True, private_ip="172.31.0.9", network="NET-mumbai")], "NET-mumbai"
 		)
 		self.assertEqual([e["targets"][0] for e in entries], ["172.31.0.9:443", "172.31.0.9:443"])
-		self.assertEqual(
-			[e["labels"]["instance"] for e in entries], ["10.0.0.5:9100", "10.0.0.5:9400"]
-		)
+		self.assertEqual([e["labels"]["instance"] for e in entries], ["10.0.0.5:9100", "10.0.0.5:9400"])
 
 	def test_an_engine_on_a_private_box_keeps_its_public_identity(self):
-		entry = engine_entry(
-			"https://10.0.0.5/e/md-00007", {"deployment": "MD-00007"}, address="172.31.0.9"
-		)
+		entry = engine_entry("https://10.0.0.5/e/md-00007", {"deployment": "MD-00007"}, address="172.31.0.9")
 		self.assertEqual(entry["targets"], ["172.31.0.9:443"])
 		self.assertEqual(entry["labels"]["engine"], "https://10.0.0.5/e/md-00007")
 		self.assertEqual(entry["labels"]["instance"], "https://10.0.0.5/e/md-00007")
@@ -203,7 +198,7 @@ class TestWhichBoxesAreScraped(unittest.TestCase):
 
 
 class TestEngineTargets(unittest.TestCase):
-	LABELS = {
+	LABELS: ClassVar[dict] = {
 		"model": "qwen3-35b",
 		"deployment": "MD-00007",
 		"server": "INF-blackwell",
@@ -277,9 +272,7 @@ class TestExporterPortsAgree(unittest.TestCase):
 		self.assertEqual(
 			self.role_default("engine_proxy", "engine_proxy_node_metrics_path"), NODE_METRICS_PATH
 		)
-		self.assertEqual(
-			self.role_default("engine_proxy", "engine_proxy_gpu_metrics_path"), GPU_METRICS_PATH
-		)
+		self.assertEqual(self.role_default("engine_proxy", "engine_proxy_gpu_metrics_path"), GPU_METRICS_PATH)
 
 	def test_the_front_forwards_to_the_ports_the_exporters_listen_on(self):
 		for key, port in (
@@ -441,9 +434,7 @@ class TestTheAgentPlayChecksBeforeItInstalls(unittest.TestCase):
 			for task_file in sorted((role_dir(role) / "tasks").glob("*.yml")):
 				with self.subTest(f"{role}/{task_file.name}"):
 					tasks = yaml.safe_load(task_file.read_text())
-					self.assertNotIn(
-						"ansible.builtin.assert", {key for task in tasks for key in task}
-					)
+					self.assertNotIn("ansible.builtin.assert", {key for task in tasks for key in task})
 
 
 class TestEveryTemplateVariableHasADefault(unittest.TestCase):
@@ -473,7 +464,7 @@ class TestEveryTemplateVariableHasADefault(unittest.TestCase):
 class TestScrapeConfig(unittest.TestCase):
 	"""vmagent parses this file strictly, and it is the whole of what the agent knows."""
 
-	BASE = {
+	BASE: ClassVar[dict] = {
 		"monitoring_scrape_interval": "15s",
 		"monitoring_engine_scrape_interval": "5s",
 		"monitoring_sd_url": "https://grove.example/api/method/grove.monitoring.targets",
@@ -507,7 +498,8 @@ class TestScrapeConfig(unittest.TestCase):
 	def test_the_password_file_is_not_world_readable(self):
 		tasks = yaml.safe_load((VMAGENT_ROLE / "tasks/config.yml").read_text())
 		[write] = [
-			task for task in tasks
+			task
+			for task in tasks
 			if task.get("ansible.builtin.copy", {}).get("dest", "").endswith("scrape.password")
 		]
 		self.assertEqual(write["ansible.builtin.copy"]["mode"], "0600")
@@ -559,7 +551,9 @@ class TestScrapeConfig(unittest.TestCase):
 
 	def test_the_file_holding_the_token_is_not_world_readable(self):
 		tasks = yaml.safe_load((VMAGENT_ROLE / "tasks/targets.yml").read_text())
-		[write] = [task for task in tasks if task.get("ansible.builtin.template", {}).get("src") == "scrape.yml.j2"]
+		[write] = [
+			task for task in tasks if task.get("ansible.builtin.template", {}).get("src") == "scrape.yml.j2"
+		]
 		self.assertEqual(write["ansible.builtin.template"]["mode"], "0600")
 
 
@@ -567,7 +561,7 @@ class TestPushedTargets(unittest.TestCase):
 	"""The file_sd half: Grove writes the lists instead of serving them, for a box that cannot
 	reach Grove at all. Same entries either way — only how they arrive changes."""
 
-	BASE = {**TestScrapeConfig.BASE, "monitoring_static_targets": True}
+	BASE: ClassVar[dict] = {**TestScrapeConfig.BASE, "monitoring_static_targets": True}
 
 	def setUp(self):
 		self.config = yaml.safe_load(TEMPLATES.get_template("scrape.yml.j2").render(**self.BASE))
@@ -601,8 +595,11 @@ class TestPushedTargets(unittest.TestCase):
 		self.assertLess(names.index("Write the pushed target lists"), names.index("Write the scrape config"))
 
 	def test_the_lists_are_only_written_when_grove_is_pushing_them(self):
-		[write] = [task for task in yaml.safe_load((VMAGENT_ROLE / "tasks/targets.yml").read_text())
-			if task["name"] == "Write the pushed target lists"]
+		[write] = [
+			task
+			for task in yaml.safe_load((VMAGENT_ROLE / "tasks/targets.yml").read_text())
+			if task["name"] == "Write the pushed target lists"
+		]
 		self.assertIn("monitoring_static_targets", write["when"])
 
 	def test_pushing_is_a_dev_site_fallback_and_nothing_else(self):
@@ -636,29 +633,33 @@ class TestTheAgentsOwnTuningReachesItsBox(unittest.TestCase):
 	def agent(self, **fields):
 		"""A Monitoring Agent as ansible_variables reads one. The property is called unbound so
 		this stays pure — it touches nothing but these attributes."""
-		return SimpleNamespace(**{
-			"name": "MA-1",
-			"remote_write_url": "https://ingest.example/api/v1/write",
-			"get_password": lambda *args, **kwargs: "push-token",
-			"target_variables": {
-				"monitoring_static_targets": True,
-				"monitoring_host_targets": [],
-				"monitoring_engine_targets": [],
-			},
-			"scrape_interval": None,
-			"engine_scrape_interval": None,
-			"flush_interval": None,
-			"max_disk_usage": None,
-			**fields,
-		})
+		return SimpleNamespace(
+			**{
+				"name": "MA-1",
+				"remote_write_url": "https://ingest.example/api/v1/write",
+				"get_password": lambda *args, **kwargs: "push-token",
+				"target_variables": {
+					"monitoring_static_targets": True,
+					"monitoring_host_targets": [],
+					"monitoring_engine_targets": [],
+				},
+				"scrape_interval": None,
+				"engine_scrape_interval": None,
+				"flush_interval": None,
+				"max_disk_usage": None,
+				**fields,
+			}
+		)
 
 	def variables(self, **fields):
-		settings = SimpleNamespace(monitoring_variables={
-			"monitoring_extra_labels": {},
-			"monitoring_sd_url": "https://grove.example/api/method/grove.monitoring.targets",
-			"monitoring_sd_token": "tok",
-			"monitoring_scrape_password": "sc4ape",
-		})
+		settings = SimpleNamespace(
+			monitoring_variables={
+				"monitoring_extra_labels": {},
+				"monitoring_sd_url": "https://grove.example/api/method/grove.monitoring.targets",
+				"monitoring_sd_token": "tok",
+				"monitoring_scrape_password": "sc4ape",
+			}
+		)
 		with unittest.mock.patch.object(frappe, "get_single", return_value=settings):
 			return MonitoringAgent.ansible_variables.fget(self.agent(**fields))
 

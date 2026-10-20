@@ -18,8 +18,21 @@ from grove.utils import utc_today
 DEAD = "dead:"
 NANO_USD = Decimal(1) / NANO
 FIELDS = (
-	"name", "creation", "modified", "owner", "modified_by", "api_key", "team", "day", "gateway_store",
-	"drain_id", "request_count", "total_tokens", "cost", "gateway_cost", "usage",
+	"name",
+	"creation",
+	"modified",
+	"owner",
+	"modified_by",
+	"api_key",
+	"team",
+	"day",
+	"gateway_store",
+	"drain_id",
+	"request_count",
+	"total_tokens",
+	"cost",
+	"gateway_cost",
+	"usage",
 )
 
 
@@ -61,14 +74,23 @@ class Reconciler:
 		along for `bill` and `audit`."""
 		now = frappe.utils.now()
 		return frappe._dict(
-			name=make_autoname("hash", "Usage Record"), creation=now, modified=now,
-			owner=frappe.session.user, modified_by=frappe.session.user,
-			api_key=prefix, team=team, day=self.day, gateway_store=self.gateway_store, drain_id=self.drain_id,
+			name=make_autoname("hash", "Usage Record"),
+			creation=now,
+			modified=now,
+			owner=frappe.session.user,
+			modified_by=frappe.session.user,
+			api_key=prefix,
+			team=team,
+			day=self.day,
+			gateway_store=self.gateway_store,
+			drain_id=self.drain_id,
 			request_count=requests,
 			total_tokens=sum(e[counter] for e in entries for counter in self.book.counters.whole),
 			cost=sum((e["grove_cost"] for e in entries), Decimal(0)),
 			gateway_cost=sum((e["gateway_cost"] for e in entries), Decimal(0)),
-			usage=frappe.as_json([{k: v for k, v in e.items() if k != "gateway_cost"} for e in entries], indent=None),
+			usage=frappe.as_json(
+				[{k: v for k, v in e.items() if k != "gateway_cost"} for e in entries], indent=None
+			),
 			entries=entries,
 		)
 
@@ -77,8 +99,11 @@ class Reconciler:
 		totals are exactly the sum of what is stored."""
 		return [
 			self.entry(
-				self.book.pricing(pricing).model_key, pricing, counts,
-				usd(counts.get("cost", 0)), self.book.pricing_cost(pricing, counts),
+				self.book.pricing(pricing).model_key,
+				pricing,
+				counts,
+				usd(counts.get("cost", 0)),
+				self.book.pricing_cost(pricing, counts),
 			)
 			for pricing, counts in pricings.items()
 		]
@@ -95,9 +120,16 @@ class Reconciler:
 	def entry(self, model, pricing, counts, gateway_cost, grove_cost):
 		"""`model` is the key — what the bucket, the report and the customer name."""
 		return {
-			"model": model, "pricing": pricing, "requests": counts.get("request_count", 0),
-			**{counter: counts.get(counter, 0) for counter in self.book.counters.names if counter != "request_count"},
-			"gateway_cost": gateway_cost.quantize(NANO_USD), "grove_cost": grove_cost.quantize(NANO_USD),
+			"model": model,
+			"pricing": pricing,
+			"requests": counts.get("request_count", 0),
+			**{
+				counter: counts.get(counter, 0)
+				for counter in self.book.counters.names
+				if counter != "request_count"
+			},
+			"gateway_cost": gateway_cost.quantize(NANO_USD),
+			"grove_cost": grove_cost.quantize(NANO_USD),
 		}
 
 	@property
@@ -123,6 +155,12 @@ class Reconciler:
 
 	def discrepancy(self, row, entry, gateway, grove):
 		return record(
-			usage_record=row.name, team=row.team, api_key=row.api_key, pricing=entry["pricing"],
-			gateway_store=self.gateway_store, gateway_value=gateway, grove_value=grove, delta=gateway - grove,
+			usage_record=row.name,
+			team=row.team,
+			api_key=row.api_key,
+			pricing=entry["pricing"],
+			gateway_store=self.gateway_store,
+			gateway_value=gateway,
+			grove_value=grove,
+			delta=gateway - grove,
 		)

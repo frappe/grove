@@ -3,7 +3,6 @@
 """Usage aggregation. Pure — the rows are passed in, so no site needed."""
 
 import unittest
-
 from datetime import date
 from unittest.mock import patch
 
@@ -20,16 +19,23 @@ class TestTotalsByModel(unittest.TestCase):
 		self.assertEqual(totals_by_model([]), [])
 
 	def test_rows_for_one_model_are_summed_not_overwritten(self):
-		summary = totals_by_model([
-			row("qwen3-35b", requests=1, tokens=10, cost=0.5), row("qwen3-35b", requests=2, tokens=20, cost=0.25),
-		])
+		summary = totals_by_model(
+			[
+				row("qwen3-35b", requests=1, tokens=10, cost=0.5),
+				row("qwen3-35b", requests=2, tokens=20, cost=0.25),
+			]
+		)
 		self.assertEqual(summary, [{"model": "qwen3-35b", "requests": 3, "tokens": 30, "cost": 0.75}])
 
 	def test_costliest_comes_first_then_busiest(self):
-		summary = totals_by_model([
-			row("free-quiet", requests=1), row("big", requests=1, cost=9.0),
-			row("free-busy", requests=50), row("mid", requests=900, cost=1.0),
-		])
+		summary = totals_by_model(
+			[
+				row("free-quiet", requests=1),
+				row("big", requests=1, cost=9.0),
+				row("free-busy", requests=50),
+				row("mid", requests=900, cost=1.0),
+			]
+		)
 		self.assertEqual([t["model"] for t in summary], ["big", "mid", "free-busy", "free-quiet"])
 
 	def test_missing_metrics_count_as_zero(self):
@@ -42,7 +48,9 @@ class TestUsageWindow(unittest.TestCase):
 
 	def window(self, **kwargs):
 		with patch.object(usage, "utc_today", return_value=date(2026, 9, 28)):
-			return usage.usage_window(kwargs.get("from_date"), kwargs.get("to_date"), kwargs.get("period"), kwargs.get("month"))
+			return usage.usage_window(
+				kwargs.get("from_date"), kwargs.get("to_date"), kwargs.get("period"), kwargs.get("month")
+			)
 
 	def test_the_named_periods(self):
 		self.assertEqual(self.window(), (date(2026, 9, 1), date(2026, 9, 28)))
@@ -54,7 +62,9 @@ class TestUsageWindow(unittest.TestCase):
 
 	def test_a_month_and_an_explicit_range(self):
 		self.assertEqual(self.window(month="2026-02"), (date(2026, 2, 1), date(2026, 2, 28)))
-		self.assertEqual(self.window(from_date="2026-09-03", to_date="2026-09-05"), (date(2026, 9, 3), date(2026, 9, 5)))
+		self.assertEqual(
+			self.window(from_date="2026-09-03", to_date="2026-09-05"), (date(2026, 9, 3), date(2026, 9, 5))
+		)
 		self.assertEqual(self.window(from_date="2026-09-03"), (date(2026, 9, 3), date(2026, 9, 3)))
 
 

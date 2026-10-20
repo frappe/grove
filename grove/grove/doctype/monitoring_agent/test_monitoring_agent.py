@@ -23,21 +23,34 @@ class TestRemoteWriteUrl(IntegrationTestCase):
 
 	def agent(self, name, remote_write_url):
 		"""An agent on a box in its own Region, which may or may not name an endpoint."""
-		region = frappe.get_doc({
-			"doctype": "Region", "name": f"test-agent-region-{name}",
-			"label": name, "remote_write_url": remote_write_url, "geography": make_test_geography(),
-		}).insert(ignore_permissions=True)
+		region = frappe.get_doc(
+			{
+				"doctype": "Region",
+				"name": f"test-agent-region-{name}",
+				"label": name,
+				"remote_write_url": remote_write_url,
+				"geography": make_test_geography(),
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(region.delete, ignore_permissions=True)
 
-		machine = frappe.get_doc({
-			"doctype": "Machine", "name": f"test-agent-box-{name}", "region": region.name,
-			"machine_type": "Monitoring Agent",
-		}).insert(ignore_permissions=True)
+		machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": f"test-agent-box-{name}",
+				"region": region.name,
+				"machine_type": "Monitoring Agent",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(machine.delete, ignore_permissions=True)
 
-		agent = frappe.get_doc({
-			"doctype": "Monitoring Agent", "name": f"test-agent-{name}", "machine": machine.name,
-		}).insert(ignore_permissions=True)
+		agent = frappe.get_doc(
+			{
+				"doctype": "Monitoring Agent",
+				"name": f"test-agent-{name}",
+				"machine": machine.name,
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(agent.delete, ignore_permissions=True)
 		return agent
 

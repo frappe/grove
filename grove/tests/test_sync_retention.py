@@ -17,16 +17,18 @@ from grove.grove.doctype.pathway_sync.pathway_sync import PathwaySync
 class TestClearOldLogs(IntegrationTestCase):
 	def run_aged(self, days_old, server="gw-retention-test"):
 		"""One sync run with a child row, backdated by `days_old`."""
-		doc = frappe.get_doc({
-			"doctype": "Pathway Sync",
-			"run_at": now_datetime(),
-			"sync_type": "Projection",
-			"trigger": "Manual",
-			"status": "Success",
-			"targets_total": 1,
-			"targets_ok": 1,
-			"results": [{"server_type": "Gateway Server", "server": server, "success": 1}],
-		}).insert(ignore_permissions=True, ignore_links=True)
+		doc = frappe.get_doc(
+			{
+				"doctype": "Pathway Sync",
+				"run_at": now_datetime(),
+				"sync_type": "Projection",
+				"trigger": "Manual",
+				"status": "Success",
+				"targets_total": 1,
+				"targets_ok": 1,
+				"results": [{"server_type": "Gateway Server", "server": server, "success": 1}],
+			}
+		).insert(ignore_permissions=True, ignore_links=True)
 		aged = add_days(now_datetime(), -days_old)
 		frappe.db.set_value("Pathway Sync", doc.name, "creation", aged, update_modified=False)
 		return doc.name

@@ -12,10 +12,14 @@ from grove.utils import utc_today
 
 
 def new_pricing(model, status="Disabled", **rates):
-	return frappe.get_doc({
-		"doctype": "Model Pricing", "model": model, "status": status,
-		"rates": [{"counter": counter, "rate": rate} for counter, rate in rates.items()],
-	}).insert(ignore_permissions=True)
+	return frappe.get_doc(
+		{
+			"doctype": "Model Pricing",
+			"model": model,
+			"status": status,
+			"rates": [{"counter": counter, "rate": rate} for counter, rate in rates.items()],
+		}
+	).insert(ignore_permissions=True)
 
 
 def enabled_pricing(model, **rates):
@@ -26,9 +30,11 @@ class TestModelPricing(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		cls.model = frappe.get_doc(
-			{"doctype": "Model", "model_id": "pricing-7b", "hf_repo": "org/pricing-7b"}
-		).insert(ignore_permissions=True).name
+		cls.model = (
+			frappe.get_doc({"doctype": "Model", "model_id": "pricing-7b", "hf_repo": "org/pricing-7b"})
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 	def test_a_draft_is_editable_until_it_is_enabled(self):
 		doc = new_pricing(self.model, completion_tokens=1)
@@ -92,4 +98,3 @@ class TestModelPricing(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			new_pricing(self.model, prompt_tokens=2.5, cache_write_tokens_above_272k=6.25)
 		new_pricing(self.model, prompt_tokens=2.5, prompt_tokens_above_272k=5)
-

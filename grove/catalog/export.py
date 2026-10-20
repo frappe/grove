@@ -7,9 +7,9 @@ from pathlib import Path
 import frappe
 
 from grove.access import limit_entries, model_rows
+from grove.billing.pricing import CounterTable
 from grove.catalog.seed import CATALOG, get_model_key
 from grove.grove.doctype.model.model import get_modality_names
-from grove.billing.pricing import CounterTable
 
 MAIN = "Main"
 PROVIDER_FIELDS = ("provider_name", "is_self_hosted", "base_url", "anthropic_base_url", "api_version")
@@ -20,12 +20,17 @@ def write(path=None):
 	"""Sorted and indented, so a second export of an unchanged site is an empty diff."""
 	models = get_models()
 	catalog = {
-		"counters": get_counters(), "geographies": [{"name": MAIN}],
+		"counters": get_counters(),
+		"geographies": [{"name": MAIN}],
 		"modalities": get_modalities(),
-		"cloud_providers": get_cloud_providers(), "regions": get_regions(),
-		"providers": get_providers(), "denied_tools": get_denied_tools(),
-		"models": models, "model_groups": get_model_groups(models),
-		"tiers": get_tiers(), "default_tier": frappe.db.get_single_value("Grove Settings", "default_tier") or "",
+		"cloud_providers": get_cloud_providers(),
+		"regions": get_regions(),
+		"providers": get_providers(),
+		"denied_tools": get_denied_tools(),
+		"models": models,
+		"model_groups": get_model_groups(models),
+		"tiers": get_tiers(),
+		"default_tier": frappe.db.get_single_value("Grove Settings", "default_tier") or "",
 	}
 	Path(path or CATALOG).write_text(json.dumps(catalog, indent=1, sort_keys=True) + "\n")
 
@@ -34,7 +39,10 @@ def get_tiers():
 	"""Every tier, its caps and its rows, so a site's ladder ships with the catalog."""
 	rows = limit_entries("Tier")
 	tiers = frappe.get_all("Tier", fields=["name", "max_keys", "spend_limit"], order_by="name")
-	return [{"name": t.name, "max_keys": t.max_keys, "spend_limit": t.spend_limit, "limits": rows.get(t.name, [])} for t in tiers]
+	return [
+		{"name": t.name, "max_keys": t.max_keys, "spend_limit": t.spend_limit, "limits": rows.get(t.name, [])}
+		for t in tiers
+	]
 
 
 def get_counters():
@@ -53,7 +61,9 @@ def get_counters():
 
 def get_modalities():
 	"""Every modality, with its description when it has one. The two checks are kept at 0."""
-	rows = frappe.get_all("Modality", fields=["name", "description", "is_input", "is_output"], order_by="name")
+	rows = frappe.get_all(
+		"Modality", fields=["name", "description", "is_input", "is_output"], order_by="name"
+	)
 	return [{k: v for k, v in row.items() if k != "description" or v} for row in rows]
 
 
@@ -99,8 +109,12 @@ def get_models():
 	modalities = get_modality_names([row.name for row in rows])
 	entries = {}
 	for row in sorted(rows, key=lambda row: (row.model_key, row.geography != default)):
-		entries.setdefault(row.model_key, {"provider": row.provider_name, "rates": get_rates(row.name)}
-			| modalities[row.name] | {field: row[field] for field in MODEL_FIELDS if row[field]})
+		entries.setdefault(
+			row.model_key,
+			{"provider": row.provider_name, "rates": get_rates(row.name)}
+			| modalities[row.name]
+			| {field: row[field] for field in MODEL_FIELDS if row[field]},
+		)
 	return list(entries.values())
 
 

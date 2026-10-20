@@ -5,12 +5,13 @@ the catalog, no site."""
 
 import unittest
 from decimal import Decimal
+from typing import ClassVar
 
 import frappe
 
 from grove.billing import pricing
-from grove.catalog import seed
 from grove.billing.pricing import CounterTable, PriceBook
+from grove.catalog import seed
 
 D = Decimal
 
@@ -34,18 +35,31 @@ def book(models=(), pricings=None, counters=None):
 
 
 class TestPriceBook(unittest.TestCase):
-	RATES = {"prompt_tokens": "3", "cached_tokens": "0.3", "cache_write_tokens": "3.75",
-	         "cache_write_1h_tokens": "6", "completion_tokens": "15", "audio_tokens": "40"}
+	RATES: ClassVar[dict] = {
+		"prompt_tokens": "3",
+		"cached_tokens": "0.3",
+		"cache_write_tokens": "3.75",
+		"cache_write_1h_tokens": "6",
+		"completion_tokens": "15",
+		"audio_tokens": "40",
+	}
 
 	def priced(self):
 		return book(pricings={"p1": ("anthropic/claude", self.RATES)})
 
 	def test_the_prompt_rate_charges_what_the_cache_counters_left(self):
-		counts = {"prompt_tokens": 1_000_000, "cached_tokens": 400_000, "cache_write_tokens": 100_000,
-		          "cache_write_1h_tokens": 100_000, "completion_tokens": 500_000}
+		counts = {
+			"prompt_tokens": 1_000_000,
+			"cached_tokens": 400_000,
+			"cache_write_tokens": 100_000,
+			"cache_write_1h_tokens": 100_000,
+			"completion_tokens": 500_000,
+		}
 		self.assertEqual(self.priced().pricing_cost("p1", counts), D("9.795"))
 		# Parts past the prompt charge no prompt: only the cached 50 bill.
-		self.assertEqual(self.priced().pricing_cost("p1", {"prompt_tokens": 10, "cached_tokens": 50}), D("0.000015"))
+		self.assertEqual(
+			self.priced().pricing_cost("p1", {"prompt_tokens": 10, "cached_tokens": 50}), D("0.000015")
+		)
 
 	def test_audio_output_comes_out_of_the_completion(self):
 		counts = {"completion_tokens": 500_000, "completion_audio_tokens": 100_000}
@@ -55,11 +69,20 @@ class TestPriceBook(unittest.TestCase):
 
 	def test_a_drain_of_a_short_and_a_long_request_prices_as_the_two_apart(self):
 		priced = book(pricings={"p1": ("anthropic/claude", self.RATES | {"prompt_tokens_above_272k": "6"})})
-		short = {"prompt_tokens": 100_000, "cached_tokens": 60_000, "cache_write_1h_tokens": 10_000,
-		         "completion_tokens": 1000}
-		long = {"prompt_tokens": 10_000, "cache_write_1h_tokens": 10_000, "prompt_tokens_above_272k": 310_000,
-		        "cached_tokens_above_272k": 280_000, "cache_write_tokens_above_272k": 20_000,
-		        "completion_tokens_above_272k": 1000}
+		short = {
+			"prompt_tokens": 100_000,
+			"cached_tokens": 60_000,
+			"cache_write_1h_tokens": 10_000,
+			"completion_tokens": 1000,
+		}
+		long = {
+			"prompt_tokens": 10_000,
+			"cache_write_1h_tokens": 10_000,
+			"prompt_tokens_above_272k": 310_000,
+			"cached_tokens_above_272k": 280_000,
+			"cache_write_tokens_above_272k": 20_000,
+			"completion_tokens_above_272k": 1000,
+		}
 		drain = {counter: short.get(counter, 0) + long.get(counter, 0) for counter in short | long}
 		self.assertEqual(priced.pricing_cost("p1", short), D("0.183"))
 		self.assertEqual(priced.pricing_cost("p1", long), D("0.294"))
@@ -70,11 +93,20 @@ class TestPriceBook(unittest.TestCase):
 		self.assertEqual(self.priced().pricing_cost("p1", counts), D("20"))
 
 	def test_amounts_charged_above_272k_are_priced_at_those_rates(self):
-		rates = {"prompt_tokens": "2.5", "cached_tokens": "0.25", "completion_tokens": "15",
-		         "prompt_tokens_above_272k": "5", "cached_tokens_above_272k": "0.5",
-		         "cache_write_tokens_above_272k": "6.25", "completion_tokens_above_272k": "22.5"}
-		counts = {"prompt_tokens_above_272k": 300_000, "cached_tokens_above_272k": 280_000,
-		          "completion_tokens_above_272k": 1000}
+		rates = {
+			"prompt_tokens": "2.5",
+			"cached_tokens": "0.25",
+			"completion_tokens": "15",
+			"prompt_tokens_above_272k": "5",
+			"cached_tokens_above_272k": "0.5",
+			"cache_write_tokens_above_272k": "6.25",
+			"completion_tokens_above_272k": "22.5",
+		}
+		counts = {
+			"prompt_tokens_above_272k": 300_000,
+			"cached_tokens_above_272k": 280_000,
+			"completion_tokens_above_272k": 1000,
+		}
 		priced = book(pricings={"p1": ("openai/gpt", rates)})
 		self.assertEqual(priced.pricing_cost("p1", counts), D("0.2625"))
 		self.assertEqual(priced.pricing_cost("p1", {"cache_write_tokens_above_272k": 80_000}), D("0.5"))
@@ -111,24 +143,57 @@ class TestMoneyUnits(unittest.TestCase):
 
 class TestCounterTable(unittest.TestCase):
 	BRACKET = (
-		{"counter_name": "prompt_tokens_above_500k", "base_counter": "prompt_tokens", "min_prompt_tokens": 500_000},
-		{"counter_name": "cached_tokens_above_500k", "base_counter": "cached_tokens", "min_prompt_tokens": 500_000},
-		{"counter_name": "cache_write_tokens_above_500k", "base_counter": "cache_write_tokens", "min_prompt_tokens": 500_000},
+		{
+			"counter_name": "prompt_tokens_above_500k",
+			"base_counter": "prompt_tokens",
+			"min_prompt_tokens": 500_000,
+		},
+		{
+			"counter_name": "cached_tokens_above_500k",
+			"base_counter": "cached_tokens",
+			"min_prompt_tokens": 500_000,
+		},
+		{
+			"counter_name": "cache_write_tokens_above_500k",
+			"base_counter": "cache_write_tokens",
+			"min_prompt_tokens": 500_000,
+		},
 	)
 
 	def test_the_catalog_is_todays_table(self):
 		t = table()
-		self.assertEqual(t.roots, ["prompt_tokens", "cached_tokens", "cache_write_tokens", "cache_write_1h_tokens",
-		                           "audio_tokens", "completion_tokens", "completion_audio_tokens", "request_count"])
-		self.assertEqual(t.parts("prompt_tokens"), ["cached_tokens", "cache_write_tokens", "cache_write_1h_tokens", "audio_tokens"])
-		self.assertEqual(t.parts("prompt_tokens_above_272k"), ["cached_tokens_above_272k", "cache_write_tokens_above_272k"])
+		self.assertEqual(
+			t.roots,
+			[
+				"prompt_tokens",
+				"cached_tokens",
+				"cache_write_tokens",
+				"cache_write_1h_tokens",
+				"audio_tokens",
+				"completion_tokens",
+				"completion_audio_tokens",
+				"request_count",
+			],
+		)
+		self.assertEqual(
+			t.parts("prompt_tokens"),
+			["cached_tokens", "cache_write_tokens", "cache_write_1h_tokens", "audio_tokens"],
+		)
+		self.assertEqual(
+			t.parts("prompt_tokens_above_272k"), ["cached_tokens_above_272k", "cache_write_tokens_above_272k"]
+		)
 		self.assertEqual((t.divisor("prompt_tokens_above_272k"), t.divisor("request_count")), (1_000_000, 1))
 		self.assertEqual(t.base("cached_tokens_above_272k"), "cached_tokens")
 		self.assertIs(t.validate(), t)
 
 	def test_a_second_bracket_prices_at_its_own_rates(self):
-		rates = {"prompt_tokens": "2", "cached_tokens": "0.2", "prompt_tokens_above_272k": "4",
-		         "cached_tokens_above_272k": "0.4", "prompt_tokens_above_500k": "8"}
+		rates = {
+			"prompt_tokens": "2",
+			"cached_tokens": "0.2",
+			"prompt_tokens_above_272k": "4",
+			"cached_tokens_above_272k": "0.4",
+			"prompt_tokens_above_500k": "8",
+		}
 		priced = book(pricings={"p1": ("m", rates)}, counters=table(*self.BRACKET))
 		counts = {"prompt_tokens_above_500k": 600_000, "cached_tokens_above_500k": 100_000}
 		self.assertEqual(priced.pricing_cost("p1", counts), D("4") + D("0.02"))
@@ -141,10 +206,18 @@ class TestCounterTable(unittest.TestCase):
 	def test_the_push_carries_only_what_is_set(self):
 		rows = {row["name"]: row for row in table().published}
 		self.assertEqual(rows["prompt_tokens"], {"name": "prompt_tokens", "divisor": 1_000_000})
-		self.assertEqual(rows["cached_tokens"], {"name": "cached_tokens", "divisor": 1_000_000, "part_of": "prompt_tokens"})
-		self.assertEqual(rows["cached_tokens_above_272k"], {
-			"name": "cached_tokens_above_272k", "divisor": 1_000_000, "base": "cached_tokens", "min_prompt_tokens": 272_000,
-		})
+		self.assertEqual(
+			rows["cached_tokens"], {"name": "cached_tokens", "divisor": 1_000_000, "part_of": "prompt_tokens"}
+		)
+		self.assertEqual(
+			rows["cached_tokens_above_272k"],
+			{
+				"name": "cached_tokens_above_272k",
+				"divisor": 1_000_000,
+				"base": "cached_tokens",
+				"min_prompt_tokens": 272_000,
+			},
+		)
 		self.assertEqual(rows["request_count"], {"name": "request_count", "divisor": 1})
 
 
@@ -154,7 +227,9 @@ class TestValidatePriceRows(unittest.TestCase):
 
 	def test_a_duplicate_counter_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):
-			pricing.validate_price_rows(self.rows(("completion_tokens", 1), ("completion_tokens", 2)), key=lambda r: r.counter)
+			pricing.validate_price_rows(
+				self.rows(("completion_tokens", 1), ("completion_tokens", 2)), key=lambda r: r.counter
+			)
 
 	def test_a_negative_rate_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):

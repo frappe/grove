@@ -19,8 +19,8 @@ after_migrate = ["grove.catalog.seed.insert_missing"]
 scheduler_events = {
 	"cron": {
 		"*/1 * * * *": [
-            "grove.pathway.projection.sync_projection",
-        ],
+			"grove.pathway.projection.sync_projection",
+		],
 		"*/2 * * * *": [
 			"grove.cloud_provider.reconcile.sync_all",
 		],
@@ -31,7 +31,7 @@ scheduler_events = {
 			"grove.grove.doctype.gateway_store.gateway_store.backup_all",
 		],
 	},
-    "hourly_long": [
+	"hourly_long": [
 		"grove.pathway.usage.pull_all",
 		"grove.tls.renew_fleet_certificate",
 		"grove.cloud_provider.schedule.run_due_pods",

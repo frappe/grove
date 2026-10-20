@@ -21,7 +21,11 @@ SCAN_TASK = "query nvidia-smi"
 TOPO_TASK = "query nvidia-smi topo"
 
 NAME_PREFIX = {
-	"Gateway": "gw", "Ingress": "ing", "Inference": "inf", "Monitoring Agent": "mon", "Gateway Store": "store",
+	"Gateway": "gw",
+	"Ingress": "ing",
+	"Inference": "inf",
+	"Monitoring Agent": "mon",
+	"Gateway Store": "store",
 }
 
 
@@ -33,6 +37,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
+
 		from grove.grove.doctype.machine_gpu.machine_gpu import MachineGPU
 
 		cloud_provider: DF.Link | None
@@ -104,7 +109,9 @@ class Machine(GeneratedName, AnsibleHost, Document):
 			frappe.throw(f"Machine {self.name} has no public IP — nothing to connect to.")
 		frappe.enqueue(
 			"grove.grove.doctype.machine.machine.scan_machine_gpus",
-			queue="long", timeout=600, machine_name=self.name,
+			queue="long",
+			timeout=600,
+			machine_name=self.name,
 		)
 		frappe.msgprint(f"Scanning {self.name}'s GPUs — watch its Ansible Plays, then reload.", alert=True)
 
@@ -137,8 +144,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 	def cloud_client(self):
 		if not self.cloud_provider:
 			frappe.throw(
-				f"Machine {self.name} has no Cloud Provider — set one, "
-				f"or leave it blank for an on-prem box."
+				f"Machine {self.name} has no Cloud Provider — set one, or leave it blank for an on-prem box."
 			)
 		provider = frappe.get_doc("Cloud Provider", self.cloud_provider)
 		secret = provider.get_password("api_key", raise_exception=False)
@@ -251,11 +257,14 @@ class Machine(GeneratedName, AnsibleHost, Document):
 		# Committed before the poll, or a timeout below rolls back the id of a billed instance.
 		self.db_set("instance_id", instance["instance_id"], commit=True)
 		ready = client.poll_instance_ready(instance["instance_id"], timeout_sec=self.boot_timeout_sec)
-		self.db_set({
-			"public_ip": ready["public_ip"],
-			"private_ip": ready["private_ip"],
-			"status": ready["status"],
-		}, commit=True)
+		self.db_set(
+			{
+				"public_ip": ready["public_ip"],
+				"private_ip": ready["private_ip"],
+				"status": ready["status"],
+			},
+			commit=True,
+		)
 		if self.is_static_ip:
 			self.attach_static_ip()
 		self.sync_instance_type(client)
@@ -268,11 +277,14 @@ class Machine(GeneratedName, AnsibleHost, Document):
 		if self.static_ip_allocation_id:
 			frappe.throw(f"{self.name} already holds Elastic IP {self.public_ip}.")
 		address = self.cloud_client.allocate_static_ip(self.instance_id)
-		self.db_set({
-			"public_ip": address["public_ip"],
-			"static_ip_allocation_id": address["allocation_id"],
-			"is_static_ip": 1,
-		}, commit=True)
+		self.db_set(
+			{
+				"public_ip": address["public_ip"],
+				"static_ip_allocation_id": address["allocation_id"],
+				"is_static_ip": 1,
+			},
+			commit=True,
+		)
 		self.sync_static_ip()
 
 	@frappe.whitelist()
@@ -301,14 +313,16 @@ class Machine(GeneratedName, AnsibleHost, Document):
 			self.mark_terminated()
 			frappe.msgprint(f"{self.name} no longer exists on AWS — marked Terminated.")
 			return
-		self.db_set({
-			"status": instance["status"],
-			"public_ip": instance["public_ip"] or "",
-			"private_ip": instance["private_ip"] or "",
-			"instance_type": instance["instance_type"] or "",
-			"machine_image": instance["image_id"] or "",
-			"root_volume_gb": instance["root_volume_gb"] or 0,
-		})
+		self.db_set(
+			{
+				"status": instance["status"],
+				"public_ip": instance["public_ip"] or "",
+				"private_ip": instance["private_ip"] or "",
+				"instance_type": instance["instance_type"] or "",
+				"machine_image": instance["image_id"] or "",
+				"root_volume_gb": instance["root_volume_gb"] or 0,
+			}
+		)
 		self.sync_dependent_servers()
 		self.sync_instance_type(client)
 
@@ -319,7 +333,11 @@ class Machine(GeneratedName, AnsibleHost, Document):
 			return
 		dependent_status = "Terminated" if self.status == "Terminated" else "Broken"
 		for doctype in (
-			"Gateway Server", "Ingress Server", "Inference Server", "Monitoring Agent", "Gateway Store"
+			"Gateway Server",
+			"Ingress Server",
+			"Inference Server",
+			"Monitoring Agent",
+			"Gateway Store",
 		):
 			for name in frappe.get_all(
 				doctype, filters={"machine": self.name, "status": "Active"}, pluck="name"
@@ -356,12 +374,14 @@ class Machine(GeneratedName, AnsibleHost, Document):
 			return
 		info = client.get_instance_type_info(self.instance_type)
 		store = info["instance_store"]
-		self.db_set({
-			"cpu_architecture": info["cpu_architecture"],
-			"is_bare_metal": int(info["is_bare_metal"]),
-			"instance_store_disks": store["disks"],
-			"instance_store_gb": store["total_gb"],
-		})
+		self.db_set(
+			{
+				"cpu_architecture": info["cpu_architecture"],
+				"is_bare_metal": int(info["is_bare_metal"]),
+				"instance_store_disks": store["disks"],
+				"instance_store_gb": store["total_gb"],
+			}
+		)
 		from grove.grove.doctype.gpu.gpu import cards_on
 
 		if cards_on([self.name]):
@@ -395,11 +415,14 @@ class Machine(GeneratedName, AnsibleHost, Document):
 		client = self.cloud_client
 		client.start_instance(self.instance_id)
 		ready = client.poll_instance_ready(self.instance_id, timeout_sec=self.boot_timeout_sec)
-		self.db_set({
-			"public_ip": ready["public_ip"],
-			"private_ip": ready["private_ip"],
-			"status": ready["status"],
-		}, commit=True)
+		self.db_set(
+			{
+				"public_ip": ready["public_ip"],
+				"private_ip": ready["private_ip"],
+				"status": ready["status"],
+			},
+			commit=True,
+		)
 
 	@frappe.whitelist()
 	def resize_root_volume(self, size_gb: int):
@@ -412,10 +435,10 @@ class Machine(GeneratedName, AnsibleHost, Document):
 				"A volume can only be grown, never shrunk."
 			)
 		self.cloud_client
-		frappe.enqueue_doc(
-			self.doctype, self.name, "grow_root", queue="long", timeout=1800, size_gb=size_gb
+		frappe.enqueue_doc(self.doctype, self.name, "grow_root", queue="long", timeout=1800, size_gb=size_gb)
+		frappe.msgprint(
+			f"Growing {self.name}'s root volume to {size_gb} GB — watch its Ansible Plays.", alert=True
 		)
-		frappe.msgprint(f"Growing {self.name}'s root volume to {size_gb} GB — watch its Ansible Plays.", alert=True)
 
 	@failure.reports_failure(mark_broken=False)
 	def grow_root(self, size_gb):
@@ -472,10 +495,18 @@ class Machine(GeneratedName, AnsibleHost, Document):
 			command = ["sudo", "-n", *command]
 		remote = " ".join(shlex.quote(word) for word in command)
 		return [
-			"ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",
-			"-o", "ConnectTimeout=10", "-p", str(self.ssh_port or 22),
+			"ssh",
+			"-o",
+			"BatchMode=yes",
+			"-o",
+			"StrictHostKeyChecking=accept-new",
+			"-o",
+			"ConnectTimeout=10",
+			"-p",
+			str(self.ssh_port or 22),
 			*(["-tt"] if tty else []),
-			f"{user}@{self.public_ip}", remote,
+			f"{user}@{self.public_ip}",
+			remote,
 		]
 
 	def run_command(self, command, timeout=60):
@@ -493,7 +524,10 @@ class Machine(GeneratedName, AnsibleHost, Document):
 		a caller that stops consuming must not leave a `docker logs -f` on the box."""
 		process = subprocess.Popen(
 			self.get_ssh_argv(command, tty=True),
-			stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+			stdout=subprocess.PIPE,
+			stderr=subprocess.STDOUT,
+			text=True,
+			bufsize=1,
 		)
 		try:
 			selector = selectors.DefaultSelector()
@@ -569,8 +603,7 @@ def plan_reconcile(existing, scanned, slot_is_identity=False):
 	by_slot = {
 		card.gpu_index: card
 		for card in existing
-		if card.name not in claimed
-		and (slot_is_identity or is_placeholder_device_id(card.device_id))
+		if card.name not in claimed and (slot_is_identity or is_placeholder_device_id(card.device_id))
 	}
 	for row in unmatched:
 		card = by_slot.pop(row.get("gpu_index"), None)
@@ -622,9 +655,7 @@ def _scanned_values(row):
 	from grove.grove.doctype.gpu_type.gpu_type import resolve
 
 	return {
-		"gpu_type": resolve(
-			row.get("gpu_model"), row.get("vram_gb"), row.get("compute_capability")
-		),
+		"gpu_type": resolve(row.get("gpu_model"), row.get("vram_gb"), row.get("compute_capability")),
 		"gpu_index": row.get("gpu_index") or 0,
 	}
 
@@ -668,9 +699,7 @@ def _mirror_onto_machine(machine):
 def _scan_result(play_name, task_name=SCAN_TASK):
 	"""A scan task's result, off its Ansible Task doc. Empty when the task never ran — an
 	unreachable host has no result to report."""
-	output = frappe.db.get_value(
-		"Ansible Task", {"play": play_name, "task_name": task_name}, "output"
-	)
+	output = frappe.db.get_value("Ansible Task", {"play": play_name, "task_name": task_name}, "output")
 	try:
 		return json.loads(output) if output else {}
 	except json.JSONDecodeError:
@@ -679,9 +708,7 @@ def _scan_result(play_name, task_name=SCAN_TASK):
 
 def _scan_message(result):
 	"""What nvidia-smi said, so the error is actionable without opening the play."""
-	message = (
-		result.get("stdout") or result.get("stderr") or result.get("msg") or "nothing at all"
-	).strip()
+	message = (result.get("stdout") or result.get("stderr") or result.get("msg") or "nothing at all").strip()
 	if "version mismatch" in message.lower():
 		message += (
 			" — the loaded kernel module and the userspace driver disagree, which usually means "
@@ -704,13 +731,15 @@ def parse_nvidia_smi(stdout):
 		# Appended to the query, not inserted, so a box answering an older playbook still parses
 		# and parse_gpu_memory's column offsets do not move.
 		compute_cap = fields[6] if len(fields) > 6 else ""
-		gpus.append({
-			"gpu_index": int(index),
-			"gpu_model": name,
-			"vram_gb": vram_gb_from_mib(int(memory_mib)) if memory_mib.isdigit() else 0,
-			"device_id": uuid or str(int(index)),
-			"compute_capability": float(compute_cap) if _is_number(compute_cap) else 0,
-		})
+		gpus.append(
+			{
+				"gpu_index": int(index),
+				"gpu_model": name,
+				"vram_gb": vram_gb_from_mib(int(memory_mib)) if memory_mib.isdigit() else 0,
+				"device_id": uuid or str(int(index)),
+				"compute_capability": float(compute_cap) if _is_number(compute_cap) else 0,
+			}
+		)
 	return gpus
 
 
@@ -719,7 +748,7 @@ def parse_interconnect(stdout):
 	columns count; NIC rows, affinity columns and the legend are skipped. Blank on one card, which
 	has no GPU-to-GPU path to describe."""
 	rows = [line.split() for line in (stdout or "").splitlines() if line.startswith("GPU")]
-	cells = [cell for row in rows for cell in row[1:1 + len(rows)] if cell != "X"]
+	cells = [cell for row in rows for cell in row[1 : 1 + len(rows)] if cell != "X"]
 	if not cells:
 		return ""
 	nvlink = sum(cell.startswith("NV") for cell in cells)
@@ -739,11 +768,13 @@ def parse_gpu_memory(stdout):
 		total, used, free = fields[2], fields[4], fields[5]
 		if not (total.isdigit() and used.isdigit() and free.isdigit()):
 			continue
-		rows.append({
-			"gpu_index": int(fields[0]),
-			"gpu_model": fields[1],
-			"total_mib": int(total),
-			"used_mib": int(used),
-			"free_mib": int(free),
-		})
+		rows.append(
+			{
+				"gpu_index": int(fields[0]),
+				"gpu_model": fields[1],
+				"total_mib": int(total),
+				"used_mib": int(used),
+				"free_mib": int(free),
+			}
+		)
 	return rows

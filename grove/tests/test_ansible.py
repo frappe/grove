@@ -9,9 +9,8 @@ import unittest.mock
 from pathlib import Path
 from types import SimpleNamespace
 
-import yaml
-
 import frappe
+import yaml
 
 from grove import ansible
 from grove.ansible import AnsibleHost
@@ -96,7 +95,14 @@ class TestEveryRoleAPlaybookNamesResolves(unittest.TestCase):
 		folders = {path.parent.name for path in self.playbooks()}
 		self.assertEqual(
 			folders,
-			{"machine", "inference_server", "gateway_server", "ingress_server", "monitoring_agent", "gateway_store"},
+			{
+				"machine",
+				"inference_server",
+				"gateway_server",
+				"ingress_server",
+				"monitoring_agent",
+				"gateway_store",
+			},
 		)
 
 	def test_every_role_resolves_in_its_own_folder_or_the_shared_one(self):
@@ -202,7 +208,9 @@ class TestTheBoxesOwnKeyComesBack(CallbackCase):
 		callback, runner = self.callback()
 		self.start(callback, "Create the frappe user")
 		callback.v2_runner_on_ok(
-			self.result(action="ansible.builtin.user", name="frappe", ssh_public_key="ssh-ed25519 AAAA frappe@box")
+			self.result(
+				action="ansible.builtin.user", name="frappe", ssh_public_key="ssh-ed25519 AAAA frappe@box"
+			)
 		)
 		self.assertEqual(runner.key, "ssh-ed25519 AAAA frappe@box")
 
@@ -211,7 +219,9 @@ class TestTheBoxesOwnKeyComesBack(CallbackCase):
 		self.start(callback, "Remove the cloud image's ubuntu user")
 		callback.v2_runner_on_ok(self.result(action="ansible.builtin.user", name="ubuntu"))
 		self.start(callback, "root")
-		callback.v2_runner_on_ok(self.result(action="ansible.builtin.user", name="root", ssh_public_key="ssh-ed25519 AAAA"))
+		callback.v2_runner_on_ok(
+			self.result(action="ansible.builtin.user", name="root", ssh_public_key="ssh-ed25519 AAAA")
+		)
 		self.assertFalse(hasattr(runner, "key"))
 
 	def test_a_command_that_happens_to_print_a_key_is_not_one(self):
@@ -244,8 +254,12 @@ class TestEveryPlayThatPutsSomethingOnABoxCreatesTheUserFirst(unittest.TestCase)
 	never provisioned with it, or are guarded."""
 
 	PLAYS = (
-		"gateway_server/gateway.yml", "ingress_server/ingress.yml", "gateway_store/store.yml",
-		"monitoring_agent/agent.yml", "monitoring_agent/config.yml", "monitoring_agent/push_targets.yml",
+		"gateway_server/gateway.yml",
+		"ingress_server/ingress.yml",
+		"gateway_store/store.yml",
+		"monitoring_agent/agent.yml",
+		"monitoring_agent/config.yml",
+		"monitoring_agent/push_targets.yml",
 	)
 
 	def test_grove_user_is_the_first_role(self):
@@ -268,8 +282,11 @@ class TestEverySetupPlayRemovesTheCloudImagesUser(unittest.TestCase):
 	Setup play, so the inference box — which has no service account — loses it too."""
 
 	PLAYS = (
-		"inference_server/provision.yml", "gateway_server/gateway.yml",
-		"ingress_server/ingress.yml", "monitoring_agent/agent.yml", "gateway_store/store.yml",
+		"inference_server/provision.yml",
+		"gateway_server/gateway.yml",
+		"ingress_server/ingress.yml",
+		"monitoring_agent/agent.yml",
+		"gateway_store/store.yml",
 	)
 
 	def test_every_setup_play_lists_the_role(self):
@@ -294,8 +311,12 @@ class TestOneServiceAccount(unittest.TestCase):
 	def test_every_literal_names_the_same_account(self):
 		grove_user = yaml.safe_load((SHARED_ROLES / "grove_user/defaults/main.yml").read_text())["grove_user"]
 		literals = {
-			"fleet_tls_key_owner": yaml.safe_load((SHARED_ROLES / "fleet_tls/defaults/main.yml").read_text())["fleet_tls_key_owner"],
-			"vmagent_user": yaml.safe_load((PLAYBOOKS / "monitoring_agent/roles/vmagent/defaults/main.yml").read_text())["vmagent_user"],
+			"fleet_tls_key_owner": yaml.safe_load((SHARED_ROLES / "fleet_tls/defaults/main.yml").read_text())[
+				"fleet_tls_key_owner"
+			],
+			"vmagent_user": yaml.safe_load(
+				(PLAYBOOKS / "monitoring_agent/roles/vmagent/defaults/main.yml").read_text()
+			)["vmagent_user"],
 		}
 		for unit in ("gateway_server/systemd/pathway.service", "ingress_server/systemd/pathway.service"):
 			user = next(l for l in (PLAYBOOKS / unit).read_text().splitlines() if l.startswith("User="))

@@ -3,12 +3,14 @@
 """VllmEngine argument assembly. Pure — the Model row is passed in, so no site needed."""
 
 import unittest
+from typing import ClassVar
 
 from grove.serving.vllm import VllmEngine
 
 CHAT_MODEL = {
 	"hf_repo": "Qwen/Qwen3-35B",
-	"input_modalities": ["text"], "output_modalities": ["text"],
+	"input_modalities": ["text"],
+	"output_modalities": ["text"],
 	"enable_prefix_caching": True,
 	"enable_auto_tool_choice": True,
 	"tool_call_parser": "hermes",
@@ -60,7 +62,7 @@ class TestWhatTheCardCanRun(unittest.TestCase):
 	compute capability of at least 8.0` and exits — minutes into a play, on the box. Every other
 	hard filter is checked before a deploy; this is the one that was not."""
 
-	BF16 = dict(CHAT_MODEL, torch_dtype="bfloat16")
+	BF16: ClassVar[dict] = dict(CHAT_MODEL, torch_dtype="bfloat16")
 
 	def test_a_t4_cannot_serve_a_bfloat16_repo(self):
 		errors = serve(self.BF16, compute_capability=7.5).placement_errors
@@ -87,17 +89,15 @@ class TestWhatTheCardCanRun(unittest.TestCase):
 
 	def test_an_override_beats_what_the_repo_asks_for(self):
 		self.assertEqual(
-			serve(dict(CHAT_MODEL, torch_dtype="float16"), compute_capability=7.5,
-			      dtype="bfloat16").placement_errors[0].count("bfloat16"), 1
+			serve(dict(CHAT_MODEL, torch_dtype="float16"), compute_capability=7.5, dtype="bfloat16")
+			.placement_errors[0]
+			.count("bfloat16"),
+			1,
 		)
-		self.assertEqual(
-			serve(self.BF16, compute_capability=7.5, dtype="float16").placement_errors, []
-		)
+		self.assertEqual(serve(self.BF16, compute_capability=7.5, dtype="float16").placement_errors, [])
 
 	def test_an_fp8_kv_cache_needs_ada_or_newer(self):
-		self.assertEqual(
-			serve(CHAT_MODEL, compute_capability=8.9, kv_cache_dtype="fp8").placement_errors, []
-		)
+		self.assertEqual(serve(CHAT_MODEL, compute_capability=8.9, kv_cache_dtype="fp8").placement_errors, [])
 		errors = serve(CHAT_MODEL, compute_capability=8.0, kv_cache_dtype="fp8").placement_errors
 		self.assertEqual(len(errors), 1)
 		self.assertIn("8.9", errors[0])
@@ -108,7 +108,7 @@ class TestWhatTheCardCanRun(unittest.TestCase):
 
 
 class TestVramFit(unittest.TestCase):
-	BIG = dict(CHAT_MODEL, weights_gb=148.0, attention_heads=64)
+	BIG: ClassVar[dict] = dict(CHAT_MODEL, weights_gb=148.0, attention_heads=64)
 
 	def test_weights_larger_than_gpus_is_rejected(self):
 		errors = serve(self.BIG, gpu_count=2, gpu_vram_gb=80).placement_errors
@@ -226,7 +226,9 @@ class TestStreamingFromS3(unittest.TestCase):
 	"""A Model with an S3 mirror serves it as the positional and loads via the runai
 	streamer — weights go S3 → GPU, no HF download."""
 
-	S3 = dict(CHAT_MODEL, weights_s3_uri="s3://grove-weights/models/Qwen--Qwen3-35B", weights_gb=67.0)
+	S3: ClassVar[dict] = dict(
+		CHAT_MODEL, weights_s3_uri="s3://grove-weights/models/Qwen--Qwen3-35B", weights_gb=67.0
+	)
 
 	def test_the_mirror_replaces_the_repo(self):
 		self.assertEqual(serve(dict(self.S3)).repo, "s3://grove-weights/models/Qwen--Qwen3-35B")
@@ -256,7 +258,7 @@ class TestStreamingFromS3(unittest.TestCase):
 
 	def test_the_streamer_json_survives_a_shell(self):
 		command = serve(dict(self.S3), gpu_count=2).command
-		self.assertIn("'{\"concurrency\":17,\"distributed\":true}'", command)
+		self.assertIn('\'{"concurrency":17,"distributed":true}\'', command)
 
 	def test_extra_serve_args_still_come_last(self):
 		args = serve(dict(self.S3), extra_serve_args="--load-format auto").args
@@ -343,7 +345,12 @@ class TestWarmupRequest(unittest.TestCase):
 		self.assertEqual(request["path"], "/v1/completions")
 
 	def test_audio_has_nothing_cheap_to_prove(self):
-		self.assertEqual(serve(dict(CHAT_MODEL, input_modalities=["audio"], output_modalities=["transcription"])).warmup_request, {})
+		self.assertEqual(
+			serve(
+				dict(CHAT_MODEL, input_modalities=["audio"], output_modalities=["transcription"])
+			).warmup_request,
+			{},
+		)
 
 
 if __name__ == "__main__":

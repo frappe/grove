@@ -39,12 +39,10 @@ from grove.utils import vram_gb_from_mib
 G6_12XLARGE = {
 	"InstanceType": "g6.12xlarge",
 	"GpuInfo": {
-		"Gpus": [{"Name": "L4", "Manufacturer": "NVIDIA", "Count": 4,
-				  "MemoryInfo": {"SizeInMiB": 23040}}],
+		"Gpus": [{"Name": "L4", "Manufacturer": "NVIDIA", "Count": 4, "MemoryInfo": {"SizeInMiB": 23040}}],
 		"TotalGpuMemoryInMiB": 92160,
 	},
-	"InstanceStorageInfo": {"Disks": [{"SizeInGB": 940, "Count": 2, "Type": "ssd"}],
-							"TotalSizeInGB": 1880},
+	"InstanceStorageInfo": {"Disks": [{"SizeInGB": 940, "Count": 2, "Type": "ssd"}], "TotalSizeInGB": 1880},
 }
 
 
@@ -92,16 +90,19 @@ class TestParseGpuMemory(unittest.TestCase):
 	"""The live half of the same CSV — index, name, total, uuid, used, free."""
 
 	def test_used_and_free_come_off_the_last_two_columns(self):
-		stdout = (
-			"0, Tesla T4, 15360, GPU-a, 14000, 1360\n"
-			"1, Tesla T4, 15360, GPU-b, 0, 15360"
-		)
+		stdout = "0, Tesla T4, 15360, GPU-a, 14000, 1360\n1, Tesla T4, 15360, GPU-b, 0, 15360"
 		rows = parse_gpu_memory(stdout)
 		self.assertEqual(len(rows), 2)
-		self.assertEqual(rows[0], {
-			"gpu_index": 0, "gpu_model": "Tesla T4",
-			"total_mib": 15360, "used_mib": 14000, "free_mib": 1360,
-		})
+		self.assertEqual(
+			rows[0],
+			{
+				"gpu_index": 0,
+				"gpu_model": "Tesla T4",
+				"total_mib": 15360,
+				"used_mib": 14000,
+				"free_mib": 1360,
+			},
+		)
 		self.assertEqual(rows[1]["free_mib"], 15360)
 
 	def test_a_scan_without_the_memory_columns_is_not_reported_as_idle(self):
@@ -137,8 +138,7 @@ class TestParseInterconnect(unittest.TestCase):
 			"GPU2\tNV12\tNV12\t X \tNV12\tSYS\tPXB\t24-47,72-95\t1\t\tN/A\n"
 			"GPU3\tNV12\tNV12\tNV12\t X \tSYS\tPXB\t24-47,72-95\t1\t\tN/A\n"
 			"NIC0\tPXB\tPXB\tSYS\tSYS\t X \tSYS\n"
-			"NIC1\tSYS\tSYS\tPXB\tPXB\tSYS\t X \n"
-			+ self.LEGEND
+			"NIC1\tSYS\tSYS\tPXB\tPXB\tSYS\t X \n" + self.LEGEND
 		)
 		self.assertEqual(parse_interconnect(stdout), "NVLink")
 
@@ -146,8 +146,7 @@ class TestParseInterconnect(unittest.TestCase):
 		stdout = (
 			"\tGPU0\tGPU1\tCPU Affinity\tNUMA Affinity\tGPU NUMA ID\n"
 			"GPU0\t X \tPHB\t0-15\t0\t\tN/A\n"
-			"GPU1\tPHB\t X \t0-15\t0\t\tN/A\n"
-			+ self.LEGEND
+			"GPU1\tPHB\t X \t0-15\t0\t\tN/A\n" + self.LEGEND
 		)
 		self.assertEqual(parse_interconnect(stdout), "PCIe")
 
@@ -219,15 +218,16 @@ class TestParseInstanceStore(unittest.TestCase):
 		self.assertEqual(parse_instance_store(G6_12XLARGE), {"disks": 2, "total_gb": 1880})
 
 	def test_sums_several_disk_groups(self):
-		info = {"InstanceStorageInfo": {
-			"Disks": [{"SizeInGB": 3750, "Count": 8}, {"SizeInGB": 940, "Count": 1}],
-			"TotalSizeInGB": 30940,
-		}}
+		info = {
+			"InstanceStorageInfo": {
+				"Disks": [{"SizeInGB": 3750, "Count": 8}, {"SizeInGB": 940, "Count": 1}],
+				"TotalSizeInGB": 30940,
+			}
+		}
 		self.assertEqual(parse_instance_store(info), {"disks": 9, "total_gb": 30940})
 
 	def test_ebs_only_type_is_zeros_not_a_keyerror(self):
-		self.assertEqual(parse_instance_store({"InstanceType": "m7i.large"}),
-						 {"disks": 0, "total_gb": 0})
+		self.assertEqual(parse_instance_store({"InstanceType": "m7i.large"}), {"disks": 0, "total_gb": 0})
 
 
 class TestParseGpus(unittest.TestCase):
@@ -238,16 +238,18 @@ class TestParseGpus(unittest.TestCase):
 		self.assertEqual(gpus[0]["device_id"], "0")
 
 	def test_indexes_run_across_several_entries(self):
-		info = {"GpuInfo": {"Gpus": [
-			{"Name": "A", "Count": 2, "MemoryInfo": {"SizeInMiB": 16384}},
-			{"Name": "B", "Count": 1, "MemoryInfo": {"SizeInMiB": 16384}},
-		]}}
+		info = {
+			"GpuInfo": {
+				"Gpus": [
+					{"Name": "A", "Count": 2, "MemoryInfo": {"SizeInMiB": 16384}},
+					{"Name": "B", "Count": 1, "MemoryInfo": {"SizeInMiB": 16384}},
+				]
+			}
+		}
 		gpus = parse_gpus(info)
 		self.assertEqual([gpu["gpu_index"] for gpu in gpus], [0, 1, 2])
 		# The placeholder id IS the slot: a mismatched one takes a neighbour's identity on the first scan.
-		self.assertEqual(
-			[gpu["device_id"] for gpu in gpus], [str(gpu["gpu_index"]) for gpu in gpus]
-		)
+		self.assertEqual([gpu["device_id"] for gpu in gpus], [str(gpu["gpu_index"]) for gpu in gpus])
 
 	def test_cpu_only_type_has_no_gpus(self):
 		self.assertEqual(parse_gpus({"InstanceType": "m7i.large"}), [])
@@ -280,28 +282,46 @@ class TestMachineStatus(unittest.TestCase):
 
 class TestBuildIpPermission(unittest.TestCase):
 	def test_cidr_rule(self):
-		permission = build_ip_permission({"protocol": "tcp", "from_port": 22, "to_port": 22, "cidr": "0.0.0.0/0"})
-		self.assertEqual(permission, {
-			"IpProtocol": "tcp", "FromPort": 22, "ToPort": 22, "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
-		})
+		permission = build_ip_permission(
+			{"protocol": "tcp", "from_port": 22, "to_port": 22, "cidr": "0.0.0.0/0"}
+		)
+		self.assertEqual(
+			permission,
+			{
+				"IpProtocol": "tcp",
+				"FromPort": 22,
+				"ToPort": 22,
+				"IpRanges": [{"CidrIp": "0.0.0.0/0"}],
+			},
+		)
 
 	def test_a_single_address_rule(self):
 		permission = build_ip_permission(
 			{"protocol": "tcp", "from_port": 443, "to_port": 443, "cidr": "54.251.169.42/32"}
 		)
-		self.assertEqual(permission, {
-			"IpProtocol": "tcp", "FromPort": 443, "ToPort": 443,
-			"IpRanges": [{"CidrIp": "54.251.169.42/32"}],
-		})
+		self.assertEqual(
+			permission,
+			{
+				"IpProtocol": "tcp",
+				"FromPort": 443,
+				"ToPort": 443,
+				"IpRanges": [{"CidrIp": "54.251.169.42/32"}],
+			},
+		)
 
 	def test_source_group_rule(self):
 		permission = build_ip_permission(
 			{"protocol": "tcp", "from_port": 443, "to_port": 443, "source_group_id": "sg-proxy"}
 		)
-		self.assertEqual(permission, {
-			"IpProtocol": "tcp", "FromPort": 443, "ToPort": 443,
-			"UserIdGroupPairs": [{"GroupId": "sg-proxy"}],
-		})
+		self.assertEqual(
+			permission,
+			{
+				"IpProtocol": "tcp",
+				"FromPort": 443,
+				"ToPort": 443,
+				"UserIdGroupPairs": [{"GroupId": "sg-proxy"}],
+			},
+		)
 
 
 class TestRootVolumeId(unittest.TestCase):
@@ -350,10 +370,20 @@ class TestResizeRootVolume(unittest.TestCase):
 		client.region = "ap-south-1"
 		client.calls = []
 		client.ec2 = SimpleNamespace(
-			describe_instances=lambda **kw: {"Reservations": [{"Instances": [{
-				"RootDeviceName": "/dev/sda1",
-				"BlockDeviceMappings": [{"DeviceName": "/dev/sda1", "Ebs": {"VolumeId": "vol-1"}}],
-			}]}]},
+			describe_instances=lambda **kw: {
+				"Reservations": [
+					{
+						"Instances": [
+							{
+								"RootDeviceName": "/dev/sda1",
+								"BlockDeviceMappings": [
+									{"DeviceName": "/dev/sda1", "Ebs": {"VolumeId": "vol-1"}}
+								],
+							}
+						]
+					}
+				]
+			},
 			modify_volume=lambda **kw: client.calls.append(kw) or {},
 			describe_volumes_modifications=lambda **kw: {
 				"VolumesModifications": [dict(next(reported), VolumeId="vol-1")]
@@ -385,9 +415,18 @@ class TestResizeRootVolume(unittest.TestCase):
 
 	def test_an_instance_with_no_ebs_root_is_refused(self):
 		client = self.client([{"ModificationState": "completed"}])
-		client.ec2.describe_instances = lambda **kw: {"Reservations": [{"Instances": [{
-			"RootDeviceName": "/dev/sda1", "BlockDeviceMappings": [],
-		}]}]}
+		client.ec2.describe_instances = lambda **kw: {
+			"Reservations": [
+				{
+					"Instances": [
+						{
+							"RootDeviceName": "/dev/sda1",
+							"BlockDeviceMappings": [],
+						}
+					]
+				}
+			]
+		}
 		with self.assertRaises(AWSError):
 			self.resize(client)
 		self.assertEqual(client.calls, [], "nothing is modified when there is no root volume")
@@ -403,7 +442,10 @@ class TestStaticIp(unittest.TestCase):
 		client = EC2Client.__new__(EC2Client)
 		client.region = "ap-south-1"
 		client.calls = []
-		record = lambda name: lambda **kw: client.calls.append((name, kw)) or {}
+
+		def record(name):
+			return lambda **kw: client.calls.append((name, kw)) or {}
+
 		client.ec2 = SimpleNamespace(
 			allocate_address=lambda **kw: client.calls.append(("allocate_address", kw))
 			or {"PublicIp": "13.1.1.1", "AllocationId": "eipalloc-1"},
@@ -427,9 +469,7 @@ class TestStaticIp(unittest.TestCase):
 	def test_an_attached_address_is_detached_before_release(self):
 		client = self.client([{"AllocationId": "eipalloc-1", "AssociationId": "eipassoc-1"}])
 		client.release_static_ip("eipalloc-1")
-		self.assertEqual(
-			[name for name, _ in client.calls], ["disassociate_address", "release_address"]
-		)
+		self.assertEqual([name for name, _ in client.calls], ["disassociate_address", "release_address"])
 
 	def test_a_free_address_is_released_straight_away(self):
 		client = self.client([{"AllocationId": "eipalloc-1"}])
@@ -442,10 +482,15 @@ class TestLaunchResetsStatusOnFailure(IntegrationTestCase):
 	out of that state once instance_id is blank but status says Pending."""
 
 	def test_failure_before_instance_id_resets_to_draft(self):
-		machine = frappe.get_doc({
-			"doctype": "Machine", "name": "test-launch-failure", "machine_type": "Inference",
-			"instance_type": "g6.12xlarge", "root_volume_gb": 100,
-		}).insert(ignore_permissions=True)
+		machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": "test-launch-failure",
+				"machine_type": "Inference",
+				"instance_type": "g6.12xlarge",
+				"root_volume_gb": 100,
+			}
+		).insert(ignore_permissions=True)
 		# launch() commits, ending the test's transaction, so the row outlives the rollback and
 		# the cleanup delete has to be committed too.
 		self.addCleanup(frappe.db.commit)
@@ -461,41 +506,62 @@ class TestBaremetalMachine(IntegrationTestCase):
 	"""Registering a box by hand must not get harder now that AWS fields exist."""
 
 	def test_saves_with_no_cloud_provider(self):
-		machine = frappe.get_doc({
-			"doctype": "Machine", "name": "test-baremetal-01", "public_ip": "10.0.0.1",
-			"machine_type": "Inference",
-		}).insert(ignore_permissions=True)
+		machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": "test-baremetal-01",
+				"public_ip": "10.0.0.1",
+				"machine_type": "Inference",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(machine.delete, ignore_permissions=True)
 		self.assertFalse(machine.cloud_provider)
 		self.assertIsNone(machine.network_doc, "no Network and no Cloud Provider default")
 
 	def test_provision_throws_instead_of_reaching_boto3(self):
-		machine = frappe.get_doc({
-			"doctype": "Machine", "name": "test-baremetal-02", "public_ip": "10.0.0.2",
-			"machine_type": "Inference",
-			"instance_type": "g6.12xlarge", "root_volume_gb": 500,
-		}).insert(ignore_permissions=True)
+		machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": "test-baremetal-02",
+				"public_ip": "10.0.0.2",
+				"machine_type": "Inference",
+				"instance_type": "g6.12xlarge",
+				"root_volume_gb": 500,
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(machine.delete, ignore_permissions=True)
 		with self.assertRaises(frappe.ValidationError):
 			machine.provision()
 
 	def test_dummy_network_does_not_wipe_manually_set_region(self):
-		region = frappe.get_doc({
-			"doctype": "Region", "name": "test-baremetal-region", "label": "test-baremetal-region",
-			"geography": make_test_geography(),
-		}).insert(ignore_permissions=True)
+		region = frappe.get_doc(
+			{
+				"doctype": "Region",
+				"name": "test-baremetal-region",
+				"label": "test-baremetal-region",
+				"geography": make_test_geography(),
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(region.delete, ignore_permissions=True)
 
 		# Region is mandatory on Network now; a blank one is a row predating that.
-		dummy_network = frappe.get_doc({
-			"doctype": "Network", "name": "test-baremetal-dummy-network",
-		}).insert(ignore_permissions=True, ignore_mandatory=True)
+		dummy_network = frappe.get_doc(
+			{
+				"doctype": "Network",
+				"name": "test-baremetal-dummy-network",
+			}
+		).insert(ignore_permissions=True, ignore_mandatory=True)
 		self.addCleanup(dummy_network.delete, ignore_permissions=True)
 
-		machine = frappe.get_doc({
-			"doctype": "Machine", "name": "test-baremetal-03", "machine_type": "Inference",
-			"region": region.name, "network": dummy_network.name,
-		}).insert(ignore_permissions=True)
+		machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": "test-baremetal-03",
+				"machine_type": "Inference",
+				"region": region.name,
+				"network": dummy_network.name,
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(machine.delete, ignore_permissions=True)
 		self.assertEqual(machine.region, region.name, "a region-less Network must not clear it")
 
@@ -506,16 +572,24 @@ class TestLaunchLockedFields(IntegrationTestCase):
 	running box at any time, by button."""
 
 	def setUp(self):
-		self.key = frappe.get_doc({
-			"doctype": "SSH Key", "key_name": "test-launch-locked-key",
-			"public_key": "ssh-ed25519 AAAA test@grove",
-		}).insert(ignore_permissions=True)
+		self.key = frappe.get_doc(
+			{
+				"doctype": "SSH Key",
+				"key_name": "test-launch-locked-key",
+				"public_key": "ssh-ed25519 AAAA test@grove",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(self.key.delete, ignore_permissions=True)
 
 	def machine(self, name, **fields):
-		machine = frappe.get_doc({
-			"doctype": "Machine", "name": name, "machine_type": "Inference", **fields,
-		}).insert(ignore_permissions=True)
+		machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": name,
+				"machine_type": "Inference",
+				**fields,
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(machine.delete, ignore_permissions=True)
 		return machine
 
@@ -556,21 +630,34 @@ class TestSyncDependentServers(IntegrationTestCase):
 	Server still claiming Active — that would be a lie about what's actually running."""
 
 	def setUp(self):
-		self.machine = frappe.get_doc({
-			"doctype": "Machine", "name": "test-sync-dependents", "machine_type": "Inference",
-		}).insert(ignore_permissions=True)
+		self.machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": "test-sync-dependents",
+				"machine_type": "Inference",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(self.machine.delete, ignore_permissions=True)
 
-		self.inference_server = frappe.get_doc({
-			"doctype": "Inference Server", "name": "test-sync-dependents-inference",
-			"machine": self.machine.name, "status": "Active", "data_path": "/opt/vllm",
-		}).insert(ignore_permissions=True)
+		self.inference_server = frappe.get_doc(
+			{
+				"doctype": "Inference Server",
+				"name": "test-sync-dependents-inference",
+				"machine": self.machine.name,
+				"status": "Active",
+				"data_path": "/opt/vllm",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(self.inference_server.delete, ignore_permissions=True)
 
-		self.gateway_server = frappe.get_doc({
-			"doctype": "Gateway Server", "name": "test-sync-dependents-proxy",
-			"machine": self.machine.name, "status": "Active",
-		}).insert(ignore_permissions=True)
+		self.gateway_server = frappe.get_doc(
+			{
+				"doctype": "Gateway Server",
+				"name": "test-sync-dependents-proxy",
+				"machine": self.machine.name,
+				"status": "Active",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(self.gateway_server.delete, ignore_permissions=True)
 
 	def test_terminated_machine_breaks_active_servers(self):
@@ -614,129 +701,205 @@ class TestNetworkResolution(IntegrationTestCase):
 	resolution (Machine's own, else its Network's — no Cloud Provider fallback for either)."""
 
 	def setUp(self):
-		self.region_a = frappe.get_doc({
-			"doctype": "Region", "name": "test-region-a", "label": "test-region-a",
-			"geography": make_test_geography(),
-		}).insert(ignore_permissions=True)
+		self.region_a = frappe.get_doc(
+			{
+				"doctype": "Region",
+				"name": "test-region-a",
+				"label": "test-region-a",
+				"geography": make_test_geography(),
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(self.region_a.delete, ignore_permissions=True)
 
-		self.region_b = frappe.get_doc({
-			"doctype": "Region", "name": "test-region-b", "label": "test-region-b",
-			"geography": make_test_geography(),
-		}).insert(ignore_permissions=True)
+		self.region_b = frappe.get_doc(
+			{
+				"doctype": "Region",
+				"name": "test-region-b",
+				"label": "test-region-b",
+				"geography": make_test_geography(),
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(self.region_b.delete, ignore_permissions=True)
 
-		self.provider = frappe.get_doc({
-			"doctype": "Cloud Provider", "name": "test-network-provider", "provider_type": "aws",
-			"api_key": "dummy-secret", "access_key_id": "dummy-key",
-		}).insert(ignore_permissions=True)
+		self.provider = frappe.get_doc(
+			{
+				"doctype": "Cloud Provider",
+				"name": "test-network-provider",
+				"provider_type": "aws",
+				"api_key": "dummy-secret",
+				"access_key_id": "dummy-key",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(self.provider.delete, ignore_permissions=True)
 
-		self.network = frappe.get_doc({
-			"doctype": "Network", "name": "test-network",
-			"cloud_provider": self.provider.name, "region": self.region_b.name,
-			"subnet_id": "subnet-x",
-			"proxy_security_group_ids": "sg-proxy",
-			"inference_security_group_ids": "sg-inference",
-			"store_security_group_ids": "sg-store",
-		}).insert(ignore_permissions=True)
+		self.network = frappe.get_doc(
+			{
+				"doctype": "Network",
+				"name": "test-network",
+				"cloud_provider": self.provider.name,
+				"region": self.region_b.name,
+				"subnet_id": "subnet-x",
+				"proxy_security_group_ids": "sg-proxy",
+				"inference_security_group_ids": "sg-inference",
+				"store_security_group_ids": "sg-store",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(self.network.delete, ignore_permissions=True)
 
 	def test_network_doc_resolves_the_linked_network(self):
-		machine = frappe.get_doc({
-			"doctype": "Machine", "name": "test-net-link", "cloud_provider": self.provider.name,
-			"network": self.network.name, "machine_type": "Inference",
-		}).insert(ignore_permissions=True)
+		machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": "test-net-link",
+				"cloud_provider": self.provider.name,
+				"network": self.network.name,
+				"machine_type": "Inference",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(machine.delete, ignore_permissions=True)
 		self.assertEqual(machine.network_doc.name, self.network.name)
 
 	def test_region_derived_from_network(self):
-		machine = frappe.get_doc({
-			"doctype": "Machine", "name": "test-net-region", "cloud_provider": self.provider.name,
-			"network": self.network.name, "region": self.region_a.name, "machine_type": "Inference",
-		}).insert(ignore_permissions=True)
+		machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": "test-net-region",
+				"cloud_provider": self.provider.name,
+				"network": self.network.name,
+				"region": self.region_a.name,
+				"machine_type": "Inference",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(machine.delete, ignore_permissions=True)
 		self.assertEqual(machine.region, self.region_b.name, "Network's region wins over the typed one")
 
 	def test_proxy_role_picks_proxy_security_groups(self):
-		machine = frappe.get_doc({
-			"doctype": "Machine", "name": "test-net-role-proxy", "cloud_provider": self.provider.name,
-			"network": self.network.name, "machine_type": "Gateway",
-		}).insert(ignore_permissions=True)
+		machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": "test-net-role-proxy",
+				"cloud_provider": self.provider.name,
+				"network": self.network.name,
+				"machine_type": "Gateway",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(machine.delete, ignore_permissions=True)
 		self.assertEqual(machine.get_security_group_ids(machine.network_doc), ["sg-proxy"])
 
 	def test_inference_role_picks_inference_security_groups(self):
-		machine = frappe.get_doc({
-			"doctype": "Machine", "name": "test-net-role-inference", "cloud_provider": self.provider.name,
-			"network": self.network.name, "machine_type": "Inference",
-		}).insert(ignore_permissions=True)
+		machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": "test-net-role-inference",
+				"cloud_provider": self.provider.name,
+				"network": self.network.name,
+				"machine_type": "Inference",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(machine.delete, ignore_permissions=True)
 		self.assertEqual(machine.get_security_group_ids(machine.network_doc), ["sg-inference"])
 
 	def test_monitoring_agent_role_picks_inference_security_groups(self):
-		machine = frappe.get_doc({
-			"doctype": "Machine", "name": "test-net-role-agent", "cloud_provider": self.provider.name,
-			"network": self.network.name, "machine_type": "Monitoring Agent",
-		}).insert(ignore_permissions=True)
+		machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": "test-net-role-agent",
+				"cloud_provider": self.provider.name,
+				"network": self.network.name,
+				"machine_type": "Monitoring Agent",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(machine.delete, ignore_permissions=True)
 		self.assertEqual(machine.get_security_group_ids(machine.network_doc), ["sg-inference"])
 
 	def test_gateway_store_role_picks_store_security_groups(self):
-		machine = frappe.get_doc({
-			"doctype": "Machine", "name": "test-net-role-store", "cloud_provider": self.provider.name,
-			"network": self.network.name, "machine_type": "Gateway Store",
-		}).insert(ignore_permissions=True)
+		machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": "test-net-role-store",
+				"cloud_provider": self.provider.name,
+				"network": self.network.name,
+				"machine_type": "Gateway Store",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(machine.delete, ignore_permissions=True)
 		self.assertEqual(machine.get_security_group_ids(machine.network_doc), ["sg-store"])
 
 	def test_no_role_set_throws_when_network_present(self):
-		machine = frappe.get_doc({
-			"doctype": "Machine", "name": "test-net-role-missing", "cloud_provider": self.provider.name,
-			"network": self.network.name,
-		})
+		machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": "test-net-role-missing",
+				"cloud_provider": self.provider.name,
+				"network": self.network.name,
+			}
+		)
 		with self.assertRaises(frappe.ValidationError):
 			machine.get_security_group_ids(machine.network_doc)
 
 	def test_no_network_is_empty_list_regardless_of_role(self):
-		machine = frappe.get_doc({
-			"doctype": "Machine", "name": "test-net-role-no-network", "machine_type": "Inference",
-		}).insert(ignore_permissions=True)
+		machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": "test-net-role-no-network",
+				"machine_type": "Inference",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(machine.delete, ignore_permissions=True)
 		self.assertEqual(machine.get_security_group_ids(None), [])
 
 	def test_region_code_throws_when_no_region(self):
-		machine = frappe.get_doc({
-			"doctype": "Machine", "name": "test-net-no-region", "cloud_provider": self.provider.name,
-			"machine_type": "Inference",
-		}).insert(ignore_permissions=True)
+		machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": "test-net-no-region",
+				"cloud_provider": self.provider.name,
+				"machine_type": "Inference",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(machine.delete, ignore_permissions=True)
 		with self.assertRaises(frappe.ValidationError):
 			machine.region_code
 
 	def test_resolved_machine_image_prefers_the_machines_own(self):
 		self.network.db_set("machine_image", "ami-network-default")
-		machine = frappe.get_doc({
-			"doctype": "Machine", "name": "test-net-image-own", "cloud_provider": self.provider.name,
-			"network": self.network.name, "machine_image": "ami-machine-own", "machine_type": "Inference",
-		}).insert(ignore_permissions=True)
+		machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": "test-net-image-own",
+				"cloud_provider": self.provider.name,
+				"network": self.network.name,
+				"machine_image": "ami-machine-own",
+				"machine_type": "Inference",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(machine.delete, ignore_permissions=True)
 		self.assertEqual(machine.resolved_machine_image, "ami-machine-own")
 
 	def test_resolved_machine_image_falls_back_to_network(self):
 		self.network.db_set("machine_image", "ami-network-default")
-		machine = frappe.get_doc({
-			"doctype": "Machine", "name": "test-net-image-fallback", "cloud_provider": self.provider.name,
-			"network": self.network.name, "machine_type": "Inference",
-		}).insert(ignore_permissions=True)
+		machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": "test-net-image-fallback",
+				"cloud_provider": self.provider.name,
+				"network": self.network.name,
+				"machine_type": "Inference",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(machine.delete, ignore_permissions=True)
 		self.assertEqual(machine.resolved_machine_image, "ami-network-default")
 
 	def test_resolved_machine_image_throws_when_neither_set(self):
-		machine = frappe.get_doc({
-			"doctype": "Machine", "name": "test-net-image-missing", "cloud_provider": self.provider.name,
-			"network": self.network.name, "machine_type": "Inference",
-		}).insert(ignore_permissions=True)
+		machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": "test-net-image-missing",
+				"cloud_provider": self.provider.name,
+				"network": self.network.name,
+				"machine_type": "Inference",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(machine.delete, ignore_permissions=True)
 		with self.assertRaises(frappe.ValidationError):
 			machine.resolved_machine_image
@@ -746,15 +909,23 @@ class TestTerminatingABareMetalBox(IntegrationTestCase):
 	"""A box with no Cloud Provider has nothing to destroy, so Terminate only retires rows."""
 
 	def setUp(self):
-		self.machine = frappe.get_doc({
-			"doctype": "Machine", "name": "test-bare-metal-terminate", "machine_type": "Inference",
-			"public_ip": "203.0.113.7",
-		}).insert(ignore_permissions=True)
+		self.machine = frappe.get_doc(
+			{
+				"doctype": "Machine",
+				"name": "test-bare-metal-terminate",
+				"machine_type": "Inference",
+				"public_ip": "203.0.113.7",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(self.machine.delete, ignore_permissions=True)
-		self.server = frappe.get_doc({
-			"doctype": "Inference Server", "machine": self.machine.name, "status": "Active",
-			"data_path": "/opt/vllm",
-		}).insert(ignore_permissions=True)
+		self.server = frappe.get_doc(
+			{
+				"doctype": "Inference Server",
+				"machine": self.machine.name,
+				"status": "Active",
+				"data_path": "/opt/vllm",
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(self.server.delete, ignore_permissions=True)
 
 	def test_it_retires_the_box_and_its_server_without_a_provider(self):
@@ -813,7 +984,11 @@ class TestTerminatingABoxTakesItsServersWithIt(unittest.TestCase):
 			patch("frappe.get_all", side_effect=lambda dt, **kw: dependents.get(dt, [])),
 			patch("frappe.get_doc", side_effect=FakeDoc),
 			patch("frappe.log_error", side_effect=lambda title: logged.append(title)),
-			patch.object(frappe, "db", SimpleNamespace(savepoint=lambda name: None, rollback=lambda **kw: rollbacks.append(kw))),
+			patch.object(
+				frappe,
+				"db",
+				SimpleNamespace(savepoint=lambda name: None, rollback=lambda **kw: rollbacks.append(kw)),
+			),
 		):
 			Machine.sync_dependent_servers(machine)
 		return saved, logged, rollbacks
@@ -827,10 +1002,15 @@ class TestTerminatingABoxTakesItsServersWithIt(unittest.TestCase):
 		self.assertEqual([("Ingress Server", "ing-1", "Terminated", True)], saved)
 
 	def test_every_dependent_kind_is_covered(self):
-		saved, _, _ = self.cascade(dependents={
-			"Gateway Server": ["gw-1"], "Ingress Server": ["ing-1"],
-			"Inference Server": ["inf-1"], "Monitoring Agent": ["ma-1"], "Gateway Store": ["store-1"],
-		})
+		saved, _, _ = self.cascade(
+			dependents={
+				"Gateway Server": ["gw-1"],
+				"Ingress Server": ["ing-1"],
+				"Inference Server": ["inf-1"],
+				"Monitoring Agent": ["ma-1"],
+				"Gateway Store": ["store-1"],
+			}
+		)
 		self.assertEqual(
 			{"Gateway Server", "Ingress Server", "Inference Server", "Monitoring Agent", "Gateway Store"},
 			{doctype for doctype, _, _, _ in saved},

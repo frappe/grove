@@ -15,7 +15,16 @@ def build(source, architecture, label):
 	version = "-".join(filter(None, ["dev", sha, label, datetime.now(UTC).strftime("%Y%m%d%H%M")]))
 	binary = BENCH / "builds" / f"pathway-{version}"
 	subprocess.run(
-		["go", "build", "-trimpath", "-ldflags", f"-s -w -X main.version={version}", "-o", binary, "./cmd/pathway"],
+		[
+			"go",
+			"build",
+			"-trimpath",
+			"-ldflags",
+			f"-s -w -X main.version={version}",
+			"-o",
+			binary,
+			"./cmd/pathway",
+		],
 		cwd=source,
 		env={**os.environ, "CGO_ENABLED": "0", "GOOS": "linux", "GOARCH": architecture},
 		check=True,

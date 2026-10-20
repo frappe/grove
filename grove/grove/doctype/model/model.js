@@ -1,51 +1,58 @@
-frappe.ui.form.on('Model', {
+frappe.ui.form.on("Model", {
 	setup(frm) {
-		frm.set_query('input_modalities', () => ({ filters: { is_input: 1 } }));
-		frm.set_query('output_modalities', () => ({ filters: { is_output: 1 } }));
+		frm.set_query("input_modalities", () => ({ filters: { is_input: 1 } }));
+		frm.set_query("output_modalities", () => ({ filters: { is_output: 1 } }));
 	},
 
 	onload(frm) {
 		if (!frm.is_new() || frm.doc.provider) return;
-		frappe.db.get_value('Model Provider', { is_self_hosted: 1 }, 'name').then((r) => {
-			if (r.message && r.message.name) frm.set_value('provider', r.message.name);
+		frappe.db.get_value("Model Provider", { is_self_hosted: 1 }, "name").then((r) => {
+			if (r.message && r.message.name) frm.set_value("provider", r.message.name);
 		});
 	},
 
 	refresh(frm) {
-		if (!frm.is_new()) frm.trigger('pricing_headline');
+		if (!frm.is_new()) frm.trigger("pricing_headline");
 		if (frm.doc.published && frm.doc.__onload && frm.doc.__onload.is_granted === false) {
 			frm.dashboard.set_headline(
-				__('Published, but no Model Group with a user and no user Allow names {0} — nobody can call it. {1}',
-					[frm.doc.model_key, `<a href="/app/model-group">${__('Model Groups')}</a>`]),
-				'orange'
+				__(
+					"Published, but no Model Group with a user and no user Allow names {0} — nobody can call it. {1}",
+					[frm.doc.model_key, `<a href="/app/model-group">${__("Model Groups")}</a>`]
+				),
+				"orange"
 			);
 		}
 		if (frm.doc.__onload && frm.doc.__onload.has_catalog_pricing) {
-			frm.add_custom_button(__('Load Pricing'), () => {
-				frm.call('load_pricing').then((r) => {
-					if (r.message) frappe.set_route('Form', 'Model Pricing', r.message);
+			frm.add_custom_button(__("Load Pricing"), () => {
+				frm.call("load_pricing").then((r) => {
+					if (r.message) frappe.set_route("Form", "Model Pricing", r.message);
 				});
 			});
 		}
 		if (frm.is_new() || !frm.doc.provider_is_self_hosted) return;
 
-		frm.add_custom_button(__('Fetch Architecture'), () => {
-			frm.call('fetch_architecture').then(() => frm.reload_doc());
+		frm.add_custom_button(__("Fetch Architecture"), () => {
+			frm.call("fetch_architecture").then(() => frm.reload_doc());
 		});
 
-		frm.add_custom_button(__('Mirror Weights To S3'), () => {
-			frm.call('mirror_weights');
+		frm.add_custom_button(__("Mirror Weights To S3"), () => {
+			frm.call("mirror_weights");
 		});
 	},
 
 	pricing_headline(frm) {
-		frappe.db.get_value('Model Pricing', { model: frm.doc.name, status: 'Enabled' }, 'name').then((r) => {
-			if (r.message && r.message.name) return;
-			const href = `/app/model-pricing/new?model=${encodeURIComponent(frm.doc.name)}`;
-			frm.dashboard.set_headline(
-				__('No Model Pricing enabled — this model cannot be published. Zero rates serve it free. {0}', [`<a href="${href}">${__('Add one')}</a>`]),
-				'orange'
-			);
-		});
+		frappe.db
+			.get_value("Model Pricing", { model: frm.doc.name, status: "Enabled" }, "name")
+			.then((r) => {
+				if (r.message && r.message.name) return;
+				const href = `/app/model-pricing/new?model=${encodeURIComponent(frm.doc.name)}`;
+				frm.dashboard.set_headline(
+					__(
+						"No Model Pricing enabled — this model cannot be published. Zero rates serve it free. {0}",
+						[`<a href="${href}">${__("Add one")}</a>`]
+					),
+					"orange"
+				);
+			});
 	},
 });

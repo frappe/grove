@@ -27,6 +27,7 @@ class PathwayUpdate(StepHandler, Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
+
 		from grove.grove.doctype.pathway_update_server.pathway_update_server import PathwayUpdateServer
 
 		ended_at: DF.Datetime | None
@@ -48,7 +49,9 @@ class PathwayUpdate(StepHandler, Document):
 		self.set("servers", [])
 		for checkbox, doctype in SERVER_TYPES:
 			if self.get(checkbox):
-				for server in frappe.get_all(doctype, filters={"status": "Active"}, order_by="name asc", pluck="name"):
+				for server in frappe.get_all(
+					doctype, filters={"status": "Active"}, order_by="name asc", pluck="name"
+				):
 					self.append("servers", {"server_type": doctype, "server": server})
 
 	def validate(self):
@@ -77,7 +80,9 @@ class PathwayUpdate(StepHandler, Document):
 	@frappe.whitelist()
 	def start(self):
 		if self.is_in_progress:
-			frappe.throw(f"Pathway Update {self.name} is still deploying — wait until it is Stopped, then Continue.")
+			frappe.throw(
+				f"Pathway Update {self.name} is still deploying — wait until it is Stopped, then Continue."
+			)
 		if self.status != Status.Pending:
 			frappe.throw(f"Pathway Update {self.name} is {self.status} — use Continue.")
 		self.run(started_at=now_datetime())
@@ -101,12 +106,20 @@ class PathwayUpdate(StepHandler, Document):
 			frappe.throw("No Pending servers — add a row for each server to update.")
 		running = frappe.db.get_value(
 			"Pathway Update",
-			{"status": ("in", (Status.Running, Status.Pending)), "started_at": ("is", "set"), "name": ("!=", self.name)},
+			{
+				"status": ("in", (Status.Running, Status.Pending)),
+				"started_at": ("is", "set"),
+				"name": ("!=", self.name),
+			},
 		)
 		if running:
 			frappe.throw(f"Pathway Update {running} is still running.")
 		self.check_settings_unchanged()
-		inactive = [row.server for row in pending if frappe.db.get_value(row.server_type, row.server, "status") != "Active"]
+		inactive = [
+			row.server
+			for row in pending
+			if frappe.db.get_value(row.server_type, row.server, "status") != "Active"
+		]
 		if inactive:
 			frappe.throw(f"Not Active: {', '.join(inactive)} — delete their rows first.")
 		self.check_release_is_published()
@@ -125,7 +138,9 @@ class PathwayUpdate(StepHandler, Document):
 		url = f"https://github.com/{self.repo}/releases/download/{self.release}/sha256sums.txt"
 		response = requests.head(url, allow_redirects=True, timeout=10)
 		if response.status_code != 200:
-			frappe.throw(f"{self.repo} has no published release {self.release}: {url} answered {response.status_code}.")
+			frappe.throw(
+				f"{self.repo} has no published release {self.release}: {url} answered {response.status_code}."
+			)
 
 	@frappe.whitelist()
 	def stop(self):
@@ -138,8 +153,14 @@ class PathwayUpdate(StepHandler, Document):
 
 	def enqueue_steps(self):
 		frappe.enqueue_doc(
-			self.doctype, self.name, "_execute_steps", steps=self.servers, commit=True,
-			queue="long", timeout=18000, enqueue_after_commit=True,
+			self.doctype,
+			self.name,
+			"_execute_steps",
+			steps=self.servers,
+			commit=True,
+			queue="long",
+			timeout=18000,
+			enqueue_after_commit=True,
 		)
 
 	def _execute_steps(self, steps, **kwargs):

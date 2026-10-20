@@ -64,9 +64,7 @@ class TestWhatBlocksAnArchive(unittest.TestCase):
 		with patch.object(frappe, "get_all", side_effect=get_all):
 			blockers = MonitoringAgent.archive_blockers.fget(SimpleNamespace(name="ma-1"))
 		self.assertEqual(len(blockers), 2)
-		self.assertEqual(
-			set(get_all.asked), {"Inference Server", "Ingress Server", "Gateway Server", "Pod"}
-		)
+		self.assertEqual(set(get_all.asked), {"Inference Server", "Ingress Server", "Gateway Server", "Pod"})
 		for filters in get_all.asked.values():
 			self.assertEqual(filters, {"monitoring_agent": "ma-1", "status": LIVE})
 
@@ -101,9 +99,12 @@ class TestWhatBlocksAnArchive(unittest.TestCase):
 class TestArchive(unittest.TestCase):
 	def server(self, blockers=(), status="Active", machine="m-1"):
 		doc = SimpleNamespace(
-			name="s-1", machine=machine, status=status,
+			name="s-1",
+			machine=machine,
+			status=status,
 			archive_blockers=list(blockers),
-			reload=lambda: None, saved=[],
+			reload=lambda: None,
+			saved=[],
 		)
 		doc.save = lambda: doc.saved.append(doc.status)
 		return doc
@@ -149,7 +150,9 @@ class TestArchive(unittest.TestCase):
 
 class TestANewInferenceServerTakesTheNetworksSingletons(unittest.TestCase):
 	def defaults(self, ingresses, agents, ingress=None, agent=None, standalone=0):
-		doc = SimpleNamespace(machine="m-1", ingress=ingress, monitoring_agent=agent, is_standalone=standalone)
+		doc = SimpleNamespace(
+			machine="m-1", ingress=ingress, monitoring_agent=agent, is_standalone=standalone
+		)
 		doc.get = lambda field: getattr(doc, field)
 		doc.set = lambda field, value: setattr(doc, field, value)
 		get_all = rows({"Machine": ["m-1", "m-2"], "Ingress Server": ingresses, "Monitoring Agent": agents})
@@ -189,4 +192,6 @@ class TestEveryServerIsAServer(unittest.TestCase):
 		for cls in (InferenceServer, IngressServer, GatewayServer, MonitoringAgent, GatewayStore):
 			with self.subTest(cls.__name__):
 				self.assertTrue(issubclass(cls, Server))
-				self.assertEqual(cls.get_generated_name(SimpleNamespace(machine="inf1-ap-south-1")), "inf1-ap-south-1")
+				self.assertEqual(
+					cls.get_generated_name(SimpleNamespace(machine="inf1-ap-south-1")), "inf1-ap-south-1"
+				)

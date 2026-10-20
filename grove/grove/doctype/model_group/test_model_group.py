@@ -21,7 +21,9 @@ class IntegrationTestModelGroup(IntegrationTestCase):
 		return frappe.get_doc({"doctype": "Model Group", "__newname": name, "geography": geography, **fields})
 
 	def test_a_vendor_model_of_another_geography_is_refused_and_ours_is_not(self):
-		vendor = provider("group-vendor", base_url="https://group.test/v1", api_key="k", geography=self.away).insert()
+		vendor = provider(
+			"group-vendor", base_url="https://group.test/v1", api_key="k", geography=self.away
+		).insert()
 		theirs = vendor_model("group-big", vendor.name).insert().name
 		ours = our_model("group-ours-7b").insert().name
 		self.group("group-ours", self.here, models=[{"model": ours}]).insert()
@@ -38,6 +40,8 @@ class IntegrationTestModelGroup(IntegrationTestCase):
 		away = self.group("group-default-away", self.away, is_default=1).insert().name
 		second = self.group("group-default-second", self.here, is_default=1).insert().name
 		ticked = frappe.get_all(
-			"Model Group", filters={"is_default": 1, "geography": ("in", [self.here, self.away])}, pluck="name"
+			"Model Group",
+			filters={"is_default": 1, "geography": ("in", [self.here, self.away])},
+			pluck="name",
 		)
 		self.assertEqual(sorted(ticked), sorted([away, second]))

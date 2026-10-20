@@ -36,7 +36,9 @@ class TestKeyStatsPull(IntegrationTestCase):
 
 	def rows(self):
 		rows = frappe.get_all(
-			"Provider Key Stats", filters={"model_provider": self.vendor.name}, order_by="creation asc",
+			"Provider Key Stats",
+			filters={"model_provider": self.vendor.name},
+			order_by="creation asc",
 			fields=["gateway_store", "stats", "key_title", "model_provider"],
 		)
 		for row in rows:
@@ -44,15 +46,26 @@ class TestKeyStatsPull(IntegrationTestCase):
 		return rows
 
 	def test_a_dialled_key_lands_as_the_store_counted_it(self):
-		outcome, rows = self.settle({
-			self.key: {"requests": "3", "ok": "2", "unpaid": "1", "rejected": "1", "last_used": "1700000000"},
-			"nobody": {"requests": "9"},
-		})
+		outcome, rows = self.settle(
+			{
+				self.key: {
+					"requests": "3",
+					"ok": "2",
+					"unpaid": "1",
+					"rejected": "1",
+					"last_used": "1700000000",
+				},
+				"nobody": {"requests": "9"},
+			}
+		)
 		self.assertTrue(outcome)
 		self.assertEqual((rows[0]["had_data"], rows[0]["detail"]), (1, "keys:1"))
 		self.assertNotIn("stats", rows[0])
 		[row] = self.rows()
-		self.assertEqual((row.gateway_store, row.stats["requests"], row.stats["unpaid"], row.stats["rejected"]), ("store-a", 3, 1, 1))
+		self.assertEqual(
+			(row.gateway_store, row.stats["requests"], row.stats["unpaid"], row.stats["rejected"]),
+			("store-a", 3, 1, 1),
+		)
 		self.assertEqual((row.key_title, row.model_provider), ("key", self.vendor.name))
 		self.assertEqual(row.stats["forbidden"], 0)
 		self.assertRegex(row.stats["last_used"], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")

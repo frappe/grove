@@ -1,8 +1,9 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
-import frappe
 from abc import ABC, abstractmethod
+
+import frappe
 
 
 class CloudClientError(Exception):
@@ -19,8 +20,14 @@ class CloudClient(ABC):
 
 	@abstractmethod
 	def run_instance(
-		self, name, instance_type, image_id, subnet_id, security_group_ids,
-		root_volume_gb, ssh_public_keys="",
+		self,
+		name,
+		instance_type,
+		image_id,
+		subnet_id,
+		security_group_ids,
+		root_volume_gb,
+		ssh_public_keys="",
 	):
 		"""Launch one instance, tagged with the Machine's name and authorised for the given SSH
 		public keys however this provider injects them. See get_instance for the shape."""

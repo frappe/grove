@@ -179,7 +179,9 @@ def record_drain(outcome, rows, gateway_store=None):
 			continue
 		start = time.monotonic()
 		try:
-			pulled, acks, dead_acks, stuck = record_drains(row["server"], drains, dead, gateway_store=gateway_store)
+			pulled, acks, dead_acks, stuck = record_drains(
+				row["server"], drains, dead, gateway_store=gateway_store
+			)
 			row["had_data"] = 1 if pulled else 0
 			row["detail"] = f"pulled:{pulled} stuck:{stuck}" if stuck else f"pulled:{pulled}"
 			if spool.get("depth") or spool.get("dead"):
@@ -268,7 +270,9 @@ def teams_of_keys(drains):
 	prefixes = {prefix for keys in drains.values() for prefix in keys}
 	if not prefixes:
 		return {}
-	rows = frappe.get_all("Grove API Key", filters={"name": ("in", sorted(prefixes))}, fields=["name", "team"])
+	rows = frappe.get_all(
+		"Grove API Key", filters={"name": ("in", sorted(prefixes))}, fields=["name", "team"]
+	)
 	return {row.name: row.team for row in rows}
 
 

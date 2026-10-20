@@ -21,6 +21,7 @@ class Tier(Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
+
 		from grove.grove.doctype.model_limit.model_limit import ModelLimit
 
 		limits: DF.Table[ModelLimit]
