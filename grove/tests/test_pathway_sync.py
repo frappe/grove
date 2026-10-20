@@ -600,7 +600,7 @@ class TestAPush(unittest.TestCase):
 		self.assertEqual((row["success"], row["error"], row["payload"]), (0, "ValidationError: no admin_url", []))
 
 	def test_a_box_with_no_admin_url_resolves_to_its_reason(self):
-		with unittest.mock.patch.object(frappe, "get_doc", side_effect=ValueError("no admin_url")):
+		with unittest.mock.patch.object(frappe, "get_cached_doc", side_effect=ValueError("no admin_url")):
 			target = Target.resolve("Gateway Server", "gw1")
 		self.assertEqual(target.error, "ValueError: no admin_url")
 

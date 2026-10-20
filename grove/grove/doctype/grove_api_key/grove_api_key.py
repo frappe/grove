@@ -107,21 +107,22 @@ class GroveAPIKey(Document):
 			self.validate_cap()
 
 	def validate_cap(self):
-		"""A raise or a mint keeps what the month binds of the team's spend limit within it: each live key's cap or what it spent this month, whichever is more, plus what revoked
-		keys spent (`pricing.committed`), with what the boxes hold this moment on top of the
-		records (`usage.peek_team`, or what the caller just read), since the hourly pull is up to
-		an hour behind and a revoked key's counter leaves the box with it; so moving a spent cap to
-		another key, or revoking and minting afresh, frees nothing. Only a raise is checked: a
-		lowered limit stops no key and a key can always be minted at 0, refused until capped."""
-		if self.status != "active":
+		"""A raise or a mint keeps what the month binds of the team's spend limit within it: each
+		live key's cap or what it spent this month, whichever is more, plus what revoked keys spent
+		(`pricing.committed`), a key's month being the records or what its box counts, whichever is
+		more (`usage.peek_team`): the hourly pull is up to an hour behind, and a revoked key's
+		counter leaves the box with it. So moving a spent cap to another key, or revoking and
+		minting afresh, frees nothing. Only a raise is checked: a lowered limit stops no key and a
+		key can always be minted at 0, refused until capped. `flags.cap_checked` says the caller
+		checked the whole batch (`api.update_caps`, lowers first, so no step passes what the end
+		does not)."""
+		if self.status != "active" or self.flags.cap_checked:
 			return
-		pending = self.flags.pending_spend
-		if pending is None:
-			from grove.pathway.usage import peek_team
+		from grove.pathway.usage import peek_team
 
-			pending = peek_team(self.team)
+		box_spent = peek_team(self.team)
 		team = team_limits(self.team, for_update=True)
-		total = committed(self.team, {self.name: self.cap}, pending=pending)
+		total = committed(self.team, {self.name: self.cap}, box_spent=box_spent)
 		if total > flt(team.spend_limit, 9):
 			frappe.throw(
 				f"This month's spend and caps would add up to {usd(total)} of a spend limit of "

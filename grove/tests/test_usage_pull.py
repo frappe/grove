@@ -16,9 +16,11 @@ from frappe.utils import getdate
 
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.billing.doctype.stuck_usage.stuck_usage import StuckUsage
+from grove.billing.pricing import committed
 from grove.pathway import reconcile, run, usage
 from grove.pathway.reconcile import FIELDS, Reconciler
 from grove.pathway.run import Target
+from grove.tests.test_api_permissions import billed_record
 from grove.utils import utc_today
 
 
@@ -312,9 +314,41 @@ class TestAPullForOneTeam(PullCase):
 			self.assertEqual(pull.units(), ["unit"])
 		units.assert_called_once_with(None, geography=frappe.db.get_value("Grove API Key", keys[0], "geography"))
 		self.assertEqual(sorted(pull.keys), keys)
+		self.assertEqual(sorted(pull.hashes.values()), keys)
 
 	def test_a_team_with_no_keys_pulls_nothing(self):
 		self.assertEqual(usage.Usage(team=self.central_team("usage-one-nokeys@grove.test")).units(), [])
+
+
+class TestTheCheckReadsTheBoxesForRealKeys(PullCase):
+	"""`peek_team` end to end over real keys, only HTTP faked: the ids it sends are the keys' own
+	hashes, the answer comes back by key name in USD, a key the box does not name is left out, and
+	`committed` takes the box or the records, whichever is more."""
+
+	email = "usage-check@grove.test"
+	box = "usage-check-box"
+
+	def test_the_box_figure_lands_on_its_key_and_the_check_takes_the_larger(self):
+		first, second = self.key(), self.key()
+		hashes = dict(
+			frappe.get_all("Grove API Key", filters={"team": self.team}, fields=["name", "key_hash"], as_list=True)
+		)
+		billed_record(first, self.team, self.day, 4)
+		asked = []
+		response = unittest.mock.Mock()
+		response.json.return_value = {hashes[first]: 7_000_000_000, "stranger": 1}
+		target = Target("Gateway Server", self.gateway, "http://box", "t")
+		with (
+			unittest.mock.patch.object(usage, "gateway_units", return_value=[run.Unit(self.store, (target,))]),
+			unittest.mock.patch("grove.pathway.run.requests.get", side_effect=lambda url, **_: asked.append(url) or response),
+		):
+			spent = usage.peek_team(self.team)
+		[url] = asked
+		path, ids = url.split("?ids=")
+		self.assertEqual((path, set(ids.split(","))), ("http://box/spent", {hashes[first], hashes[second]}))
+		self.assertEqual(spent, {first: Decimal("7")})
+		self.assertEqual(committed(self.team, lock=False, box_spent=spent), 7.0)
+		self.assertEqual(committed(self.team, lock=False, box_spent={first: Decimal("2")}), 4.0)
 
 
 class TestADrainIsAcknowledgedOnceRecorded(unittest.TestCase):
@@ -520,87 +554,57 @@ class TestFetchUsage(unittest.TestCase):
 		self.assertEqual((row["success"], row["error"]), (0, "no admin_url"))
 
 
-class TestACapCheckPeeksAtTheBoxes(unittest.TestCase):
-	"""`peek_team` reads what the boxes hold of a team without moving it, and refuses rather than
-	answer stale: pushes paused, a pull holding the lock, a store it could not read. Pure."""
+class TestACapCheckReadsEachKeysOwnCounter(unittest.TestCase):
+	"""`peek_team` reads what the boxes count as this month's spend of a team's keys, off each key's
+	own counter, and refuses rather than answer stale: pushes paused, a store it could not read.
+	No lock and no run doc: it reads beside a pull. Pure."""
 
-	def peek(self, answer=None, skipped=None, paused=False):
+	def peek(self, answer=None, paused=False):
 		fake = unittest.mock.MagicMock()
-		fake.run.return_value, fake.skipped = answer, skipped
+		fake.run.return_value = answer
 		db = frappe._dict(get_single_value=lambda _doctype, field: paused and field == "pause_projection")
 		with (
 			unittest.mock.patch.object(usage, "Peek", return_value=fake) as cls,
 			unittest.mock.patch.object(frappe, "db", db),
 		):
 			result = usage.peek_team("T-1")
-		cls.assert_called_once_with(trigger="Manual", wait=30, team="T-1")
+		cls.assert_called_once_with(trigger="Manual", team="T-1")
 		return result
 
-	def test_what_the_boxes_hold_comes_back_in_dollars_per_key(self):
-		self.assertEqual(self.peek({"ok": True, "pending": {"k1": 15_500}}), {"k1": Decimal("0.0000155")})
-		self.assertEqual(self.peek(skipped="nothing"), {})
+	def test_what_the_boxes_count_comes_back_in_dollars_per_key(self):
+		self.assertEqual(self.peek({"ok": True, "spent": {"k1": 15_500}}), {"k1": Decimal("0.0000155")})
+		self.assertEqual(self.peek({"ok": True, "spent": {}}), {})
 
 	def test_it_refuses_rather_than_answer_stale(self):
-		cases = ({"paused": True}, {"skipped": "locked"}, {"answer": {"ok": False, "pending": {}}})
-		for case in cases:
+		for case in ({"paused": True}, {"answer": {"ok": False, "spent": {}}}):
 			with self.subTest(**case), self.assertRaises(frappe.ValidationError):
 				self.peek(**case)
 
-	def test_pending_is_what_no_record_has_yet(self):
-		rows = [{
-			"success": 1,
-			"drains": {
-				"": {"k1": {"2026-10-13": {"cost": "100", "request_count": "4"}}},
-				"d1": {"k1": {"2026-10-12": {"cost": "40"}}, "k2": {"2026-10-12": {"cost": "7"}}},
-			},
-			"dead": [
-				{"id": "r9", "line": json.dumps({"prefix": "k2", "fields": {"cost": 3}})},
-				{"id": "", "line": "?"},
-			],
-		}]
-		landed = [frappe._dict(drain_id="d1", api_key="k2", day="2026-10-12")]
-		with (
-			unittest.mock.patch.object(frappe, "get_all", return_value=landed) as get_all,
-			unittest.mock.patch.object(usage, "utc_today", return_value=getdate("2026-10-13")),
-		):
-			self.assertEqual(usage.pending_spend(rows), {"k1": 140, "k2": 3})
-		self.assertEqual(get_all.call_args.kwargs["filters"], {"drain_id": ("in", ["d1"])})
-
-	def test_another_months_bucket_is_not_this_months_spend(self):
-		rows = [{
-			"success": 1,
-			"drains": {
-				"": {"k1": {"2026-09-30": {"cost": "100"}, "2026-10-01": {"cost": "5"}, "": {"cost": "1"}}},
-				"d0": {"k1": {"2026-09-29": {"cost": "40"}}},
-			},
-			"dead": [
-				{"id": "r8", "line": json.dumps({"prefix": "k1", "at": "2026-09-30T23:59:00Z", "fields": {"cost": 7}})},
-				{"id": "r9", "line": json.dumps({"prefix": "k1", "fields": {"cost": 2}})},
-			],
-		}]
-		with (
-			unittest.mock.patch.object(frappe, "get_all", return_value=[]),
-			unittest.mock.patch.object(usage, "utc_today", return_value=getdate("2026-10-13")),
-		):
-			self.assertEqual(usage.pending_spend(rows), {"k1": 8})
-
 	def test_a_store_answers_through_whichever_writer_got_through(self):
+		"""Answers come back by key name, summed over the stores that hold the key; a key no store
+		holds is left out, and so is a hash that was never asked for."""
 		failed = {"success": 0, "error": "down"}
-		answered = {"success": 1, "drains": {"": {"k1": {"2026-10-13": {"cost": "9"}}}}, "dead": []}
+		answered = {"success": 1, "spent": {"h1": 9, "h9": 1}}
+		elsewhere = {"success": 1, "spent": {"h1": 2}}
 		peek = usage.Peek.__new__(usage.Peek)
-		with (
-			unittest.mock.patch.object(frappe, "get_all", return_value=[]),
-			unittest.mock.patch.object(usage, "utc_today", return_value=getdate("2026-10-13")),
-		):
-			self.assertEqual(peek.record([(True, [failed, answered])]), {"ok": True, "pending": {"k1": 9}})
-			self.assertEqual(peek.record([(False, [failed])]), {"ok": False, "pending": {}})
+		peek.hashes = {"h1": "k1", "h2": "k2"}
+		self.assertEqual(
+			peek.record([(True, [failed, answered]), (True, [elsewhere])]), {"ok": True, "spent": {"k1": 11}}
+		)
+		self.assertEqual(peek.record([(False, [failed])]), {"ok": False, "spent": {}})
 
-	def test_a_peek_asks_without_setting_aside(self):
+	def test_it_takes_no_lock_and_logs_no_run(self):
+		peek = usage.Peek(trigger="Manual", team="T-1")
+		with (
+			unittest.mock.patch.object(peek, "units", return_value=[]),
+			unittest.mock.patch.object(run, "new_run", side_effect=AssertionError("a run doc was built")),
+		):
+			self.assertEqual(peek.run(), {"ok": True, "spent": {}})
+
+	def test_a_read_asks_for_every_hash_in_one_call(self):
 		asked = []
 		target = unittest.mock.MagicMock()
-		target.get.side_effect = lambda path, timeout: asked.append(path) or {"drains": {}}
+		target.get.side_effect = lambda path: asked.append(path) or {"h1": 5}
 		target.dial.side_effect = lambda work, **row: work(row) or row
-		usage.fetch_usage(target, ["k1", "k2"], peek=True)
-		usage.fetch_usage(target, ["k1"])
-		usage.fetch_usage(target)
-		self.assertEqual(asked, ["usage?keys=k1,k2&peek=1", "usage?keys=k1", "usage"])
+		self.assertEqual(usage.fetch_spent(target, ["h1", "h2"])["spent"], {"h1": 5})
+		self.assertEqual(asked, ["spent?ids=h1,h2"])

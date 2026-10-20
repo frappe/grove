@@ -138,10 +138,10 @@ it holds no money that must not run out. What gates is:
   each live key's cap or what it spent this month, whichever is more, plus what revoked keys spent
   (`pricing.committed`), so the keys together never outspend the tier on any mix of stores, and
   moving a spent cap to another key or revoking and minting afresh frees nothing. Only a raise, a
-  mint or a revive is checked, against what the boxes hold of the team at that moment on top of
-  the records (`usage.peek_team`: read without moving it, landed by the next pull; refused rather
-  than stale while a store cannot be read, another pull holds the lock or pushes are paused). A
-  lowered limit stops no key, it
+  mint or a revive is checked, a key's month being the records or what its box counts, whichever
+  is more (`usage.peek_team`: each key's own counter, the one its cap is gated on, read in one call
+  per store with no lock; refused rather than stale while a store cannot be read or pushes are
+  paused). A lowered limit stops no key, it
   refuses a new cap or a raise until the caps fit; a revoke frees the key's cap, never its spend.
   A team with no tier runs under the default tier (Grove Settings), and a tier Central names
   before Grove has one is created as a copy of it. **Override Max Keys** on the team pins its own

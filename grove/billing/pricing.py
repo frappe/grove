@@ -193,14 +193,16 @@ def usd(amount):
 	return f"{float(amount):.9f}".rstrip("0").rstrip(".") or "0"
 
 
-def committed(team, caps=None, lock=True, pending=None):
+def committed(team, caps=None, lock=True, box_spent=None):
 	"""USD of the team's spend limit the month has spoken for: each live key's cap or what it spent
 	this month, whichever is more, plus what its revoked keys spent — a revoke frees a cap, never
 	the spend. `caps` are proposed caps by key name, over the live keys' own; one for a key with no
-	row yet counts as given. `pending` is what the boxes hold per key that no record has yet
-	(`usage.peek_team`), on top of the records. `lock` reads the keys FOR UPDATE, so two raises
-	serialized on the team row see each other's caps rather than the snapshot taken before the
-	lock."""
+	row yet counts as given. `box_spent` is what the boxes count for each key this month
+	(`usage.peek_team`): a key's month is that or the records, whichever is more — the records lag
+	the boxes by up to an hour, the boxes lose what a restore or a dead spool line left behind, and
+	everything recorded was counted on a box first, so a sum would double. `lock` reads the keys
+	FOR UPDATE, so two raises serialized on the team row see each other's caps rather than the
+	snapshot taken before the lock."""
 	keys = frappe.db.sql(
 		"select name, cap, status from `tabGrove API Key` where team = %s" + (" for update" if lock else ""),
 		[team],
@@ -210,7 +212,7 @@ def committed(team, caps=None, lock=True, pending=None):
 	caps = dict(caps or {})
 	total = Decimal(0)
 	for k in keys:
-		month = spent.get(k.name, Decimal(0)) + Decimal(str((pending or {}).get(k.name, 0)))
+		month = max(spent.get(k.name, Decimal(0)), Decimal(str((box_spent or {}).get(k.name, 0))))
 		cap = Decimal(str(caps.pop(k.name, k.cap) or 0)) if k.status == "active" else Decimal(0)
 		total += max(cap, month)
 	total += sum((Decimal(str(cap or 0)) for cap in caps.values()), Decimal(0))

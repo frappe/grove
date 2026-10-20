@@ -64,8 +64,9 @@ def update_caps(team: str, caps: dict[str, float]):
 	"""Set several monthly caps of `team`'s live keys at once, {key: USD}. Lowered caps are saved
 	first, so moving a cap from one key to another fits the spend limit midway as well; any
 	refusal leaves every cap as it was. What the limit holds is this month's spend and the caps
-	together (`pricing.committed`), with what the boxes hold read first: a cap a key already
-	spent frees nothing when moved. → the keys as `keys` lists them."""
+	together (`pricing.committed`), with what the boxes count read first: a cap a key already
+	spent frees nothing when moved. Checked once for the batch; no save checks again. → the keys
+	as `keys` lists them."""
 	frappe.only_for(ALLOWED_ROLES)
 	from grove.billing.pricing import committed, usd
 	from grove.pathway.usage import peek_team
@@ -75,16 +76,16 @@ def update_caps(team: str, caps: dict[str, float]):
 	if revoked := [doc.name for doc in docs if doc.status != "active"]:
 		frappe.throw(f"{', '.join(revoked)} is revoked.")
 	raised = any(flt(caps[doc.name]) > flt(doc.cap) for doc in docs)
-	pending = peek_team(team) if raised else {}
+	box_spent = peek_team(team) if raised else {}
 	team_doc = team_limits(team, for_update=True)
-	total = committed(team, {doc.name: flt(caps[doc.name]) for doc in docs}, pending=pending)
+	total = committed(team, {doc.name: flt(caps[doc.name]) for doc in docs}, box_spent=box_spent)
 	if raised and total > flt(team_doc.spend_limit, 9):
 		frappe.throw(
 			f"This month's spend and caps would add up to {usd(total)} of a spend limit of {usd(team_doc.spend_limit)}."
 		)
 	for doc in sorted(docs, key=lambda doc: flt(caps[doc.name]) - flt(doc.cap)):
 		doc.cap = flt(caps[doc.name])
-		doc.flags.pending_spend = pending
+		doc.flags.cap_checked = True
 		doc.save()
 	return key_rows([doc.name for doc in docs])
 
