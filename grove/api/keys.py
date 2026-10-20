@@ -116,6 +116,26 @@ def revoke_key(team: str, key: str):
 	return "Revoked. Might take some time to reflect."
 
 
+@frappe.whitelist()
+def secrets(team: str):
+	"""Every live key of `team` with its secret, for the control client to hand the team's servers:
+	`name`, `title`, `geography`, `gateway_url` and `api_key` each, newest first. A revoked key is
+	not in it. An unknown team is refused."""
+	frappe.only_for(ALLOWED_ROLES)
+	from frappe.utils.password import get_decrypted_password
+
+	rows = frappe.get_list(
+		"Grove API Key",
+		filters={"team": get_team(team), "status": "active"},
+		fields=["name", "title", "geography"],
+		order_by="creation desc",
+	)
+	for row in rows:
+		row["gateway_url"] = get_gateway_url(row.geography)
+		row["api_key"] = get_decrypted_password("Grove API Key", row.name, "api_secret")
+	return rows
+
+
 def get_gateway_url(geography):
 	"""Where a key of `geography` works: its endpoint, None while it has none."""
 	host = frappe.db.get_value("Geography", geography, "endpoint")
