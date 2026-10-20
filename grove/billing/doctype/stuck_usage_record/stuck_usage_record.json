@@ -1,0 +1,54 @@
+{
+ "actions": [],
+ "creation": "2026-10-20 00:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "usage_record",
+  "api_key",
+  "day"
+ ],
+ "fields": [
+  {
+   "columns": 4,
+   "fieldname": "usage_record",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Usage Record",
+   "options": "Usage Record",
+   "reqd": 1
+  },
+  {
+   "columns": 4,
+   "fetch_from": "usage_record.api_key",
+   "fieldname": "api_key",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "API Key",
+   "options": "Grove API Key",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "fetch_from": "usage_record.day",
+   "fieldname": "day",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Day (UTC)",
+   "read_only": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-20 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Stuck Usage Record",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

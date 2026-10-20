@@ -15,6 +15,8 @@
   "first_failed",
   "last_failed",
   "attempts",
+  "section_landed",
+  "usage_records",
   "section_error",
   "last_error",
   "last_payload"
@@ -93,6 +95,20 @@
    "read_only": 1
   },
   {
+   "depends_on": "resolved",
+   "fieldname": "section_landed",
+   "fieldtype": "Section Break",
+   "label": "Landed"
+  },
+  {
+   "description": "The Usage Records the pull that resolved this row wrote.",
+   "fieldname": "usage_records",
+   "fieldtype": "Table",
+   "label": "Usage Records",
+   "options": "Stuck Usage Record",
+   "read_only": 1
+  },
+  {
    "fieldname": "section_error",
    "fieldtype": "Section Break"
   },
@@ -112,7 +128,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-09-28 18:00:00.000000",
+ "modified": "2026-10-20 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Stuck Usage",

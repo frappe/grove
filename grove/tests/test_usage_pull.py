@@ -268,7 +268,10 @@ class TestAStuckTeamHoldsOnlyItselfBack(PullCase):
 		self.assertEqual((self.stuck(store).attempts, self.stuck(store).resolved), (2, 0))
 		self.assertEqual(self.pull({key: {"request_count": "1"}}, drain_id="d8", store=store), (1, {"d8": {key: [self.today]}}, [], 0))
 		self.assertEqual((self.stuck(store).resolved, bool(self.stuck(store).resolved_on)), (1, True))
-		self.assertEqual([r.drain_id for r in self.records(key)], ["d8"])
+		[record] = self.records(key)
+		self.assertEqual(record.drain_id, "d8")
+		landed = [(r.usage_record, r.api_key, str(r.day)) for r in self.stuck(store).usage_records]
+		self.assertEqual(landed, [(record.name, key, self.today)])
 
 	def test_pull_now_pulls_just_that_team(self):
 		key, store = self.key(), a_store("usage-stuck-pull-now-store")
@@ -281,12 +284,20 @@ class TestAStuckTeamHoldsOnlyItselfBack(PullCase):
 	def test_log_settings_clears_old_resolved_rows_and_keeps_open_ones(self):
 		self.assertTrue(_supports_log_clearing("Stuck Usage"))
 		long_ago = frappe.utils.add_days(frappe.utils.now_datetime(), -100)
-		old = frappe.get_doc({"doctype": "Stuck Usage", "team": self.team, "gateway_store": self.store, "resolved": 1, "resolved_on": long_ago}).insert(ignore_permissions=True)
+		key = self.key()
+		self.pull({key: {"request_count": "1"}}, drain_id="d11")
+		[record] = self.records(key)
+		old = frappe.get_doc({
+			"doctype": "Stuck Usage", "team": self.team, "gateway_store": self.store, "resolved": 1,
+			"resolved_on": long_ago, "usage_records": [{"usage_record": record.name}],
+		}).insert(ignore_permissions=True)
 		open_row = frappe.get_doc({"doctype": "Stuck Usage", "team": self.team, "gateway_store": a_store("usage-stuck-open-store")}).insert(ignore_permissions=True)
 		open_row.db_set("creation", long_ago)
 		StuckUsage.clear_old_logs(days=90)
 		self.assertFalse(frappe.db.exists("Stuck Usage", old.name))
+		self.assertFalse(frappe.db.exists("Stuck Usage Record", {"parent": old.name}))
 		self.assertTrue(frappe.db.exists("Stuck Usage", open_row.name))
+		self.assertTrue(frappe.db.exists("Usage Record", record.name))
 
 
 class TestAPullForOneTeam(PullCase):

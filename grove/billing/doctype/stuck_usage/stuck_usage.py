@@ -21,6 +21,8 @@ class StuckUsage(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		from grove.billing.doctype.stuck_usage_record.stuck_usage_record import StuckUsageRecord
+
 		api_keys: DF.SmallText | None
 		attempts: DF.Int
 		dead_line: DF.Data | None
@@ -32,6 +34,7 @@ class StuckUsage(Document):
 		resolved: DF.Check
 		resolved_on: DF.Datetime | None
 		team: DF.Link | None
+		usage_records: DF.Table[StuckUsageRecord]
 	# end: auto-generated types
 
 	@frappe.whitelist()
@@ -51,9 +54,15 @@ class StuckUsage(Document):
 
 	@staticmethod
 	def clear_old_logs(days=RETENTION_DAYS):
-		"""Log Settings: rows resolved more than `days` ago. An open row stays whatever its age."""
+		"""Log Settings: rows resolved more than `days` ago, and the records they list. An open row
+		stays whatever its age."""
 		cutoff = add_days(now_datetime(), -cint(days))
-		frappe.db.delete("Stuck Usage", {"resolved": 1, "resolved_on": ("<", cutoff)})
+		names = frappe.get_all(
+			"Stuck Usage", filters={"resolved": 1, "resolved_on": ("<", cutoff)}, pluck="name"
+		)
+		if names:
+			frappe.db.delete("Stuck Usage Record", {"parent": ("in", names)})
+			frappe.db.delete("Stuck Usage", {"name": ("in", names)})
 
 
 def record_stuck(team, gateway_store, shares, dead_line=None):
@@ -77,11 +86,25 @@ def record_stuck(team, gateway_store, shares, dead_line=None):
 	}).insert(ignore_permissions=True).name
 
 
-def resolve_stuck(team, gateway_store):
-	"""The team's usage on `gateway_store` landed: close the open row, if there is one."""
+def resolve_stuck(team, gateway_store, shares):
+	"""The team's usage on `gateway_store` landed: close the open row, if there is one, listing the
+	Usage Records of `shares` — its drains and keys — so the row leads to what it was waiting for."""
 	name = frappe.db.get_value(
 		"Stuck Usage", {"team": team, "gateway_store": gateway_store, "resolved": 0, "dead_line": ("is", "not set")}
 	)
-	if name:
-		frappe.db.set_value("Stuck Usage", name, {"resolved": 1, "resolved_on": now_datetime()})
+	if not name:
+		return None
+	keys = sorted({key for hashes in shares.values() for key in hashes})
+	records = frappe.get_all(
+		"Usage Record",
+		filters={"drain_id": ("in", list(shares)), "api_key": ("in", keys)},
+		order_by="api_key asc, day asc",
+		pluck="name",
+	)
+	doc = frappe.get_doc("Stuck Usage", name)
+	doc.resolved, doc.resolved_on = 1, now_datetime()
+	for record in records:
+		doc.append("usage_records", {"usage_record": record})
+	# The pull runs as whoever triggered it; the row is the pull's own, not theirs.
+	doc.save(ignore_permissions=True)
 	return name

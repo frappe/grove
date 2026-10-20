@@ -265,7 +265,7 @@ def record_drains(proxy_name, drains, dead=(), gateway_store=None):
 					Reconciler(book, served_on(day, drain_id), gateway_store, drain_id, landed).team(
 						team, {k: parse_drain(h, book.counters) for k, h in hashes.items()}
 					)
-			resolve_stuck(team, gateway_store)
+			resolve_stuck(team, gateway_store, shares)
 		except Exception:
 			frappe.db.rollback(save_point="usage_team")
 			record_stuck(team, gateway_store, shares)
