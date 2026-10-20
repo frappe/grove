@@ -61,7 +61,9 @@ def on_doctype_update():
 	for older in ("unique_drain_key", "unique_drain_key_billed", "unique_drain_key_day_billed"):
 		if frappe.db.has_index("tabUsage Record", older):
 			frappe.db.sql_ddl(f"alter table `tabUsage Record` drop index {older}")
-	frappe.db.add_unique("Usage Record", ["drain_id", "api_key", "day"], constraint_name="unique_drain_key_day")
+	frappe.db.add_unique(
+		"Usage Record", ["drain_id", "api_key", "day"], constraint_name="unique_drain_key_day"
+	)
 	frappe.db.add_index("Usage Record", ["team", "day"])
 	frappe.db.add_index("Usage Record", ["api_key", "day"])
 

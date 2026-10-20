@@ -62,12 +62,14 @@ def parse_gpus(instance_type_info):
 		for _ in range(entry.get("Count") or 0):
 			# The placeholder id IS the slot: `plan_reconcile` matches on it.
 			index = len(gpus)
-			gpus.append({
-				"gpu_index": index,
-				"gpu_model": entry.get("Name") or "",
-				"vram_gb": vram_gb_from_mib(memory_mib),
-				"device_id": str(index),
-			})
+			gpus.append(
+				{
+					"gpu_index": index,
+					"gpu_model": entry.get("Name") or "",
+					"vram_gb": vram_gb_from_mib(memory_mib),
+					"device_id": str(index),
+				}
+			)
 	return gpus
 
 
@@ -111,7 +113,9 @@ def build_ip_permission(rule):
 	"""One ingress rule → a boto3 IpPermission. A rule names exactly one source: a CIDR, or a
 	same-VPC security group."""
 	permission = {
-		"IpProtocol": rule["protocol"], "FromPort": rule["from_port"], "ToPort": rule["to_port"],
+		"IpProtocol": rule["protocol"],
+		"FromPort": rule["from_port"],
+		"ToPort": rule["to_port"],
 	}
 	if rule.get("cidr"):
 		permission["IpRanges"] = [{"CidrIp": rule["cidr"]}]
@@ -161,11 +165,16 @@ class EC2Client(CloudClient):
 			"InstanceType": instance_type,
 			"MinCount": 1,
 			"MaxCount": 1,
-			"BlockDeviceMappings": [{
-				"DeviceName": self.get_image_info(image_id)["root_device_name"],
-				"Ebs": {"VolumeSize": int(root_volume_gb), "VolumeType": "gp3",
-						"DeleteOnTermination": True},
-			}],
+			"BlockDeviceMappings": [
+				{
+					"DeviceName": self.get_image_info(image_id)["root_device_name"],
+					"Ebs": {
+						"VolumeSize": int(root_volume_gb),
+						"VolumeType": "gp3",
+						"DeleteOnTermination": True,
+					},
+				}
+			],
 			"TagSpecifications": [self._tags("instance", name)],
 		}
 		if subnet_id:
@@ -195,9 +204,9 @@ class EC2Client(CloudClient):
 	def get_instance(self, instance_id):
 		"""Fetch one instance → parsed (status, public_ip, private_ip, instance_type, image_id,
 		root_volume_gb)."""
-		reservations = self._call(
-			self.ec2.describe_instances, InstanceIds=[instance_id]
-		).get("Reservations") or []
+		reservations = (
+			self._call(self.ec2.describe_instances, InstanceIds=[instance_id]).get("Reservations") or []
+		)
 		for reservation in reservations:
 			for instance in reservation.get("Instances") or []:
 				return self._parse_instance(instance)
@@ -206,9 +215,10 @@ class EC2Client(CloudClient):
 	def get_instance_type_info(self, instance_type):
 		"""Local storage, GPUs, architecture and bare metal, in Grove's own shape — one
 		describe_instance_types call carries all four."""
-		types = self._call(
-			self.ec2.describe_instance_types, InstanceTypes=[instance_type]
-		).get("InstanceTypes") or []
+		types = (
+			self._call(self.ec2.describe_instance_types, InstanceTypes=[instance_type]).get("InstanceTypes")
+			or []
+		)
 		if not types:
 			raise AWSError(f"Instance type {instance_type} not available in {self.region}")
 		info = types[0]
@@ -244,11 +254,14 @@ class EC2Client(CloudClient):
 
 		IncludeAllInstances is load-bearing: without it the response silently omits an instance
 		that is not already running, and an empty list is indistinguishable from an answer."""
-		statuses = self._call(
-			self.ec2.describe_instance_status,
-			InstanceIds=[instance_id],
-			IncludeAllInstances=True,
-		).get("InstanceStatuses") or []
+		statuses = (
+			self._call(
+				self.ec2.describe_instance_status,
+				InstanceIds=[instance_id],
+				IncludeAllInstances=True,
+			).get("InstanceStatuses")
+			or []
+		)
 		if not statuses:
 			return False
 		return all(
@@ -274,9 +287,9 @@ class EC2Client(CloudClient):
 	def release_static_ip(self, allocation_id):
 		"""Disassociated first: AWS refuses to release one still attached, and an address left
 		allocated is billed by the hour."""
-		addresses = self._call(
-			self.ec2.describe_addresses, AllocationIds=[allocation_id]
-		).get("Addresses") or []
+		addresses = (
+			self._call(self.ec2.describe_addresses, AllocationIds=[allocation_id]).get("Addresses") or []
+		)
 		for address in addresses:
 			if address.get("AssociationId"):
 				self._call(self.ec2.disassociate_address, AssociationId=address["AssociationId"])
@@ -295,12 +308,13 @@ class EC2Client(CloudClient):
 		self._call(self.ec2.modify_vpc_attribute, VpcId=vpc_id, EnableDnsHostnames={"Value": True})
 
 		subnet_id = self._call(
-			self.ec2.create_subnet, VpcId=vpc_id, CidrBlock=subnet_cidr_block,
-			AvailabilityZone=availability_zone, TagSpecifications=[self._tags("subnet", name)],
+			self.ec2.create_subnet,
+			VpcId=vpc_id,
+			CidrBlock=subnet_cidr_block,
+			AvailabilityZone=availability_zone,
+			TagSpecifications=[self._tags("subnet", name)],
 		)["Subnet"]["SubnetId"]
-		self._call(
-			self.ec2.modify_subnet_attribute, SubnetId=subnet_id, MapPublicIpOnLaunch={"Value": True}
-		)
+		self._call(self.ec2.modify_subnet_attribute, SubnetId=subnet_id, MapPublicIpOnLaunch={"Value": True})
 
 		gateway_id = self._call(
 			self.ec2.create_internet_gateway,
@@ -313,23 +327,30 @@ class EC2Client(CloudClient):
 		)["RouteTables"]
 		route_table_id = route_tables[0]["RouteTableId"]
 		self._call(
-			self.ec2.create_route, RouteTableId=route_table_id,
-			DestinationCidrBlock="0.0.0.0/0", GatewayId=gateway_id,
+			self.ec2.create_route,
+			RouteTableId=route_table_id,
+			DestinationCidrBlock="0.0.0.0/0",
+			GatewayId=gateway_id,
 		)
 
 		return {
-			"vpc_id": vpc_id, "subnet_id": subnet_id,
-			"internet_gateway_id": gateway_id, "route_table_id": route_table_id,
+			"vpc_id": vpc_id,
+			"subnet_id": subnet_id,
+			"internet_gateway_id": gateway_id,
+			"route_table_id": route_table_id,
 			"availability_zone": availability_zone,
 		}
 
 	def get_first_availability_zone(self):
 		"""An available AZ in this region. Any one will do — Grove launches a single public
 		subnet, and which letter it lands in is not a choice worth asking an operator to make."""
-		zones = self._call(
-			self.ec2.describe_availability_zones,
-			Filters=[{"Name": "state", "Values": ["available"]}],
-		).get("AvailabilityZones") or []
+		zones = (
+			self._call(
+				self.ec2.describe_availability_zones,
+				Filters=[{"Name": "state", "Values": ["available"]}],
+			).get("AvailabilityZones")
+			or []
+		)
 		if not zones:
 			raise AWSError(f"No availability zone is available in {self.region}")
 		return zones[0]["ZoneName"]
@@ -364,9 +385,10 @@ class EC2Client(CloudClient):
 
 	def get_ingress_permissions(self, security_group_id, port):
 		"""This group's ingress permissions for exactly this port, as AWS reports them."""
-		groups = self._call(
-			self.ec2.describe_security_groups, GroupIds=[security_group_id]
-		).get("SecurityGroups") or []
+		groups = (
+			self._call(self.ec2.describe_security_groups, GroupIds=[security_group_id]).get("SecurityGroups")
+			or []
+		)
 		if not groups:
 			raise AWSError(f"Security group {security_group_id} does not exist")
 		return [
@@ -386,14 +408,10 @@ class EC2Client(CloudClient):
 		definition not in it."""
 		permissions = self.get_ingress_permissions(security_group_id, port)
 		current = {
-			ip_range["CidrIp"]
-			for permission in permissions
-			for ip_range in permission.get("IpRanges", [])
+			ip_range["CidrIp"] for permission in permissions for ip_range in permission.get("IpRanges", [])
 		}
 		source_groups = [
-			pair["GroupId"]
-			for permission in permissions
-			for pair in permission.get("UserIdGroupPairs", [])
+			pair["GroupId"] for permission in permissions for pair in permission.get("UserIdGroupPairs", [])
 		]
 
 		desired = set(cidrs)
@@ -419,9 +437,12 @@ class EC2Client(CloudClient):
 		self._call(self.ec2.modify_volume, VolumeId=volume_id, Size=int(size_gb))
 		start = time.time()
 		while time.time() - start < timeout_sec:
-			modifications = self._call(
-				self.ec2.describe_volumes_modifications, VolumeIds=[volume_id]
-			).get("VolumesModifications") or []
+			modifications = (
+				self._call(self.ec2.describe_volumes_modifications, VolumeIds=[volume_id]).get(
+					"VolumesModifications"
+				)
+				or []
+			)
 			# Empty right after modify_volume — the record is eventually consistent, so an
 			# absent one means "not started yet", not "done".
 			state = modifications[0].get("ModificationState") if modifications else "modifying"
@@ -438,9 +459,9 @@ class EC2Client(CloudClient):
 	def _root_volume_id(self, instance_id):
 		"""The instance's root EBS volume, off its own BlockDeviceMappings. get_instance returns
 		the parsed shape, which does not carry them, so this reads the raw instance."""
-		reservations = self._call(
-			self.ec2.describe_instances, InstanceIds=[instance_id]
-		).get("Reservations") or []
+		reservations = (
+			self._call(self.ec2.describe_instances, InstanceIds=[instance_id]).get("Reservations") or []
+		)
 		for reservation in reservations:
 			for instance in reservation.get("Instances") or []:
 				if volume_id := root_volume_id(instance):

@@ -18,10 +18,19 @@ from grove.utils import utc_today
 def a_record(day, drain_id, landed=None):
 	"""A bare row served on `day` and landed on `landed` (the same day unless said): the purge reads
 	those two and nothing else, so no key or team has to exist."""
-	doc = frappe.get_doc({
-		"doctype": "Usage Record", "api_key": "k", "team": "t", "day": day, "drain_id": drain_id,
-		"request_count": 1, "cost": 0, "gateway_cost": 0, "usage": "[]",
-	})
+	doc = frappe.get_doc(
+		{
+			"doctype": "Usage Record",
+			"api_key": "k",
+			"team": "t",
+			"day": day,
+			"drain_id": drain_id,
+			"request_count": 1,
+			"cost": 0,
+			"gateway_cost": 0,
+			"usage": "[]",
+		}
+	)
 	doc.flags.ignore_links = True
 	name = doc.insert(ignore_permissions=True).name
 	frappe.db.set_value("Usage Record", name, "creation", landed or day, update_modified=False)
@@ -39,7 +48,9 @@ class TestOldRecordsArePurged(IntegrationTestCase):
 		evidence = a_record(old, "d-evidence")
 		kept = a_record(cutoff, "d-kept")
 		late = a_record(old, "d-late", landed=utc_today())
-		frappe.get_doc({"doctype": "Credit Discrepancy", "usage_record": evidence}).insert(ignore_permissions=True)
+		frappe.get_doc({"doctype": "Credit Discrepancy", "usage_record": evidence}).insert(
+			ignore_permissions=True
+		)
 
 		# The commit between chunks is patched out so the test's rows roll back with it.
 		with (
@@ -52,5 +63,7 @@ class TestOldRecordsArePurged(IntegrationTestCase):
 		self.assertFalse(any(frappe.db.exists("Usage Record", name) for name in gone))
 		self.assertTrue(frappe.db.exists("Usage Record", evidence))
 		self.assertTrue(frappe.db.exists("Usage Record", kept))
-		self.assertTrue(frappe.db.exists("Usage Record", late), "landed within the retention, however old its day")
+		self.assertTrue(
+			frappe.db.exists("Usage Record", late), "landed within the retention, however old its day"
+		)
 		self.assertEqual(delete.call_count, 2)

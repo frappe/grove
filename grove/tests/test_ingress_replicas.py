@@ -16,9 +16,8 @@ from unittest.mock import patch
 
 import frappe
 
-from grove.tests.model_rows import model_row
-
 from grove.net import private_url
+from grove.tests.model_rows import model_row
 
 
 class TestPrivateURL(unittest.TestCase):
@@ -39,9 +38,7 @@ class TestPrivateURL(unittest.TestCase):
 		)
 
 	def test_a_port_on_the_url_is_the_engines_and_stays(self):
-		self.assertEqual(
-			private_url("http://203.0.113.7:8081/v1", "10.0.1.4"), "http://10.0.1.4:8081/v1"
-		)
+		self.assertEqual(private_url("http://203.0.113.7:8081/v1", "10.0.1.4"), "http://10.0.1.4:8081/v1")
 
 	def test_no_private_address_means_no_url(self):
 		for blank in ("", None):
@@ -95,16 +92,51 @@ MACHINES = [
 	{"name": "M-direct", "network": "Mumbai", "private_ip": "10.0.1.9"},
 ]
 REPLICAS = [
-	{"name": "MD-1", "model": "qwen3-35b", "model_key": "qwen3-35b", "engine_url": "https://203.0.113.7/e/md-1",
-	 "status": "Active", "inference_server": "INF-local", "max_num_seqs": 8},
-	{"name": "MD-2", "model": "llama-70b", "model_key": "llama-70b", "engine_url": "https://203.0.113.8/e/md-2",
-	 "status": "Active", "inference_server": "INF-elsewhere", "max_num_seqs": 4},
-	{"name": "MD-5", "model": "llama-70b", "model_key": "llama-70b", "engine_url": "https://203.0.113.10/e/md-5",
-	 "status": "Active", "inference_server": "INF-direct", "max_num_seqs": 4},
-	{"name": "MD-3", "model": "llama-70b", "model_key": "llama-70b", "engine_url": "https://203.0.113.9/e/md-3",
-	 "status": "Active", "inference_server": "INF-noprivate", "max_num_seqs": 4},
-	{"name": "MD-4", "model": "qwen3-35b", "model_key": "qwen3-35b", "engine_url": "https://203.0.113.7/e/md-4",
-	 "status": "Draft", "inference_server": "INF-local", "max_num_seqs": 8},
+	{
+		"name": "MD-1",
+		"model": "qwen3-35b",
+		"model_key": "qwen3-35b",
+		"engine_url": "https://203.0.113.7/e/md-1",
+		"status": "Active",
+		"inference_server": "INF-local",
+		"max_num_seqs": 8,
+	},
+	{
+		"name": "MD-2",
+		"model": "llama-70b",
+		"model_key": "llama-70b",
+		"engine_url": "https://203.0.113.8/e/md-2",
+		"status": "Active",
+		"inference_server": "INF-elsewhere",
+		"max_num_seqs": 4,
+	},
+	{
+		"name": "MD-5",
+		"model": "llama-70b",
+		"model_key": "llama-70b",
+		"engine_url": "https://203.0.113.10/e/md-5",
+		"status": "Active",
+		"inference_server": "INF-direct",
+		"max_num_seqs": 4,
+	},
+	{
+		"name": "MD-3",
+		"model": "llama-70b",
+		"model_key": "llama-70b",
+		"engine_url": "https://203.0.113.9/e/md-3",
+		"status": "Active",
+		"inference_server": "INF-noprivate",
+		"max_num_seqs": 4,
+	},
+	{
+		"name": "MD-4",
+		"model": "qwen3-35b",
+		"model_key": "qwen3-35b",
+		"engine_url": "https://203.0.113.7/e/md-4",
+		"status": "Draft",
+		"inference_server": "INF-local",
+		"max_num_seqs": 8,
+	},
 ]
 
 
@@ -116,7 +148,8 @@ class TestReplicasForIngress(unittest.TestCase):
 		with (
 			patch.object(frappe, "get_all", side_effect=query),
 			patch.object(
-				frappe, "get_doc",
+				frappe,
+				"get_doc",
 				side_effect=lambda *a, **k: frappe._dict(get_password=lambda *a, **k: "internal"),
 			),
 		):
@@ -131,9 +164,7 @@ class TestReplicasForIngress(unittest.TestCase):
 	def test_a_row_carries_only_what_the_ingress_reads(self):
 		"""Every field is read by pathway's pickReplica or handlePick; `server` is not."""
 		[route] = self.routes()["qwen3-35b"]
-		self.assertEqual(
-			set(route), {"engine_url", "internal_key", "healthy", "capacity", "deployment"}
-		)
+		self.assertEqual(set(route), {"engine_url", "internal_key", "healthy", "capacity", "deployment"})
 
 	def test_a_box_owned_by_another_ingress_is_not_in_this_table(self):
 		urls = [r["engine_url"] for routes in self.routes().values() for r in routes]
@@ -204,9 +235,14 @@ class TestTheIngressGateResolvesThroughTheDeployment(unittest.TestCase):
 
 	def capacity(self, max_num_seqs, deployment_max_num_seqs):
 		replica = {
-			"name": "MD-1", "model": "qwen3-35b", "model_key": "qwen3-35b", "engine_url": "https://203.0.113.7/e/md-1",
-			"status": "Active", "inference_server": "INF-local",
-			"max_num_seqs": max_num_seqs, "model_deployment": "T1",
+			"name": "MD-1",
+			"model": "qwen3-35b",
+			"model_key": "qwen3-35b",
+			"engine_url": "https://203.0.113.7/e/md-1",
+			"status": "Active",
+			"inference_server": "INF-local",
+			"max_num_seqs": max_num_seqs,
+			"model_deployment": "T1",
 		}
 		[route] = TestReplicasForIngress().routes(
 			replicas=[replica],

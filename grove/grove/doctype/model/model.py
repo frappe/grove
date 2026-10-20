@@ -1,9 +1,8 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
-import requests
-
 import frappe
+import requests
 from frappe.model.document import Document
 
 from grove import failure
@@ -30,6 +29,7 @@ class Model(Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
+
 		from grove.grove.doctype.model_modality_row.model_modality_row import ModelModalityRow
 
 		attention_heads: DF.Int
@@ -77,7 +77,9 @@ class Model(Document):
 	@property
 	def has_catalog_pricing(self):
 		"""The catalog prices this model and no Model Pricing names it yet."""
-		return bool(seed.get_rates(self.model_key)) and not frappe.db.exists("Model Pricing", {"model": self.name})
+		return bool(seed.get_rates(self.model_key)) and not frappe.db.exists(
+			"Model Pricing", {"model": self.name}
+		)
 
 	@property
 	def is_granted(self):
@@ -92,7 +94,9 @@ class Model(Document):
 			return True
 		groups = [row.parent for row in rows if row.parenttype == "Model Group"]
 		return bool(groups) and bool(
-			frappe.db.exists("Model Group Row", {"parenttype": "Grove API Key", "model_group": ("in", groups)})
+			frappe.db.exists(
+				"Model Group Row", {"parenttype": "Grove API Key", "model_group": ("in", groups)}
+			)
 		)
 
 	@frappe.whitelist()
@@ -191,9 +195,7 @@ class Model(Document):
 	def is_self_hosted(self):
 		"""Our own engines serve it — the provider is the flagged one. Read off the provider rather
 		than the mirror, so the two cannot disagree."""
-		return bool(
-			self.provider and frappe.db.get_value("Model Provider", self.provider, "is_self_hosted")
-		)
+		return bool(self.provider and frappe.db.get_value("Model Provider", self.provider, "is_self_hosted"))
 
 	def reject_if_vendor_served(self, what):
 		"""Refuse a self-hosting operation on a model we do not host. The form hides these, but a
@@ -386,9 +388,16 @@ def has_vendor_front(provider):
 
 
 LAUNCH_FIELDS = (
-	"hf_repo", "weights_s3_uri", "enable_prefix_caching",
-	"enable_auto_tool_choice", "tool_call_parser", "thinking", "reasoning_parser",
-	"attention_heads", "weights_gb", "torch_dtype",
+	"hf_repo",
+	"weights_s3_uri",
+	"enable_prefix_caching",
+	"enable_auto_tool_choice",
+	"tool_call_parser",
+	"thinking",
+	"reasoning_parser",
+	"attention_heads",
+	"weights_gb",
+	"torch_dtype",
 )
 
 

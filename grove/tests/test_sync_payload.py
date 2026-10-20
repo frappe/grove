@@ -23,7 +23,9 @@ ROW_FIELDS = {field["fieldname"] for field in json.loads(ROW_DOCTYPE.read_text()
 
 class TestRedaction(unittest.TestCase):
 	def test_an_engine_key_never_reaches_the_row(self):
-		payload = {"routes": {"qwen3.5-4b": [{"engine_url": "https://10.0.18.19/e/md", "internal_key": SECRET}]}}
+		payload = {
+			"routes": {"qwen3.5-4b": [{"engine_url": "https://10.0.18.19/e/md", "internal_key": SECRET}]}
+		}
 		self.assertNotIn(SECRET, json.dumps(redact(payload)))
 
 	def test_it_is_marked_not_dropped(self):
@@ -39,15 +41,28 @@ class TestRedaction(unittest.TestCase):
 	def test_every_credential_shaped_key_goes(self):
 		payload = {
 			"keys": [{"key_hash": "abc", "prefix": "k1", "team": "t1"}],
-			"admin_token": "t", "data_token": "t", "api_secret": "s",
+			"admin_token": "t",
+			"data_token": "t",
+			"api_secret": "s",
 		}
 		text = json.dumps(redact(payload))
 		for leaked in ("abc", '"t"', '"s"'):
 			self.assertNotIn(leaked, text)
 
 	def test_everything_else_survives_intact(self):
-		payload = {"routes": {"m": [{"engine_url": "https://10.0.18.19/e/md", "capacity": 1024,
-		                             "healthy": True, "deployment": "MD-00011", "internal_key": SECRET}]}}
+		payload = {
+			"routes": {
+				"m": [
+					{
+						"engine_url": "https://10.0.18.19/e/md",
+						"capacity": 1024,
+						"healthy": True,
+						"deployment": "MD-00011",
+						"internal_key": SECRET,
+					}
+				]
+			}
+		}
 		[route] = redact(payload)["routes"]["m"]
 		self.assertEqual(route["engine_url"], "https://10.0.18.19/e/md")
 		self.assertEqual(route["capacity"], 1024)

@@ -32,18 +32,61 @@ SERVERS = [
 	{"name": "INF-direct", "ingress": None},
 ]
 DEPLOYMENTS = [
-	{"name": "MD-1", "model": "qwen3-35b", "model_key": "qwen3-35b", "engine_url": "https://203.0.113.1/e/md-1",
-	 "status": "Active", "inference_server": "INF-a", "max_num_seqs": 8},
-	{"name": "MD-2", "model": "qwen3-35b", "model_key": "qwen3-35b", "engine_url": "https://203.0.113.2/e/md-2",
-	 "status": "Active", "inference_server": "INF-b", "max_num_seqs": 4},
-	{"name": "MD-3", "model": "qwen3-35b", "model_key": "qwen3-35b", "engine_url": "https://203.0.113.3/e/md-3",
-	 "status": "Active", "inference_server": "INF-c", "max_num_seqs": 16},
-	{"name": "MD-4", "model": "llama-70b", "model_key": "llama-70b", "engine_url": "https://203.0.113.4/e/md-4",
-	 "status": "Active", "inference_server": "INF-direct", "max_num_seqs": 4},
-	{"name": "MD-5", "model": "llama-70b", "model_key": "llama-70b", "engine_url": "https://203.0.113.5/e/md-5",
-	 "status": "Active", "inference_server": "INF-orphan", "max_num_seqs": 4},
+	{
+		"name": "MD-1",
+		"model": "qwen3-35b",
+		"model_key": "qwen3-35b",
+		"engine_url": "https://203.0.113.1/e/md-1",
+		"status": "Active",
+		"inference_server": "INF-a",
+		"max_num_seqs": 8,
+	},
+	{
+		"name": "MD-2",
+		"model": "qwen3-35b",
+		"model_key": "qwen3-35b",
+		"engine_url": "https://203.0.113.2/e/md-2",
+		"status": "Active",
+		"inference_server": "INF-b",
+		"max_num_seqs": 4,
+	},
+	{
+		"name": "MD-3",
+		"model": "qwen3-35b",
+		"model_key": "qwen3-35b",
+		"engine_url": "https://203.0.113.3/e/md-3",
+		"status": "Active",
+		"inference_server": "INF-c",
+		"max_num_seqs": 16,
+	},
+	{
+		"name": "MD-4",
+		"model": "llama-70b",
+		"model_key": "llama-70b",
+		"engine_url": "https://203.0.113.4/e/md-4",
+		"status": "Active",
+		"inference_server": "INF-direct",
+		"max_num_seqs": 4,
+	},
+	{
+		"name": "MD-5",
+		"model": "llama-70b",
+		"model_key": "llama-70b",
+		"engine_url": "https://203.0.113.5/e/md-5",
+		"status": "Active",
+		"inference_server": "INF-orphan",
+		"max_num_seqs": 4,
+	},
 ]
-PODS = [{"name": "POD-1", "model": "llama-70b", "model_key": "llama-70b", "engine_url": "http://1.2.3.4:8081", "max_num_seqs": 2}]
+PODS = [
+	{
+		"name": "POD-1",
+		"model": "llama-70b",
+		"model_key": "llama-70b",
+		"engine_url": "http://1.2.3.4:8081",
+		"max_num_seqs": 2,
+	}
+]
 
 
 class FakeQuery:
@@ -75,9 +118,12 @@ def routes(zone=ZONE):
 	with (
 		patch.object(frappe, "get_all", side_effect=FakeQuery(zone)),
 		patch("grove.pathway.routes.published_routes", side_effect=lambda table, models: table),
-		patch.object(frappe, "db", frappe._dict(get_value=lambda *args: zone, get_single_value=lambda *args: "in")),
 		patch.object(
-			frappe, "get_doc",
+			frappe, "db", frappe._dict(get_value=lambda *args: zone, get_single_value=lambda *args: "in")
+		),
+		patch.object(
+			frappe,
+			"get_doc",
 			side_effect=lambda *a, **k: frappe._dict(get_password=lambda *a, **k: "secret"),
 		),
 	):
@@ -97,13 +143,15 @@ class TestIngressRows(unittest.TestCase):
 		)
 
 	def test_the_folded_capacity_is_the_sum_behind_that_ingress(self):
-		[row] = [r for r in rows_for("qwen3-35b") if r["engine_url"].startswith(f"https://aps1-i1.")]
+		[row] = [r for r in rows_for("qwen3-35b") if r["engine_url"].startswith("https://aps1-i1.")]
 		self.assertEqual(row["capacity"], 12)
 
 	def test_every_row_says_what_its_model_takes_and_gives(self):
 		for row in rows_for("qwen3-35b"):
 			with self.subTest(row["engine_url"]):
-				self.assertEqual((row["input_modalities"], row["output_modalities"]), (["text", "image"], ["text"]))
+				self.assertEqual(
+					(row["input_modalities"], row["output_modalities"]), (["text", "image"], ["text"])
+				)
 		for row in rows_for("llama-70b"):
 			self.assertEqual((row["input_modalities"], row["output_modalities"]), (["text"], ["text"]))
 			self.assertNotIn("modality", row)

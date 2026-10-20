@@ -17,11 +17,12 @@ import requests
 from frappe.utils import escape_html
 
 from grove import failure
-from grove.pathway.run import Target
 from grove.cloud_provider.dns import Route53Client, Route53Error
 from grove.monitoring import run_exporters_play
+from grove.pathway.run import Target
 from grove.server import Server
 from grove.tls import dns_credentials
+
 
 def gateway_agent_version():
 	"""The pathway release every box runs. A setting rather than a constant: the agent lives in its
@@ -39,7 +40,9 @@ def pathway_repo():
 	"""The GitHub owner/name every box downloads pathway from. No default, so blank is refused."""
 	repo = frappe.db.get_single_value("Grove Settings", "pathway_repo")
 	if not repo:
-		frappe.throw("Set Pathway Repo in Grove Settings — it names the GitHub repo each box downloads pathway from.")
+		frappe.throw(
+			"Set Pathway Repo in Grove Settings — it names the GitHub repo each box downloads pathway from."
+		)
 	return repo
 
 
@@ -168,7 +171,6 @@ class FleetHost(NamedHost):
 		if rc == 0:
 			frappe.db.set_value(self.doctype, self.name, "agent_version", gateway_agent_version())
 
-
 	@frappe.whitelist()
 	def deploy_tls(self):
 		return self.run_playbook(
@@ -225,7 +227,9 @@ class PathwayHost(FleetHost):
 			if self.get_in_flight()["maintenance"] == want:
 				return play_name, rc
 			time.sleep(1)
-		frappe.throw(f"{self.name} kept maintenance={not want}: pathway rejected config.json, see its journal.")
+		frappe.throw(
+			f"{self.name} kept maintenance={not want}: pathway rejected config.json, see its journal."
+		)
 
 	@property
 	def memory_variables(self):

@@ -46,7 +46,9 @@ def renew_fleet_certificate():
 	this from reloading the fleet every night. One geography failing does not stop the rest."""
 	settings = frappe.get_single("Grove Settings")
 	issued = frappe.get_all(
-		"Geography", filters={"fleet_zone": ("is", "set"), "fleet_tls_cert": ("is", "set")}, fields=["name", "fleet_zone"]
+		"Geography",
+		filters={"fleet_zone": ("is", "set"), "fleet_tls_cert": ("is", "set")},
+		fields=["name", "fleet_zone"],
 	)
 	for geography in issued:
 		try:
@@ -113,9 +115,12 @@ def run_certbot(settings, arguments, geography):
 		*arguments,
 		"--non-interactive",
 		"--agree-tos",
-		"--config-dir", certbot_dir("config"),
-		"--work-dir", certbot_dir("work"),
-		"--logs-dir", certbot_dir("logs"),
+		"--config-dir",
+		certbot_dir("config"),
+		"--work-dir",
+		certbot_dir("work"),
+		"--logs-dir",
+		certbot_dir("logs"),
 	]
 	if settings.acme_email:
 		command += ["--email", settings.acme_email]

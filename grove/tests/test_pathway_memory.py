@@ -39,9 +39,7 @@ class FakeHost(SimpleNamespace):
 
 def fake_host(rc=0, **fields):
 	defaults = dict(doctype="Gateway Server", name="gw-1", memory_limit_mb=0)
-	return FakeHost(
-		**{**defaults, **fields}, run_playbook=Mock(return_value=("play-1", rc)), db_set=Mock()
-	)
+	return FakeHost(**{**defaults, **fields}, run_playbook=Mock(return_value=("play-1", rc)), db_set=Mock())
 
 
 class TestTheDropIn(unittest.TestCase):
@@ -67,7 +65,12 @@ class TestWhichPlaysWriteIt(unittest.TestCase):
 		tasks = yaml.safe_load((ROLE / "tasks" / "main.yml").read_text())
 		modules = [key for task in tasks for key in task if key.startswith("ansible.builtin.")]
 		self.assertEqual(
-			["ansible.builtin.assert", "ansible.builtin.file", "ansible.builtin.template", "ansible.builtin.systemd"],
+			[
+				"ansible.builtin.assert",
+				"ansible.builtin.file",
+				"ansible.builtin.template",
+				"ansible.builtin.systemd",
+			],
 			modules,
 		)
 		self.assertEqual({"daemon_reload": True}, tasks[-1]["ansible.builtin.systemd"])

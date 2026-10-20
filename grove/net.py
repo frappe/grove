@@ -6,7 +6,6 @@ which addresses a security group opens, so it lives here rather than inside eith
 a firewall should not have to import from a metrics module to know how boxes reach each other.
 """
 
-
 from urllib.parse import urlparse
 
 

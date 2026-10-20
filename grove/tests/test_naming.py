@@ -87,7 +87,9 @@ class TestServerNaming(unittest.TestCase):
 		self.assertEqual(name(self.series, region="AP South 1"), "gw1-ap-south-1")
 
 	def test_a_box_in_a_zone_is_named_for_its_whole_hostname(self):
-		self.assertEqual(next_machine_name("gw", "ap-south-1", ZONE, counter=self.series), f"gw1-ap-south-1.{ZONE}")
+		self.assertEqual(
+			next_machine_name("gw", "ap-south-1", ZONE, counter=self.series), f"gw1-ap-south-1.{ZONE}"
+		)
 		self.assertEqual(name(self.series), "gw2-ap-south-1")
 
 	def test_the_short_name_is_the_first_label(self):

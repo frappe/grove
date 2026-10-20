@@ -11,10 +11,10 @@ deploy, not a failed assertion, so the parsers themselves are the assertion wher
 import subprocess
 import unittest
 from pathlib import Path
+from typing import ClassVar
 
 import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
-
 
 PLAYBOOKS = Path(__file__).parent.parent / "playbooks"
 INFERENCE_ROLES = PLAYBOOKS / "inference_server/roles"
@@ -38,6 +38,7 @@ def role_defaults(path):
 TEMPLATES = environment(INFERENCE_ROLES / "vllm/templates")
 PROXY_TEMPLATES = environment(INFERENCE_ROLES / "engine_proxy/templates")
 
+
 def resolve(variables):
 	"""A default that references another default (grove_tls_cert → grove_tls_dir) is resolved lazily
 	by Ansible and not at all by plain Jinja. Without this the config renders with the braces still
@@ -56,11 +57,13 @@ def resolve(variables):
 	return variables
 
 
-PROXY_VARS = resolve({
-	**role_defaults(PLAYBOOKS / "roles/grove_https"),
-	**role_defaults(PLAYBOOKS / "roles/openresty"),
-	**role_defaults(INFERENCE_ROLES / "engine_proxy"),
-})
+PROXY_VARS = resolve(
+	{
+		**role_defaults(PLAYBOOKS / "roles/grove_https"),
+		**role_defaults(PLAYBOOKS / "roles/openresty"),
+		**role_defaults(INFERENCE_ROLES / "engine_proxy"),
+	}
+)
 
 RAW_BASE = {
 	**role_defaults(INFERENCE_ROLES / "vllm"),
@@ -146,15 +149,13 @@ CACHE_LINES = [
 	"TRITON_CACHE_DIR=/root/.cache/vllm/triton",
 	"TORCHINDUCTOR_CACHE_DIR=/root/.cache/vllm/torchinductor",
 ]
-FIXED_LINES = CACHE_LINES + ["HF_HUB_OFFLINE=1"]
+FIXED_LINES = [*CACHE_LINES, "HF_HUB_OFFLINE=1"]
 
 
 class TestContainerEnvFile(unittest.TestCase):
 	def test_one_key_value_per_line(self):
 		lines = render("vllm-container.env.j2", BASE).splitlines()
-		self.assertEqual(
-			lines, FIXED_LINES + ["HF_TOKEN=hf_secret", "ODD=a b;c", "VLLM_API_KEY=deadbeef"]
-		)
+		self.assertEqual(lines, [*FIXED_LINES, "HF_TOKEN=hf_secret", "ODD=a b;c", "VLLM_API_KEY=deadbeef"])
 
 	def test_a_deployment_env_row_overrides_the_cache_defaults(self):
 		"""docker --env-file: the last occurrence of a key wins, so ours must come first."""
@@ -279,9 +280,7 @@ class TestReconfigureRunsTheConfigTasksOnly(unittest.TestCase):
 		[play] = yaml.safe_load((PLAYBOOKS / "inference_server/reconfigure.yml").read_text())
 		self.assertFalse(play.get("roles"))
 		[task] = play["tasks"]
-		self.assertEqual(
-			task["ansible.builtin.import_role"], {"name": "vllm", "tasks_from": "config.yml"}
-		)
+		self.assertEqual(task["ansible.builtin.import_role"], {"name": "vllm", "tasks_from": "config.yml"})
 
 
 class TestStopIsResumable(unittest.TestCase):
@@ -316,7 +315,7 @@ class TestCompileCachePrewarmHooks(unittest.TestCase):
 	container and pushes it (backgrounded, after /health) once compiled. No bucket → the
 	script renders exactly as before."""
 
-	WITH_BUCKET = {
+	WITH_BUCKET: ClassVar[dict] = {
 		**BASE,
 		"vllm_cache_bucket": "s3://grove-weights",
 		"vllm_cache_sync_script": "/opt/vllm/containers/vllm-md-00007-cache-sync.sh",
@@ -416,11 +415,11 @@ class TestWeightsOffTheDataVolume(unittest.TestCase):
 		return next(t for t in self.tasks if t.get("name") == name)
 
 	def on_data(self, vllm_home, vllm_hf_home):
-		expression = self.task("Note whether the weights share the data volume")[
-			"ansible.builtin.set_fact"
-		]["vllm_weights_on_data"]
-		rendered = Environment().from_string(expression).render(
-			vllm_home=vllm_home, vllm_hf_home=vllm_hf_home
+		expression = self.task("Note whether the weights share the data volume")["ansible.builtin.set_fact"][
+			"vllm_weights_on_data"
+		]
+		rendered = (
+			Environment().from_string(expression).render(vllm_home=vllm_home, vllm_hf_home=vllm_hf_home)
 		)
 		return rendered == "True"
 
@@ -541,4 +540,3 @@ class TestWarmupGate(unittest.TestCase):
 
 	def test_a_modality_with_nothing_to_prove_skips_it(self):
 		self.assertIn("vllm_warmup_request | length > 0", self.warmup()["when"])
-

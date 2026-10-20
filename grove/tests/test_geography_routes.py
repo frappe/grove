@@ -10,22 +10,33 @@ from unittest.mock import patch
 import frappe
 
 from grove.pathway import projection, run, snapshot
-from grove.tests.model_rows import model_row, placement
 from grove.pathway.routes import gateway_routes
 from grove.pathway.run import Target
+from grove.tests.model_rows import model_row, placement
 
 ZONE = "grove.example.com"
 MODELS = [
 	model_row("frappe/qwen3-8b", model_id="qwen3-8b"),
 	model_row("gpt5-in", "openai", "in", model_key="openai/gpt-5", model_id="gpt-5"),
-	model_row("gpt5-eu", "openai", "eu", model_key="openai/gpt-5", model_id="gpt-5",
-	          upstream_model_id="gpt-5-eu"),
+	model_row(
+		"gpt5-eu", "openai", "eu", model_key="openai/gpt-5", model_id="gpt-5", upstream_model_id="gpt-5-eu"
+	),
 ]
 REPLICAS = [
-	placement("frappe/qwen3-8b", name="MD-in", engine_url="https://203.0.113.1/e/md-in",
-	          inference_server="INF-in", geography="in"),
-	placement("frappe/qwen3-8b", name="MD-eu", engine_url="https://203.0.113.2/e/md-eu",
-	          inference_server="INF-eu-behind", geography="eu"),
+	placement(
+		"frappe/qwen3-8b",
+		name="MD-in",
+		engine_url="https://203.0.113.1/e/md-in",
+		inference_server="INF-in",
+		geography="in",
+	),
+	placement(
+		"frappe/qwen3-8b",
+		name="MD-eu",
+		engine_url="https://203.0.113.2/e/md-eu",
+		inference_server="INF-eu-behind",
+		geography="eu",
+	),
 ]
 INGRESSES = [{"name": "eu-i1", "region": "eu-central-1", "geography": "eu"}]
 SERVERS = [{"name": "INF-eu-behind", "ingress": "eu-i1"}]
@@ -33,10 +44,18 @@ PODS = [placement("frappe/qwen3-8b", name="POD-1", engine_url="http://1.2.3.4:80
 POD_GEOGRAPHY = "in"
 PROVIDERS = {
 	"frappe": {"provider_name": "frappe", "geography": None},
-	"a1b2": {"provider_name": "openai", "base_url": "https://api.openai.com/v1", "api_key": "in-key",
-	         "geography": "in"},
-	"c3d4": {"provider_name": "openai", "base_url": "https://eu.api.openai.com/v1",
-	         "api_key": "eu-key", "geography": "eu"},
+	"a1b2": {
+		"provider_name": "openai",
+		"base_url": "https://api.openai.com/v1",
+		"api_key": "in-key",
+		"geography": "in",
+	},
+	"c3d4": {
+		"provider_name": "openai",
+		"base_url": "https://eu.api.openai.com/v1",
+		"api_key": "eu-key",
+		"geography": "eu",
+	},
 }
 
 
@@ -74,8 +93,14 @@ def routes(geography):
 		patch.object(frappe, "get_all", side_effect=get_all),
 		patch.object(frappe, "get_cached_doc", side_effect=cached_provider),
 		patch("grove.pathway.routes.published_routes", side_effect=lambda table, models: table),
-		patch.object(frappe, "db", frappe._dict(get_value=lambda *args: ZONE, get_single_value=lambda *args: POD_GEOGRAPHY)),
-		patch.object(frappe, "get_doc", side_effect=lambda *a, **k: frappe._dict(get_password=lambda *a, **k: "secret")),
+		patch.object(
+			frappe,
+			"db",
+			frappe._dict(get_value=lambda *args: ZONE, get_single_value=lambda *args: POD_GEOGRAPHY),
+		),
+		patch.object(
+			frappe, "get_doc", side_effect=lambda *a, **k: frappe._dict(get_password=lambda *a, **k: "secret")
+		),
 	):
 		return gateway_routes(geography)
 
@@ -94,10 +119,14 @@ class TestRoutesStayInTheirGeography(unittest.TestCase):
 
 	def test_one_id_is_dialled_through_each_geographys_own_record(self):
 		[row] = routes("in")["openai/gpt-5"]
-		self.assertEqual((row["engine_url"], row["credentials"][0]["secret"]), ("https://api.openai.com/v1", "in-key"))
+		self.assertEqual(
+			(row["engine_url"], row["credentials"][0]["secret"]), ("https://api.openai.com/v1", "in-key")
+		)
 		self.assertEqual(row["upstream_model"], "gpt-5")
 		[row] = routes("eu")["openai/gpt-5"]
-		self.assertEqual((row["engine_url"], row["credentials"][0]["secret"]), ("https://eu.api.openai.com/v1", "eu-key"))
+		self.assertEqual(
+			(row["engine_url"], row["credentials"][0]["secret"]), ("https://eu.api.openai.com/v1", "eu-key")
+		)
 		self.assertEqual(row["upstream_model"], "gpt-5-eu")
 		self.assertEqual(row["vendor"], "openai")
 
@@ -126,10 +155,26 @@ class TestEveryKeyCarriesItsPin(unittest.TestCase):
 			return {key["prefix"]: key for key in snapshot.effective_keys()}
 
 	def test_pinned_and_unpinned_keys_both_reach_every_gateway(self):
-		keys = self.keys([
-			{"name": "k1", "key_hash": "aa", "team": "T-1", "status": "active", "cap": 0, "geography": "eu"},
-			{"name": "k2", "key_hash": "bb", "team": "T-1", "status": "active", "cap": 0, "geography": None},
-		])
+		keys = self.keys(
+			[
+				{
+					"name": "k1",
+					"key_hash": "aa",
+					"team": "T-1",
+					"status": "active",
+					"cap": 0,
+					"geography": "eu",
+				},
+				{
+					"name": "k2",
+					"key_hash": "bb",
+					"team": "T-1",
+					"status": "active",
+					"cap": 0,
+					"geography": None,
+				},
+			]
+		)
 		self.assertEqual(keys["k1"]["geography"], "eu")
 		self.assertEqual(keys["k2"]["geography"], "")
 
@@ -165,16 +210,21 @@ class TestOneSnapshotPerGeography(unittest.TestCase):
 			patch.object(projection, "push_target", side_effect=push_target),
 			patch.object(projection, "pending_adjustments", return_value={}),
 			patch.object(
-				frappe, "db",
+				frappe,
+				"db",
 				frappe._dict(
-					commit=lambda: None, get_single_value=lambda *a: 0,
-					get_value=lambda *a, **k: None, set_value=lambda *a, **k: None,
+					commit=lambda: None,
+					get_single_value=lambda *a: 0,
+					get_value=lambda *a, **k: None,
+					set_value=lambda *a, **k: None,
 				),
 			),
 		):
 			projection.sync_projection()
 		self.assertEqual(sorted(built), ["eu", "in"])
-		self.assertEqual(sorted(pushed), [("gw-eu-1", "eu"), ("gw-in-1", "in"), ("gw-in-2", "in"), ("gw-in-3", "in")])
+		self.assertEqual(
+			sorted(pushed), [("gw-eu-1", "eu"), ("gw-in-1", "in"), ("gw-in-2", "in"), ("gw-in-3", "in")]
+		)
 
 
 if __name__ == "__main__":

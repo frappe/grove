@@ -130,7 +130,10 @@ class TestCustomEngine(unittest.TestCase):
 		engine = CustomEngine(
 			"nemotron-asr",
 			dict(CHAT_MODEL, attention_heads=64, weights_gb=148.0),
-			port=8080, gpu_count=6, pipeline_parallel_size=4, gpu_vram_gb=8,
+			port=8080,
+			gpu_count=6,
+			pipeline_parallel_size=4,
+			gpu_vram_gb=8,
 		)
 		self.assertEqual(engine.placement_errors, [])
 
@@ -152,9 +155,7 @@ class TestCustomEngine(unittest.TestCase):
 		)
 
 	def test_a_path_with_no_body_posts_an_empty_one(self):
-		self.assertEqual(
-			self.engine(warmup_path="/ready").warmup_request, {"path": "/ready", "body": {}}
-		)
+		self.assertEqual(self.engine(warmup_path="/ready").warmup_request, {"path": "/ready", "body": {}})
 
 	def test_a_body_with_no_path_is_still_no_warmup(self):
 		self.assertEqual(self.engine(warmup_body='{"input": "ping"}').warmup_request, {})

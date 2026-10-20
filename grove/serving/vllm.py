@@ -7,7 +7,6 @@ import shlex
 
 from grove.serving.base import Engine
 
-
 # vLLM does not fall back to float16 — it raises `Bfloat16 is only supported on GPUs with compute
 # capability of at least 8.0` and exits.
 BF16_MIN_COMPUTE_CAPABILITY = 8.0
@@ -127,19 +126,26 @@ class VllmEngine(Engine):
 	def args(self):
 		"""The flags only, without the positional repo (the run script supplies that)."""
 		args = [
-			"--served-model-name", self.model_name,
-			"--host", self.host,
-			"--port", str(self.port),
-			"--tensor-parallel-size", str(self.tensor_parallel_size),
-			"--gpu-memory-utilization", str(self.gpu_memory_utilization),
-			"--max-model-len", str(self.max_model_len),
+			"--served-model-name",
+			self.model_name,
+			"--host",
+			self.host,
+			"--port",
+			str(self.port),
+			"--tensor-parallel-size",
+			str(self.tensor_parallel_size),
+			"--gpu-memory-utilization",
+			str(self.gpu_memory_utilization),
+			"--max-model-len",
+			str(self.max_model_len),
 			# Surfaces cached_tokens, which billing credits.
 			"--enable-prompt-tokens-details",
 			# NOT --enable-request-id-headers: the gateway sets the response header and that flag would
 			# echo a duplicate. This logs the forwarded X-Request-Id, which vLLM adopts as request_id.
 			"--enable-log-requests",
 			"--enable-log-outputs",
-			"--fingerprint-mode", "none",
+			"--fingerprint-mode",
+			"none",
 		]
 		# --gpu-memory-utilization stays: vLLM ignores it for the cache when this is set, but the
 		# placement arithmetic (usable_vram_gb) still reads it.

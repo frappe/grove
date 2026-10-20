@@ -10,6 +10,7 @@ updates it live — `Ansible Task.on_update` publishes realtime to the parent pl
 import json
 import os
 
+import frappe
 from ansible import constants as C
 from ansible import context
 from ansible.executor.playbook_executor import PlaybookExecutor
@@ -19,8 +20,6 @@ from ansible.parsing.dataloader import DataLoader
 from ansible.plugins.callback import CallbackBase
 from ansible.plugins.loader import init_plugin_loader
 from ansible.vars.manager import VariableManager
-
-import frappe
 from frappe.database.utils import dangerously_reconnect_on_connection_abort
 
 from grove.utils import shared_roles_dir
@@ -133,7 +132,7 @@ class AnsibleCallback(CallbackBase):
 		a new thread starts with none of it, so frappe.db raises "object is not bound". That thread
 		gets a connection of its own; the runner closes it when the play ends."""
 		try:
-			frappe.db.get_value  # noqa: B018 — unbound frappe.local raises on attribute access
+			frappe.db.get_value
 			return
 		except RuntimeError:
 			frappe.init(site=self.site)
@@ -144,14 +143,15 @@ class AnsibleCallback(CallbackBase):
 		self._close_orphan("skipped" if self.stopped else "ok")
 		hosts = sorted(stats.processed.keys())
 		failed = any(
-			stats.summarize(h).get("failures", 0) or stats.summarize(h).get("unreachable", 0)
-			for h in hosts
+			stats.summarize(h).get("failures", 0) or stats.summarize(h).get("unreachable", 0) for h in hosts
 		)
-		self.runner.update_play({
-			"status": "Stopped" if self.stopped else ("Failure" if failed else "Success"),
-			"ended": frappe.utils.now(),
-			"output": "\n".join(self.log)[:1000000],
-		})
+		self.runner.update_play(
+			{
+				"status": "Stopped" if self.stopped else ("Failure" if failed else "Success"),
+				"ended": frappe.utils.now(),
+				"output": "\n".join(self.log)[:1000000],
+			}
+		)
 
 	def v2_runner_on_ok(self, result):
 		changed = bool(result._result.get("changed"))
@@ -185,7 +185,20 @@ class AnsibleCallback(CallbackBase):
 class Ansible:
 	"""Runs one playbook against one host, logging to Ansible Play/Task."""
 
-	def __init__(self, playbook_path, host, server_type, server, user="root", port=22, variables=None, tags=None, skip_tags=None, reference_doctype=None, reference_docname=None):
+	def __init__(
+		self,
+		playbook_path,
+		host,
+		server_type,
+		server,
+		user="root",
+		port=22,
+		variables=None,
+		tags=None,
+		skip_tags=None,
+		reference_doctype=None,
+		reference_docname=None,
+	):
 		self.playbook_path = playbook_path
 		self.playbook = os.path.basename(playbook_path)
 		self.host = host
@@ -213,15 +226,17 @@ class Ansible:
 
 	@dangerously_reconnect_on_connection_abort
 	def _create_play(self):
-		doc = frappe.get_doc({
-			"doctype": "Ansible Play",
-			"server_type": self.server_type,
-			"server": self.server,
-			"reference_doctype": self.reference_doctype,
-			"reference_docname": self.reference_docname,
-			"playbook": self.playbook,
-			"status": "Pending",
-		}).insert(ignore_permissions=True)
+		doc = frappe.get_doc(
+			{
+				"doctype": "Ansible Play",
+				"server_type": self.server_type,
+				"server": self.server,
+				"reference_doctype": self.reference_doctype,
+				"reference_docname": self.reference_docname,
+				"playbook": self.playbook,
+				"status": "Pending",
+			}
+		).insert(ignore_permissions=True)
 		frappe.db.commit()
 		return doc.name
 
@@ -237,13 +252,15 @@ class Ansible:
 	@dangerously_reconnect_on_connection_abort
 	def add_task(self, task_name):
 		"""Running until it reports back, so a play watched live shows where it actually is."""
-		doc = frappe.get_doc({
-			"doctype": "Ansible Task",
-			"play": self.play_name,
-			"task_name": task_name,
-			"host": self.host,
-			"status": "Running",
-		}).insert(ignore_permissions=True)
+		doc = frappe.get_doc(
+			{
+				"doctype": "Ansible Task",
+				"play": self.play_name,
+				"task_name": task_name,
+				"host": self.host,
+				"status": "Running",
+			}
+		).insert(ignore_permissions=True)
 		frappe.db.commit()
 		return doc.name
 
@@ -293,7 +310,18 @@ class Ansible:
 		return frappe.get_doc("Ansible Play", self.play_name), rc
 
 
-def run_play(playbook, server_type, server_name, machine_name, project_dir, extravars=None, tags=None, skip_tags=None, reference_doctype=None, reference_docname=None):
+def run_play(
+	playbook,
+	server_type,
+	server_name,
+	machine_name,
+	project_dir,
+	extravars=None,
+	tags=None,
+	skip_tags=None,
+	reference_doctype=None,
+	reference_docname=None,
+):
 	"""Build a single-host inventory from the Machine and run <project_dir>/<playbook>. Returns
 	(ansible_play_name, rc), rc 0 = success. tags restricts the run, skip_tags excludes.
 	reference_doctype/docname link the Play to the triggering doc."""

@@ -30,7 +30,9 @@ def insert_missing(path=None):
 		insert_named("Region", region)
 	for tier in catalog.get("tiers", []):
 		insert_named("Tier", tier)
-	if (default := catalog.get("default_tier")) and not frappe.db.get_single_value("Grove Settings", "default_tier"):
+	if (default := catalog.get("default_tier")) and not frappe.db.get_single_value(
+		"Grove Settings", "default_tier"
+	):
 		frappe.db.set_single_value("Grove Settings", "default_tier", default)
 	for provider in catalog["providers"]:
 		if not frappe.db.exists("Model Provider", {"provider_name": provider["provider_name"]}):

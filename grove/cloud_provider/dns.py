@@ -53,7 +53,10 @@ class Route53Client:
 			return self._zone_ids[zone]
 		response = self._call(self.route53.list_hosted_zones_by_name, DNSName=zone, MaxItems="10")
 		for hosted_zone in response.get("HostedZones") or []:
-			if hosted_zone["Name"].rstrip(".") == zone.rstrip(".") and not hosted_zone["Config"]["PrivateZone"]:
+			if (
+				hosted_zone["Name"].rstrip(".") == zone.rstrip(".")
+				and not hosted_zone["Config"]["PrivateZone"]
+			):
 				self._zone_ids[zone] = hosted_zone["Id"].split("/")[-1]
 				return self._zone_ids[zone]
 		raise Route53Error(f"No public Route53 hosted zone for '{zone}' in this account.")
@@ -104,13 +107,17 @@ class Route53Client:
 		"""The one record an ingress needs: the name that reaches this box. UPSERT, so a box that
 		came back on a new address is corrected by running it again."""
 		return self._submit(
-			zone, f"Grove UPSERT {identifier}", [{"Action": "UPSERT", "ResourceRecordSet": a_record(hostname, public_ip)}]
+			zone,
+			f"Grove UPSERT {identifier}",
+			[{"Action": "UPSERT", "ResourceRecordSet": a_record(hostname, public_ip)}],
 		)
 
 	def delete_ingress_records(self, zone, hostname, public_ip, identifier):
 		"""The same record on the way out, repeating what the upsert wrote."""
 		return self._submit(
-			zone, f"Grove DELETE {identifier}", [{"Action": "DELETE", "ResourceRecordSet": a_record(hostname, public_ip)}]
+			zone,
+			f"Grove DELETE {identifier}",
+			[{"Action": "DELETE", "ResourceRecordSet": a_record(hostname, public_ip)}],
 		)
 
 	def find_record_sets(self, zone, name):

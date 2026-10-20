@@ -115,10 +115,14 @@ class RunPodClient:
 		from the Pod's Ports rows since the provider cannot hot-add later. `args` is appended to
 		the image's entrypoint. Endpoints are absent until it runs, so poll_pod_ready()."""
 		config = self._container_config(
-			ports=ports, env=env, args=args, name=name,
+			ports=ports,
+			env=env,
+			args=args,
+			name=name,
 			image_name=image_name or DEFAULT_IMAGE,
 			container_disk_in_gb=container_disk_in_gb,
-			volume_in_gb=volume_in_gb, volume_mount_path=volume_mount_path,
+			volume_in_gb=volume_in_gb,
+			volume_mount_path=volume_mount_path,
 			container_registry_auth_id=container_registry_auth_id,
 		)
 		body = {
@@ -175,9 +179,7 @@ class RunPodClient:
 		ports = ((pod.get("runtime") or {}).get("ports")) or []
 		# Keys are str so JSON round-trips cleanly (engine_url lookup uses str).
 		port_map = {
-			str(p["private"]): int(p["public"])
-			for p in ports
-			if p.get("private") and p.get("public")
+			str(p["private"]): int(p["public"]) for p in ports if p.get("private") and p.get("public")
 		}
 		# The tcp mappings share the real public IP; a RunPod http proxy port reports a separate
 		# CGNAT address, and entry order is not stable between calls.
@@ -223,7 +225,10 @@ class RunPodClient:
 		try:
 			response = requests.get(
 				f"{RUNPOD_API_URL}/pods/{pod_id}/logs",
-				headers=headers, params=params, stream=True, timeout=(10, LOG_READ_TIMEOUT),
+				headers=headers,
+				params=params,
+				stream=True,
+				timeout=(10, LOG_READ_TIMEOUT),
 			)
 		except requests.RequestException as e:
 			raise RunPodError(f"RunPod API error: {e}")

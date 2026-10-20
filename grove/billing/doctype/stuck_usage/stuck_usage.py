@@ -41,7 +41,9 @@ class StuckUsage(Document):
 	def pull_now(self):
 		"""Button: pull this team's keys from every store now instead of at the next hourly pull."""
 		frappe.only_for("System Manager")
-		frappe.enqueue("grove.pathway.usage.pull_all", queue="short", team=self.team, trigger="Manual", wait=60)
+		frappe.enqueue(
+			"grove.pathway.usage.pull_all", queue="short", team=self.team, trigger="Manual", wait=60
+		)
 		frappe.msgprint(f"Usage pull queued for {self.team}.", alert=True)
 
 	@frappe.whitelist()
@@ -72,25 +74,40 @@ def record_stuck(team, gateway_store, shares, dead_line=None):
 	now = now_datetime()
 	keys = [] if dead_line else sorted({key for hashes in shares.values() for key in hashes})
 	facts = {
-		"api_keys": ", ".join(keys), "last_failed": now,
-		"last_error": frappe.get_traceback(), "last_payload": frappe.as_json(shares),
+		"api_keys": ", ".join(keys),
+		"last_failed": now,
+		"last_error": frappe.get_traceback(),
+		"last_payload": frappe.as_json(shares),
 	}
 	key = {"team": team, "gateway_store": gateway_store, "dead_line": dead_line}
-	name = frappe.db.get_value("Stuck Usage", {**{k: v or ("is", "not set") for k, v in key.items()}, "resolved": 0})
+	name = frappe.db.get_value(
+		"Stuck Usage", {**{k: v or ("is", "not set") for k, v in key.items()}, "resolved": 0}
+	)
 	if name:
 		attempts = frappe.db.get_value("Stuck Usage", name, "attempts") or 0
 		frappe.db.set_value("Stuck Usage", name, {**facts, "attempts": attempts + 1})
 		return name
-	return frappe.get_doc({
-		"doctype": "Stuck Usage", **key, "first_failed": now, "attempts": 1, **facts,
-	}).insert(ignore_permissions=True).name
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "Stuck Usage",
+				**key,
+				"first_failed": now,
+				"attempts": 1,
+				**facts,
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 def resolve_stuck(team, gateway_store, shares):
 	"""The team's usage on `gateway_store` landed: close the open row, if there is one, listing the
 	Usage Records of `shares` — its drains and keys — so the row leads to what it was waiting for."""
 	name = frappe.db.get_value(
-		"Stuck Usage", {"team": team, "gateway_store": gateway_store, "resolved": 0, "dead_line": ("is", "not set")}
+		"Stuck Usage",
+		{"team": team, "gateway_store": gateway_store, "resolved": 0, "dead_line": ("is", "not set")},
 	)
 	if not name:
 		return None

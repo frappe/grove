@@ -47,6 +47,9 @@ teams, 12 tiers, a probe user and `Grove Settings.default_tier = ""`, deleted by
 mints a capped key patches it in `setUpClass`:
 `cls.enterClassContext(unittest.mock.patch("grove.pathway.usage.peek_team", return_value={}))`.
 
+`test_cap_race.py` is the one suite that commits: it races two raises on two connections of its own,
+which can only see committed rows, so it commits its team, tier and keys and deletes them by hand.
+
 ## What a test here is for
 
 Not coverage. Each one pins a rule that something outside this repo enforces and that reading the code

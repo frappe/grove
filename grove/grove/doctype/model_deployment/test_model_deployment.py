@@ -16,8 +16,8 @@ import frappe
 
 from grove.grove.doctype.model_deployment.model_deployment import (
 	ADDITIVE,
-	OVERRIDABLE,
 	DEPLOYMENT_ONLY,
+	OVERRIDABLE,
 	ModelDeployment,
 	gpu_indexes,
 )
@@ -118,12 +118,12 @@ class TestExtraServeArgsAreAppendedNotReplaced(unittest.TestCase):
 
 	def test_a_replicas_flags_land_after_the_deployments(self):
 		"""vLLM takes the last occurrence of a repeated flag, so landing second is the override."""
-		self.assertEqual(
-			self.args("--enforce-eager"), "--disable-log-requests --enforce-eager"
-		)
+		self.assertEqual(self.args("--enforce-eager"), "--disable-log-requests --enforce-eager")
 
 	def test_a_deployment_with_no_flags_leaves_only_the_replicas(self):
-		config = deployment(extra_serve_args=None).resolved_config(replica(extra_serve_args="--enforce-eager"))
+		config = deployment(extra_serve_args=None).resolved_config(
+			replica(extra_serve_args="--enforce-eager")
+		)
 		self.assertEqual(config["extra_serve_args"], "--enforce-eager")
 
 	def test_neither_side_naming_flags_is_blank_not_a_stray_space(self):
@@ -155,7 +155,9 @@ class TestEngineForAReplica(unittest.TestCase):
 		self.assertEqual(engine.tensor_parallel_size, 2)
 
 	def test_an_override_reaches_the_serve_command(self):
-		self.assertIn("--gpu-memory-utilization 0.75", self.engine(rep=replica(gpu_memory_utilization=0.75)).command)
+		self.assertIn(
+			"--gpu-memory-utilization 0.75", self.engine(rep=replica(gpu_memory_utilization=0.75)).command
+		)
 		self.assertIn("--gpu-memory-utilization 0.92", self.engine(rep=replica()).command)
 
 	def test_a_replica_naming_no_cards_is_still_single_gpu(self):
@@ -197,16 +199,12 @@ class TestNaming(unittest.TestCase):
 		self.assertEqual(self.name("frappe/qwen3-35b"), self.name("openai/gpt-oss-120b"))
 
 	def test_several_deployments_of_one_model_get_distinct_names(self):
-		self.assertNotEqual(
-			self.name("frappe/qwen3-35b", "00014"), self.name("frappe/qwen3-35b", "00015")
-		)
+		self.assertNotEqual(self.name("frappe/qwen3-35b", "00014"), self.name("frappe/qwen3-35b", "00015"))
 
 
 def claim(free=(), unpinned=0, replicas=0, vram=80, capability=9.0):
 	"""What one box reports: its unheld cards, and what is already running on it."""
-	cards = [
-		{"name": f"gpu-{i}", "gpu_index": i, "gpu_type": "h100", "vram_gb": vram} for i in free
-	]
+	cards = [{"name": f"gpu-{i}", "gpu_index": i, "gpu_type": "h100", "vram_gb": vram} for i in free]
 	return frappe._dict(
 		free_gpus=cards,
 		vram_by_card={f"gpu-{i}": vram for i in free},
@@ -224,7 +222,12 @@ def _real_engine(torch_dtype):
 	def engine_for(self, replica=None, gpu_vram_gb=None, compute_capability=None):
 		return VllmEngine(
 			"qwen3-35b",
-			{"hf_repo": "Qwen/Qwen3-35B", "input_modalities": ["text"], "output_modalities": ["text"], "torch_dtype": torch_dtype},
+			{
+				"hf_repo": "Qwen/Qwen3-35B",
+				"input_modalities": ["text"],
+				"output_modalities": ["text"],
+				"torch_dtype": torch_dtype,
+			},
 			port=8080,
 			gpu_count=self.gpus_per_replica,
 			gpu_vram_gb=gpu_vram_gb,

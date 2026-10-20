@@ -25,7 +25,9 @@ def execute(filters=None):
 		{"fieldname": "revenue", "label": "Revenue (USD)", "fieldtype": "Currency", "width": 140},
 	]
 	table, params = money_rows(
-		{name: filters.get(name) or None for name in FILTERS}, from_date=filters.from_date, to_date=filters.to_date
+		{name: filters.get(name) or None for name in FILTERS},
+		from_date=filters.from_date,
+		to_date=filters.to_date,
 	)
 	rows = frappe.db.sql(
 		f"""select {expr} as label, sum(requests) as requests, sum(cost) as revenue
@@ -33,4 +35,6 @@ def execute(filters=None):
 		params,
 		as_dict=True,
 	)
-	return columns, [{**row, "requests": int(row.requests or 0), "revenue": float(row.revenue or 0)} for row in rows]
+	return columns, [
+		{**row, "requests": int(row.requests or 0), "revenue": float(row.revenue or 0)} for row in rows
+	]

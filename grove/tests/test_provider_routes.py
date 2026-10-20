@@ -19,36 +19,63 @@ from grove.tests.model_rows import modality_rows, model_row, placement
 
 MODELS = [
 	model_row("frappe/qwen3-8b", model_id="qwen3-8b"),
-	model_row("anthropic/claude-4-5", "anthropic", model_id="claude-4-5",
-	          upstream_model_id="claude-sonnet-4-5-20250929"),
+	model_row(
+		"anthropic/claude-4-5",
+		"anthropic",
+		model_id="claude-4-5",
+		upstream_model_id="claude-sonnet-4-5-20250929",
+	),
 	model_row("anthropic/claude-haiku", "anthropic", model_id="claude-haiku"),
-	model_row("frappe/nemo-asr", model_id="nemo-asr", upstream_model_id="test-nemo-asr",
-	          input_modalities=["audio"], output_modalities=["transcription"]),
+	model_row(
+		"frappe/nemo-asr",
+		model_id="nemo-asr",
+		upstream_model_id="test-nemo-asr",
+		input_modalities=["audio"],
+		output_modalities=["transcription"],
+	),
 	model_row("anthropic/claude-draft", "anthropic", model_id="claude-draft", published=0),
 	model_row("deepseek/deepseek-chat", "deepseek", model_id="deepseek-chat"),
 	model_row("dual/mix-1", "dual", model_id="mix-1"),
 	model_row("kimi/k2", "kimi", model_id="k2"),
-	model_row("kimi-eu/k2", "kimi", "eu", model_key="kimi/k2", model_id="k2",
-	          upstream_model_id="k2-eu"),
+	model_row("kimi-eu/k2", "kimi", "eu", model_key="kimi/k2", model_id="k2", upstream_model_id="k2-eu"),
 ]
 PROVIDERS = {
 	# `keys` becomes the Keys table: (row id, secret[, disabled]) rows, a blank secret standing for
 	# a row whose password was never set.
 	"frappe": {"base_url": None, "api_version": None, "keys": []},
-	"anthropic": {"anthropic_base_url": "https://api.anthropic.com",
-	              "api_version": "2023-06-01", "keys": [("k-anthropic-1", "vendor-key")]},
-	"deepseek": {"base_url": "https://api.deepseek.com", "api_version": "",
-	             "keys": [("k-deepseek-1", "ds-key"), ("k-deepseek-2", "ds-key-2"), ("k-deepseek-3", "ds-key-3", 1)]},
-	"dual": {"base_url": "https://api.dual.test",
-	         "anthropic_base_url": "https://api.dual.test", "api_version": "",
-	         "keys": [("k-dual-1", "dual-key")]},
-	"kimi": {"base_url": "https://api.kimi.test", "api_version": "", "keys": [("k-kimi-1", "kimi-key")],
-	         "anthropic_base_url": "https://api.kimi.test/anthropic"},
+	"anthropic": {
+		"anthropic_base_url": "https://api.anthropic.com",
+		"api_version": "2023-06-01",
+		"keys": [("k-anthropic-1", "vendor-key")],
+	},
+	"deepseek": {
+		"base_url": "https://api.deepseek.com",
+		"api_version": "",
+		"keys": [("k-deepseek-1", "ds-key"), ("k-deepseek-2", "ds-key-2"), ("k-deepseek-3", "ds-key-3", 1)],
+	},
+	"dual": {
+		"base_url": "https://api.dual.test",
+		"anthropic_base_url": "https://api.dual.test",
+		"api_version": "",
+		"keys": [("k-dual-1", "dual-key")],
+	},
+	"kimi": {
+		"base_url": "https://api.kimi.test",
+		"api_version": "",
+		"keys": [("k-kimi-1", "kimi-key")],
+		"anthropic_base_url": "https://api.kimi.test/anthropic",
+	},
 	"halfway": {"base_url": "https://api.halfway.test", "api_version": "", "keys": [("k-halfway-1", "")]},
 }
 DEPLOYMENTS = [
-	placement("frappe/qwen3-8b", name="MD-1", engine_url="https://203.0.113.1/e/md-1",
-	          status="Active", inference_server="INF-direct", max_num_seqs=4),
+	placement(
+		"frappe/qwen3-8b",
+		name="MD-1",
+		engine_url="https://203.0.113.1/e/md-1",
+		status="Active",
+		inference_server="INF-direct",
+		max_num_seqs=4,
+	),
 ]
 PODS = [placement("frappe/nemo-asr", name="POD-1", engine_url="http://1.2.3.4:8081", max_num_seqs=2)]
 # What a vendor would run on its own side, as the operator listed it; out of order on purpose.
@@ -94,9 +121,12 @@ def routes():
 		patch.object(frappe, "get_all", side_effect=FakeQuery()),
 		patch("grove.pathway.routes.published_routes", side_effect=lambda table, models: table),
 		patch.object(frappe, "get_cached_doc", side_effect=fake_cached_doc),
-		patch.object(frappe, "db", frappe._dict(get_value=lambda *args: "", get_single_value=lambda *args: "in")),
 		patch.object(
-			frappe, "get_doc",
+			frappe, "db", frappe._dict(get_value=lambda *args: "", get_single_value=lambda *args: "in")
+		),
+		patch.object(
+			frappe,
+			"get_doc",
 			side_effect=lambda *a, **k: frappe._dict(get_password=lambda *a, **k: "secret"),
 		),
 	):
@@ -136,8 +166,7 @@ class TestAVendorModelIsRoutable(unittest.TestCase):
 		rows = routes()["kimi/k2"]
 		self.assertEqual(
 			{(r["engine_url"], r["dialect"]) for r in rows},
-			{("https://api.kimi.test", "openai"),
-			 ("https://api.kimi.test/anthropic", "anthropic")},
+			{("https://api.kimi.test", "openai"), ("https://api.kimi.test/anthropic", "anthropic")},
 		)
 		for row in rows:
 			self.assertEqual(row["credentials"], [{"id": "k-kimi-1", "secret": "kimi-key"}])

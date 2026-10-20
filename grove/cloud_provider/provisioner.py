@@ -46,7 +46,6 @@ class PodProvisioner:
 			self._engine = self.pod.engine
 		return self._engine
 
-
 	@property
 	def client(self):
 		"""The Pod's provider API client, built once per provisioner."""
@@ -75,7 +74,6 @@ class PodProvisioner:
 		if not keys:
 			frappe.throw("No active SSH Key found — add one so Ansible/ops can reach the pod.")
 		return keys
-
 
 	@property
 	def env(self):
@@ -109,9 +107,7 @@ class PodProvisioner:
 		credentials = image.registry_credentials
 		if not credentials:
 			return None
-		return self.client.get_registry_auth_id(
-			f"grove-{frappe.scrub(image.image_provider)}", *credentials
-		)
+		return self.client.get_registry_auth_id(f"grove-{frappe.scrub(image.image_provider)}", *credentials)
 
 	@property
 	def config_kwargs(self):
@@ -137,15 +133,13 @@ class PodProvisioner:
 		"""config_kwargs plus the create-only field update does not accept: the GPU shape."""
 		if not self.pod.gpu_type_id:
 			frappe.throw(
-				f"Pod {self.pod.name} has no GPU Type ID — set it (provider GPU id, e.g. "
-				"'NVIDIA L40S')."
+				f"Pod {self.pod.name} has no GPU Type ID — set it (provider GPU id, e.g. 'NVIDIA L40S')."
 			)
 		return dict(
 			self.config_kwargs,
 			gpu_type_id=self.pod.gpu_type_id,
 			gpu_count=self.pod.gpu_count or 1,
 		)
-
 
 	@property
 	def engine_endpoint(self):
@@ -283,7 +277,6 @@ class PodProvisioner:
 		frappe.db.set_value("Pod", self.pod.name, values)
 		frappe.db.commit()
 
-
 	def spawn(self):
 		"""Create the pod on its provider from the Pod doc, record the provider id, and wait for
 		it to serve."""
@@ -330,8 +323,7 @@ class PodProvisioner:
 		self.require_pod_id("spawn it first")
 		try:
 			pod_api = (
-				self.client.poll_pod_ready(self.pod.pod_id) if wait
-				else self.client.get_pod(self.pod.pod_id)
+				self.client.poll_pod_ready(self.pod.pod_id) if wait else self.client.get_pod(self.pod.pod_id)
 			)
 		except RunPodError as e:
 			if "404" not in str(e):
@@ -416,7 +408,6 @@ class PodProvisioner:
 		self.set_state({"pod_id": "", "status": "Terminated", "engine_url": ""})
 		self.sync_model_published()
 		self.log("Terminate", "Success", detail)
-
 
 	def restart_blocker(self, live):
 		"""Why this Pod's config cannot be applied to its live provider pod, or None when it

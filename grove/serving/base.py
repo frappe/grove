@@ -100,7 +100,6 @@ class Engine(ABC):
 		self.warmup_body = json.loads(warmup_body) if warmup_body else {}
 		self.host = host
 
-
 	@property
 	def tensor_parallel_size(self):
 		"""GPUs left once the pipeline stages are carved out. World size is TP x PP, which has to
@@ -117,7 +116,6 @@ class Engine(ABC):
 		"""Weights come off the S3 mirror, so the bucket's credentials belong in the environment
 		and nothing needs pre-downloading."""
 		return bool(self.model.get("weights_s3_uri"))
-
 
 	@property
 	@abstractmethod

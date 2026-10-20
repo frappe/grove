@@ -4,19 +4,27 @@
 behind it. Capacity IS the gateway's admission cap, so it resolves through the deployment in one
 place — `active_replicas` — for both planes."""
 
-from datetime import timezone
+from datetime import UTC, timezone
 from zoneinfo import ZoneInfo
 
 import frappe
 from frappe.utils import get_system_timezone
 
-from grove.naming import short_name
-from grove.net import private_url
 from grove.billing.pricing import PriceBook
 from grove.grove.doctype.model.model import get_modalities
+from grove.naming import short_name
+from grove.net import private_url
 from grove.serving.base import engine_class
 
-REPLICA_FIELDS = ["name", "model", "model_key", "engine_url", "inference_server", "max_num_seqs", "model_deployment"]
+REPLICA_FIELDS = [
+	"name",
+	"model",
+	"model_key",
+	"engine_url",
+	"inference_server",
+	"max_num_seqs",
+	"model_deployment",
+]
 
 
 def ingress_targets(geography):
@@ -56,7 +64,8 @@ def ingress_targets(geography):
 			# The gateway presents this to prove it is a gateway. It is NOT the admin token.
 			"internal_key": frappe.get_doc("Ingress Server", ingress["name"]).get_password(
 				"data_token", raise_exception=False
-			) or "",
+			)
+			or "",
 			"healthy": True,
 			"region": ingress["region"] or "",
 			"deployment": short_name(ingress["name"]),
@@ -79,9 +88,7 @@ def deployments():
 	"""Resolved once per snapshot, for the same reason as `engine_kinds`."""
 	return {
 		deployment["name"]: deployment
-		for deployment in frappe.get_all(
-			"Model Deployment", fields=["name", "engine_image", "max_num_seqs"]
-		)
+		for deployment in frappe.get_all("Model Deployment", fields=["name", "engine_image", "max_num_seqs"])
 	}
 
 
@@ -148,41 +155,51 @@ def gateway_routes(geography):
 			row["capacity"] += cap
 			continue
 		internal_key = frappe.get_doc("Model Replica", d.name).get_password("internal_api_key") or ""
-		routes.setdefault(key_of[d.model], []).append({
-			"engine_url": d.engine_url,
-			"internal_key": internal_key,
-			"healthy": True,
-			"capacity": cap,
-			"deployment": d.name,
-			"server": d.inference_server or d.name,
-			"kind": "direct",
-			"upstream_model": upstream.get(d.model, ""),
-		})
+		routes.setdefault(key_of[d.model], []).append(
+			{
+				"engine_url": d.engine_url,
+				"internal_key": internal_key,
+				"healthy": True,
+				"capacity": cap,
+				"deployment": d.name,
+				"server": d.inference_server or d.name,
+				"kind": "direct",
+				"upstream_model": upstream.get(d.model, ""),
+			}
+		)
 	for (model, _ingress), row in folded.items():
-		routes.setdefault(key_of[model], []).append({
-			**row,
-			"upstream_model": upstream.get(model, ""),
-		})
+		routes.setdefault(key_of[model], []).append(
+			{
+				**row,
+				"upstream_model": upstream.get(model, ""),
+			}
+		)
 
-	pods = frappe.get_all(
-		"Pod",
-		filters={"status": "Running"},
-		fields=["name", "model", "engine_url", "max_num_seqs", "engine_image"],
-	) if geography == frappe.db.get_single_value("Grove Settings", "pod_geography") else []
+	pods = (
+		frappe.get_all(
+			"Pod",
+			filters={"status": "Running"},
+			fields=["name", "model", "engine_url", "max_num_seqs", "engine_image"],
+		)
+		if geography == frappe.db.get_single_value("Grove Settings", "pod_geography")
+		else []
+	)
 	for p in pods:
 		if not (p.model and p.engine_url):
 			continue
 		internal_key = frappe.get_doc("Pod", p.name).get_password("api_key") or ""
-		routes.setdefault(key_of[p.model], []).append({
-			"engine_url": p.engine_url,
-			"internal_key": internal_key,
-			"healthy": True,
-			"capacity": capacity(p, kinds),
-			"deployment": p.name,
-			"server": p.name,
-			"kind": "direct",
-			"upstream_model": upstream.get(p.model, ""),
-		})
+		routes.setdefault(key_of[p.model], []).append(
+			{
+				"engine_url": p.engine_url,
+				"internal_key": internal_key,
+				"healthy": True,
+				"capacity": capacity(p, kinds),
+				"deployment": p.name,
+				"server": p.name,
+				"kind": "direct",
+				"upstream_model": upstream.get(p.model, ""),
+			}
+		)
 	add_vendor_routes(routes, models, vendors, upstream)
 	stamp_modalities(routes, models)
 	routes = published_routes(routes, models)
@@ -210,8 +227,14 @@ def models_in(geography):
 		for m in frappe.get_all(
 			"Model",
 			fields=[
-				"name", "model_key", "model_id", "upstream_model_id", "published",
-				"provider", "provider.provider_name as provider_name", "provider.geography as geography",
+				"name",
+				"model_key",
+				"model_id",
+				"upstream_model_id",
+				"published",
+				"provider",
+				"provider.provider_name as provider_name",
+				"provider.geography as geography",
 				"provider.is_self_hosted as is_self_hosted",
 			],
 		)
@@ -228,7 +251,9 @@ def published_routes(routes, models):
 	book = PriceBook.load()
 	counters = book.counters.validate().published
 	enabled = frappe.get_all("Model Pricing", filters={"status": "Enabled"}, fields=["name", "model"])
-	pricing = {p.model: {"id": p.name, "rates": book.nano_rates(p.name), "counters": counters} for p in enabled}
+	pricing = {
+		p.model: {"id": p.name, "rates": book.nano_rates(p.name), "counters": counters} for p in enabled
+	}
 	by_key = {m.model_key: m for m in models}
 	return {
 		key: [{**row, "pricing": pricing[by_key[key].name]} for row in rows]
@@ -240,7 +265,7 @@ def published_routes(routes, models):
 def utc_timestamp(value):
 	"""A site-time-zone Datetime as an RFC 3339 UTC string."""
 	local = frappe.utils.get_datetime(value).replace(tzinfo=ZoneInfo(get_system_timezone()))
-	return local.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+	return local.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def upstream_model(model, is_vendor):
@@ -332,22 +357,24 @@ def add_vendor_routes(routes, models, vendors, upstream):
 			continue
 		vendor = vendors[model.provider_name]
 		for engine_url, dialect in vendor["fronts"]:
-			routes.setdefault(model.model_key, []).append({
-				"engine_url": engine_url,
-				"internal_key": "",
-				"credentials": vendor["credentials"],
-				"key_selection": vendor["key_selection"],
-				"healthy": True,
-				"capacity": 0,
-				"deployment": "",
-				"server": "",
-				"vendor": model.provider_name,
-				"kind": "provider",
-				"upstream_model": upstream.get(model.name, ""),
-				"api_version": vendor["api_version"],
-				"dialect": dialect,
-				"denied_tools": vendor["denied_tools"],
-			})
+			routes.setdefault(model.model_key, []).append(
+				{
+					"engine_url": engine_url,
+					"internal_key": "",
+					"credentials": vendor["credentials"],
+					"key_selection": vendor["key_selection"],
+					"healthy": True,
+					"capacity": 0,
+					"deployment": "",
+					"server": "",
+					"vendor": model.provider_name,
+					"kind": "provider",
+					"upstream_model": upstream.get(model.name, ""),
+					"api_version": vendor["api_version"],
+					"dialect": dialect,
+					"denied_tools": vendor["denied_tools"],
+				}
+			)
 
 
 def owned_boxes(ingress_name):
@@ -359,15 +386,21 @@ def owned_boxes(ingress_name):
 
 	A box with no private address is left out, not dialled publicly — fail closed, rather than
 	customer traffic quietly crossing the internet to a box meant to be private."""
-	servers = frappe.get_all("Inference Server", filters={"ingress": ingress_name}, fields=["name", "machine"])
-	machines = {
-		machine["name"]: machine
-		for machine in frappe.get_all(
-			"Machine",
-			filters={"name": ("in", [s["machine"] for s in servers if s["machine"]])},
-			fields=["name", "private_ip"],
-		)
-	} if servers else {}
+	servers = frappe.get_all(
+		"Inference Server", filters={"ingress": ingress_name}, fields=["name", "machine"]
+	)
+	machines = (
+		{
+			machine["name"]: machine
+			for machine in frappe.get_all(
+				"Machine",
+				filters={"name": ("in", [s["machine"] for s in servers if s["machine"]])},
+				fields=["name", "private_ip"],
+			)
+		}
+		if servers
+		else {}
+	)
 	return {
 		server["name"]: machines[server["machine"]]["private_ip"]
 		for server in servers
@@ -395,13 +428,15 @@ def replicas_for_ingress(ingress_name):
 		if not engine_url:
 			continue
 		internal_key = frappe.get_doc("Model Replica", replica.name).get_password("internal_api_key") or ""
-		routes.setdefault(replica.model_key, []).append({
-			"engine_url": engine_url,
-			"internal_key": internal_key,
-			"healthy": True,
-			"capacity": capacity(replica, kinds),
-			"deployment": replica.name,
-		})
+		routes.setdefault(replica.model_key, []).append(
+			{
+				"engine_url": engine_url,
+				"internal_key": internal_key,
+				"healthy": True,
+				"capacity": capacity(replica, kinds),
+				"deployment": replica.name,
+			}
+		)
 	for rows in routes.values():
 		rows.sort(key=lambda r: r["deployment"])
 	return routes

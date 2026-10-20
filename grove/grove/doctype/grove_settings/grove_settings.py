@@ -9,10 +9,8 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import get_url
 
-
 # The SD token rides in a query string: URL-unreserved characters only.
 SD_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._~-]{16,}$")
-
 
 
 def verify_scrape_password(password: str, stored: str) -> bool:
@@ -77,15 +75,6 @@ class GroveSettings(Document):
 			if not isinstance(labels, dict):
 				frappe.throw('Extra Labels must be a JSON object, e.g. {"env": "prod"}.')
 
-	def on_update(self):
-		"""A new default tier moves the limits of every team that names none."""
-		from grove.billing.pricing import forget_figures
-
-		before = self.get_doc_before_save()
-		if before and before.default_tier != self.default_tier:
-			for team in frappe.get_all("Central Team", {"tier": ("is", "not set")}, pluck="name"):
-				forget_figures(team)
-
 	def validate_sd_token(self):
 		"""The only guard on an endpoint that returns the fleet's inventory. Checked as it is set:
 		a site holding an older token keeps saving until someone replaces it."""
@@ -139,7 +128,10 @@ class GroveSettings(Document):
 		value that lives in one is not overridable from the other, so there is never a question of
 		which won. `synthetic_session_ttl` is stored as a bare "0" here, which Go reads as a zero
 		duration. `usage_retention` blank keeps the gateway's own default."""
-		return {"synthetic_session_ttl": self.synthetic_session_ttl or "0", "usage_retention": self.usage_retention or ""}
+		return {
+			"synthetic_session_ttl": self.synthetic_session_ttl or "0",
+			"usage_retention": self.usage_retention or "",
+		}
 
 	@property
 	def weights_s3_engine_environment(self):
@@ -149,7 +141,8 @@ class GroveSettings(Document):
 			return {}
 		return {
 			"AWS_ACCESS_KEY_ID": self.weights_s3_access_key_id,
-			"AWS_SECRET_ACCESS_KEY": self.get_password("weights_s3_secret_access_key", raise_exception=False) or "",
+			"AWS_SECRET_ACCESS_KEY": self.get_password("weights_s3_secret_access_key", raise_exception=False)
+			or "",
 			"AWS_DEFAULT_REGION": self.weights_s3_region or "",
 			"RUNAI_STREAMER_CHUNK_BYTESIZE": "4294967296",
 			"RUNAI_STREAMER_S3_REQUEST_TIMEOUT_MS": "3000",
@@ -163,7 +156,10 @@ class GroveSettings(Document):
 			return {}
 		return {
 			"AWS_ACCESS_KEY_ID": self.weights_s3_write_access_key_id,
-			"AWS_SECRET_ACCESS_KEY": self.get_password("weights_s3_write_secret_access_key", raise_exception=False) or "",
+			"AWS_SECRET_ACCESS_KEY": self.get_password(
+				"weights_s3_write_secret_access_key", raise_exception=False
+			)
+			or "",
 			"AWS_DEFAULT_REGION": self.weights_s3_region or "",
 		}
 

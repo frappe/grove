@@ -4,7 +4,7 @@
 import base64
 import binascii
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import frappe
 from frappe.model.document import Document
@@ -91,7 +91,9 @@ class GatewayStore(NamedHost, Document):
 		"""The Machine's private address, live: where Redis binds and the gateways dial."""
 		private_ip = frappe.db.get_value("Machine", self.machine, "private_ip")
 		if not private_ip:
-			frappe.throw(f"Machine {self.machine} has no private IP — its gateways would have nothing to dial.")
+			frappe.throw(
+				f"Machine {self.machine} has no private IP — its gateways would have nothing to dial."
+			)
 		return private_ip
 
 	@property
@@ -154,10 +156,14 @@ class GatewayStore(NamedHost, Document):
 		source = source or self.name
 		key, geography = frappe.db.get_value("Gateway Store", source, ["last_backup_key", "geography"])
 		if geography != self.geography:
-			frappe.throw(f"{source} is in {geography}, not {self.geography}: a snapshot never leaves its geography.")
+			frappe.throw(
+				f"{source} is in {geography}, not {self.geography}: a snapshot never leaves its geography."
+			)
 		if not key:
 			frappe.throw(f"{source} has no backup yet.")
-		frappe.enqueue_doc(self.doctype, self.name, "restore_from", source=source, key=key, queue="long", timeout=900)
+		frappe.enqueue_doc(
+			self.doctype, self.name, "restore_from", source=source, key=key, queue="long", timeout=900
+		)
 		frappe.msgprint(f"Restoring {key} onto {self.name} — watch its Ansible Plays.", alert=True)
 
 	@failure.reports_failure()
@@ -193,9 +199,7 @@ def stores_in(network, **filters):
 	boxes = frappe.get_all("Machine", filters={"network": network}, pluck="name")
 	if not boxes:
 		return []
-	return frappe.get_all(
-		"Gateway Store", filters={"machine": ("in", boxes), **filters}, pluck="name"
-	)
+	return frappe.get_all("Gateway Store", filters={"machine": ("in", boxes), **filters}, pluck="name")
 
 
 def store_writers(store):
@@ -211,7 +215,7 @@ def store_writers(store):
 def backup_key(store, at=None):
 	"""Per store, UTC-stamped in the drain-id format, so a listing sorts by time and a drain id
 	compares against it as a string."""
-	stamp = (at or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
+	stamp = (at or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
 	return f"gateway-store/{store}/{stamp}.rdb"
 
 
@@ -223,7 +227,8 @@ def landed_since(store, key):
 	return frappe.get_all(
 		"Usage Record",
 		filters=[["gateway_store", "=", store], ["drain_id", ">", stamp], ["drain_id", "not like", "dead:%"]],
-		pluck="api_key", distinct=True,
+		pluck="api_key",
+		distinct=True,
 	)
 
 
@@ -236,18 +241,24 @@ def spent_seeds(store):
 	from grove.utils import utc_today
 
 	geographies = frappe.get_all(
-		"Gateway Server", filters={"gateway_store": store, "status": "Active"}, pluck="geography", distinct=True
+		"Gateway Server",
+		filters={"gateway_store": store, "status": "Active"},
+		pluck="geography",
+		distinct=True,
 	)
 	if not geographies:
 		return []
 	keys = frappe.get_all(
-		"Grove API Key", filters={"status": "active", "geography": ("in", geographies)}, fields=["name", "key_hash"]
+		"Grove API Key",
+		filters={"status": "active", "geography": ("in", geographies)},
+		fields=["name", "key_hash"],
 	)
 	spent = month_spent_by("api_key", [k.name for k in keys])
 	field = f"spent:{utc_today():%Y-%m}"
 	return [
 		{"key": f"key:{k.key_hash}", "field": field, "value": round(spent[k.name] * NANO)}
-		for k in keys if spent.get(k.name)
+		for k in keys
+		if spent.get(k.name)
 	]
 
 
@@ -257,7 +268,9 @@ def backup_all():
 	geographies = frappe.get_all("Geography", filters={"backup_bucket": ("is", "set")}, pluck="name")
 	if not geographies:
 		return
-	stores = frappe.get_all("Gateway Store", filters={"status": "Active", "geography": ("in", geographies)}, pluck="name")
+	stores = frappe.get_all(
+		"Gateway Store", filters={"status": "Active", "geography": ("in", geographies)}, pluck="name"
+	)
 	for name in stores:
 		try:
 			frappe.get_doc("Gateway Store", name).backup()

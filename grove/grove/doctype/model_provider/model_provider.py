@@ -34,6 +34,7 @@ class ModelProvider(Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
+
 		from grove.grove.doctype.model_provider_key.model_provider_key import ModelProviderKey
 
 		anthropic_base_url: DF.Data | None
@@ -84,7 +85,9 @@ class ModelProvider(Document):
 		)
 		for sibling in siblings:
 			if bool(sibling.is_self_hosted) != bool(self.is_self_hosted):
-				frappe.throw(f"{self.provider_name} is already named by a provider that is not the same kind.")
+				frappe.throw(
+					f"{self.provider_name} is already named by a provider that is not the same kind."
+				)
 			if sibling.geography == self.geography:
 				frappe.throw(f"{self.provider_name} already has a record in {self.geography}.")
 

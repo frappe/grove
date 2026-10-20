@@ -9,7 +9,7 @@ from frappe.model.document import Document
 from frappe.utils import flt
 
 from grove.access import team_limits, validate_limit_rows, validate_model_geography
-from grove.billing.pricing import committed, forget_figures, usd
+from grove.billing.pricing import committed, forget_figures, lock_team, usd
 
 KEY_PREFIX = "gr_"
 REVOKE_AFTER_HOURS = 6
@@ -38,6 +38,7 @@ class GroveAPIKey(Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
+
 		from grove.grove.doctype.grove_model_row.grove_model_row import GroveModelRow
 		from grove.grove.doctype.model_group_row.model_group_row import ModelGroupRow
 		from grove.grove.doctype.model_limit.model_limit import ModelLimit
@@ -103,25 +104,39 @@ class GroveAPIKey(Document):
 		before = self.get_doc_before_save()
 		if before and before.status == "revoked" and self.status != "revoked":
 			frappe.throw("A revoked key stays revoked. Mint a new one.")
-		if flt(self.cap, 9) > flt(before.cap if before else 0, 9):
+		if self.needs_cap_check:
 			self.validate_cap()
 
-	def validate_cap(self):
-		"""A raise or a mint keeps what the month binds of the team's spend limit within it: each live key's cap or what it spent this month, whichever is more, plus what revoked
-		keys spent (`pricing.committed`), with what the boxes hold this moment on top of the
-		records (`usage.peek_team`, or what the caller just read), since the hourly pull is up to
-		an hour behind and a revoked key's counter leaves the box with it; so moving a spent cap to
-		another key, or revoking and minting afresh, frees nothing. Only a raise is checked: a
-		lowered limit stops no key and a key can always be minted at 0, refused until capped."""
-		if self.status != "active":
-			return
-		pending = self.flags.pending_spend
-		if pending is None:
-			from grove.pathway.usage import peek_team
+	def check_if_latest(self):
+		"""Frappe locks this row from here. A raise takes the team row ahead of it, so two raises
+		queue on the team rather than deadlock on each other's row."""
+		if self.needs_cap_check:
+			lock_team(self.team)
+		super().check_if_latest()
 
-			pending = peek_team(self.team)
+	@property
+	def needs_cap_check(self):
+		"""Only a raise of a live key: a lowered limit stops no key and a key can always be minted
+		at 0, refused until capped. `flags.cap_checked` says the caller checked the whole batch
+		(`api.update_caps`, lowers first, so no step passes what the end does not). The cap before
+		is read without a lock: this decides whether to lock."""
+		if self.status != "active" or self.flags.cap_checked:
+			return False
+		before = 0 if self.is_new() else frappe.db.get_value("Grove API Key", self.name, "cap")
+		return flt(self.cap, 9) > flt(before, 9)
+
+	def validate_cap(self):
+		"""A raise or a mint keeps what the month binds of the team's spend limit within it: each
+		live key's cap or what it spent this month, whichever is more, plus what revoked keys spent
+		(`pricing.committed`), a key's month being the records or what its box counts, whichever is
+		more (`usage.peek_team`): the hourly pull is up to an hour behind, and a revoked key's
+		counter leaves the box with it. So moving a spent cap to another key, or revoking and
+		minting afresh, frees nothing. The boxes are read here, under the team row and after
+		the key count: a mint refused for its count never dials."""
+		from grove.pathway.usage import peek_team
+
 		team = team_limits(self.team, for_update=True)
-		total = committed(self.team, {self.name: self.cap}, pending=pending)
+		total = committed(self.team, {self.name: self.cap}, box_spent=peek_team(self.team))
 		if total > flt(team.spend_limit, 9):
 			frappe.throw(
 				f"This month's spend and caps would add up to {usd(total)} of a spend limit of "

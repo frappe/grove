@@ -22,11 +22,13 @@ own Geography's routes, an INGRESS takes only the replica table for the boxes it
 and the next tick carries it. `full_sync` is the operator buttons: force-push, skipping the gate.
 
 The tick also carries each store the spend adjustments it is owed (a Gateway Spend Adjustment still
-Pending): not state, so not hashed — sent after it, every tick until the box answers."""
+Pending): not state, so not hashed — sent after it, every tick until the box answers, or until it
+says it no longer holds the key."""
 
 from datetime import timedelta
 
 import frappe
+import requests
 
 from grove.billing.doctype.gateway_spend_adjustment.gateway_spend_adjustment import (
 	mark_corrected,
@@ -194,11 +196,23 @@ def push_target(target, delta, adjustments=()):
 			row["detail"] = snapshot.describe(delta, target.post("state", delta))
 		for body in adjustments:
 			row["payload"].append({"push": "spend-adjust", "body": body})
-			row["adjusted"][body["id"]] = target.post("spend-adjust", body)["spent"]
+			row["adjusted"][body["id"]] = adjust(target, body)
 		if adjustments:
 			row["detail"] = f"{row['detail']} spend-adjust:{len(adjustments)}".strip()
 
 	return target.dial(push, payload=[], adjusted={})
+
+
+def adjust(target, body):
+	"""The key's counter after one adjustment, or None when the store no longer holds the key: one
+	revoked since the pull was pruned with its counter, and sending again every tick would fail
+	every tick. Only that 404; an old agent's is still the row's failure."""
+	try:
+		return target.post("spend-adjust", body)["spent"]
+	except requests.HTTPError as e:
+		if e.response is None or e.response.status_code != 404 or "no such key" not in e.response.text:
+			raise
+		return None
 
 
 def check_state(server_type, name):

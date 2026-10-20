@@ -27,6 +27,7 @@ class GPUType(Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
+
 		from grove.grove.doctype.gpu_type_alias.gpu_type_alias import GPUTypeAlias
 
 		aliases: DF.Table[GPUTypeAlias]
@@ -42,8 +43,7 @@ class GPUType(Document):
 		frappe.db.sql(
 			"""update `tabGPU` set vram_gb = %(vram)s, compute_capability = %(capability)s
 			where gpu_type = %(type)s""",
-			{"vram": self.vram_gb or 0, "capability": self.compute_capability or 0,
-			 "type": self.name},
+			{"vram": self.vram_gb or 0, "capability": self.compute_capability or 0, "type": self.name},
 		)
 
 	def knows(self, reported):

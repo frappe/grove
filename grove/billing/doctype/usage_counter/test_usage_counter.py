@@ -21,7 +21,10 @@ class TestUsageCounter(IntegrationTestCase):
 		table = CounterTable.load()
 		self.assertEqual(len(table.names), 12)
 		self.assertEqual(table.base("prompt_tokens_above_272k"), "prompt_tokens")
-		self.assertEqual(table.parts("prompt_tokens_above_272k"), ["cached_tokens_above_272k", "cache_write_tokens_above_272k"])
+		self.assertEqual(
+			table.parts("prompt_tokens_above_272k"),
+			["cached_tokens_above_272k", "cache_write_tokens_above_272k"],
+		)
 		self.assertEqual(frappe.db.get_value("Usage Counter", "prompt_tokens_above_272k", "unit"), "Mtok")
 
 	def test_a_derived_counter_takes_its_base_unit_and_names_a_threshold(self):
@@ -32,7 +35,9 @@ class TestUsageCounter(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			counter("twice_derived", base_counter="prompt_tokens_above_272k", min_prompt_tokens=1)
 		with self.assertRaises(frappe.ValidationError):
-			counter("derived_part", base_counter="cached_tokens", min_prompt_tokens=1, part_of="prompt_tokens")
+			counter(
+				"derived_part", base_counter="cached_tokens", min_prompt_tokens=1, part_of="prompt_tokens"
+			)
 
 	def test_a_root_needs_a_unit_and_a_root_container(self):
 		with self.assertRaises(frappe.ValidationError):
@@ -56,11 +61,19 @@ class TestUsageCounter(IntegrationTestCase):
 
 	def test_a_counter_a_record_names_stays(self):
 		doc = counter("web_search_requests", unit="request")
-		record = frappe.get_doc({
-			"doctype": "Usage Record", "api_key": "k", "team": "t", "day": "2026-10-02", "drain_id": "d",
-			"request_count": 1, "cost": 0, "gateway_cost": 0,
-			"usage": '[{"model": "m", "web_search_requests": 2}]',
-		})
+		record = frappe.get_doc(
+			{
+				"doctype": "Usage Record",
+				"api_key": "k",
+				"team": "t",
+				"day": "2026-10-02",
+				"drain_id": "d",
+				"request_count": 1,
+				"cost": 0,
+				"gateway_cost": 0,
+				"usage": '[{"model": "m", "web_search_requests": 2}]',
+			}
+		)
 		record.flags.ignore_links = True
 		record.insert(ignore_permissions=True)
 		with self.assertRaises(frappe.ValidationError):
@@ -73,4 +86,7 @@ class TestUsageCounter(IntegrationTestCase):
 		counter("prompt_tokens_above_500k", base_counter="prompt_tokens", min_prompt_tokens=500_000)
 		counter("cache_write_tokens_above_500k", base_counter="cache_write_tokens", min_prompt_tokens=500_000)
 		table = CounterTable.load().validate()
-		self.assertEqual(table.parts("prompt_tokens_above_500k"), ["cached_tokens_above_500k", "cache_write_tokens_above_500k"])
+		self.assertEqual(
+			table.parts("prompt_tokens_above_500k"),
+			["cached_tokens_above_500k", "cache_write_tokens_above_500k"],
+		)

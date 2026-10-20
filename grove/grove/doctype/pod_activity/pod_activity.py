@@ -15,16 +15,18 @@ class PodActivity(Document):
 def record(pod, event, outcome, detail="", attempt=None, started=None, trigger="Manual"):
 	"""One line on a Pod, committed at once — the worker may die right after."""
 	ended = frappe.utils.now_datetime()
-	frappe.get_doc({
-		"doctype": "Pod Activity",
-		"pod": pod,
-		"event": event,
-		"trigger": trigger,
-		"outcome": outcome,
-		"attempt": attempt,
-		"started": started,
-		"ended": ended,
-		"duration": (ended - started).total_seconds() if started else None,
-		"detail": str(detail)[:10000],
-	}).insert(ignore_permissions=True)
+	frappe.get_doc(
+		{
+			"doctype": "Pod Activity",
+			"pod": pod,
+			"event": event,
+			"trigger": trigger,
+			"outcome": outcome,
+			"attempt": attempt,
+			"started": started,
+			"ended": ended,
+			"duration": (ended - started).total_seconds() if started else None,
+			"detail": str(detail)[:10000],
+		}
+	).insert(ignore_permissions=True)
 	frappe.db.commit()

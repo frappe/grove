@@ -98,7 +98,9 @@ class TestSpawnRetries(unittest.TestCase):
 		self.assertEqual(len([c for c in h.calls if c[0] == "create"]), 2)
 		self.assertEqual(h.reported.call_count, 1)
 		self.assertIn({"status": "Stopped"}, h.writes)
-		self.assertEqual(h.events(), [("Spawn", "Failure", 1), ("Spawn", "Failure", 2), ("Spawn", "Failure", None)])
+		self.assertEqual(
+			h.events(), [("Spawn", "Failure", 1), ("Spawn", "Failure", 2), ("Spawn", "Failure", None)]
+		)
 
 	def test_zero_retries_means_one_ask(self):
 		h = Harness([RunPodError("no capacity")], retries=0, stored_pod_id="")
@@ -163,11 +165,21 @@ class TestTheRowItself(unittest.TestCase):
 			patch.object(frappe.utils, "now_datetime", lambda: T0 + datetime.timedelta(seconds=90)),
 		):
 			pod_activity.record(
-				"POD-1", "Spawn", "Failure", RunPodError("no capacity"), attempt=2, started=T0, trigger="Scheduled"
+				"POD-1",
+				"Spawn",
+				"Failure",
+				RunPodError("no capacity"),
+				attempt=2,
+				started=T0,
+				trigger="Scheduled",
 			)
 		self.assertEqual(inserted["doctype"], "Pod Activity")
-		self.assertEqual((inserted["pod"], inserted["event"], inserted["outcome"]), ("POD-1", "Spawn", "Failure"))
-		self.assertEqual((inserted["attempt"], inserted["trigger"], inserted["duration"]), (2, "Scheduled", 90.0))
+		self.assertEqual(
+			(inserted["pod"], inserted["event"], inserted["outcome"]), ("POD-1", "Spawn", "Failure")
+		)
+		self.assertEqual(
+			(inserted["attempt"], inserted["trigger"], inserted["duration"]), (2, "Scheduled", 90.0)
+		)
 		self.assertEqual(inserted["detail"], "no capacity")
 		self.assertEqual(kwargs_seen, {"ignore_permissions": True})
 		self.assertTrue(db.commit.called)
@@ -176,7 +188,9 @@ class TestTheRowItself(unittest.TestCase):
 		options = json.loads(DOCTYPE.read_text())
 		event = next(f for f in options["fields"] if f["fieldname"] == "event")["options"].split("\n")
 		source = pathlib.Path(provisioner.__file__).read_text()
-		recorded = {name for name in ("Spawn", "Restart", "Stop", "Start", "Terminate") if f'"{name}"' in source}
+		recorded = {
+			name for name in ("Spawn", "Restart", "Stop", "Start", "Terminate") if f'"{name}"' in source
+		}
 		self.assertEqual(set(event), recorded)
 
 
@@ -207,7 +221,9 @@ class TestTheWindow(unittest.TestCase):
 class TestTheWindowTick(unittest.TestCase):
 	def tick(self, pods, now=datetime.datetime(2026, 9, 8, 12, 0)):
 		writes, queued = [], []
-		db = frappe._dict(set_value=lambda *args: writes.append(args), commit=lambda: None, rollback=lambda: None)
+		db = frappe._dict(
+			set_value=lambda *args: writes.append(args), commit=lambda: None, rollback=lambda: None
+		)
 		rows = [frappe._dict(pod) for pod in pods]
 		with (
 			patch.object(schedule.frappe, "get_all", return_value=rows),
@@ -220,8 +236,14 @@ class TestTheWindowTick(unittest.TestCase):
 		return writes, queued, logged
 
 	def pod(self, **over):
-		base = dict(name="POD-1", provision_at=datetime.timedelta(hours=9), terminate_at=datetime.timedelta(hours=18),
-			pod_id="", status="Pending", scheduled_for=None)
+		base = dict(
+			name="POD-1",
+			provision_at=datetime.timedelta(hours=9),
+			terminate_at=datetime.timedelta(hours=18),
+			pod_id="",
+			status="Pending",
+			scheduled_for=None,
+		)
 		return {**base, **over}
 
 	def test_inside_the_window_an_unprovisioned_pod_is_spawned_once_a_day(self):
@@ -229,8 +251,10 @@ class TestTheWindowTick(unittest.TestCase):
 		self.assertEqual(writes, [("Pod", "POD-1", "scheduled_for", datetime.date(2026, 9, 8))])
 		method, kwargs = queued[0]
 		self.assertEqual(method, "grove.cloud_provider.provisioner.spawn_pod_doc")
-		self.assertEqual((kwargs["pod_name"], kwargs["trigger"], kwargs["job_id"], kwargs["deduplicate"]),
-			("POD-1", "Scheduled", "pod-spawn_pod_doc-POD-1", True))
+		self.assertEqual(
+			(kwargs["pod_name"], kwargs["trigger"], kwargs["job_id"], kwargs["deduplicate"]),
+			("POD-1", "Scheduled", "pod-spawn_pod_doc-POD-1", True),
+		)
 
 	def test_a_window_already_opened_today_is_not_reopened(self):
 		writes, queued, _ = self.tick([self.pod(status="Stopped", scheduled_for=datetime.date(2026, 9, 8))])
@@ -241,13 +265,17 @@ class TestTheWindowTick(unittest.TestCase):
 		self.assertEqual(len(queued), 1)
 
 	def test_outside_the_window_a_live_pod_is_terminated(self):
-		writes, queued, _ = self.tick([self.pod(pod_id="p1", status="Running")], now=datetime.datetime(2026, 9, 8, 18, 0))
+		writes, queued, _ = self.tick(
+			[self.pod(pod_id="p1", status="Running")], now=datetime.datetime(2026, 9, 8, 18, 0)
+		)
 		self.assertEqual(writes, [])
 		self.assertEqual(queued[0][0], "grove.cloud_provider.provisioner.terminate_pod_doc")
 		self.assertEqual(queued[0][1]["job_id"], "pod-terminate_pod_doc-POD-1")
 
 	def test_outside_the_window_nothing_else_happens(self):
-		_, queued, _ = self.tick([self.pod(pod_id="", status="Terminated")], now=datetime.datetime(2026, 9, 8, 20, 0))
+		_, queued, _ = self.tick(
+			[self.pod(pod_id="", status="Terminated")], now=datetime.datetime(2026, 9, 8, 20, 0)
+		)
 		self.assertEqual(queued, [])
 
 	def test_one_bad_pod_does_not_stop_the_tick(self):

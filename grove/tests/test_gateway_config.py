@@ -15,6 +15,7 @@ import json
 import pathlib
 import re
 import unittest
+from typing import ClassVar
 
 import yaml
 
@@ -59,8 +60,12 @@ KNOWN_TUNABLES = {
 	"usage_retention",
 }
 
-PLAYS = ("gateway_server/gateway.yml", "gateway_server/deploy_agent.yml",
-         "ingress_server/ingress.yml", "ingress_server/deploy_agent.yml")
+PLAYS = (
+	"gateway_server/gateway.yml",
+	"gateway_server/deploy_agent.yml",
+	"ingress_server/ingress.yml",
+	"ingress_server/deploy_agent.yml",
+)
 
 
 def play(name):
@@ -76,9 +81,7 @@ def agent_env(name):
 	for task in tasks(name):
 		if task.get("name") == "agent.env":
 			body = task["ansible.builtin.copy"]["content"]
-			return dict(
-				line.split("=", 1) for line in body.strip().splitlines() if "=" in line
-			)
+			return dict(line.split("=", 1) for line in body.strip().splitlines() if "=" in line)
 	raise AssertionError(f"{name} writes no agent.env")
 
 
@@ -119,9 +122,15 @@ class TestAgentEnvIsWrittenWhole(unittest.TestCase):
 	its admin plane on no name at all.
 	"""
 
-	REQUIRED = {
-		"GROVE_ADMIN_TOKEN", "GROVE_REDIS_ADDR", "GROVE_LISTEN_HTTP", "GROVE_LISTEN_HTTPS",
-		"GROVE_TLS_CERT", "GROVE_TLS_KEY", "GROVE_CONFIG", "GROVE_ACCESS_LOG",
+	REQUIRED: ClassVar[dict] = {
+		"GROVE_ADMIN_TOKEN",
+		"GROVE_REDIS_ADDR",
+		"GROVE_LISTEN_HTTP",
+		"GROVE_LISTEN_HTTPS",
+		"GROVE_TLS_CERT",
+		"GROVE_TLS_KEY",
+		"GROVE_CONFIG",
+		"GROVE_ACCESS_LOG",
 		"GROVE_ERROR_LOG",
 	}
 
@@ -199,7 +208,9 @@ class TestDeployingIsNotATrafficEvent(unittest.TestCase):
 		self.assertEqual(["fleet_tls"], deploy_tls["roles"])
 		[point] = deploy_tls["tasks"]
 		notifying = [task for task in point["block"] if "notify" in task]
-		self.assertEqual(["/etc/pathway/agent.env"], [task["ansible.builtin.lineinfile"]["path"] for task in notifying])
+		self.assertEqual(
+			["/etc/pathway/agent.env"], [task["ansible.builtin.lineinfile"]["path"] for task in notifying]
+		)
 		self.assertEqual(["restart pathway"], [handler["name"] for handler in deploy_tls["handlers"]])
 
 
@@ -271,7 +282,7 @@ class TestOpenRestyIsGoneFromTheseBoxes(unittest.TestCase):
 				self.assertFalse(stop["failed_when"])
 
 	def test_no_play_here_references_lua_or_an_nginx_config(self):
-		for name in PLAYS + ("gateway_server/deploy_tls.yml",):
+		for name in (*PLAYS, "gateway_server/deploy_tls.yml"):
 			with self.subTest(name):
 				body = (PLAYBOOKS / name).read_text()
 				for dead in ("lua", "nginx.conf", "openresty -t", "opm get"):
@@ -328,7 +339,10 @@ class TestTheUnitCanSurviveAnUpgrade(unittest.TestCase):
 
 	def test_both_planes_run_the_same_unit_but_for_the_description(self):
 		ingress = (PLAYBOOKS / "ingress_server/systemd/pathway.service").read_text()
-		strip = lambda text: [l for l in text.splitlines() if not l.startswith("Description=")]
+
+		def strip(text):
+			return [l for l in text.splitlines() if not l.startswith("Description=")]
+
 		self.assertEqual(strip(self.unit), strip(ingress))
 
 
@@ -359,7 +373,9 @@ class TestTheProcessIsNotRoot(unittest.TestCase):
 				# Ownership by chown, never `file: recurse`: that stamped the directory's 0755 onto
 				# payload.log — customer content, world-readable — the first time it ran.
 				self.assertNotIn("recurse", logs["ansible.builtin.file"])
-				handover = next(t for t in tasks(name) if t.get("name") == "hand the existing logs to the process")
+				handover = next(
+					t for t in tasks(name) if t.get("name") == "hand the existing logs to the process"
+				)
 				self.assertIn("chown -Rc {{ grove_user }}", handover["ansible.builtin.command"])
 				private = next(t for t in tasks(name) if t.get("name") == "keep the logs private")
 				self.assertIn("chmod -c 0640", private["ansible.builtin.command"])
@@ -373,12 +389,15 @@ class TestTheProcessIsNotRoot(unittest.TestCase):
 				self.assertIn("create 0640 frappe frappe", text)
 				self.assertIn("su frappe frappe", text)
 
+
 class TestAGatewayRunsNoRedisOfItsOwn(unittest.TestCase):
 	"""A gateway keeps everything on its Network's Gateway Store; a Redis still running beside it
 	would hold stale keys nothing reads."""
 
 	def test_the_gateway_play_installs_no_redis(self):
-		roles = [r.get("role") if isinstance(r, dict) else r for r in play("gateway_server/gateway.yml")["roles"]]
+		roles = [
+			r.get("role") if isinstance(r, dict) else r for r in play("gateway_server/gateway.yml")["roles"]
+		]
 		self.assertNotIn("redis", roles)
 
 	def test_the_old_redis_stops_only_after_the_gateway_restarted_off_it(self):
@@ -411,7 +430,10 @@ class TestMaintenanceIsATunable(unittest.TestCase):
 	def test_the_key_is_rendered_only_while_on(self):
 		"""A pathway older than the key refuses the whole file, so a box not in maintenance gets the old bytes."""
 		template = (PLAYBOOKS / "gateway_server/config.json.j2").read_text()
-		self.assertRegex(template, r'{% if gateway_maintenance \| default\(false\) %}\n\s*"maintenance": true,\n{% endif %}')
+		self.assertRegex(
+			template,
+			r'{% if gateway_maintenance \| default\(false\) %}\n\s*"maintenance": true,\n{% endif %}',
+		)
 
 	def test_the_config_play_signals_and_touches_nothing_else(self):
 		for name in ("gateway_server/config.yml", "ingress_server/config.yml"):
@@ -421,5 +443,3 @@ class TestMaintenanceIsATunable(unittest.TestCase):
 				self.assertEqual("reload pathway config", config["tasks"][0]["notify"])
 				[handler] = config["handlers"]
 				self.assertIn("SIGUSR1", handler["ansible.builtin.command"])
-
-

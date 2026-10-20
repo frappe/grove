@@ -2,7 +2,7 @@
 # See license.txt
 """The monthly spend limit holds against what the month's keys spent, not only their caps: each live
 key's cap or its month's spend, whichever is more, plus what revoked keys spent, with what the
-boxes hold this moment on top (`pricing.committed` over `usage.peek_team`). So moving a spent cap
+boxes count this moment where that is more (`pricing.committed` over `usage.peek_team`). So moving a spent cap
 to another key, or revoking and minting afresh, frees nothing. Site-backed; the boxes are a fake
 that answers whatever a test says they hold."""
 
@@ -16,6 +16,7 @@ from frappe.tests import IntegrationTestCase
 from grove.api import keys, teams, usage
 from grove.billing.pricing import committed, usd
 from grove.grove.doctype.geography.test_geography import make_test_geography
+from grove.grove.doctype.grove_api_key import grove_api_key
 from grove.tests.test_api_permissions import backdate, billed_record, tier
 from grove.utils import utc_today
 
@@ -24,7 +25,7 @@ LAST_MONTH = frappe.utils.add_months(utc_today(), -1)
 
 class SpendLimitCase(IntegrationTestCase):
 	"""A team per test on a tier of its own, Administrator at the API, the boxes faked: `self.peek`
-	is what `usage.peek_team` answers, {key: USD the boxes hold that no record has yet}."""
+	is what `usage.peek_team` answers, {key: USD the boxes count this month}."""
 
 	counter = 0
 
@@ -108,15 +109,15 @@ class TestWhatTheMonthSpentBindsTheLimit(SpendLimitCase):
 		keys.revoke_key(team, first)
 		self.refused(lambda: self.key(team, cap=1), "add up to 11")
 
-	def test_the_boxes_answer_stands_in_for_nothing_the_records_have(self):
-		"""A spend both landed and still on the box would double; the peek skips a landed set-aside
-		bucket itself (test_usage_pull), so here the sum is simply records plus what it answers."""
+	def test_a_keys_month_is_the_records_or_the_boxes_whichever_is_more(self):
+		"""The records lag the boxes by up to an hour and the boxes lose what a restore or a dead
+		spool line left behind; everything recorded was counted on a box first, so a sum would
+		double."""
 		team = self.team(spend_limit=10)
-		first = self.key(team, cap=10)
+		first = self.key(team, cap=1)
 		billed_record(first, team, utc_today(), 4)
-		self.peek.return_value = {first: Decimal("2")}
-		self.assertEqual(committed(team, pending=self.peek()), 10.0)
-		self.assertEqual(committed(team, pending={first: Decimal("7")}), 11.0)
+		self.assertEqual(committed(team, box_spent={first: Decimal("2")}), 4.0)
+		self.assertEqual(committed(team, box_spent={first: Decimal("7")}), 7.0)
 
 
 class TestWhereTheCheckRuns(SpendLimitCase):
@@ -130,14 +131,26 @@ class TestWhereTheCheckRuns(SpendLimitCase):
 		self.assertEqual(self.peek.call_count, 2)
 		self.peek.assert_called_with(team)
 
-	def test_a_batch_asks_once_refuses_whole_and_passes_its_answer_to_every_save(self):
+	def test_a_mint_past_the_key_count_never_asks_the_boxes(self):
+		team = self.team(spend_limit=10)
+		only_one = frappe.get_doc("Tier", f"{team}-tier")
+		only_one.max_keys = 1
+		only_one.save()
+		self.key(team, cap=1)
+		self.peek.reset_mock()
+		self.refused(lambda: self.key(team, cap=1), "already holds 1 live keys")
+		self.peek.assert_not_called()
+
+	def test_a_batch_asks_once_refuses_whole_and_checks_no_save_again(self):
 		team = self.team(spend_limit=10)
 		first, second = self.key(team, cap=6), self.key(team, cap=4)
 		self.peek.reset_mock()
 		self.peek.return_value = {first: Decimal("3")}
 		keys.update_caps(team, {first: 2, second: 2})
 		self.peek.assert_not_called()
-		rows = keys.update_caps(team, {first: 3, second: 7})
+		with unittest.mock.patch.object(grove_api_key, "committed") as per_save:
+			rows = keys.update_caps(team, {first: 3, second: 7})
+		per_save.assert_not_called()
 		self.assertEqual({row.name: row.cap for row in rows}, {first: 3, second: 7})
 		self.assertEqual(self.peek.call_count, 1)
 		self.refused(

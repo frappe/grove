@@ -3,7 +3,8 @@
 Grove bills its own price: each pricing the gateway tagged a request with is priced here at that
 pricing's rates, and the team's figures are forgotten so the next read sees it. The gateway's own
 cost sits beside it; where the two differ beyond the gateway's truncation, a Credit Discrepancy
-says so. A model the gateway served without a pricing lands in the same record at no cost."""
+says so. A model the gateway served without a pricing lands in the same record at no cost. A dead
+line's is decided here: the box counted none of it, so its counter is owed the whole price."""
 
 from decimal import Decimal
 
@@ -12,11 +13,26 @@ from frappe.model.naming import make_autoname
 
 from grove.billing.doctype.credit_discrepancy.credit_discrepancy import record
 from grove.billing.pricing import NANO, forget_figures, lock_team
+from grove.utils import utc_today
 
+DEAD = "dead:"
 NANO_USD = Decimal(1) / NANO
 FIELDS = (
-	"name", "creation", "modified", "owner", "modified_by", "api_key", "team", "day", "gateway_store",
-	"drain_id", "request_count", "total_tokens", "cost", "gateway_cost", "usage",
+	"name",
+	"creation",
+	"modified",
+	"owner",
+	"modified_by",
+	"api_key",
+	"team",
+	"day",
+	"gateway_store",
+	"drain_id",
+	"request_count",
+	"total_tokens",
+	"cost",
+	"gateway_cost",
+	"usage",
 )
 
 
@@ -58,14 +74,23 @@ class Reconciler:
 		along for `bill` and `audit`."""
 		now = frappe.utils.now()
 		return frappe._dict(
-			name=make_autoname("hash", "Usage Record"), creation=now, modified=now,
-			owner=frappe.session.user, modified_by=frappe.session.user,
-			api_key=prefix, team=team, day=self.day, gateway_store=self.gateway_store, drain_id=self.drain_id,
+			name=make_autoname("hash", "Usage Record"),
+			creation=now,
+			modified=now,
+			owner=frappe.session.user,
+			modified_by=frappe.session.user,
+			api_key=prefix,
+			team=team,
+			day=self.day,
+			gateway_store=self.gateway_store,
+			drain_id=self.drain_id,
 			request_count=requests,
 			total_tokens=sum(e[counter] for e in entries for counter in self.book.counters.whole),
 			cost=sum((e["grove_cost"] for e in entries), Decimal(0)),
 			gateway_cost=sum((e["gateway_cost"] for e in entries), Decimal(0)),
-			usage=frappe.as_json([{k: v for k, v in e.items() if k != "gateway_cost"} for e in entries], indent=None),
+			usage=frappe.as_json(
+				[{k: v for k, v in e.items() if k != "gateway_cost"} for e in entries], indent=None
+			),
 			entries=entries,
 		)
 
@@ -74,8 +99,11 @@ class Reconciler:
 		totals are exactly the sum of what is stored."""
 		return [
 			self.entry(
-				self.book.pricing(pricing).model_key, pricing, counts,
-				usd(counts.get("cost", 0)), self.book.pricing_cost(pricing, counts),
+				self.book.pricing(pricing).model_key,
+				pricing,
+				counts,
+				usd(counts.get("cost", 0)),
+				self.book.pricing_cost(pricing, counts),
 			)
 			for pricing, counts in pricings.items()
 		]
@@ -92,17 +120,47 @@ class Reconciler:
 	def entry(self, model, pricing, counts, gateway_cost, grove_cost):
 		"""`model` is the key — what the bucket, the report and the customer name."""
 		return {
-			"model": model, "pricing": pricing, "requests": counts.get("request_count", 0),
-			**{counter: counts.get(counter, 0) for counter in self.book.counters.names if counter != "request_count"},
-			"gateway_cost": gateway_cost.quantize(NANO_USD), "grove_cost": grove_cost.quantize(NANO_USD),
+			"model": model,
+			"pricing": pricing,
+			"requests": counts.get("request_count", 0),
+			**{
+				counter: counts.get(counter, 0)
+				for counter in self.book.counters.names
+				if counter != "request_count"
+			},
+			"gateway_cost": gateway_cost.quantize(NANO_USD),
+			"grove_cost": grove_cost.quantize(NANO_USD),
 		}
 
+	@property
+	def is_dead(self):
+		"""A dead line of this month: the box never counted it and its counter still gates the key.
+		One of a past month lands and lifts nothing; that counter gates nobody now."""
+		return self.drain_id.startswith(DEAD) and self.day >= utc_today().replace(day=1)
+
 	def audit(self, row):
-		"""The gateway undercharges by at most its truncation; anything else is a discrepancy."""
-		for entry in row.entries:
-			gateway, grove = entry["gateway_cost"], entry["grove_cost"]
-			if entry["pricing"] and abs(gateway - grove) > self.book.counters.tolerance(entry["requests"]):
-				record(
-					usage_record=row.name, team=row.team, api_key=row.api_key, pricing=entry["pricing"],
-					gateway_store=self.gateway_store, gateway_value=gateway, grove_value=grove, delta=gateway - grove,
-				)
+		"""The gateway undercharges by at most its truncation; anything else is a discrepancy for a
+		person to decide. A dead line's is decided here: the box charged none of it, so a live key's
+		counter is owed the whole price, sent by the next tick. A revoked key's counter is gone with
+		it: billed, owed nothing."""
+		priced = [entry for entry in row.entries if entry["pricing"]]
+		if not self.is_dead:
+			for entry in priced:
+				gateway, grove = entry["gateway_cost"], entry["grove_cost"]
+				if abs(gateway - grove) > self.book.counters.tolerance(entry["requests"]):
+					self.discrepancy(row, entry, gateway, grove)
+		elif frappe.db.get_value("Grove API Key", row.api_key, "status") == "active":
+			for entry in priced:
+				self.discrepancy(row, entry, Decimal(0), entry["grove_cost"]).adjust_gateway()
+
+	def discrepancy(self, row, entry, gateway, grove):
+		return record(
+			usage_record=row.name,
+			team=row.team,
+			api_key=row.api_key,
+			pricing=entry["pricing"],
+			gateway_store=self.gateway_store,
+			gateway_value=gateway,
+			grove_value=grove,
+			delta=gateway - grove,
+		)

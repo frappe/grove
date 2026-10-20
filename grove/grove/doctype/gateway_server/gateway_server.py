@@ -5,7 +5,6 @@ import frappe
 from frappe.model.document import Document
 
 from grove import failure
-from grove.pathway import projection
 from grove.cloud_provider.dns import Route53Error
 from grove.fleet import (
 	PathwayHost,
@@ -13,6 +12,7 @@ from grove.fleet import (
 	gateway_agent_version,
 )
 from grove.grove.doctype.gateway_store.gateway_store import store_writers, stores_in
+from grove.pathway import projection
 
 
 class GatewayServer(PathwayHost, Document):
@@ -50,7 +50,9 @@ class GatewayServer(PathwayHost, Document):
 		self.set_admin_url()
 		self.set_admin_token()
 		if self.is_store_writer and not self.gateway_store:
-			frappe.throw(f"{self.name} is not on a Gateway Store yet — only a gateway deployed onto one can be its writer.")
+			frappe.throw(
+				f"{self.name} is not on a Gateway Store yet — only a gateway deployed onto one can be its writer."
+			)
 
 	def set_admin_token(self):
 		"""The credential the control plane authenticates every push with. Generated rather than
@@ -105,7 +107,9 @@ class GatewayServer(PathwayHost, Document):
 		like record_agent_version, so it fires no on_update."""
 		if rc != 0:
 			return
-		before = frappe.db.get_value(self.doctype, self.name, ["gateway_store", "is_store_writer"], as_dict=True)
+		before = frappe.db.get_value(
+			self.doctype, self.name, ["gateway_store", "is_store_writer"], as_dict=True
+		)
 		stays_writer = before.gateway_store == store and before.is_store_writer
 		is_writer = bool(stays_writer or not store_writers(store))
 		frappe.db.set_value(
@@ -141,7 +145,9 @@ class GatewayServer(PathwayHost, Document):
 	def pull_usage(self):
 		"""Button: drain this box's store now instead of at the next hourly pull (logged on a
 		Pathway Sync doc)."""
-		frappe.enqueue("grove.pathway.usage.pull_all", queue="short", gateways=[self.name], trigger="Manual", wait=60)
+		frappe.enqueue(
+			"grove.pathway.usage.pull_all", queue="short", gateways=[self.name], trigger="Manual", wait=60
+		)
 		frappe.msgprint(f"Usage pull queued for {self.name}.", alert=True)
 
 	@property
@@ -260,7 +266,9 @@ class GatewayServer(PathwayHost, Document):
 			"gateway_id": self.short_name,
 			"gateway_region": self.region or "",
 			"gateway_geography": self.geography or "",
-			"gateway_host": frappe.db.get_value("Geography", self.geography, "endpoint") if self.geography else "",
+			"gateway_host": frappe.db.get_value("Geography", self.geography, "endpoint")
+			if self.geography
+			else "",
 			"proxy_hostname": self.hostname,
 			**frappe.get_doc("Gateway Store", store).redis_variables,
 			**tls_variables,

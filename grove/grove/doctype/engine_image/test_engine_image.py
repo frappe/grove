@@ -48,9 +48,7 @@ class TestSplitImagePath(unittest.TestCase):
 		)
 
 	def test_a_private_registry_drops_the_host_it_already_carries(self):
-		self.assertEqual(
-			split("ghcr.io/acme/vllm:v1", registry_host="ghcr.io"), ("acme/vllm", "v1")
-		)
+		self.assertEqual(split("ghcr.io/acme/vllm:v1", registry_host="ghcr.io"), ("acme/vllm", "v1"))
 
 	def test_a_private_registry_path_without_the_host(self):
 		self.assertEqual(split("acme/vllm:v1", registry_host="ghcr.io"), ("acme/vllm", "v1"))
@@ -66,9 +64,7 @@ class TestSplitImagePath(unittest.TestCase):
 
 	def test_a_digest_ref_keeps_its_whole_digest(self):
 		digest = "sha256:f9de5cd9fa9071a2b1b0e2a0d7b39e1c" + "0" * 32
-		self.assertEqual(
-			split(f"vllm/vllm-openai@{digest}"), ("vllm/vllm-openai", digest)
-		)
+		self.assertEqual(split(f"vllm/vllm-openai@{digest}"), ("vllm/vllm-openai", digest))
 
 
 class TestWarmupBody(unittest.TestCase):

@@ -24,9 +24,17 @@ def throw(message, *args, **kwargs):
 
 def server(**fields):
 	doc = SimpleNamespace(
-		doctype="Inference Server", name="inf-1", machine="m-1", machine_ip="1.2.3.4",
-		ingress=None, is_standalone=0, is_provisioned=0, status="Active", hostname="inf-1.fleet.dev",
-		has_fleet_name=True, geography="in",
+		doctype="Inference Server",
+		name="inf-1",
+		machine="m-1",
+		machine_ip="1.2.3.4",
+		ingress=None,
+		is_standalone=0,
+		is_provisioned=0,
+		status="Active",
+		hostname="inf-1.fleet.dev",
+		has_fleet_name=True,
+		geography="in",
 	)
 	doc.__dict__.update(fields)
 	return doc
@@ -34,7 +42,9 @@ def server(**fields):
 
 def geography(**fields):
 	"""The box's Geography, reduced to the TLS vars it hands out."""
-	return SimpleNamespace(tls_variables={"fleet_zone": "fleet.dev", "fleet_tls_cert": "CERT", "fleet_tls_key": "KEY", **fields})
+	return SimpleNamespace(
+		tls_variables={"fleet_zone": "fleet.dev", "fleet_tls_cert": "CERT", "fleet_tls_key": "KEY", **fields}
+	)
 
 
 class TestSetupNeedsAFront(unittest.TestCase):
@@ -117,7 +127,10 @@ class TestTlsVariables(unittest.TestCase):
 		self.assertEqual(variables["fleet_tls_key"], "KEY")
 		self.assertFalse(variables["grove_tls_selfsigned"])
 		defaults = yaml.safe_load(FLEET_TLS_DEFAULTS.read_text())
-		for override, path in (("grove_tls_cert", "fleet_tls_cert_path"), ("grove_tls_key", "fleet_tls_key_path")):
+		for override, path in (
+			("grove_tls_cert", "fleet_tls_cert_path"),
+			("grove_tls_key", "fleet_tls_key_path"),
+		):
 			self.assertEqual(variables[override], "{{ %s }}" % path)
 			self.assertIn(path, defaults)
 

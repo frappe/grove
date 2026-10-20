@@ -67,9 +67,7 @@ class TestARentedBoxIsRehosted(unittest.TestCase):
 
 	def test_a_new_card_at_a_known_slot_keeps_the_row(self):
 		rows = [card("gpu-a", UUID, 0)]
-		upgrades, inserts, stale = plan_reconcile(
-			rows, [scan(OTHER_UUID, 0)], slot_is_identity=True
-		)
+		upgrades, inserts, stale = plan_reconcile(rows, [scan(OTHER_UUID, 0)], slot_is_identity=True)
 		self.assertEqual([(c.name, r["device_id"]) for c, r in upgrades], [("gpu-a", OTHER_UUID)])
 		self.assertEqual((inserts, stale), ([], []))
 
@@ -94,9 +92,7 @@ class TestARentedBoxIsRehosted(unittest.TestCase):
 
 	def test_a_slot_the_box_no_longer_reports_is_still_pruned(self):
 		rows = [card("gpu-a", UUID, 0), card("gpu-b", OTHER_UUID, 1)]
-		_upgrades, inserts, stale = plan_reconcile(
-			rows, [scan("GPU-1111", 0)], slot_is_identity=True
-		)
+		_upgrades, inserts, stale = plan_reconcile(rows, [scan("GPU-1111", 0)], slot_is_identity=True)
 		self.assertEqual(inserts, [])
 		self.assertEqual([c.name for c in stale], ["gpu-b"])
 

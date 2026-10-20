@@ -17,6 +17,7 @@ class ModelPricing(Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
+
 		from grove.billing.doctype.model_pricing_rate.model_pricing_rate import ModelPricingRate
 
 		enabled_on: DF.Date | None
@@ -60,5 +61,8 @@ class ModelPricing(Document):
 		if not self.flags.enabling:
 			return
 		frappe.db.set_value(
-			"Model Pricing", {"model": self.model, "status": "Enabled", "name": ("!=", self.name)}, "status", "Disabled"
+			"Model Pricing",
+			{"model": self.model, "status": "Enabled", "name": ("!=", self.name)},
+			"status",
+			"Disabled",
 		)

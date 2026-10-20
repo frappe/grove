@@ -4,6 +4,7 @@
 charged, the gateway's own charge is audited beside it, a discrepancy is corrected on the side
 that is wrong, and the push carries each key its monthly cap."""
 
+import json
 import unittest.mock
 from decimal import Decimal
 
@@ -16,9 +17,9 @@ from grove.billing.doctype.gateway_spend_adjustment.gateway_spend_adjustment imp
 	mark_corrected,
 	pending_adjustments,
 )
-from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing, new_pricing
 from grove.billing.report.revenue.revenue import execute as revenue
+from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.pathway import routes, snapshot, usage
 from grove.pathway.run import Target
 from grove.tests.test_usage_pull import a_store
@@ -254,7 +255,9 @@ class TestWhatTheGatewayDidNotCharge(CreditsCase):
 		would bill what the box never counted, so the team waits as Stuck Usage."""
 		team, key = self.team(cap=1)
 		self.assertEqual(
-			self.pull({key: self.hash(20_000) | {f"f:{self.pricing}:cost": "1"}}, drain_id="credits-unbilled"),
+			self.pull(
+				{key: self.hash(20_000) | {f"f:{self.pricing}:cost": "1"}}, drain_id="credits-unbilled"
+			),
 			(1, {}, [], 1),
 		)
 		self.assertEqual(self.state(team), (D("0"), 0))
@@ -378,6 +381,9 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		row.reload()
 		self.assertEqual(self.state(team)[0], D("0.6"))
 		self.assertEqual(row.resolution, "Grove corrected")
+		# The figures wait out their cache: a correction is an operator's action in Desk.
+		self.assertEqual(self.money(team), (0.6, 0.6, 0.5))
+		pricing.forget_figures(team)
 		self.assertEqual(self.money(team), (0.6, 0.6, 0.6))
 		self.assertEqual(D(str(frappe.db.get_value("Usage Record", row.usage_record, "cost"))), D("0.5"))
 		[correction] = frappe.get_all(
@@ -466,6 +472,20 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		self.assertEqual(self.money(team), (0.5, 0.5, 0.5), "and so is every money read")
 		self.assertFalse(frappe.db.exists("Usage Correction", {"credit_discrepancy": row.name}))
 
+	def test_a_store_that_no_longer_holds_the_key_is_owed_no_more(self):
+		_team, row = self.discrepancy()
+		row.correct_gateway()
+		mark_corrected({row.name: None})
+		adjustment = frappe.db.get_value(
+			"Gateway Spend Adjustment",
+			{"credit_discrepancy": row.name},
+			["status", "gateway_spent", "applied_on"],
+			as_dict=True,
+		)
+		self.assertEqual((adjustment.status, adjustment.gateway_spent), ("Applied", 0))
+		self.assertIsNotNone(adjustment.applied_on)
+		self.assertNotIn(row.name, self.owed_ids())
+
 	def owed_ids(self):
 		return [body["id"] for body in pending_adjustments().get(self.store, [])]
 
@@ -475,6 +495,59 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		self.addCleanup(frappe.set_user, "Administrator")
 		with self.assertRaises(frappe.PermissionError):
 			row.correct_grove()
+
+
+class TestADeadLineIsOwedToTheBox(CreditsCase):
+	"""Usage the box spooled while its store was down and could not replay: Grove bills it, and the
+	box, which charged none of it, is owed the price on the key's counter."""
+
+	def dead(self, key, tokens, at=None):
+		CreditsCase.counter += 1
+		accrual = {"prefix": key, "fields": self.hash(tokens), "at": at or f"{usage.utc_today()}T10:00:00Z"}
+		line = {"id": f"rid-{CreditsCase.counter}", "line": json.dumps(accrual), "error": "script failed"}
+		with unittest.mock.patch.object(frappe.db, "commit"):
+			return usage.record_drains(self.gateway, {}, [line], gateway_store=self.store)
+
+	def test_a_dead_line_is_the_gateways_error_and_its_price_is_owed_to_the_counter(self):
+		team, key = self.team(cap=5)
+		with unittest.mock.patch.object(Target, "post") as post:
+			self.dead(key, 50_000)
+		post.assert_not_called()
+		self.assertEqual(self.state(team)[0], D("0.5"))
+		[row] = frappe.get_all(
+			"Credit Discrepancy",
+			filters={"team": team},
+			fields=["name", "resolution", "gateway_value", "grove_value", "delta"],
+		)
+		self.assertEqual(
+			(row.resolution, D(str(row.gateway_value)), D(str(row.grove_value)), D(str(row.delta))),
+			("Gateway corrected", D(0), D("0.5"), D("-0.5")),
+		)
+		key_hash = frappe.db.get_value("Grove API Key", key, "key_hash")
+		self.assertIn(
+			{"key": key_hash, "delta": 500_000_000, "id": row.name}, pending_adjustments()[self.store]
+		)
+		self.assertEqual(self.discrepancies(team), [], "nothing is left for a person to decide")
+
+	def test_a_revoked_keys_dead_line_is_billed_and_owed_nothing(self):
+		team, key = self.team(cap=5)
+		frappe.db.set_value("Grove API Key", key, "status", "revoked")
+		self.dead(key, 50_000)
+		self.assertEqual(self.state(team)[0], D("0.5"))
+		self.assertFalse(frappe.db.exists("Credit Discrepancy", {"team": team}))
+
+	def test_a_dead_line_of_a_past_month_lands_and_lifts_nothing(self):
+		team, key = self.team(cap=5)
+		self.dead(key, 50_000, at="2026-09-15T10:00:00Z")
+		self.assertTrue(frappe.db.get_value("Usage Record", {"api_key": key}, "drain_id").startswith("dead:"))
+		self.assertFalse(frappe.db.exists("Credit Discrepancy", {"team": team}))
+
+	def test_the_pull_decides_it_under_whoever_pulled(self):
+		team, key = self.team(cap=5)
+		frappe.set_user("Guest")
+		self.addCleanup(frappe.set_user, "Administrator")
+		self.dead(key, 50_000)
+		self.assertTrue(frappe.db.exists("Gateway Spend Adjustment", {"team": team, "status": "Pending"}))
 
 
 class TestThePushCarriesTheCap(CreditsCase):
@@ -487,9 +560,7 @@ class TestThePushCarriesTheCap(CreditsCase):
 		self.pull({key: self.hash(30_000)})
 		self.pull({key: self.hash(20_000)}, store=a_store("credits-store-2"))
 		pushed = self.keys()[key]
-		self.assertEqual(
-			(pushed["team"], pushed["budget"], pushed["limited"]), (team, 1_250_000_000, False)
-		)
+		self.assertEqual((pushed["team"], pushed["budget"], pushed["limited"]), (team, 1_250_000_000, False))
 
 	def test_a_suspended_teams_keys_are_pushed_limited(self):
 		team, key = self.team(cap=0.5)

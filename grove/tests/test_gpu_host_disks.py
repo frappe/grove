@@ -38,9 +38,9 @@ def find_task(tasks, name):
 
 
 SHORTLIST = find_task(TASKS, "Shortlist the disks nothing else is using")
-PINNED_IS_SPARE = find_task(TASKS, "Refuse a pinned data device that is in use")[
-	"ansible.builtin.assert"
-]["that"]
+PINNED_IS_SPARE = find_task(TASKS, "Refuse a pinned data device that is in use")["ansible.builtin.assert"][
+	"that"
+]
 
 
 def evaluate(expression, context):
@@ -79,17 +79,31 @@ INSTANCE_STORE = "Amazon EC2 NVMe Instance Storage"
 
 def disk(name, size, fstype=None, mountpoint=None, model=None, rm=False, ro=False):
 	return {
-		"name": name, "path": f"/dev/{name}", "type": "disk", "size": size,
-		"fstype": fstype, "mountpoint": mountpoint, "pkname": None, "model": model,
-		"rm": rm, "ro": ro,
+		"name": name,
+		"path": f"/dev/{name}",
+		"type": "disk",
+		"size": size,
+		"fstype": fstype,
+		"mountpoint": mountpoint,
+		"pkname": None,
+		"model": model,
+		"rm": rm,
+		"ro": ro,
 	}
 
 
 def partition(name, size, parent, fstype="ext4", mountpoint=None):
 	return {
-		"name": name, "path": f"/dev/{name}", "type": "part", "size": size,
-		"fstype": fstype, "mountpoint": mountpoint, "pkname": parent, "model": None,
-		"rm": False, "ro": False,
+		"name": name,
+		"path": f"/dev/{name}",
+		"type": "part",
+		"size": size,
+		"fstype": fstype,
+		"mountpoint": mountpoint,
+		"pkname": parent,
+		"model": None,
+		"rm": False,
+		"ro": False,
 	}
 
 

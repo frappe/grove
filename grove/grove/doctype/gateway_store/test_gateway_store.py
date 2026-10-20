@@ -7,7 +7,7 @@ import base64
 import os
 import tempfile
 import unittest
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -44,7 +44,9 @@ def stub_get_all(stores):
 		wanted = filters["status"]
 		matches = lambda status: status != wanted[1] if isinstance(wanted, tuple) else status == wanted  # noqa: E731
 		return [
-			store for pairs in stores.values() for store, status in pairs
+			store
+			for pairs in stores.values()
+			for store, status in pairs
 			if store in filters["machine"][1] and matches(status)
 		]
 
@@ -143,7 +145,7 @@ class TestBackup(unittest.TestCase):
 	"""One RDB per store every 5 minutes into the weights bucket, the doc pointing at the newest."""
 
 	def test_a_backup_key_is_per_store_and_stamped_like_a_drain_id(self):
-		at = datetime(2026, 9, 28, 3, 0, tzinfo=timezone.utc)
+		at = datetime(2026, 9, 28, 3, 0, tzinfo=UTC)
 		self.assertEqual(backup_key("store1", at), "gateway-store/store1/20260928T030000Z.rdb")
 
 	def backup(self, answer):
@@ -153,7 +155,9 @@ class TestBackup(unittest.TestCase):
 		docs = {("Machine", "m1"): machine, ("Geography", "in"): bucket_of(s3)}
 		with (
 			patch.object(frappe, "get_doc", side_effect=lambda dt, name: docs[(dt, name)]),
-			patch.object(frappe, "db", SimpleNamespace(set_value=lambda dt, dn, values: written.update(values))),
+			patch.object(
+				frappe, "db", SimpleNamespace(set_value=lambda dt, dn, values: written.update(values))
+			),
 			patch.object(frappe, "throw", side_effect=Refused),
 			patch.object(frappe.utils, "now_datetime", lambda: datetime(2026, 9, 28, 3, 0)),
 		):
@@ -162,7 +166,9 @@ class TestBackup(unittest.TestCase):
 
 	def test_a_backup_uploads_what_the_box_returned_and_points_the_doc_at_it(self):
 		# The doc carries no get_password: the box reads its own conf, grove never puts it in argv.
-		key, s3, written, argv = self.backup("Warning: Permanently added 'x' to known hosts.\n" + base64.b64encode(RDB).decode())
+		key, s3, written, argv = self.backup(
+			"Warning: Permanently added 'x' to known hosts.\n" + base64.b64encode(RDB).decode()
+		)
 		self.assertEqual(s3.puts, [("b", key, RDB)])
 		self.assertTrue(key.startswith("gateway-store/store1/"))
 		self.assertEqual(written["last_backup_key"], key)
@@ -176,7 +182,14 @@ class TestBackup(unittest.TestCase):
 
 	def backup_all(self, geographies, stores, failing=()):
 		backed, reported = [], []
-		docs = {name: SimpleNamespace(backup=(lambda n=name: (_ for _ in ()).throw(RuntimeError(n))) if name in failing else (lambda n=name: backed.append(n))) for name in stores}
+		docs = {
+			name: SimpleNamespace(
+				backup=(lambda n=name: (_ for _ in ()).throw(RuntimeError(n)))
+				if name in failing
+				else (lambda n=name: backed.append(n))
+			)
+			for name in stores
+		}
 
 		def get_all(doctype, filters, pluck):
 			if doctype == "Geography":
@@ -212,7 +225,11 @@ class TestRestore(unittest.TestCase):
 			self.assertEqual(landed_since("store1", "gateway-store/store1/20260928T100000Z.rdb"), ["k1"])
 		self.assertEqual(
 			calls[0][1]["filters"],
-			[["gateway_store", "=", "store1"], ["drain_id", ">", "20260928T100000Z"], ["drain_id", "not like", "dead:%"]],
+			[
+				["gateway_store", "=", "store1"],
+				["drain_id", ">", "20260928T100000Z"],
+				["drain_id", "not like", "dead:%"],
+			],
 		)
 
 	def test_a_drain_id_orders_against_the_stamp_as_a_string(self):
@@ -239,7 +256,9 @@ class TestRestore(unittest.TestCase):
 			patch.object(pricing, "month_spent_by", lambda field, names: {"k1": Decimal("0.0000155")}),
 			patch.object(utils, "utc_today", lambda: date(2026, 10, 13)),
 		):
-			self.assertEqual(spent_seeds("store2"), [{"key": "key:h1", "field": "spent:2026-10", "value": 15500}])
+			self.assertEqual(
+				spent_seeds("store2"), [{"key": "key:h1", "field": "spent:2026-10", "value": 15500}]
+			)
 
 	def restore(self, key, geography):
 		store = SimpleNamespace(name="store2", doctype="Gateway Store", geography="in")
@@ -261,8 +280,15 @@ class TestRestore(unittest.TestCase):
 		seed = {"key": "key:h1", "field": "spent:2026-10", "value": 5}
 		self.addCleanup(lambda: __import__("shutil").rmtree(site, True))
 		store = SimpleNamespace(
-			name="store2", doctype="Gateway Store", geography="in", get_password=lambda field: "pw", backup=lambda: "insurance",
-			run_playbook=lambda playbook, **kwargs: plays.append((playbook, kwargs, os.path.exists(kwargs["extravars"]["restore_file"]))) or ("play-1", 2),
+			name="store2",
+			doctype="Gateway Store",
+			geography="in",
+			get_password=lambda field: "pw",
+			backup=lambda: "insurance",
+			run_playbook=lambda playbook, **kwargs: plays.append(
+				(playbook, kwargs, os.path.exists(kwargs["extravars"]["restore_file"]))
+			)
+			or ("play-1", 2),
 		)
 		with (
 			patch.object(frappe, "get_doc", lambda dt, name: bucket_of(FakeS3())),
@@ -293,8 +319,12 @@ class TestDnsRecord(unittest.TestCase):
 	def provision(self, rc):
 		synced = []
 		store = SimpleNamespace(
-			name="store1", doctype="Gateway Store", listen_ip="10.0.0.5", get_password=lambda field: "pw",
-			run_playbook=lambda playbook, **kwargs: ("play-1", rc), sync_dns_records=lambda: synced.append(True),
+			name="store1",
+			doctype="Gateway Store",
+			listen_ip="10.0.0.5",
+			get_password=lambda field: "pw",
+			run_playbook=lambda playbook, **kwargs: ("play-1", rc),
+			sync_dns_records=lambda: synced.append(True),
 		)
 		with patch.object(frappe, "db", SimpleNamespace(set_value=lambda *a: None, commit=lambda: None)):
 			GatewayStore.provision.__wrapped__(store)
@@ -308,7 +338,8 @@ class TestDnsRecord(unittest.TestCase):
 		removed = []
 		for status, changed in (("Terminated", True), ("Active", True), ("Terminated", False)):
 			store = SimpleNamespace(
-				status=status, has_value_changed=lambda field, changed=changed: changed,
+				status=status,
+				has_value_changed=lambda field, changed=changed: changed,
 				remove_dns_records=lambda: removed.append(status),
 			)
 			GatewayStore.on_update(store)

@@ -387,10 +387,11 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			keys.secrets("probe-secrets-nobody")
 
-	def test_the_default_tier_moves_the_figures_of_a_team_that_names_none(self):
+	def test_a_tier_edit_waits_out_the_figures_cache(self):
 		from grove.billing.pricing import forget_figures
 
-		# The tier and the settings are the operator's to edit; the cache is what is under test.
+		# Operator edits in Desk: nobody is watching a console for them, so the cache keeps the
+		# old limit until something of the team's moves or FIGURES_SECONDS pass.
 		frappe.set_user("Administrator")
 		was = frappe.db.get_single_value("Grove Settings", "default_tier")
 		self.addCleanup(frappe.db.set_single_value, "Grove Settings", "default_tier", was)
@@ -403,12 +404,12 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 
 		default.spend_limit = 37
 		default.save()
-		self.assertEqual(usage.figures(team)["spend"]["spend_limit"], 37, "the default tier edited")
-
 		settings = frappe.get_doc("Grove Settings")
 		settings.default_tier = tier("probe-other-default", spend_limit=50)
 		settings.save()
-		self.assertEqual(usage.figures(team)["spend"]["spend_limit"], 50, "another tier made default")
+		self.assertEqual(usage.figures(team)["spend"]["spend_limit"], 30, "kept through both edits")
+		forget_figures(team)
+		self.assertEqual(usage.figures(team)["spend"]["spend_limit"], 50, "read afresh")
 
 	def test_the_figures_are_one_read_kept_until_something_moves_them(self):
 		from grove.billing.pricing import forget_figures
@@ -431,7 +432,9 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		billed_record(key, team, utc_today(), 3, drain="-later")
 		self.assertEqual(usage.figures(team)["spend"]["month_spent"], 5)
 		keys.update_caps(team, {key: 6})
-		self.assertEqual((usage.figures(team)["keys"][0]["cap"], usage.figures(team)["spend"]["capped"]), (6, 6))
+		self.assertEqual(
+			(usage.figures(team)["keys"][0]["cap"], usage.figures(team)["spend"]["capped"]), (6, 6)
+		)
 		teams.update_team(team, suspended=True)
 		self.assertTrue(usage.figures(team)["spend"]["suspended"])
 

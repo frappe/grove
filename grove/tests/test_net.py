@@ -18,9 +18,7 @@ def box(network="", private_ip="", ip="203.0.113.7"):
 
 class TestReachableIp(unittest.TestCase):
 	def test_a_shared_network_is_reached_privately(self):
-		self.assertEqual(
-			reachable_ip(box(network=NETWORK, private_ip="10.0.0.5"), NETWORK), "10.0.0.5"
-		)
+		self.assertEqual(reachable_ip(box(network=NETWORK, private_ip="10.0.0.5"), NETWORK), "10.0.0.5")
 
 	def test_another_network_is_reached_publicly(self):
 		self.assertEqual(
@@ -28,9 +26,7 @@ class TestReachableIp(unittest.TestCase):
 		)
 
 	def test_a_viewer_in_no_network_reaches_publicly(self):
-		self.assertEqual(
-			reachable_ip(box(network=NETWORK, private_ip="10.0.0.5"), ""), "203.0.113.7"
-		)
+		self.assertEqual(reachable_ip(box(network=NETWORK, private_ip="10.0.0.5"), ""), "203.0.113.7")
 
 	def test_a_shared_network_with_no_private_address_falls_back(self):
 		self.assertEqual(reachable_ip(box(network=NETWORK), NETWORK), "203.0.113.7")

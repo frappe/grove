@@ -21,6 +21,7 @@ class ModelGroup(Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
+
 		from grove.grove.doctype.grove_model_row.grove_model_row import GroveModelRow
 
 		description: DF.Data | None

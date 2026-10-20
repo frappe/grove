@@ -39,8 +39,17 @@ def row(server_type, server, status=Status.Pending, **fields):
 def update(**fields):
 	doc = PathwayUpdate.__new__(PathwayUpdate)
 	doc.__dict__.update(
-		doctype="Pathway Update", name="u1", release="v0.0.4", repo="someone/pathway", status=Status.Pending,
-		gateways=1, ingresses=1, servers=[], error=None, started_at=None, ended_at=None,
+		doctype="Pathway Update",
+		name="u1",
+		release="v0.0.4",
+		repo="someone/pathway",
+		status=Status.Pending,
+		gateways=1,
+		ingresses=1,
+		servers=[],
+		error=None,
+		started_at=None,
+		ended_at=None,
 	)
 	doc.__dict__.update(fields)
 	doc.set = lambda field, rows: setattr(doc, field, list(rows))
@@ -57,7 +66,9 @@ def refused():
 
 class TestInsert(unittest.TestCase):
 	def insert(self, doc, active):
-		with patch.object(frappe, "get_all", side_effect=lambda doctype, **kwargs: active[doctype]) as get_all:
+		with patch.object(
+			frappe, "get_all", side_effect=lambda doctype, **kwargs: active[doctype]
+		) as get_all:
 			PathwayUpdate.before_insert(doc)
 		return get_all
 
@@ -69,7 +80,9 @@ class TestInsert(unittest.TestCase):
 	def test_each_ticked_box_adds_its_active_servers_ingresses_first(self):
 		doc = update()
 		get_all = self.insert(doc, {"Ingress Server": ["ing1"], "Gateway Server": ["gw1", "gw2"]})
-		get_all.assert_any_call("Gateway Server", filters={"status": "Active"}, order_by="name asc", pluck="name")
+		get_all.assert_any_call(
+			"Gateway Server", filters={"status": "Active"}, order_by="name asc", pluck="name"
+		)
 		self.assertEqual(
 			[("Ingress Server", "ing1"), ("Gateway Server", "gw1"), ("Gateway Server", "gw2")],
 			[(r.server_type, r.server) for r in doc.servers],
@@ -103,10 +116,14 @@ class TestRowsAddedByHand(unittest.TestCase):
 
 	def test_a_server_waits_at_most_once(self):
 		with refused(), self.assertRaises(frappe.ValidationError):
-			PathwayUpdate.validate(update(servers=[row("Gateway Server", "gw1"), row("Gateway Server", "gw1")]))
+			PathwayUpdate.validate(
+				update(servers=[row("Gateway Server", "gw1"), row("Gateway Server", "gw1")])
+			)
 
 	def test_a_failed_server_can_be_added_again_to_retry_it(self):
-		PathwayUpdate.validate(update(servers=[row("Gateway Server", "gw1", Status.Failure), row("Gateway Server", "gw1")]))
+		PathwayUpdate.validate(
+			update(servers=[row("Gateway Server", "gw1", Status.Failure), row("Gateway Server", "gw1")])
+		)
 
 	def test_nothing_is_checked_while_it_runs_or_stops(self):
 		for fields in ({"status": Status.Running}, {"status": Status.Pending, "started_at": "then"}):
@@ -117,11 +134,15 @@ class TestStartAndContinue(unittest.TestCase):
 	def run_it(self, method, doc, running=None, statuses=None, published=200):
 		statuses = statuses or {}
 		db = SimpleNamespace(
-			get_value=lambda doctype, name, field=None: running if doctype == "Pathway Update" else statuses.get(name, "Active"),
+			get_value=lambda doctype, name, field=None: running
+			if doctype == "Pathway Update"
+			else statuses.get(name, "Active"),
 		)
 		with (
 			patch.object(frappe, "db", db),
-			patch.object(module.requests, "head", return_value=SimpleNamespace(status_code=published)) as head,
+			patch.object(
+				module.requests, "head", return_value=SimpleNamespace(status_code=published)
+			) as head,
 		):
 			method(doc)
 		return head
@@ -138,7 +159,9 @@ class TestStartAndContinue(unittest.TestCase):
 		doc = self.ready()
 		head = self.run_it(PathwayUpdate.start, doc)
 		head.assert_called_once_with(
-			"https://github.com/someone/pathway/releases/download/v0.0.4/sha256sums.txt", allow_redirects=True, timeout=10
+			"https://github.com/someone/pathway/releases/download/v0.0.4/sha256sums.txt",
+			allow_redirects=True,
+			timeout=10,
 		)
 		self.assertEqual(Status.Running, doc.status)
 		self.assertIsNotNone(doc.started_at)
@@ -155,7 +178,10 @@ class TestStartAndContinue(unittest.TestCase):
 			doc = self.ready(status=status, started_at="then", ended_at="later", error="Traceback")
 			with self.subTest(status):
 				self.run_it(PathwayUpdate.resume, doc)
-				self.assertEqual((Status.Running, "then", None, None), (doc.status, doc.started_at, doc.ended_at, doc.error))
+				self.assertEqual(
+					(Status.Running, "then", None, None),
+					(doc.status, doc.started_at, doc.ended_at, doc.error),
+				)
 				doc.enqueue_steps.assert_called_once()
 
 	def test_continue_is_not_for_a_pending_or_running_update(self):
@@ -164,7 +190,9 @@ class TestStartAndContinue(unittest.TestCase):
 				self.assert_refused(PathwayUpdate.resume, self.ready(status=status))
 
 	def test_nothing_pending_is_refused(self):
-		self.assert_refused(PathwayUpdate.start, update(servers=[row("Gateway Server", "gw1", Status.Failure)]))
+		self.assert_refused(
+			PathwayUpdate.start, update(servers=[row("Gateway Server", "gw1", Status.Failure)])
+		)
 
 	def test_one_update_runs_at_a_time(self):
 		self.assert_refused(PathwayUpdate.start, self.ready(), running="u0")
@@ -191,7 +219,9 @@ class TestStop(unittest.TestCase):
 		db = SimpleNamespace(set_value=Mock())
 		with patch.object(frappe, "db", db):
 			PathwayUpdate.stop(update(status=Status.Running))
-		db.set_value.assert_called_once_with("Pathway Update", "u1", "status", Status.Pending, update_modified=False)
+		db.set_value.assert_called_once_with(
+			"Pathway Update", "u1", "status", Status.Pending, update_modified=False
+		)
 
 	def test_only_a_running_update_stops(self):
 		with refused(), self.assertRaises(frappe.ValidationError):
@@ -206,13 +236,19 @@ class TestStop(unittest.TestCase):
 		return runner
 
 	def test_the_next_server_does_not_start_after_a_stop(self):
-		doc = update(status=Status.Pending, started_at="then", servers=[row("Gateway Server", "gw1", Status.Success), row("Gateway Server", "gw2")])
+		doc = update(
+			status=Status.Pending,
+			started_at="then",
+			servers=[row("Gateway Server", "gw1", Status.Success), row("Gateway Server", "gw2")],
+		)
 		self.execute(doc).assert_not_called()
 		self.assertEqual("Stopped", doc.status)
 		self.assertIsNotNone(doc.ended_at)
 
 	def test_a_stop_after_the_last_server_still_finishes_the_update(self):
-		doc = update(status=Status.Pending, started_at="then", servers=[row("Gateway Server", "gw1", Status.Success)])
+		doc = update(
+			status=Status.Pending, started_at="then", servers=[row("Gateway Server", "gw1", Status.Success)]
+		)
 		self.execute(doc).assert_called_once()
 
 
@@ -269,7 +305,9 @@ class TestTheEnd(unittest.TestCase):
 
 	def test_a_server_passed_over_after_failing_fails_the_update(self):
 		doc = self.finish(
-			PathwayUpdate.succeed, row("Gateway Server", "gw1", Status.Failure), row("Gateway Server", "gw2", Status.Success)
+			PathwayUpdate.succeed,
+			row("Gateway Server", "gw1", Status.Failure),
+			row("Gateway Server", "gw2", Status.Success),
 		)
 		self.assertEqual(Status.Failure, doc.status)
 
@@ -279,10 +317,13 @@ class TestTheEnd(unittest.TestCase):
 		self.assertIsNotNone(doc.ended_at)
 
 	def handle(self, already_reported=False, failed_type="Gateway Server", in_flight_answers=True):
-		doc = update(status=Status.Failure, servers=[
-			row("Gateway Server", "gw1", Status.Failure, output="earlier failure"),
-			row(failed_type, "box2", Status.Failure, output="deploy_agent.yml failed"),
-		])
+		doc = update(
+			status=Status.Failure,
+			servers=[
+				row("Gateway Server", "gw1", Status.Failure, output="earlier failure"),
+				row(failed_type, "box2", Status.Failure, output="deploy_agent.yml failed"),
+			],
+		)
 		order = []
 		server = SimpleNamespace(set_maintenance=Mock(side_effect=lambda on: order.append("maintenance")))
 		if not in_flight_answers:
@@ -302,9 +343,14 @@ class TestTheEnd(unittest.TestCase):
 		doc, log_error, report, *_ = self.handle()
 		self.assertEqual("Traceback", doc.error)
 		log_error.assert_called_once_with(
-			title="Pathway Update u1 failed", message="Traceback", reference_doctype="Pathway Update", reference_name="u1"
+			title="Pathway Update u1 failed",
+			message="Traceback",
+			reference_doctype="Pathway Update",
+			reference_name="u1",
 		)
-		report.assert_called_once_with("Pathway Update", "u1", "Pathway update failed", "deploy_agent.yml failed")
+		report.assert_called_once_with(
+			"Pathway Update", "u1", "Pathway update failed", "deploy_agent.yml failed"
+		)
 
 	def test_the_failed_server_goes_into_maintenance_after_the_failure_is_committed(self):
 		_, _, _, get_doc, server, order = self.handle()

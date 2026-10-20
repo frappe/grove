@@ -4,9 +4,8 @@
 import json
 import re
 
-import requests
-
 import frappe
+import requests
 from frappe.model.document import Document
 
 # Docker Hub's API is not at the host its refs name, and a one-segment repository there is
@@ -57,7 +56,7 @@ class EngineImage(Document):
 		except ValueError as error:
 			frappe.throw(f"Warmup Body is not valid JSON: {error}")
 		if not isinstance(body, dict):
-			frappe.throw("Warmup Body must be a JSON object, e.g. {\"model\": \"…\", \"input\": \"ping\"}.")
+			frappe.throw('Warmup Body must be a JSON object, e.g. {"model": "…", "input": "ping"}.')
 
 	def get_full_image(self):
 		"""The ref handed to the cloud provider. A path that already carries the host is left
@@ -72,7 +71,9 @@ class EngineImage(Document):
 	@property
 	def registry_host(self):
 		"""The registry to authenticate against, '' for Docker Hub."""
-		return (frappe.get_cached_doc("Engine Image Provider", self.image_provider).registry_host or "").strip()
+		return (
+			frappe.get_cached_doc("Engine Image Provider", self.image_provider).registry_host or ""
+		).strip()
 
 	@property
 	def registry_credentials(self):
@@ -124,7 +125,7 @@ class EngineImage(Document):
 		addresses a manifest by. A bare repository means :latest."""
 		path = (self.image_path or "").strip().lstrip("/")
 		if self.registry_host and path.startswith(f"{self.registry_host}/"):
-			path = path[len(self.registry_host) + 1:]
+			path = path[len(self.registry_host) + 1 :]
 		# A digest pins the manifest directly and carries its own colon, so it is split first.
 		if "@" in path:
 			repository, _, reference = path.partition("@")
@@ -157,9 +158,7 @@ class EngineImage(Document):
 	def pull_auth_header(self, registry, repository):
 		"""Via the registry's own auth challenge — the flow every OCI registry implements, so
 		Docker Hub, GHCR and a private one need no branching. No challenge, no header."""
-		challenge = requests.get(f"https://{registry}/v2/", timeout=30).headers.get(
-			"Www-Authenticate", ""
-		)
+		challenge = requests.get(f"https://{registry}/v2/", timeout=30).headers.get("Www-Authenticate", "")
 		if not challenge.startswith("Bearer "):
 			return {}
 		params = dict(re.findall(r'(\w+)="([^"]*)"', challenge))
@@ -188,4 +187,3 @@ def engine_tuning(engine_image):
 		"Engine Image", engine_image, ["engine_kind", "warmup_path", "warmup_body"]
 	)
 	return kind, {"warmup_path": path, "warmup_body": body}
-

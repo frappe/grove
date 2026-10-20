@@ -3,14 +3,15 @@
 """Published is the operator's tick: it needs a pricing and something serving the model, and
 only ever comes off on its own."""
 
+from typing import ClassVar
 from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing
 from grove.catalog import seed
 from grove.grove.doctype.model import model as model_module
-from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing
 
 
 class TestPublishing(IntegrationTestCase):
@@ -66,14 +67,22 @@ class TestGranted(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		cls.model = frappe.get_doc(
-			{"doctype": "Model", "model_id": "probe-granted", "hf_repo": "org/probe-granted"}
-		).insert(ignore_permissions=True).name
-		cls.group = frappe.get_doc({"doctype": "Model Group", "__newname": "probe-granted-group"}).insert().name
-		team = frappe.get_doc(
-			{"doctype": "Central Team", "__newname": "probe-granted"}
-		).insert(ignore_permissions=True).name
-		cls.key = frappe.get_doc({"doctype": "Grove API Key", "team": team}).insert(ignore_permissions=True).name
+		cls.model = (
+			frappe.get_doc({"doctype": "Model", "model_id": "probe-granted", "hf_repo": "org/probe-granted"})
+			.insert(ignore_permissions=True)
+			.name
+		)
+		cls.group = (
+			frappe.get_doc({"doctype": "Model Group", "__newname": "probe-granted-group"}).insert().name
+		)
+		team = (
+			frappe.get_doc({"doctype": "Central Team", "__newname": "probe-granted"})
+			.insert(ignore_permissions=True)
+			.name
+		)
+		cls.key = (
+			frappe.get_doc({"doctype": "Grove API Key", "team": team}).insert(ignore_permissions=True).name
+		)
 
 	def is_granted(self):
 		return frappe.get_doc("Model", self.model).is_granted
@@ -99,7 +108,10 @@ class TestGranted(IntegrationTestCase):
 
 
 class TestLoadPricing(IntegrationTestCase):
-	RATES = [{"counter": "prompt_tokens", "rate": 2.5}, {"counter": "completion_tokens", "rate": 15}]
+	RATES: ClassVar[list] = [
+		{"counter": "prompt_tokens", "rate": 2.5},
+		{"counter": "completion_tokens", "rate": 15},
+	]
 
 	def model(self, model_id):
 		return frappe.get_doc(
@@ -166,4 +178,6 @@ class TestModalities(IntegrationTestCase):
 	def test_the_launch_config_carries_both_lists(self):
 		doc = self.model(input_modalities=["Audio"], output_modalities=["Transcription"])
 		config = model_module.launch_config(doc.name)
-		self.assertEqual((config["input_modalities"], config["output_modalities"]), (["audio"], ["transcription"]))
+		self.assertEqual(
+			(config["input_modalities"], config["output_modalities"]), (["audio"], ["transcription"])
+		)

@@ -113,9 +113,7 @@ class InferenceServer(FleetHost, Document):
 
 	def before_rename(self, old, new, merge=False):
 		if self.is_standalone:
-			frappe.throw(
-				f"{old} is Standalone: its name is its DNS record and every replica's Engine URL."
-			)
+			frappe.throw(f"{old} is Standalone: its name is its DNS record and every replica's Engine URL.")
 
 	def default_to_network_singletons(self):
 		"""A Network with exactly one ingress, or one monitoring agent, leaves no choice to make,
@@ -209,9 +207,7 @@ class InferenceServer(FleetHost, Document):
 		already; this is the path after a Scrape Password rotation, which no box learns of by itself."""
 		if not self.machine:
 			frappe.throw("Set a Machine before updating its scrape auth.")
-		frappe.enqueue_doc(
-			self.doctype, self.name, "provision_exporters", queue="long", timeout=1800
-		)
+		frappe.enqueue_doc(self.doctype, self.name, "provision_exporters", queue="long", timeout=1800)
 		frappe.msgprint(f"Updating scrape auth on {self.name} — watch its Ansible Plays.", alert=True)
 
 	@failure.reports_failure(mark_broken=False)

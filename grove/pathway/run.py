@@ -10,9 +10,8 @@ land in the order asked."""
 import time
 from dataclasses import dataclass
 
-import requests
-
 import frappe
+import requests
 
 TIMEOUT = 10
 ERROR_LIMIT = 2000
@@ -51,9 +50,10 @@ class Target:
 
 	@classmethod
 	def resolve(cls, server_type, name):
-		"""A box that cannot be resolved keeps the reason, which becomes its row."""
+		"""A box that cannot be resolved keeps the reason, which becomes its row. The doc comes off
+		the doc cache (a save clears it); the token is read fresh either way."""
 		try:
-			return cls.of(frappe.get_doc(server_type, name))
+			return cls.of(frappe.get_cached_doc(server_type, name))
 		except Exception as e:
 			return cls(server_type, name, error=error_text(e))
 
@@ -139,7 +139,10 @@ def gateway_units(gateways=None, geography=None):
 	if gateways is None:
 		groups = sync_targets(geography)
 	else:
-		groups = [(frappe.db.get_value("Gateway Server", gateway, "gateway_store"), [gateway]) for gateway in gateways]
+		groups = [
+			(frappe.db.get_value("Gateway Server", gateway, "gateway_store"), [gateway])
+			for gateway in gateways
+		]
 	return [
 		Unit(store, tuple(Target.resolve("Gateway Server", gateway) for gateway in group))
 		for store, group in groups

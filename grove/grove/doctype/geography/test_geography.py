@@ -22,8 +22,10 @@ def make_test_geography(name="test"):
 	"""The Geography site-backed tests put their regions and vendors in."""
 	if not frappe.db.exists("Geography", name):
 		geography = {
-			"doctype": "Geography", "__newname": name,
-			"fleet_zone": f"{name}.grove.localhost", "endpoint": f"api.{name}.grove.localhost",
+			"doctype": "Geography",
+			"__newname": name,
+			"fleet_zone": f"{name}.grove.localhost",
+			"endpoint": f"api.{name}.grove.localhost",
 		}
 		frappe.get_doc(geography).insert(ignore_permissions=True)
 	# A Grove API Key needs a geography; on a site with no default, the test one is it.
@@ -34,7 +36,12 @@ def make_test_geography(name="test"):
 
 def validate(endpoint, zone=ZONE, before=None, gateways=()):
 	"""Run both name checks on a stub; `before` is the saved doc, as get_doc_before_save returns it."""
-	doc = SimpleNamespace(endpoint=endpoint, fleet_zone=zone, get_doc_before_save=lambda: before, gateways=lambda: list(gateways))
+	doc = SimpleNamespace(
+		endpoint=endpoint,
+		fleet_zone=zone,
+		get_doc_before_save=lambda: before,
+		gateways=lambda: list(gateways),
+	)
 	doc.get = lambda field: getattr(doc, field)
 	doc.set = lambda field, value: setattr(doc, field, value)
 	with patch("frappe.throw", side_effect=frappe.ValidationError):
@@ -53,7 +60,11 @@ class TestItsNames(unittest.TestCase):
 		self.assertEqual((doc.endpoint, doc.fleet_zone), ("eu.grove.example.com", "grove.example.com"))
 
 	def test_a_url_is_not_a_hostname(self):
-		for endpoint in ("https://eu.grove.example.com", "eu.grove.example.com/v1", "eu.grove.example.com:443"):
+		for endpoint in (
+			"https://eu.grove.example.com",
+			"eu.grove.example.com/v1",
+			"eu.grove.example.com:443",
+		):
 			with self.subTest(endpoint), self.assertRaises(frappe.ValidationError):
 				validate(endpoint)
 		with self.assertRaises(frappe.ValidationError):
@@ -86,17 +97,25 @@ class TestTlsVariables(unittest.TestCase):
 	stored encrypted, and the raw column holds ciphertext nginx cannot load."""
 
 	def variables(self, **fields):
-		doc = SimpleNamespace(**{
-			"fleet_zone": ZONE, "fleet_tls_cert": "cert-pem",
-			"get_password": lambda field, raise_exception=True: "key-pem", **fields,
-		})
+		doc = SimpleNamespace(
+			**{
+				"fleet_zone": ZONE,
+				"fleet_tls_cert": "cert-pem",
+				"get_password": lambda field, raise_exception=True: "key-pem",
+				**fields,
+			}
+		)
 		return Geography.tls_variables.fget(doc)
 
 	def test_it_carries_the_zone_and_the_certificate(self):
-		self.assertEqual(self.variables(), {"fleet_zone": ZONE, "fleet_tls_cert": "cert-pem", "fleet_tls_key": "key-pem"})
+		self.assertEqual(
+			self.variables(), {"fleet_zone": ZONE, "fleet_tls_cert": "cert-pem", "fleet_tls_key": "key-pem"}
+		)
 
 	def test_nothing_is_none(self):
-		blank = self.variables(fleet_zone=None, fleet_tls_cert=None, get_password=lambda field, raise_exception=True: None)
+		blank = self.variables(
+			fleet_zone=None, fleet_tls_cert=None, get_password=lambda field, raise_exception=True: None
+		)
 		self.assertEqual(set(blank.values()), {""})
 
 
@@ -124,7 +143,10 @@ class TestARegionsGeography(unittest.TestCase):
 class TestWhoCarriesAGeography(unittest.TestCase):
 	def test_a_machine_takes_its_regions_after_the_network_sets_it(self):
 		"""Link fetching runs before validate, so fetch_from would read the region from before the save."""
-		values = {("Network", "net-1", "region"): "eu-central-1", ("Region", "eu-central-1", "geography"): "eu"}
+		values = {
+			("Network", "net-1", "region"): "eu-central-1",
+			("Region", "eu-central-1", "geography"): "eu",
+		}
 		doc = SimpleNamespace(network="net-1", region=None, geography=None)
 		doc.set_region_from_network = lambda: Machine.set_region_from_network(doc)
 		with patch.object(frappe, "db", SimpleNamespace(get_value=lambda *key: values[key])):
@@ -133,12 +155,20 @@ class TestWhoCarriesAGeography(unittest.TestCase):
 
 	def test_a_vendor_must_name_where_it_processes(self):
 		def validate(**fields):
-			doc = SimpleNamespace(**{
-				"name": "a1b2", "provider_name": "openai", "base_url": None, "anthropic_base_url": None,
-				"geography": None, "is_self_hosted": 0,
-				"validate_self_hosted": lambda: None, "validate_siblings": lambda: None,
-				"validate_key_titles": lambda: None, **fields,
-			})
+			doc = SimpleNamespace(
+				**{
+					"name": "a1b2",
+					"provider_name": "openai",
+					"base_url": None,
+					"anthropic_base_url": None,
+					"geography": None,
+					"is_self_hosted": 0,
+					"validate_self_hosted": lambda: None,
+					"validate_siblings": lambda: None,
+					"validate_key_titles": lambda: None,
+					**fields,
+				}
+			)
 			with patch("frappe.throw", side_effect=frappe.ValidationError):
 				ModelProvider.validate(doc)
 
@@ -169,7 +199,7 @@ class TestAServerNamedWithItsDomain(unittest.TestCase):
 		self.insert(f"gw2-ap-south-1.{ZONE}")
 
 	def test_any_other_domain_is_refused(self):
-		for name, zone in ((f"gw2.other.example.com", ZONE), (f"gw2.{ZONE}", ""), (f"gw_2.{ZONE}", ZONE)):
+		for name, zone in (("gw2.other.example.com", ZONE), (f"gw2.{ZONE}", ""), (f"gw_2.{ZONE}", ZONE)):
 			with self.subTest(name), self.assertRaises(frappe.ValidationError):
 				self.insert(name, zone=zone)
 

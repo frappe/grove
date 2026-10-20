@@ -38,11 +38,10 @@ from frappe.utils import getdate
 from grove.billing.doctype.stuck_usage.stuck_usage import record_stuck, resolve_stuck
 from grove.billing.pricing import PriceBook
 from grove.pathway import snapshot
-from grove.pathway.reconcile import Reconciler
-from grove.pathway.run import SyncRun, Target, error_text, gateway_units, in_turn
+from grove.pathway.reconcile import DEAD, Reconciler
+from grove.pathway.run import SyncRun, Target, error_text, gateway_units, guarded, in_turn
 from grove.utils import utc_today
 
-DEAD = "dead:"
 # A store of a lakh keys answers tens of MB after as many Redis reads; the run's default is for a push.
 DRAIN_TIMEOUT = 120
 
@@ -59,11 +58,15 @@ class Usage(SyncRun):
 		self.gateways = gateways
 		self.team = team
 		self.keys = None
+		self.hashes = {}
 
 	def units(self):
 		if self.team:
-			keys = frappe.get_all("Grove API Key", filters={"team": self.team}, fields=["name", "geography"])
+			keys = frappe.get_all(
+				"Grove API Key", filters={"team": self.team}, fields=["name", "key_hash", "geography"]
+			)
 			self.keys = [k.name for k in keys]
+			self.hashes = {k.key_hash: k.name for k in keys if k.key_hash}
 			if not self.keys:
 				return []
 			geographies = {k.geography for k in keys}
@@ -80,87 +83,79 @@ class Usage(SyncRun):
 
 
 class Peek(Usage):
-	"""What the boxes hold of one team right now, read without moving it: a cap check's figure.
-	Live buckets come under the drain id "" and set-aside ones under theirs; nothing is landed
-	or acknowledged, so the next pull finds it all. Holds the pull lock meanwhile, so no drain
-	renames a bucket between the two reads a box makes. No run doc: it logs nothing."""
+	"""What the boxes count as this month's spend of one team's keys, off each key's own counter —
+	the one its cap is gated on — for a cap check. Every store of the team's geographies is asked
+	for every key in one call; a key a store does not hold is left out of its answer. No lock and
+	no run doc: nothing moves, nothing is logged, and two checks may read beside a pull."""
+
+	def run(self):
+		return self.record([self.settle(unit, guarded(self.work, unit)) for unit in self.units()])
 
 	def work(self, unit):
-		return in_turn(unit, lambda target: fetch_usage(target, self.keys, peek=True))
+		return in_turn(unit, lambda target: fetch_spent(target, list(self.hashes)))
 
 	def settle(self, unit, result):
 		return super(Usage, self).settle(unit, result)
 
 	def record(self, answers):
-		"""→ {"ok": every store answered through one of its writers, "pending": nano-USD per prefix
-		of what the boxes hold that no Usage Record has yet}. A writer that failed before the next
-		one answered leaves its row, which says nothing about the store."""
+		"""→ {"ok": every store answered through one of its writers, "spent": nano-USD by key name,
+		summed over the stores that hold it}. A writer that failed before the next one answered
+		leaves its row, which says nothing about the store."""
 		ok = all(outcome is True for outcome, _rows in answers)
-		rows = [row for _outcome, unit_rows in answers for row in unit_rows if row.get("success")]
-		return {"ok": ok, "pending": pending_spend(rows) if ok else {}}
+		spent = {}
+		for _outcome, rows in answers:
+			for row in rows:
+				for key_hash, nano in (row.get("spent") or {}).items():
+					if name := self.hashes.get(key_hash):
+						spent[name] = spent.get(name, 0) + int(nano)
+		return {"ok": ok, "spent": spent if ok else {}}
 
 
 def pull_all(gateways=None, trigger="Scheduled", wait=30, team=None):
 	"""Scheduled: pull + drain every gateway Redis. Named `gateways` are pulled themselves; a `team`
-	is pulled alone. Waits up to `wait` seconds for a run in flight — a cap check's peek is a
-	second — then skips."""
+	is pulled alone. Waits up to `wait` seconds for a run in flight — one team's manual pull —
+	then skips."""
 	return Usage(gateways, trigger, wait, team).run()
 
 
 def peek_team(team):
-	"""This month's spend the boxes hold of `team` that Grove has not landed yet, USD per key: what
-	a cap check adds to the records so its figure is the boxes' own and not up to an hour old.
-	Read without moving anything; the next pull lands it. Refused rather than stale: while pushes
-	are paused (a lowered cap would not reach the box), while another pull holds the lock, and
-	when a store could not be read. → {prefix: Decimal USD}."""
+	"""This month's spend the boxes count for each of `team`'s keys, USD by key name: the figure a
+	cap check puts beside the records, the boxes' own and not up to an hour old. Refused rather
+	than stale: while pushes are paused (a lowered cap would not reach the box) and when a store
+	answered through none of its writers. A key no store holds is left out."""
 	from grove.billing.pricing import NANO
 
 	if frappe.db.get_single_value("Grove Settings", "pause_projection"):
 		frappe.throw(
 			"Pushes to the gateways are paused, so a cap change would not reach them. Try again once they resume."
 		)
-	peek = Peek(trigger="Manual", wait=30, team=team)
-	answer = peek.run()
-	if peek.skipped == "locked":
-		frappe.throw("Usage is being pulled right now. Try again in a minute.")
-	if answer is None:
-		return {}
+	answer = Peek(trigger="Manual", team=team).run()
 	if not answer["ok"]:
 		frappe.throw("A gateway store could not be reached at the moment. Please try again later.")
-	return {prefix: Decimal(nano) / NANO for prefix, nano in answer["pending"].items()}
+	return {name: Decimal(nano) / NANO for name, nano in answer["spent"].items()}
 
 
-def pending_spend(rows):
-	"""Nano-USD per prefix of what peeked boxes hold of this UTC month that no Usage Record has
-	yet: every live bucket, every set-aside one whose (drain id, key, day) has not landed — ack or
-	not — and every dead line, which is only acknowledged once it lands. Another month's bucket is
-	that month's spend, not this one's; a blank day lands today, so it counts."""
-	month = f"{utc_today():%Y-%m}"
-	pending, aside = {}, {}
-	for row in rows:
-		for drain_id, keys in (row.get("drains") or {}).items():
-			for prefix, days in keys.items():
-				for day, h in days.items():
-					if day and not day.startswith(month):
-						continue
-					if drain_id:
-						aside[(drain_id, prefix, day)] = int(h.get("cost") or 0)
-					else:
-						pending[prefix] = pending.get(prefix, 0) + int(h.get("cost") or 0)
-		for line in row.get("dead") or []:
-			try:
-				accrual = json.loads(line["line"])
-				served = accrual.get("at") or ""
-				if served and not served.startswith(month):
-					continue
-				pending[accrual["prefix"]] = pending.get(accrual["prefix"], 0) + int(accrual["fields"].get("cost") or 0)
-			except Exception:
-				continue  # unreadable: the pull keeps it as Stuck Usage, and it prices nothing
-	landed = landed_pairs({drain_id for drain_id, _, _ in aside})
-	for (drain_id, prefix, day), cost in aside.items():
-		if (drain_id, prefix, day) not in landed:
-			pending[prefix] = pending.get(prefix, 0) + cost
-	return pending
+def fetch_usage(target, keys=None):
+	"""GET /usage off one gateway: {drain id: {key: {day: hash}}} of everything it holds
+	unacknowledged, `keys` alone when given, and its dead lines."""
+
+	def drain(row):
+		answer = target.get("usage" + (f"?keys={','.join(keys)}" if keys else ""), timeout=DRAIN_TIMEOUT)
+		row["drains"], row["dead"] = answer.get("drains") or {}, answer.get("dead") or []
+		row["spool"] = answer.get("spool") or {}
+
+	return target.dial(drain, had_data=0, drains={}, dead=[], spool={})
+
+
+def fetch_spent(target, hashes):
+	"""GET /spent off one gateway: {key hash: nano-USD this month} of those of `hashes` it holds,
+	in one round trip. Nothing moves."""
+
+	def read(row):
+		# ponytail: ids ride the query string; a body if a team ever holds thousands of keys.
+		row["spent"] = target.get("spent?ids=" + ",".join(hashes)) or {}
+
+	return target.dial(read, spent={})
 
 
 def landed_pairs(drain_ids):
@@ -171,20 +166,6 @@ def landed_pairs(drain_ids):
 		"Usage Record", filters={"drain_id": ("in", sorted(drain_ids))}, fields=["drain_id", "api_key", "day"]
 	)
 	return {(row.drain_id, row.api_key, str(row.day)) for row in rows}
-
-
-def fetch_usage(target, keys=None, peek=False):
-	"""GET /usage off one gateway: {drain id: {key: {day: hash}}} of everything it holds
-	unacknowledged, `keys` alone when given, and its dead lines. `peek` reads the same without
-	setting anything aside, the live buckets under the id ""."""
-
-	def drain(row):
-		parts = ([f"keys={','.join(keys)}"] if keys else []) + (["peek=1"] if peek else [])
-		answer = target.get("usage" + ("?" + "&".join(parts) if parts else ""), timeout=DRAIN_TIMEOUT)
-		row["drains"], row["dead"] = answer.get("drains") or {}, answer.get("dead") or []
-		row["spool"] = answer.get("spool") or {}
-
-	return target.dial(drain, had_data=0, drains={}, dead=[], spool={})
 
 
 def record_drain(outcome, rows, gateway_store=None):
@@ -198,7 +179,9 @@ def record_drain(outcome, rows, gateway_store=None):
 			continue
 		start = time.monotonic()
 		try:
-			pulled, acks, dead_acks, stuck = record_drains(row["server"], drains, dead, gateway_store=gateway_store)
+			pulled, acks, dead_acks, stuck = record_drains(
+				row["server"], drains, dead, gateway_store=gateway_store
+			)
 			row["had_data"] = 1 if pulled else 0
 			row["detail"] = f"pulled:{pulled} stuck:{stuck}" if stuck else f"pulled:{pulled}"
 			if spool.get("depth") or spool.get("dead"):
@@ -287,7 +270,9 @@ def teams_of_keys(drains):
 	prefixes = {prefix for keys in drains.values() for prefix in keys}
 	if not prefixes:
 		return {}
-	rows = frappe.get_all("Grove API Key", filters={"name": ("in", sorted(prefixes))}, fields=["name", "team"])
+	rows = frappe.get_all(
+		"Grove API Key", filters={"name": ("in", sorted(prefixes))}, fields=["name", "team"]
+	)
 	return {row.name: row.team for row in rows}
 
 

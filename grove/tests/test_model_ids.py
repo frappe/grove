@@ -78,16 +78,18 @@ class TestTheIdIsAlwaysPrefixed(IntegrationTestCase):
 		second = provider("probe-twice", geography=make_test_geography("test-2")).insert()
 		here = self.model("Twice 7B", provider=first.name)
 		there = frappe.get_doc(
-			{"doctype": "Model", "model_id": "twice-7b", "provider": second.name,
-			 "upstream_model_id": "twice-7b-eu"}
+			{
+				"doctype": "Model",
+				"model_id": "twice-7b",
+				"provider": second.name,
+				"upstream_model_id": "twice-7b-eu",
+			}
 		).insert()
 		self.assertEqual(here.model_key, there.model_key)
 		self.assertNotEqual(here.name, there.name)
 		self.assertEqual((here.geography, there.geography), (first.geography, second.geography))
 		with self.assertRaises(frappe.UniqueValidationError):
-			frappe.get_doc(
-				{"doctype": "Model", "model_id": "twice-7b", "provider": second.name}
-			).insert()
+			frappe.get_doc({"doctype": "Model", "model_id": "twice-7b", "provider": second.name}).insert()
 
 	def test_a_name_with_nothing_sluggable_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):

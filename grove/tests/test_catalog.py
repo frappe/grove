@@ -7,19 +7,27 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing
 from grove.catalog import export, seed
 from grove.grove.doctype.geography.test_geography import make_test_geography
-from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing
 from grove.grove.doctype.model_provider.test_model_provider import our_model, provider, vendor_model
 
 COUNTED = (
-	"Usage Counter", "Geography", "Cloud Provider", "Region", "Model Provider", "Denied Tool", "Model",
-	"Model Pricing", "Model Group",
+	"Usage Counter",
+	"Geography",
+	"Cloud Provider",
+	"Region",
+	"Model Provider",
+	"Denied Tool",
+	"Model",
+	"Model Pricing",
+	"Model Group",
 )
 
 
@@ -35,18 +43,37 @@ class CatalogCase(IntegrationTestCase):
 
 
 class TestInsertMissing(CatalogCase):
-	CATALOG = {
+	CATALOG: ClassVar[dict] = {
 		"counters": [{"counter_name": "web_search_requests", "label": "Web searches", "unit": "request"}],
 		"geographies": [{"name": "Catalog"}],
 		"cloud_providers": [{"name": "catalog-cloud", "provider_type": "aws"}],
-		"regions": [{"name": "catalog-south-1", "label": "Catalog South", "geography": "Catalog", "cloud_provider": "aws"}],
-		"providers": [{"provider_name": "catalog-vendor", "geography": "Catalog", "base_url": "https://api.vendor.test/v1"}],
+		"regions": [
+			{
+				"name": "catalog-south-1",
+				"label": "Catalog South",
+				"geography": "Catalog",
+				"cloud_provider": "aws",
+			}
+		],
+		"providers": [
+			{
+				"provider_name": "catalog-vendor",
+				"geography": "Catalog",
+				"base_url": "https://api.vendor.test/v1",
+			}
+		],
 		"denied_tools": [{"provider_name": "catalog-vendor", "tool": "web_search_20250305"}],
-		"models": [{
-			"provider": "catalog-vendor", "model_id": "big-1", "upstream_model_id": "big-1-2026",
-			"rates": [{"counter": "prompt_tokens", "rate": 2.5}],
-		}],
-		"model_groups": [{"name": "catalog-group", "description": "Catalog", "models": ["catalog-vendor/big-1"]}],
+		"models": [
+			{
+				"provider": "catalog-vendor",
+				"model_id": "big-1",
+				"upstream_model_id": "big-1-2026",
+				"rates": [{"counter": "prompt_tokens", "rate": 2.5}],
+			}
+		],
+		"model_groups": [
+			{"name": "catalog-group", "description": "Catalog", "models": ["catalog-vendor/big-1"]}
+		],
 	}
 
 	def test_what_is_absent_is_inserted_once_and_never_its_pricing(self):
@@ -57,12 +84,16 @@ class TestInsertMissing(CatalogCase):
 		self.assertFalse(geography.endpoint or geography.fleet_zone or geography.is_default)
 		self.assertEqual(frappe.db.get_value("Geography", {"is_default": 1}), default)
 		model = frappe.get_doc("Model", {"model_key": "catalog-vendor/big-1"})
-		self.assertEqual((model.upstream_model_id, model.published, model.provider_is_self_hosted), ("big-1-2026", 0, 0))
+		self.assertEqual(
+			(model.upstream_model_id, model.published, model.provider_is_self_hosted), ("big-1-2026", 0, 0)
+		)
 		self.assertFalse(frappe.db.exists("Model Pricing", {"model": model.name}))
 		self.assertEqual(frappe.db.get_value("Usage Counter", "web_search_requests", "unit"), "request")
 		self.assertTrue(frappe.db.exists("Denied Tool", "catalog-vendor:web_search_20250305"))
 		cloud = frappe.get_doc("Cloud Provider", "catalog-cloud")
-		self.assertEqual((cloud.resource_type, cloud.get_password("api_key", raise_exception=False)), ("Machine", None))
+		self.assertEqual(
+			(cloud.resource_type, cloud.get_password("api_key", raise_exception=False)), ("Machine", None)
+		)
 		self.assertEqual(frappe.db.get_value("Region", "catalog-south-1", "geography"), "Catalog")
 		group = frappe.get_doc("Model Group", "catalog-group")
 		self.assertEqual(
@@ -75,7 +106,11 @@ class TestInsertMissing(CatalogCase):
 
 	def test_a_provider_the_site_holds_is_left_as_it_is(self):
 		held = provider("catalog-held", base_url="https://held.test/v1", api_key="held-secret").insert()
-		self.load(providers=[{"provider_name": "catalog-held", "geography": "Catalog", "base_url": "https://new.test/v1"}])
+		self.load(
+			providers=[
+				{"provider_name": "catalog-held", "geography": "Catalog", "base_url": "https://new.test/v1"}
+			]
+		)
 		[name] = frappe.get_all("Model Provider", filters={"provider_name": "catalog-held"}, pluck="name")
 		doc = frappe.get_doc("Model Provider", name)
 		self.assertEqual(
@@ -94,16 +129,20 @@ class TestASiteWithNoDefaultGeography(CatalogCase):
 	def test_the_first_geography_inserted_is_the_default(self):
 		frappe.db.set_value("Geography", {"is_default": 1}, "is_default", 0)
 		self.load(geographies=[{"name": "Catalog-First"}, {"name": "Catalog-Second"}])
-		self.assertEqual(frappe.get_all("Geography", filters={"is_default": 1}, pluck="name"), ["Catalog-First"])
+		self.assertEqual(
+			frappe.get_all("Geography", filters={"is_default": 1}, pluck="name"), ["Catalog-First"]
+		)
 
 
 class TestExport(CatalogCase):
-	RATES = {"prompt_tokens": 2.5, "completion_tokens": 15, "prompt_tokens_above_272k": 5}
+	RATES: ClassVar[dict] = {"prompt_tokens": 2.5, "completion_tokens": 15, "prompt_tokens_above_272k": 5}
 
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		vendor = provider("catalog-export", base_url="https://export.test/v1", api_key="export-secret").insert()
+		vendor = provider(
+			"catalog-export", base_url="https://export.test/v1", api_key="export-secret"
+		).insert()
 		cls.provider = vendor.name
 		cls.model = vendor_model("big-2", vendor.name).insert().name
 		cls.pricing = enabled_pricing(cls.model, **cls.RATES).name
@@ -128,7 +167,9 @@ class TestExport(CatalogCase):
 		self.assertEqual(catalog["geographies"], [{"name": "Main"}])
 		self.assertEqual({r["geography"] for r in catalog["regions"]}, {"Main"})
 		self.assertEqual(catalog["counters"], seed.read()["counters"])
-		self.assertEqual({p.get("geography") for p in catalog["providers"] if not p.get("is_self_hosted")}, {"Main"})
+		self.assertEqual(
+			{p.get("geography") for p in catalog["providers"] if not p.get("is_self_hosted")}, {"Main"}
+		)
 		[model] = [m for m in catalog["models"] if seed.get_model_key(m) == self.key(self.model)]
 		self.assertEqual(model["rates"], [{"counter": c, "rate": r} for c, r in self.RATES.items()])
 		self.assertNotIn(self.key(self.ours), [seed.get_model_key(m) for m in catalog["models"]])
@@ -154,11 +195,12 @@ class TestExport(CatalogCase):
 		frappe.db.delete("Model Provider", {"name": self.provider})
 		seed.insert_missing(self.path)
 		with patch.object(seed, "CATALOG", self.path):
-			pricing = frappe.get_doc("Model Pricing", frappe.get_doc("Model", {"model_key": key}).load_pricing())
+			pricing = frappe.get_doc(
+				"Model Pricing", frappe.get_doc("Model", {"model_key": key}).load_pricing()
+			)
 		pricing.status = "Enabled"
 		pricing.save()
 		self.assertEqual(self.exported(), first)
-
 
 
 class TestTheShippedFile(unittest.TestCase):
@@ -171,7 +213,6 @@ class TestTheShippedFile(unittest.TestCase):
 		providers = {p["provider_name"] for p in self.catalog["providers"]}
 		counters = {c["counter_name"] for c in self.catalog["counters"]}
 		geographies = {g["name"] for g in self.catalog["geographies"]}
-		regions = {r["name"] for r in self.catalog["regions"]}
 		self.assertIn(self.catalog["default_tier"], {t["name"] for t in self.catalog["tiers"]})
 		inputs = {m["name"] for m in self.catalog["modalities"] if m["is_input"]}
 		outputs = {m["name"] for m in self.catalog["modalities"] if m["is_output"]}
