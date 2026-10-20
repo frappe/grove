@@ -103,6 +103,7 @@ def spend_of(team):
 		"spend_limit": flt(doc.spend_limit, 9),
 		"max_keys": doc.max_keys,
 		"suspended": bool(doc.suspended),
+		"log_payloads": bool(doc.log_payloads),
 	}
 
 

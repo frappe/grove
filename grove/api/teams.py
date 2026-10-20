@@ -36,6 +36,7 @@ def update_team(
 	suspended: bool | None = None,
 	tier: str | None = None,
 	observed_at: str | None = None,
+	log_payloads: bool | None = None,
 ):
 	frappe.only_for(ALLOWED_ROLES)
 	from grove.grove.doctype.tier.tier import ensure
@@ -45,7 +46,12 @@ def update_team(
 		return {"team": doc.name, "ignored": "not newer", **team_limits(doc.name)}
 	if tier:
 		ensure(tier)
-	fields = (("suspended", suspended), ("tier", tier), ("last_reported_at", observed_at))
+	fields = (
+		("suspended", suspended),
+		("tier", tier),
+		("last_reported_at", observed_at),
+		("log_payloads", log_payloads),
+	)
 	for field, value in fields:
 		if value is not None:
 			doc.set(field, value)
