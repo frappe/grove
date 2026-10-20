@@ -131,6 +131,16 @@ class TestWhereTheCheckRuns(SpendLimitCase):
 		self.assertEqual(self.peek.call_count, 2)
 		self.peek.assert_called_with(team)
 
+	def test_a_mint_past_the_key_count_never_asks_the_boxes(self):
+		team = self.team(spend_limit=10)
+		only_one = frappe.get_doc("Tier", f"{team}-tier")
+		only_one.max_keys = 1
+		only_one.save()
+		self.key(team, cap=1)
+		self.peek.reset_mock()
+		self.refused(lambda: self.key(team, cap=1), "already holds 1 live keys")
+		self.peek.assert_not_called()
+
 	def test_a_batch_asks_once_refuses_whole_and_checks_no_save_again(self):
 		team = self.team(spend_limit=10)
 		first, second = self.key(team, cap=6), self.key(team, cap=4)

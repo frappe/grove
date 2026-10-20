@@ -64,7 +64,7 @@ def update_caps(team: str, caps: dict[str, float]):
 	"""Set several monthly caps of `team`'s live keys at once, {key: USD}. Lowered caps are saved
 	first, so moving a cap from one key to another fits the spend limit midway as well; any
 	refusal leaves every cap as it was. What the limit holds is this month's spend and the caps
-	together (`pricing.committed`), with what the boxes count read first: a cap a key already
+	together (`pricing.committed`), with what the boxes count read under the team row: a cap a key already
 	spent frees nothing when moved. Checked once for the batch; no save checks again. → the keys
 	as `keys` lists them."""
 	frappe.only_for(ALLOWED_ROLES)
@@ -76,8 +76,8 @@ def update_caps(team: str, caps: dict[str, float]):
 	if revoked := [doc.name for doc in docs if doc.status != "active"]:
 		frappe.throw(f"{', '.join(revoked)} is revoked.")
 	raised = any(flt(caps[doc.name]) > flt(doc.cap) for doc in docs)
-	box_spent = peek_team(team) if raised else {}
 	team_doc = team_limits(team, for_update=True)
+	box_spent = peek_team(team) if raised else {}
 	total = committed(team, {doc.name: flt(caps[doc.name]) for doc in docs}, box_spent=box_spent)
 	if raised and total > flt(team_doc.spend_limit, 9):
 		frappe.throw(
