@@ -378,6 +378,9 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		row.reload()
 		self.assertEqual(self.state(team)[0], D("0.6"))
 		self.assertEqual(row.resolution, "Grove corrected")
+		# The figures wait out their cache: a correction is an operator's action in Desk.
+		self.assertEqual(self.money(team), (0.6, 0.6, 0.5))
+		pricing.forget_figures(team)
 		self.assertEqual(self.money(team), (0.6, 0.6, 0.6))
 		self.assertEqual(D(str(frappe.db.get_value("Usage Record", row.usage_record, "cost"))), D("0.5"))
 		[correction] = frappe.get_all(

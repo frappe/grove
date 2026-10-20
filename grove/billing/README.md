@@ -155,8 +155,8 @@ records of every key the team held, revoked ones too, plus what Grove corrected,
 stored; `capped`, Σ live caps; `committed`, what the month has spoken for, the figure a raise is
 checked against; `spend_limit`, `max_keys`, `suspended`), `keys` (each with its cap, `month_spent`
 and effective limits) and `usage` (this month, every key), read together and kept in the site
-cache until something moves them — a record lands, a Grove correction, a key or the team saved, its
-tier edited — and 30 minutes at most, so every console page shows one moment.
+cache until something moves them — a drain lands, a key or the team saved — and 30 minutes at most,
+so every console page shows one moment; a correction or a tier edit waits those minutes out.
 `api.usage.pull_usage(team)` drains the team now and answers its figures afresh (2 an hour per team,
 then 429). `api.usage.usage(...)` reads any other window.
 Credit, invoices and payment are Central's: it bills what landed since its last invoice from

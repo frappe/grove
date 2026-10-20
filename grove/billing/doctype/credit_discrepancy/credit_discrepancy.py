@@ -39,7 +39,7 @@ class CreditDiscrepancy(Document):
 	def correct_grove(self):
 		"""Grove priced it wrong: the money lands as a Usage Correction of the delta, dated today,
 		which every money read sums from then on, so Grove's spend meets the gateway's."""
-		from grove.billing.pricing import forget_figures, lock_team
+		from grove.billing.pricing import lock_team
 
 		self.check_open()
 		lock_team(self.team)
@@ -56,7 +56,6 @@ class CreditDiscrepancy(Document):
 				"cost": float(delta),
 			}
 		).insert()
-		forget_figures(self.team)
 		self.decide("Grove corrected")
 
 	@frappe.whitelist()

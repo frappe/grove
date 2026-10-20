@@ -5,7 +5,7 @@ A drain is priced by the pricing id the gateway tagged each request with, so bot
 same counters at the same rates.
 
 No spend is stored on a key or a team: `month_spent_by` sums this month off the records and the
-corrections, and whatever lands money forgets the team's figures (`forget_figures`)."""
+corrections; a landed drain, a key or the team saved forgets the team's figures (`forget_figures`)."""
 
 from decimal import Decimal
 
@@ -274,9 +274,9 @@ def remembered_figures(team, read):
 
 
 def forget_figures(team):
-	"""Every writer that moves a team's figures calls this: a record landed or removed, a Grove
-	correction, a key or the team saved, its tier edited. Now, and again once this transaction
-	commits, since a read in between would keep the old rows."""
+	"""What the console shows right after an action calls this: a drain landed, a key or the team
+	saved. A correction or a tier edit waits FIGURES_SECONDS out instead. Now, and again once this
+	transaction commits, since a read in between would keep the old rows."""
 	key = f"figures:{team}"
 	frappe.cache.delete_value(key)
 	frappe.db.after_commit.add(lambda: frappe.cache.delete_value(key))
