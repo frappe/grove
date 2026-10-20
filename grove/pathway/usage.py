@@ -38,11 +38,10 @@ from frappe.utils import getdate
 from grove.billing.doctype.stuck_usage.stuck_usage import record_stuck, resolve_stuck
 from grove.billing.pricing import PriceBook
 from grove.pathway import snapshot
-from grove.pathway.reconcile import Reconciler
+from grove.pathway.reconcile import DEAD, Reconciler
 from grove.pathway.run import SyncRun, Target, error_text, gateway_units, guarded, in_turn
 from grove.utils import utc_today
 
-DEAD = "dead:"
 # A store of a lakh keys answers tens of MB after as many Redis reads; the run's default is for a push.
 DRAIN_TIMEOUT = 120
 

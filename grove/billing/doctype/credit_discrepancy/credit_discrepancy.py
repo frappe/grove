@@ -8,11 +8,11 @@ from grove.utils import utc_today
 
 class CreditDiscrepancy(Document):
 	"""The gateway charged a drain differently from Grove's price of the same counters at the same
-	pricing. Logged by the pull and never acted on by it: a person decides which side is wrong and
-	corrects that side's spend, which brings the two balances back together. The row keeps the two
-	figures and the decision; the money is a record of its own — a Usage Correction when Grove was
-	wrong, a Gateway Spend Adjustment when the gateway was — so the Usage Record it names is never
-	changed."""
+	pricing. Logged by the pull: a person decides which side is wrong and corrects that side's
+	spend, which brings the two balances back together. The one the pull decides itself is a dead
+	line's, charged by the box at nothing (`Reconciler.audit`). The row keeps the two figures and
+	the decision; the money is a record of its own — a Usage Correction when Grove was wrong, a
+	Gateway Spend Adjustment when the gateway was — so the Usage Record it names is never changed."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -60,10 +60,15 @@ class CreditDiscrepancy(Document):
 
 	@frappe.whitelist()
 	def correct_gateway(self):
-		"""The gateway charged it wrong: its spend counter for the key on that store is owed minus
-		the delta. Only recorded here, as a Pending Gateway Spend Adjustment — the next projection
-		tick sends it, and every tick after until the box answers. Grove's side does not move."""
+		"""The gateway charged it wrong."""
 		self.check_open()
+		self.adjust_gateway()
+
+	def adjust_gateway(self):
+		"""The gateway's spend counter for the key on that store is owed minus the delta. Only
+		recorded here, as a Pending Gateway Spend Adjustment — the next projection tick sends it, and
+		every tick after until the box answers. Grove's side does not move. The pull calls this for
+		a dead line under whoever pulled, so the row is written past permissions."""
 		if not self.gateway_store:
 			frappe.throw("This drain names no store, so there is nothing to send the correction through.")
 		frappe.get_doc(
@@ -75,7 +80,7 @@ class CreditDiscrepancy(Document):
 				"gateway_store": self.gateway_store,
 				"adjustment": -float(self.delta),
 			}
-		).insert()
+		).insert(ignore_permissions=True)
 		self.decide("Gateway corrected")
 
 	def check_open(self):
@@ -99,4 +104,4 @@ def model_key_of(pricing):
 def record(**facts):
 	"""The one writer: one row per (Usage Record, pricing) the gateway charged differently."""
 	facts = {k: float(v) if isinstance(v, Decimal) else v for k, v in facts.items()}
-	return frappe.get_doc({"doctype": "Credit Discrepancy", **facts}).insert(ignore_permissions=True).name
+	return frappe.get_doc({"doctype": "Credit Discrepancy", **facts}).insert(ignore_permissions=True)

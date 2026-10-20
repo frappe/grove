@@ -545,13 +545,18 @@ class TestAPushCarriesOwedAdjustments(unittest.TestCase):
 	SNAPSHOT = {"groups": {"records": [], "catalog": "", "hash": "h1"}}
 	OWED = [{"user": "GU-1", "delta": -5, "id": "CD-1"}, {"user": "GU-2", "delta": 7, "id": "CD-2"}]
 
-	def push(self, delta, refused=None):
+	def push(self, delta, refused=None, gone=None):
+		"""`gone`: {id: the body of a 404 the box answers that adjustment with}."""
+		import requests
+
 		posted = []
 
 		def post(path, body):
 			posted.append((path, body))
 			if refused and body.get("id") == refused:
 				raise ConnectionError("box gone")
+			if body.get("id") in (gone or {}):
+				raise requests.HTTPError(response=unittest.mock.Mock(status_code=404, text=gone[body["id"]]))
 			return {"spent": 40}
 
 		with unittest.mock.patch.object(Target, "post", side_effect=post):
@@ -574,6 +579,15 @@ class TestAPushCarriesOwedAdjustments(unittest.TestCase):
 		row, posted = self.push(self.SNAPSHOT, refused="CD-2")
 		self.assertEqual(posted[0][0], "state")
 		self.assertEqual((row["success"], row["adjusted"]), (0, {"CD-1": 40}))
+
+	def test_a_key_the_store_no_longer_holds_is_owed_no_more_and_the_rest_still_sent(self):
+		row, posted = self.push(self.SNAPSHOT, gone={"CD-1": '{"error": "no such key on this store"}'})
+		self.assertEqual([path for path, _body in posted], ["state", "spend-adjust", "spend-adjust"])
+		self.assertEqual((row["success"], row["adjusted"]), (1, {"CD-1": None, "CD-2": 40}))
+
+	def test_an_old_agents_404_on_an_adjustment_is_still_the_rows_failure(self):
+		row, _posted = self.push(self.SNAPSHOT, gone={"CD-1": "404 page not found"})
+		self.assertEqual((row["success"], row["http_status"], row["adjusted"]), (0, 404, {}))
 
 
 class TestAPush(unittest.TestCase):
