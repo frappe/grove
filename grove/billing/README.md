@@ -153,7 +153,7 @@ it holds no money that must not run out. What gates is:
 **What Central reads.** `api.usage.figures(team)`: `spend` (`month_spent`, this UTC month's
 records of every key the team held, revoked ones too, plus what Grove corrected, nothing
 stored; `capped`, Σ live caps; `committed`, what the month has spoken for, the figure a raise is
-checked against; `spend_limit`, `max_keys`, `suspended`), `keys` (each with its cap, `month_spent`
+checked against; `spend_limit`, `max_keys`, `suspended`), `keys` (live first, newest first within each, with its cap, `month_spent`
 and effective limits) and `usage` (this month, every key), read together and kept in the site
 cache until something moves them — a drain lands, a key or the team saved — and 30 minutes at most,
 so every console page shows one moment; a correction or a tier edit waits those minutes out.

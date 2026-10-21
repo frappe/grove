@@ -140,7 +140,7 @@ class GroveAPIKey(Document):
 		if total > flt(team.spend_limit, 9):
 			frappe.throw(
 				f"This month's spend and caps would add up to {usd(total)} of a spend limit of "
-				f"{usd(team.spend_limit)}. Lower another key's cap first."
+				f"{usd(team.spend_limit)}."
 			)
 
 	@property
