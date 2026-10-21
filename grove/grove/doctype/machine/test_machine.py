@@ -477,6 +477,60 @@ class TestStaticIp(unittest.TestCase):
 		self.assertEqual([name for name, _ in client.calls], ["release_address"])
 
 
+class TestTerminationProtection(unittest.TestCase):
+	"""AWS refuses to terminate a protected instance, but Grove releases the Elastic IP first, so
+	the refusal has to come from Grove before anything is handed back."""
+
+	def client(self, protected=False):
+		client = EC2Client.__new__(EC2Client)
+		client.region = "ap-south-1"
+		client.calls = []
+		client.ec2 = SimpleNamespace(
+			describe_images=lambda **kw: {"Images": [{"RootDeviceName": "/dev/sda1"}]},
+			run_instances=lambda **kw: client.calls.append(("run_instances", kw))
+			or {"Instances": [{"InstanceId": "i-1"}]},
+			modify_instance_attribute=lambda **kw: client.calls.append(("modify_instance_attribute", kw)),
+			describe_instance_attribute=lambda **kw: {"DisableApiTermination": {"Value": protected}},
+		)
+		return client
+
+	def test_a_launch_asks_for_it(self):
+		client = self.client()
+		client.run_instance("mc-1", "g6.xlarge", "ami-1", "", [], 100, termination_protection=1)
+		_, body = client.calls[0]
+		self.assertIs(body["DisableApiTermination"], True)
+
+	def test_turning_it_off_sends_false(self):
+		client = self.client()
+		client.set_termination_protection("i-1", 0)
+		self.assertEqual(
+			client.calls,
+			[("modify_instance_attribute", {"InstanceId": "i-1", "DisableApiTermination": {"Value": False}})],
+		)
+
+	def test_it_is_read_off_the_instance(self):
+		self.assertTrue(self.client(protected=True).is_termination_protected("i-1"))
+		self.assertFalse(self.client(protected=False).is_termination_protected("i-1"))
+
+	def test_a_protected_box_keeps_its_ip_and_its_instance(self):
+		calls = []
+		client = SimpleNamespace(
+			is_termination_protected=lambda instance_id: True,
+			release_static_ip=lambda allocation_id: calls.append("release_static_ip"),
+			terminate_instance=lambda instance_id: calls.append("terminate_instance"),
+		)
+		machine = SimpleNamespace(
+			name="mc-1",
+			instance_id="i-1",
+			static_ip_allocation_id="eipalloc-1",
+			cloud_client=client,
+			require_instance=lambda: None,
+		)
+		with self.assertRaises(frappe.ValidationError):
+			Machine.destroy_instance(machine)
+		self.assertEqual(calls, [])
+
+
 class TestLaunchResetsStatusOnFailure(IntegrationTestCase):
 	"""A launch() failure must not strand a Machine at Pending forever — the UI offers no way
 	out of that state once instance_id is blank but status says Pending."""

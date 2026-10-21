@@ -63,6 +63,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 		ssh_user: DF.Data | None
 		static_ip_allocation_id: DF.Data | None
 		status: DF.Literal["Draft", "Pending", "Active", "Stopped", "Terminated"]
+		termination_protection: DF.Check
 	# end: auto-generated types
 
 	@property
@@ -250,6 +251,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 				security_group_ids=self.get_security_group_ids(network),
 				root_volume_gb=self.root_volume_gb,
 				ssh_public_keys=injected_public_keys(),
+				termination_protection=self.termination_protection,
 			)
 		except Exception:
 			self.db_set("status", "Draft", commit=True)
@@ -300,6 +302,13 @@ class Machine(GeneratedName, AnsibleHost, Document):
 		self.sync()
 
 	@frappe.whitelist()
+	def set_termination_protection(self, enabled: int):
+		"""Button: lock or unlock this box against terminate, at the provider itself."""
+		self.require_instance()
+		self.cloud_client.set_termination_protection(self.instance_id, bool(enabled))
+		self.db_set("termination_protection", int(enabled), commit=True)
+
+	@frappe.whitelist()
 	def sync(self):
 		"""Button: pull state, IPs and launch facts back off AWS, so a box registered by hand
 		(instance_id set, nothing else) gets fully backfilled from what's running."""
@@ -321,6 +330,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 				"instance_type": instance["instance_type"] or "",
 				"machine_image": instance["image_id"] or "",
 				"root_volume_gb": instance["root_volume_gb"] or 0,
+				"termination_protection": int(client.is_termination_protected(self.instance_id)),
 			}
 		)
 		self.sync_dependent_servers()
@@ -465,6 +475,9 @@ class Machine(GeneratedName, AnsibleHost, Document):
 	def destroy_instance(self):
 		self.require_instance()
 		client = self.cloud_client
+		# Asked live: the Elastic IP below would be gone before AWS refused the terminate.
+		if client.is_termination_protected(self.instance_id):
+			frappe.throw(f"{self.name} has Termination Protection on. Turn it off first.")
 		if self.static_ip_allocation_id:
 			client.release_static_ip(self.static_ip_allocation_id)
 			self.db_set("static_ip_allocation_id", "")

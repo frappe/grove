@@ -153,6 +153,7 @@ class EC2Client(CloudClient):
 		security_group_ids,
 		root_volume_gb,
 		ssh_public_keys="",
+		termination_protection=False,
 	):
 		"""Launch one instance, tagged with the Machine's name. IPs may be absent until it runs,
 		so poll_instance_ready.
@@ -176,6 +177,7 @@ class EC2Client(CloudClient):
 				}
 			],
 			"TagSpecifications": [self._tags("instance", name)],
+			"DisableApiTermination": bool(termination_protection),
 		}
 		if subnet_id:
 			body["SubnetId"] = subnet_id
@@ -480,6 +482,20 @@ class EC2Client(CloudClient):
 	def terminate_instance(self, instance_id):
 		self._call(self.ec2.terminate_instances, InstanceIds=[instance_id])
 		return True
+
+	def set_termination_protection(self, instance_id, enabled):
+		self._call(
+			self.ec2.modify_instance_attribute,
+			InstanceId=instance_id,
+			DisableApiTermination={"Value": bool(enabled)},
+		)
+		return True
+
+	def is_termination_protected(self, instance_id):
+		attribute = self._call(
+			self.ec2.describe_instance_attribute, InstanceId=instance_id, Attribute="disableApiTermination"
+		)
+		return attribute["DisableApiTermination"]["Value"]
 
 	@staticmethod
 	def _tags(resource_type, name):
