@@ -157,6 +157,31 @@ frappe.ui.form.on("Machine", {
 			},
 			__("AWS")
 		);
+		if (frm.doc.termination_protection) {
+			frm.add_custom_button(
+				__("Disable Termination Protection"),
+				() =>
+					grove.confirm_call(
+						frm,
+						__(
+							"Unlock {0}? Terminate and Archive then destroy it, from Grove or the AWS console.",
+							[frm.doc.name]
+						),
+						"set_termination_protection",
+						{ enabled: 0 }
+					),
+				__("AWS")
+			);
+			return;
+		}
+		frm.add_custom_button(
+			__("Enable Termination Protection"),
+			() =>
+				frm
+					.call("set_termination_protection", { enabled: 1 })
+					.then(() => frm.reload_doc()),
+			__("AWS")
+		);
 		frm.add_custom_button(
 			__("Terminate"),
 			() => {

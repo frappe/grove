@@ -28,6 +28,7 @@ class CloudClient(ABC):
 		security_group_ids,
 		root_volume_gb,
 		ssh_public_keys="",
+		termination_protection=False,
 	):
 		"""Launch one instance, tagged with the Machine's name and authorised for the given SSH
 		public keys however this provider injects them. See get_instance for the shape."""
@@ -70,6 +71,14 @@ class CloudClient(ABC):
 	@abstractmethod
 	def terminate_instance(self, instance_id):
 		"""Destroy the instance and its durable storage."""
+
+	@abstractmethod
+	def set_termination_protection(self, instance_id, enabled):
+		"""Lock or unlock the instance against terminate at the provider, console included."""
+
+	@abstractmethod
+	def is_termination_protected(self, instance_id):
+		"""Whether the provider will refuse to terminate this instance right now."""
 
 	@abstractmethod
 	def allocate_static_ip(self, instance_id):

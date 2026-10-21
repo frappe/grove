@@ -13,6 +13,7 @@ from grove.grove.doctype.gateway_server.gateway_server import GatewayServer
 from grove.grove.doctype.gateway_store.gateway_store import GatewayStore
 from grove.grove.doctype.inference_server.inference_server import InferenceServer
 from grove.grove.doctype.ingress_server.ingress_server import IngressServer
+from grove.grove.doctype.machine.machine import Machine
 from grove.grove.doctype.monitoring_agent.monitoring_agent import MonitoringAgent
 from grove.server import Server
 
@@ -146,6 +147,31 @@ class TestArchive(unittest.TestCase):
 		self.archive(doc, box)
 		self.assertEqual(box.terminated, [])
 		self.assertEqual(doc.saved, ["Terminated"])
+
+	def test_a_protected_box_refuses_and_the_row_stays(self):
+		"""Through the real Machine.terminate, so Archive meets the same guard as Terminate."""
+		touched = []
+		box = SimpleNamespace(
+			name="m-1",
+			cloud_provider="aws",
+			instance_id="i-1",
+			static_ip_allocation_id="eipalloc-1",
+			require_instance=lambda: None,
+			mark_terminated=lambda: touched.append("mark_terminated"),
+			cloud_client=SimpleNamespace(
+				is_termination_protected=lambda instance_id: True,
+				release_static_ip=lambda allocation_id: touched.append("release_static_ip"),
+				terminate_instance=lambda instance_id: touched.append("terminate_instance"),
+			),
+		)
+		box.destroy_instance = lambda: Machine.destroy_instance(box)
+		box.terminate = lambda: Machine.terminate(box)
+		doc = self.server()
+		with self.assertRaises(Blocked) as refused:
+			self.archive(doc, box)
+		self.assertIn("Termination Protection", str(refused.exception))
+		self.assertEqual(touched, [])
+		self.assertEqual((doc.status, doc.saved), ("Active", []))
 
 
 class TestANewInferenceServerTakesTheNetworksSingletons(unittest.TestCase):

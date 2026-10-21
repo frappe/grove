@@ -98,6 +98,8 @@ Append-only. Never read to decide anything; read to find out why.
   (replicas on an Inference Server, boxes routed through an Ingress, targets of a Monitoring Agent,
   the last gateway of a region that still serves, gateways still on a Gateway Store), then a cloud Machine is terminated, whose
   cascade already marks the row Terminated and drops its DNS. An on-prem box only has its row retired.
+  A cloud Machine launches with Termination Protection on; while the provider reports it on, Terminate
+  (and so Archive) refuses before anything is released. Its button turns it off.
   A bare-metal Machine that is gone is retired with its own `Terminate`: no provider call, just the
   same cascade. An Inference Server going Terminated takes its replicas with it — the box is
   gone, so no teardown play runs and only their rows (status, port) are retired.

@@ -24,6 +24,7 @@
   "root_volume_gb",
   "is_static_ip",
   "static_ip_allocation_id",
+  "termination_protection",
   "column_break_aws_spec",
   "machine_image",
   "cpu_architecture",
@@ -172,6 +173,14 @@
    "read_only": 1
   },
   {
+   "default": "1",
+   "description": "Makes the provider refuse to terminate this box. Set at launch, then changed with its button; Sync reads it back off the provider.",
+   "fieldname": "termination_protection",
+   "fieldtype": "Check",
+   "label": "Termination Protection",
+   "read_only_depends_on": "eval:doc.instance_id"
+  },
+  {
    "fieldname": "column_break_aws_spec",
    "fieldtype": "Column Break"
   },
@@ -234,7 +243,7 @@
   }
  ],
  "links": [],
- "modified": "2026-09-22 15:19:34.273294",
+ "modified": "2026-10-22 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Machine",
