@@ -77,6 +77,8 @@ def update_caps(team: str, caps: dict[str, float]):
 		frappe.throw(f"{', '.join(revoked)} is revoked.")
 	raised = any(flt(caps[doc.name]) > flt(doc.cap) for doc in docs)
 	team_doc = team_limits(team, for_update=True)
+	# A Total team has no spend limit: its caps are for life, the month binds nothing.
+	raised = raised and team_doc.key_cap_window != "Total"
 	box_spent = peek_team(team) if raised else {}
 	total = committed(team, {doc.name: flt(caps[doc.name]) for doc in docs}, box_spent=box_spent)
 	if raised and total > flt(team_doc.spend_limit, 9):

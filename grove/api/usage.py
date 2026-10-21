@@ -100,7 +100,7 @@ def spend_of(team):
 		"month_spent": flt(month_spent_by("team", [team]).get(team, 0), 9),
 		"capped": capped(team),
 		"committed": committed(team, lock=False),
-		"spend_limit": flt(doc.spend_limit, 9),
+		"spend_limit": None if doc.key_cap_window == "Total" else flt(doc.spend_limit, 9),
 		"max_keys": doc.max_keys,
 		"suspended": bool(doc.suspended),
 		"log_payloads": bool(doc.log_payloads),

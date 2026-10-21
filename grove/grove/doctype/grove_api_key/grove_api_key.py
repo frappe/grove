@@ -124,9 +124,13 @@ class GroveAPIKey(Document):
 	def needs_cap_check(self):
 		"""Only a raise of a live key: a lowered limit stops no key and a key can always be minted
 		at 0, refused until capped. `flags.cap_checked` says the caller checked the whole batch
-		(`api.update_caps`, lowers first, so no step passes what the end does not). The cap before
-		is read without a lock: this decides whether to lock."""
+		(`api.update_caps`, lowers first, so no step passes what the end does not). A team whose
+		Key Cap Window is Total has no spend limit: its caps are for life, so the month binds
+		nothing, and `max_keys` and the revokes bound it instead. The cap before is read without a
+		lock: this decides whether to lock."""
 		if self.status != "active" or self.flags.cap_checked:
+			return False
+		if team_limits(self.team).key_cap_window == "Total":
 			return False
 		before = 0 if self.is_new() else frappe.db.get_value("Grove API Key", self.name, "cap")
 		return flt(self.cap, 9) > flt(before, 9)

@@ -98,3 +98,19 @@ class IntegrationTestGroveTeam(IntegrationTestCase):
 			doc.save()
 		with self.assertRaises(frappe.ValidationError):
 			team("team-probe-weekly", key_cap_window="Weekly")
+
+	def test_a_total_team_has_no_spend_limit(self):
+		from grove.api import keys, usage
+
+		doc = team("team-probe-total-limit", spend_limit=1, key_cap_window="Total")
+		first = keys.provision_key(doc.name, title="a", cap=5)["name"]
+		second = keys.provision_key(doc.name, title="b", cap=5)["name"]
+		keys.update_key(doc.name, first, cap=50)
+		keys.update_caps(doc.name, {first: 60, second: 60})
+		spend = usage.figures(doc.name)["spend"]
+		self.assertEqual(
+			(spend["spend_limit"], spend["capped"], spend["key_cap_window"]), (None, 120.0, "Total")
+		)
+		monthly = team("team-probe-monthly-limit", spend_limit=1)
+		with self.assertRaisesRegex(frappe.ValidationError, "spend limit of 1"):
+			keys.provision_key(monthly.name, title="a", cap=5)

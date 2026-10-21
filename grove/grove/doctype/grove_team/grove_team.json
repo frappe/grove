@@ -70,7 +70,7 @@
   },
   {
    "default": "Monthly",
-   "description": "What each key's cap counts: this UTC month's spend, reset on the 1st, or everything since the key was minted. Stamped on every key of the team. Set when the team is made and fixed after: the gateway keeps a different counter per window, so a change would restart every key's count.",
+   "description": "What each key's cap counts: this UTC month's spend, reset on the 1st, or everything since the key was minted. Stamped on every key of the team. Set when the team is made and fixed after: the gateway keeps a different counter per window, so a change would restart every key's count. A Total team has no spend limit: its caps are for life, so the month binds nothing; Max Keys and the revokes bound it.",
    "fieldname": "key_cap_window",
    "fieldtype": "Select",
    "label": "Key Cap Window",
@@ -100,7 +100,7 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-10-22 15:00:00.000000",
+ "modified": "2026-10-22 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove Team",
