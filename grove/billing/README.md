@@ -115,7 +115,7 @@ with `as_of` = when the newest usage in the range was pulled. `pulled_after`/`pu
 over `usage_record.money_rows`: `JSON_TABLE` of the records (one column per Usage Counter) in a UNION ALL with the Usage Corrections, on
 the (team, day) and (api_key, day) indexes of both tables: nothing is summed in Python.
 
-**Nothing here is deleted.** No role holds `delete` on Central Team, Grove API Key, Usage Record, Stuck Usage, Credit Discrepancy, Model Pricing, Model or Model Provider
+**Nothing here is deleted.** No role holds `delete` on Grove Team, Grove API Key, Usage Record, Stuck Usage, Credit Discrepancy, Model Pricing, Model or Model Provider
 (`tests/test_delete_permissions.py` pins the list). A key is revoked and a pricing is superseded.
 DocPerm does not bind Administrator or `ignore_permissions`. Two exceptions, both through Log Settings and never by hand: a resolved Stuck Usage row is
 history and is cleared after 90 days; a Usage Record served more than 90 days ago (its UTC `day`, `usage_record.RETENTION_DAYS`) is purged in chunks, except one a Credit Discrepancy names, which stays as that correction's evidence.

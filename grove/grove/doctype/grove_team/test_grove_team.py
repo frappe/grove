@@ -23,14 +23,14 @@ def team(name, **fields):
 		)
 	return frappe.get_doc(
 		{
-			"doctype": "Central Team",
+			"doctype": "Grove Team",
 			"__newname": name,
 			**fields,
 		}
 	).insert()
 
 
-class IntegrationTestCentralTeam(IntegrationTestCase):
+class IntegrationTestGroveTeam(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -43,7 +43,7 @@ class IntegrationTestCentralTeam(IntegrationTestCase):
 		with self.assertRaises(frappe.DuplicateEntryError):
 			team("team-probe-twin")
 		with self.assertRaises(frappe.ValidationError):
-			frappe.get_doc({"doctype": "Central Team"}).insert()
+			frappe.get_doc({"doctype": "Grove Team"}).insert()
 
 	def test_a_team_holds_at_most_max_keys_live_keys(self):
 		doc = team("team-probe-count", max_keys=2)
@@ -79,7 +79,7 @@ class IntegrationTestCentralTeam(IntegrationTestCase):
 		self.assertEqual(
 			(team_limits(untiered.name).max_keys, team_limits(untiered.name).spend_limit), (1, 5)
 		)
-		frappe.db.set_value("Central Team", doc.name, {"override_max_keys": 1, "max_keys": 0})
+		frappe.db.set_value("Grove Team", doc.name, {"override_max_keys": 1, "max_keys": 0})
 		self.assertEqual((team_limits(doc.name).max_keys, team_limits(doc.name).spend_limit), (0, 5))
 		frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert()
 

@@ -30,7 +30,7 @@ class TestDirtyBuckets(unittest.TestCase):
 
 		def get_all(doctype, filters=None, pluck=None, **kwargs):
 			self.asked.append((doctype, filters))
-			if doctype == "Central Team":
+			if doctype == "Grove Team":
 				return list(teams)
 			return list(team_keys) if "team" in filters else list(keys)
 

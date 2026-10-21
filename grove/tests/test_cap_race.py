@@ -65,6 +65,6 @@ class TestTwoRaisesOnOneTeam(IntegrationTestCase):
 		frappe.db.rollback()
 		for key in frappe.get_all("Grove API Key", {"team": TEAM}, pluck="name"):
 			frappe.delete_doc("Grove API Key", key, force=True, ignore_permissions=True)
-		frappe.delete_doc("Central Team", TEAM, force=True, ignore_permissions=True)
+		frappe.delete_doc("Grove Team", TEAM, force=True, ignore_permissions=True)
 		frappe.delete_doc("Tier", TIER, force=True, ignore_permissions=True)
 		frappe.db.commit()

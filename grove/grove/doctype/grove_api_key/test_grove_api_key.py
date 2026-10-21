@@ -24,7 +24,7 @@ from grove.pathway.snapshot import effective_keys
 def team(name, **fields):
 	"""`max_keys` / `spend_limit` given here go on a Tier of the team's own; without one, no cap
 	fits, and the keys stay at 0."""
-	if frappe.db.exists("Central Team", name):
+	if frappe.db.exists("Grove Team", name):
 		return name
 	if "max_keys" in fields or "spend_limit" in fields:
 		numbers = {k: fields.pop(k) for k in ("max_keys", "spend_limit") if k in fields}
@@ -34,7 +34,7 @@ def team(name, **fields):
 	return (
 		frappe.get_doc(
 			{
-				"doctype": "Central Team",
+				"doctype": "Grove Team",
 				"__newname": name,
 				**fields,
 			}
@@ -78,7 +78,7 @@ class IntegrationTestGroveAPIKey(IntegrationTestCase):
 			(record["team"], record["budget"], record["limited"], record["log_payloads"]),
 			(name, 1_000_000_000, False, True),
 		)
-		frappe.db.set_value("Central Team", name, {"log_payloads": 0})
+		frappe.db.set_value("Grove Team", name, {"log_payloads": 0})
 		record = projected(doc.name)
 		self.assertEqual((record["budget"], record["log_payloads"]), (1_000_000_000, False))
 
@@ -460,7 +460,7 @@ class IntegrationTestCapsFitTheSpendLimit(IntegrationTestCase):
 	def test_a_lowered_limit_stops_no_key_and_refuses_only_a_raise(self):
 		name = team("key-cap-demoted", spend_limit=10)
 		doc = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 8}).insert()
-		tier = frappe.get_doc("Tier", frappe.db.get_value("Central Team", name, "tier"))
+		tier = frappe.get_doc("Tier", frappe.db.get_value("Grove Team", name, "tier"))
 		tier.spend_limit = 5
 		tier.save()
 		self.assertEqual(projected(doc.name)["budget"], 8_000_000_000)

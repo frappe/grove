@@ -58,7 +58,7 @@ def effective_keys(names=None):
 	teams = {
 		t.name: t
 		for t in frappe.get_all(
-			"Central Team", filters=team_filter, fields=["name", "log_payloads", "suspended", "tier"]
+			"Grove Team", filters=team_filter, fields=["name", "log_payloads", "suspended", "tier"]
 		)
 	}
 	deltas = model_rows("Grove API Key", names)
@@ -97,7 +97,7 @@ def dirty_buckets(since):
 	"""The key buckets a save after `since` moved: a saved key's own — revoked or not, a revoke
 	being what empties its slot — and a saved team's every live key's, its fields riding on each."""
 	hashes = frappe.get_all("Grove API Key", filters={"modified": (">", since)}, pluck="key_hash")
-	teams = frappe.get_all("Central Team", filters={"modified": (">", since)}, pluck="name")
+	teams = frappe.get_all("Grove Team", filters={"modified": (">", since)}, pluck="name")
 	if teams:
 		hashes += frappe.get_all(
 			"Grove API Key", filters={"team": ("in", teams), "status": "active"}, pluck="key_hash"

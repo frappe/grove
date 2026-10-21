@@ -33,7 +33,7 @@ def usage(
 	if isinstance(teams, str):
 		teams = [teams]
 	window = read_window(from_date, to_date, period, month, pulled_after, pulled_until)
-	known = frappe.get_list("Central Team", {"name": ("in", teams)}, pluck="name")
+	known = frappe.get_list("Grove Team", {"name": ("in", teams)}, pluck="name")
 	api_key = _key_of(key_hash, known) if key_hash else None
 	table, params = money_rows({"team": known, "api_key": api_key}, **window)
 	rows = (

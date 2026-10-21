@@ -38,7 +38,7 @@ class TestVendorReconciliation(IntegrationTestCase):
 			}
 		).insert()
 		cls.team = (
-			frappe.get_doc({"doctype": "Central Team", "__newname": "reconcile"})
+			frappe.get_doc({"doctype": "Grove Team", "__newname": "reconcile"})
 			.insert(ignore_permissions=True)
 			.name
 		)

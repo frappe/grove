@@ -35,7 +35,7 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Team",
-   "options": "Central Team",
+   "options": "Grove Team",
    "reqd": 1,
    "search_index": 1,
    "set_only_once": 1

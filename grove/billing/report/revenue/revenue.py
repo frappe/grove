@@ -9,7 +9,7 @@ from grove.billing.doctype.usage_record.usage_record import money_rows
 GROUP_BY = {
 	"Model": ("model", "Data", None),
 	"API Key": ("api_key", "Link", "Grove API Key"),
-	"Team": ("team", "Link", "Central Team"),
+	"Team": ("team", "Link", "Grove Team"),
 	"Day": ("day", "Date", None),
 }
 FILTERS = ("model", "api_key", "team")

@@ -196,6 +196,6 @@ def limit_rows_of(names):
 
 	keys = frappe.get_list("Grove API Key", filters={"name": ("in", names)}, fields=["name", "team"])
 	tiers = frappe.get_list(
-		"Central Team", filters={"name": ("in", [k.team for k in keys] or [""])}, fields=["name", "tier"]
+		"Grove Team", filters={"name": ("in", [k.team for k in keys] or [""])}, fields=["name", "tier"]
 	)
 	return effective_limits(keys, limit_entries("Grove API Key", names), {t.name: t.tier for t in tiers})

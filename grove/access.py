@@ -29,7 +29,7 @@ def team_limits(team, for_update=False):
 	the team row for a cap check. The tier comes off the doc cache: a save clears it."""
 	fields = ["suspended", "log_payloads", "tier", "override_max_keys", "max_keys"]
 	row = (
-		frappe.db.get_value("Central Team", team, fields, as_dict=True, for_update=for_update)
+		frappe.db.get_value("Grove Team", team, fields, as_dict=True, for_update=for_update)
 		or frappe._dict()
 	)
 	tier = row.tier or default_tier()

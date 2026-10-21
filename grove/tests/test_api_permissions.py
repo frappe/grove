@@ -518,7 +518,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		applied = deliver(team=team, tier="probe-hook-a", observed_at="2026-10-15 10:00:00.000001")
 		self.assertEqual((applied["tier"], frappe.session.user), ("probe-hook-a", PROBE))
 		self.assertEqual(
-			str(frappe.db.get_value("Central Team", team, "last_reported_at")), "2026-10-15 10:00:00.000001"
+			str(frappe.db.get_value("Grove Team", team, "last_reported_at")), "2026-10-15 10:00:00.000001"
 		)
 		for stale in ("2026-10-15 10:00:00.000001", "2026-10-15 09:59:59"):
 			replay = deliver(team=team, tier="probe-hook-b", observed_at=stale)
@@ -528,7 +528,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		)
 		frappe.set_user("Guest")
 		self.assertIsNone(deliver(team="probe-hook-unknown", tier="probe-hook-a"))
-		self.assertFalse(frappe.db.exists("Central Team", "probe-hook-unknown"))
+		self.assertFalse(frappe.db.exists("Grove Team", "probe-hook-unknown"))
 
 		for forged in (
 			{teams.WEBHOOK_SECRET_HEADER: "bm90IHRoZSBzaWduYXR1cmU="},
@@ -538,7 +538,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			frappe.set_user("Guest")
 			with self.assertRaises(frappe.AuthenticationError):
 				deliver(forged, team=team, tier="probe-hook-a")
-		self.assertEqual(frappe.db.get_value("Central Team", team, "tier"), "probe-hook-b")
+		self.assertEqual(frappe.db.get_value("Grove Team", team, "tier"), "probe-hook-b")
 
 	def test_a_renamed_tier_label_follows_at_grove(self):
 		team = "probe-rename"
@@ -549,7 +549,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		key = keys.provision_key(team, title="follows")["name"]
 
 		teams.rename_tier("probe-ren-a", "probe-ren-b")
-		self.assertEqual(frappe.db.get_value("Central Team", team, "tier"), "probe-ren-b")
+		self.assertEqual(frappe.db.get_value("Grove Team", team, "tier"), "probe-ren-b")
 		self.assertFalse(frappe.db.exists("Tier", "probe-ren-a"))
 		self.assertEqual((teams.update_team(team)["max_keys"], keys.limits(team, key)), (2, rows))
 		self.assertIsNone(teams.rename_tier("probe-ren-unseen", "probe-ren-c"))
