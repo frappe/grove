@@ -279,6 +279,15 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertEqual(usage.figures(team)["spend"]["month_spent"], 2)
 		self.assertTrue(teams.update_team(team, suspended=True)["suspended"])
 
+	def test_a_revoked_key_lists_after_every_live_one(self):
+		team = "probe-order"
+		teams.provision_team(team)
+		older = keys.provision_key(team, title="older")["name"]
+		newer = keys.provision_key(team, title="newer")["name"]
+		self.assertEqual([row.name for row in keys.key_rows([older, newer])], [newer, older])
+		frappe.db.set_value("Grove API Key", newer, "status", "revoked")
+		self.assertEqual([row.name for row in keys.key_rows([older, newer])], [older, newer])
+
 	def test_a_teams_tier_sets_the_limits_of_its_unpinned_keys(self):
 		team = "probe-tier"
 		teams.provision_team(team)

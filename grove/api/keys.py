@@ -165,7 +165,8 @@ def set_key_policy(doc, cap=None, models=None, limits=None):
 
 def key_rows(names):
 	"""The keys named, as `keys` lists them: KEY_FIELDS plus the endpoint, the limits, the
-	masked secret, `month_spent` and `revocable_at`. A handful of queries however many keys."""
+	masked secret, `month_spent` and `revocable_at`. Live keys first, newest first within each.
+	A handful of queries however many keys."""
 	from frappe.utils.password import get_decrypted_password
 
 	from grove.billing.pricing import month_spent_by
@@ -186,6 +187,7 @@ def key_rows(names):
 		row["limits"] = limits.get(row.name, [])
 		row["revocable_at"] = utc_timestamp(frappe.utils.add_to_date(row.creation, hours=REVOKE_AFTER_HOURS))
 		row["month_spent"] = flt(month.get(row.name, 0), 9)
+	rows.sort(key=lambda row: row.status == "revoked")
 	return rows
 
 
