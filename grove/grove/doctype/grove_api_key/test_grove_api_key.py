@@ -82,6 +82,13 @@ class IntegrationTestGroveAPIKey(IntegrationTestCase):
 		record = projected(doc.name)
 		self.assertEqual((record["budget"], record["log_payloads"]), (1_000_000_000, False))
 
+	def test_the_teams_key_cap_window_rides_on_the_key_as_the_budget_window(self):
+		name = team("key-probe-window", spend_limit=1)
+		doc = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 1}).insert()
+		self.assertEqual(projected(doc.name)["budget_window"], "month")
+		frappe.db.set_value("Grove Team", name, {"key_cap_window": "Total"})
+		self.assertEqual(projected(doc.name)["budget_window"], "total")
+
 	def test_a_revoked_key_is_not_projected(self):
 		doc = key("key-probe-revoked")
 		frappe.db.set_value("Grove API Key", doc.name, "status", "revoked")

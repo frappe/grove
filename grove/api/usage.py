@@ -104,6 +104,7 @@ def spend_of(team):
 		"max_keys": doc.max_keys,
 		"suspended": bool(doc.suspended),
 		"log_payloads": bool(doc.log_payloads),
+		"key_cap_window": doc.key_cap_window or "Monthly",
 	}
 
 

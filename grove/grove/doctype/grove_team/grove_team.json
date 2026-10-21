@@ -10,6 +10,7 @@
   "tier",
   "override_max_keys",
   "max_keys",
+  "key_cap_window",
   "column_break_head",
   "suspended",
   "last_reported_at"
@@ -66,6 +67,14 @@
    "fieldtype": "Datetime",
    "label": "Last Reported At",
    "read_only": 1
+  },
+  {
+   "default": "Monthly",
+   "description": "What each key's cap counts: this UTC month's spend, reset on the 1st, or everything since the key was minted. Stamped on every key of the team. A change moves the keys onto the gateway's other counter, so the count restarts.",
+   "fieldname": "key_cap_window",
+   "fieldtype": "Select",
+   "label": "Key Cap Window",
+   "options": "Monthly\nTotal"
   }
  ],
  "links": [
@@ -90,7 +99,7 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-10-22 12:00:00.000000",
+ "modified": "2026-10-22 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove Team",

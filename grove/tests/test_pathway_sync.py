@@ -307,6 +307,7 @@ class TestEffectiveKeys(unittest.TestCase):
 				"log_payloads": True,
 				"geography": "in",
 				"budget": 0,
+				"budget_window": "month",
 				"limits": "requests:1m:20,total_tokens:1m:100000",
 			},
 		)

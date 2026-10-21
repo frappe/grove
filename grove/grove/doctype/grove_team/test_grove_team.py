@@ -86,3 +86,14 @@ class IntegrationTestGroveTeam(IntegrationTestCase):
 	def test_a_spend_limit_cannot_be_negative(self):
 		with self.assertRaises(frappe.ValidationError):
 			team("team-probe-negative", spend_limit=-1)
+
+	def test_the_key_cap_window_is_monthly_or_total_and_figures_report_it(self):
+		from grove.api import usage
+
+		doc = team("team-probe-window")
+		self.assertEqual(usage.figures(doc.name)["spend"]["key_cap_window"], "Monthly")
+		doc.key_cap_window = "Total"
+		doc.save()
+		self.assertEqual(usage.figures(doc.name)["spend"]["key_cap_window"], "Total")
+		with self.assertRaises(frappe.ValidationError):
+			team("team-probe-weekly", key_cap_window="Weekly")

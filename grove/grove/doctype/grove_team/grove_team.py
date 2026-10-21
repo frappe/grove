@@ -9,9 +9,10 @@ from grove.billing.pricing import forget_figures
 
 class GroveTeam(Document):
 	"""A control client's team — Central's (`TEAM-00520`) or Press's (`Press Team`) — named by the
-	client's id for it. Policy — models, geography, rate limits, the monthly cap — sits on each Grove API Key; what is
+	client's id for it. Policy — models, geography, rate limits, the cap — sits on each Grove API Key; what is
 	the team's is what its `tier` allows (`max_keys`, `spend_limit`, the rate limits its unpinned
-	keys run under; its own `max_keys` under Override Max Keys) and whether it is suspended. What
+	keys run under; its own `max_keys` under Override Max Keys), what its keys' caps count
+	(`key_cap_window`: the month, or everything since the mint) and whether it is suspended. What
 	its keys spent is the Usage Records'; who the team is, its contacts, credit and invoices are
 	the client's.
 
@@ -26,6 +27,7 @@ class GroveTeam(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		key_cap_window: DF.Literal["Monthly", "Total"]
 		last_reported_at: DF.Datetime | None
 		log_payloads: DF.Check
 		max_keys: DF.Int

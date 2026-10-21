@@ -66,11 +66,11 @@
   },
   {
    "default": "0",
-   "description": "What this key may spend a month: the gateway counts its spend per month and refuses it at 402 once this month's reaches it. 0 until a cap is set, and the key is refused until then. Across the team's live keys the caps add up to no more than the team's Spend Limit.",
+   "description": "What this key may spend over its team's Key Cap Window \u2014 this UTC month, or everything since the mint: the gateway counts its spend and refuses it at 402 once that reaches the cap. 0 until a cap is set, and the key is refused until then. Across the team's live keys the caps add up to no more than the team's Spend Limit.",
    "fieldname": "cap",
    "fieldtype": "Currency",
    "in_list_view": 1,
-   "label": "Cap (USD / month)",
+   "label": "Cap (USD)",
    "precision": "9"
   },
   {
@@ -112,7 +112,7 @@
    "options": "Grove Model Row"
   },
   {
-   "description": "Models this key may never call. Deny wins over everything — a group grant and a Public release both lose to it.",
+   "description": "Models this key may never call. Deny wins over everything \u2014 a group grant and a Public release both lose to it.",
    "fieldname": "deny",
    "fieldtype": "Table MultiSelect",
    "label": "Deny",
@@ -147,7 +147,7 @@
    "link_fieldname": "api_key"
   }
  ],
- "modified": "2026-10-21 12:00:00.000000",
+ "modified": "2026-10-22 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove API Key",

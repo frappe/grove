@@ -36,10 +36,11 @@ def effective_groups():
 def effective_keys(names=None):
 	"""Every LIVE API Key projected for the gateway, with the whole policy the gates read: its
 	groups and own allow/deny, its geography, its rate limits (its team's tier's, else the defaults,
-	with its own rows replacing the tier's on the metrics they name) and `budget` — its monthly
-	cap; the box counts its spend per month and refuses it once this month's reaches that. What is the team's rides on each key:
-	`log_payloads`, and `limited` — the team is suspended, which refuses every key whatever its
-	own cap says.
+	with its own rows replacing the tier's on the metrics they name) and `budget` — its cap, with
+	`budget_window`, what the box counts it over: the UTC month, or everything since the mint (the
+	team's Key Cap Window); the box refuses the key once that reaches the cap. What is the team's
+	rides on each key: `log_payloads`, `limited` — the team is suspended, which refuses every key
+	whatever its own cap says — and the window.
 
 	`names` narrows it to those keys, with their teams and rows: what a tick rebuilds. Revoked
 	keys are not projected: absent from their bucket, the push prunes them off every box. The row
@@ -58,7 +59,9 @@ def effective_keys(names=None):
 	teams = {
 		t.name: t
 		for t in frappe.get_all(
-			"Grove Team", filters=team_filter, fields=["name", "log_payloads", "suspended", "tier"]
+			"Grove Team",
+			filters=team_filter,
+			fields=["name", "log_payloads", "suspended", "tier", "key_cap_window"],
 		)
 	}
 	deltas = model_rows("Grove API Key", names)
@@ -84,6 +87,7 @@ def effective_keys(names=None):
 				"log_payloads": bool(team.log_payloads),
 				"geography": k.geography or "",
 				"budget": nano(k.cap or 0),
+				"budget_window": "total" if team.key_cap_window == "Total" else "month",
 				# Blank when none: the box merges fields, so leaving it out would keep a removed limit in force.
 				"limits": ",".join(
 					f"{r['metric']}:{r['window']}:{r['value']}" for r in limits.get(k.name, [])
