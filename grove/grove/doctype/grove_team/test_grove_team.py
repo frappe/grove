@@ -90,10 +90,11 @@ class IntegrationTestGroveTeam(IntegrationTestCase):
 	def test_the_key_cap_window_is_monthly_or_total_and_figures_report_it(self):
 		from grove.api import usage
 
-		doc = team("team-probe-window")
-		self.assertEqual(usage.figures(doc.name)["spend"]["key_cap_window"], "Monthly")
-		doc.key_cap_window = "Total"
-		doc.save()
+		self.assertEqual(usage.figures(team("team-probe-window").name)["spend"]["key_cap_window"], "Monthly")
+		doc = team("team-probe-window-total", key_cap_window="Total")
 		self.assertEqual(usage.figures(doc.name)["spend"]["key_cap_window"], "Total")
+		doc.key_cap_window = "Monthly"
+		with self.assertRaises(frappe.CannotChangeConstantError):
+			doc.save()
 		with self.assertRaises(frappe.ValidationError):
 			team("team-probe-weekly", key_cap_window="Weekly")

@@ -61,6 +61,8 @@ class GroveAPIKey(Document):
 		"""A new key starts in its geography's default Model Group unless the insert names its own
 		groups. With no limit rows of its own it runs under its team's Tier."""
 		self.check_key_count()
+		# Blank is no title: NULL, which the (team, title) unique index never counts as a twin.
+		self.title = self.title or None
 		full_key = KEY_PREFIX + secrets.token_hex(24)
 		self.key_hash = hash_secret(full_key)
 		self.api_secret = full_key
@@ -100,9 +102,11 @@ class GroveAPIKey(Document):
 		both = {row.model_key for row in self.allow} & {row.model_key for row in self.deny}
 		if both:
 			frappe.throw(f"{', '.join(sorted(both))} is in both Allow and Deny")
+
 		validate_limit_rows(self.limits)
 		if flt(self.cap) < 0:
 			frappe.throw("A cap cannot be negative.")
+
 		before = self.get_doc_before_save()
 		if before and before.status == "revoked" and self.status != "revoked":
 			frappe.throw("A revoked key stays revoked. Mint a new one.")
@@ -178,3 +182,6 @@ def on_doctype_update():
 	collision, however unlikely at 192 random bits, refuses the insert rather than merging two
 	keys into one, and indexed, so a lookup by hash does not scan the table."""
 	frappe.db.add_unique("Grove API Key", ["key_hash"], constraint_name="unique_key_hash")
+	# A title is set once and used once per team, ever, revoked keys included: Press titles a trial
+	# site's key by the site, and a site must never get a second. NULL titles do not collide.
+	frappe.db.add_unique("Grove API Key", ["team", "title"], constraint_name="unique_team_title")
