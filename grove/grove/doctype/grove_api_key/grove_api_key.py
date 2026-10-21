@@ -50,6 +50,7 @@ class GroveAPIKey(Document):
 		geography: DF.Link
 		key_hash: DF.Data | None
 		limits: DF.Table[ModelLimit]
+		masked: DF.Data | None
 		model_groups: DF.TableMultiSelect[ModelGroupRow]
 		status: DF.Literal["active", "revoked"]
 		team: DF.Link
@@ -63,6 +64,7 @@ class GroveAPIKey(Document):
 		full_key = KEY_PREFIX + secrets.token_hex(24)
 		self.key_hash = hash_secret(full_key)
 		self.api_secret = full_key
+		self.masked = f"{full_key[: len(KEY_PREFIX) + 4]}…"
 		self.set_geography()
 		default = frappe.db.get_value("Model Group", {"is_default": 1, "geography": self.geography})
 		if default and not self.model_groups:
