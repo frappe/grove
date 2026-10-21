@@ -8,7 +8,7 @@ from grove.access import team_limits
 from grove.api.control import ALLOWED_ROLES
 from grove.api.teams import get_team
 
-KEY_FIELDS = ["name", "title", "status", "creation", "key_hash", "geography", "cap"]
+KEY_FIELDS = ["name", "title", "status", "creation", "key_hash", "masked", "geography", "cap"]
 
 
 @frappe.whitelist()
@@ -164,13 +164,12 @@ def set_key_policy(doc, cap=None, models=None, limits=None):
 
 
 def key_rows(names):
-	"""The keys named, as `keys` lists them: KEY_FIELDS plus the endpoint, the limits, the
-	masked secret, `month_spent` and `revocable_at`. Live keys first, newest first within each.
-	A handful of queries however many keys."""
-	from frappe.utils.password import get_decrypted_password
-
+	"""The keys named, as `keys` lists them: KEY_FIELDS (`masked` is the prefix and four characters,
+	kept on the key at mint, so nothing is decrypted here) plus the endpoint, the limits,
+	`month_spent` and `revocable_at`. Live keys first, newest first within each. A handful of
+	queries however many keys."""
 	from grove.billing.pricing import month_spent_by
-	from grove.grove.doctype.grove_api_key.grove_api_key import KEY_PREFIX, REVOKE_AFTER_HOURS
+	from grove.grove.doctype.grove_api_key.grove_api_key import REVOKE_AFTER_HOURS
 	from grove.pathway.routes import utc_timestamp
 
 	if not names:
@@ -181,8 +180,6 @@ def key_rows(names):
 	limits = limit_rows_of(names)
 	month = month_spent_by("api_key", names)
 	for row in rows:
-		secret = get_decrypted_password("Grove API Key", row.name, "api_secret")
-		row["masked"] = f"{secret[: len(KEY_PREFIX) + 4]}…"
 		row["gateway_url"] = get_gateway_url(row.geography)
 		row["limits"] = limits.get(row.name, [])
 		row["revocable_at"] = utc_timestamp(frappe.utils.add_to_date(row.creation, hours=REVOKE_AFTER_HOURS))
