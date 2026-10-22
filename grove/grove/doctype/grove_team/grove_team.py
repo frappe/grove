@@ -27,6 +27,7 @@ class GroveTeam(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		created_by: DF.Link | None
 		key_cap_window: DF.Literal["Monthly", "Total"]
 		last_reported_at: DF.Datetime | None
 		log_payloads: DF.Check

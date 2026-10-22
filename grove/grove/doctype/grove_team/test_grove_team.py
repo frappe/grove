@@ -114,3 +114,11 @@ class IntegrationTestGroveTeam(IntegrationTestCase):
 		monthly = team("team-probe-monthly-limit", spend_limit=1)
 		with self.assertRaisesRegex(frappe.ValidationError, "spend limit of 1"):
 			keys.provision_key(monthly.name, title="a", cap=5)
+
+	def test_a_team_records_who_made_it_once(self):
+		"""`created_by` is the session user at the insert: the control client that provisioned the
+		team, Central's or Press's, or the operator in Desk. Fixed after."""
+		doc = team("TEAM-made-by")
+		self.assertEqual(doc.created_by, "Administrator")
+		doc.created_by = "Guest"
+		self.assertRaises(frappe.CannotChangeConstantError, doc.save)

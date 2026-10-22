@@ -12,6 +12,7 @@
   "max_keys",
   "key_cap_window",
   "column_break_head",
+  "created_by",
   "suspended",
   "last_reported_at"
  ],
@@ -51,6 +52,18 @@
   {
    "fieldname": "column_break_head",
    "fieldtype": "Column Break"
+  },
+  {
+   "default": "__user",
+   "description": "Who made the team: the control client that provisioned it (Central's or Press's user) or the operator in Desk. Stamped at the insert and fixed.",
+   "fieldname": "created_by",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Created By",
+   "options": "User",
+   "read_only": 1,
+   "set_only_once": 1
   },
   {
    "default": "0",
@@ -100,7 +113,7 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-10-22 19:00:00.000000",
+ "modified": "2026-10-22 20:30:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove Team",
