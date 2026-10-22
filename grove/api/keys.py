@@ -8,7 +8,7 @@ from grove.access import team_limits
 from grove.api.control import ALLOWED_ROLES
 from grove.api.teams import get_team
 
-KEY_FIELDS = ["name", "title", "status", "creation", "key_hash", "masked", "geography", "cap"]
+KEY_FIELDS = ["name", "title", "status", "creation", "key_hash", "masked", "geography", "cap", "cap_window"]
 
 
 @frappe.whitelist()
@@ -19,14 +19,18 @@ def provision_key(
 	cap: float | None = None,
 	models: list[str] | None = None,
 	limits: list[dict] | None = None,
+	cap_window: str | None = None,
 ):
 	"""Mint a key for `team` in `geography` — the default one when none is given; every other
-	geography's gateway refuses it."""
+	geography's gateway refuses it. `cap_window` is what the cap counts, Monthly when not given or
+	Total (everything since the mint, so a spent key stays spent), fixed after."""
 	frappe.only_for(ALLOWED_ROLES)
 	key = frappe.new_doc("Grove API Key")
 	key.team, key.title, key.status = get_team(team), title, "active"
 	if geography:
 		key.geography = geography
+	if cap_window:
+		key.cap_window = cap_window
 	set_key_policy(key, cap, models, limits)
 	key.insert()
 	gateway_url = get_gateway_url(key.geography)
@@ -61,7 +65,7 @@ def update_key(
 
 @frappe.whitelist()
 def update_caps(team: str, caps: dict[str, float]):
-	"""Set several monthly caps of `team`'s live keys at once, {key: USD}. Lowered caps are saved
+	"""Set several caps of `team`'s live keys at once, {key: USD}. Lowered caps are saved
 	first, so moving a cap from one key to another fits the spend limit midway as well; any
 	refusal leaves every cap as it was. What the limit holds is this month's spend and the caps
 	together (`pricing.committed`), with what the boxes count read under the team row: a cap a key already
@@ -77,8 +81,6 @@ def update_caps(team: str, caps: dict[str, float]):
 		frappe.throw(f"{', '.join(revoked)} is revoked.")
 	raised = any(flt(caps[doc.name]) > flt(doc.cap) for doc in docs)
 	team_doc = team_limits(team, for_update=True)
-	# A Total team has no spend limit: its caps are for life, the month binds nothing.
-	raised = raised and team_doc.key_cap_window != "Total"
 	box_spent = peek_team(team) if raised else {}
 	total = committed(team, {doc.name: flt(caps[doc.name]) for doc in docs}, box_spent=box_spent)
 	if raised and total > flt(team_doc.spend_limit, 9):

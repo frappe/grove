@@ -218,7 +218,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 				"team": team,
 				"suspended": 0,
 				"log_payloads": 1,
-				"key_cap_window": "Monthly",
 				"tier": "probe-cap-tier",
 				"override_max_keys": 0,
 				"max_keys": 5,
@@ -239,7 +238,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 				"max_keys": 5,
 				"suspended": False,
 				"log_payloads": True,
-				"key_cap_window": "Monthly",
 			},
 		)
 		self.assertEqual(keys.update_key(team, second, cap=2)["cap"], 2)

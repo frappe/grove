@@ -87,34 +87,6 @@ class IntegrationTestGroveTeam(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			team("team-probe-negative", spend_limit=-1)
 
-	def test_the_key_cap_window_is_monthly_or_total_and_figures_report_it(self):
-		from grove.api import usage
-
-		self.assertEqual(usage.figures(team("team-probe-window").name)["spend"]["key_cap_window"], "Monthly")
-		doc = team("team-probe-window-total", key_cap_window="Total")
-		self.assertEqual(usage.figures(doc.name)["spend"]["key_cap_window"], "Total")
-		doc.key_cap_window = "Monthly"
-		with self.assertRaises(frappe.CannotChangeConstantError):
-			doc.save()
-		with self.assertRaises(frappe.ValidationError):
-			team("team-probe-weekly", key_cap_window="Weekly")
-
-	def test_a_total_team_has_no_spend_limit(self):
-		from grove.api import keys, usage
-
-		doc = team("team-probe-total-limit", spend_limit=1, key_cap_window="Total")
-		first = keys.provision_key(doc.name, title="a", cap=5)["name"]
-		second = keys.provision_key(doc.name, title="b", cap=5)["name"]
-		keys.update_key(doc.name, first, cap=50)
-		keys.update_caps(doc.name, {first: 60, second: 60})
-		spend = usage.figures(doc.name)["spend"]
-		self.assertEqual(
-			(spend["spend_limit"], spend["capped"], spend["key_cap_window"]), (None, 120.0, "Total")
-		)
-		monthly = team("team-probe-monthly-limit", spend_limit=1)
-		with self.assertRaisesRegex(frappe.ValidationError, "spend limit of 1"):
-			keys.provision_key(monthly.name, title="a", cap=5)
-
 	def test_a_team_records_who_made_it_once(self):
 		"""`created_by` is the session user at the insert: the control client that provisioned the
 		team, Central's or Press's, or the operator in Desk. Fixed after."""

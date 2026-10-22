@@ -15,3 +15,4 @@ grove.patches.v1_0.move_gateway_adjustments
 grove.patches.v1_0.fill_total_tokens #2026-10-18 a long prompt's tokens count
 grove.patches.v1_0.drop_free_columns
 grove.patches.v1_0.fill_masked_keys
+grove.patches.v1_0.move_cap_window_to_keys

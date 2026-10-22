@@ -127,11 +127,11 @@ it holds no money that must not run out. What gates is:
 - **Each key's `cap`.** The gateway holds `budget` = `cap` in nano-USD on the key's
   record, counts the key's spend per UTC month on the same record (`spent:<YYYY-MM>`; a new month
   is a field not yet written, which reads 0, so nothing resets and nothing runs at midnight), and
-  refuses at `spent >= budget` (402). A team whose **Key Cap Window** is Total has its keys pushed
-  with `budget_window: total`: the box counts their spend in one field (`spent:total`) that never
-  turns over, so a key spent is spent for good — a trial team's budget. Such a team has no
-  spend limit: its caps are for life, so the month binds nothing, the checks below skip it and
-  `figures` reports `spend_limit` null; `max_keys` and the revokes bound it instead. Every key is pinned to one geography, so all its spend lands
+  refuses at `spent >= budget` (402). A key whose **Cap Window** is Total (set at the mint, fixed
+  after) is pushed with `budget_window: total`: the box counts its spend in one field
+  (`spent:total`) that never turns over, so a key spent is spent for good — a trial's budget.
+  Under the spend limit below it counts its cap like any other key: what it spent this month is
+  at most that. Every key is pinned to one geography, so all its spend lands
   on one store and that store gates it exactly. A key is minted at 0 and refused until
   `api.keys.update_key(cap=)` gives it one.
 - **The team's `Tier`**, named by Central from the team's trust tier (`api.teams.update_team`, by

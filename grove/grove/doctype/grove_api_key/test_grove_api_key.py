@@ -82,12 +82,25 @@ class IntegrationTestGroveAPIKey(IntegrationTestCase):
 		record = projected(doc.name)
 		self.assertEqual((record["budget"], record["log_payloads"]), (1_000_000_000, False))
 
-	def test_the_teams_key_cap_window_rides_on_the_key_as_the_budget_window(self):
-		name = team("key-probe-window", spend_limit=1)
-		doc = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 1}).insert()
-		self.assertEqual(projected(doc.name)["budget_window"], "month")
-		frappe.db.set_value("Grove Team", name, {"key_cap_window": "Total"})
-		self.assertEqual(projected(doc.name)["budget_window"], "total")
+	def test_the_cap_window_is_set_once_and_rides_on_the_key_as_the_budget_window(self):
+		"""Monthly unless the mint says Total; fixed after, since a change would restart the
+		gateway's count. Under the spend limit a Total key counts its cap like any other."""
+		name = team("key-probe-window", spend_limit=3)
+		monthly = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 1}).insert()
+		self.assertEqual((monthly.cap_window, projected(monthly.name)["budget_window"]), ("Monthly", "month"))
+		total = frappe.get_doc(
+			{"doctype": "Grove API Key", "team": name, "cap": 2, "cap_window": "Total"}
+		).insert()
+		self.assertEqual(projected(total.name)["budget_window"], "total")
+		total.cap_window = "Monthly"
+		with self.assertRaises(frappe.CannotChangeConstantError):
+			total.save()
+		with self.assertRaises(frappe.ValidationError):
+			frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap_window": "Weekly"}).insert()
+		with self.assertRaisesRegex(frappe.ValidationError, "spend limit of 3"):
+			frappe.get_doc(
+				{"doctype": "Grove API Key", "team": name, "cap": 1, "cap_window": "Total"}
+			).insert()
 
 	def test_a_title_is_used_once_per_team_revoked_keys_included(self):
 		name = team("key-probe-titles")
