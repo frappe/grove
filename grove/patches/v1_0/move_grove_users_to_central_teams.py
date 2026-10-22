@@ -1,4 +1,4 @@
-"""Grove User → Central Team, with the policy moved onto each key.
+"""Grove User → Grove Team, with the policy moved onto each key.
 
 A user becomes a team named by its Central id (its old doc name when it had none). Every key of
 the user gets the team, the user's geography, groups, allow/deny and limits; every key starts at a cap of 0 and is capped by hand. Records, stuck rows and discrepancies move to the team. Runs once: a site with no Grove User doctype left (moved by hand) is left alone."""
@@ -42,12 +42,12 @@ def execute():
 
 def make_team(user):
 	name = user.reference or user.name
-	if frappe.db.exists("Central Team", name):
+	if frappe.db.exists("Grove Team", name):
 		return name
 	return (
 		frappe.get_doc(
 			{
-				"doctype": "Central Team",
+				"doctype": "Grove Team",
 				"__newname": name,
 				"log_payloads": user.log_payloads,
 			}
