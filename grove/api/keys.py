@@ -8,7 +8,18 @@ from grove.access import team_limits
 from grove.api.control import ALLOWED_ROLES
 from grove.api.teams import get_team
 
-KEY_FIELDS = ["name", "title", "status", "creation", "key_hash", "masked", "geography", "cap"]
+KEY_FIELDS = [
+	"name",
+	"title",
+	"status",
+	"creation",
+	"key_hash",
+	"masked",
+	"geography",
+	"cap",
+	"expiry",
+	"expires_at",
+]
 
 
 @frappe.whitelist()
@@ -19,14 +30,18 @@ def provision_key(
 	cap: float | None = None,
 	models: list[str] | None = None,
 	limits: list[dict] | None = None,
+	expiry: str | None = None,
 ):
 	"""Mint a key for `team` in `geography` — the default one when none is given; every other
-	geography's gateway refuses it."""
+	geography's gateway refuses it. `expiry` is when it retires on its own, one of the key's rules
+	(Never, 1 Day, 7 Days, 14 Days, 30 Days), Never when not given, fixed after."""
 	frappe.only_for(ALLOWED_ROLES)
 	key = frappe.new_doc("Grove API Key")
 	key.team, key.title, key.status = get_team(team), title, "active"
 	if geography:
 		key.geography = geography
+	if expiry:
+		key.expiry = expiry
 	set_key_policy(key, cap, models, limits)
 	key.insert()
 	gateway_url = get_gateway_url(key.geography)
@@ -168,7 +183,7 @@ def set_key_policy(doc, cap=None, models=None, limits=None):
 def key_rows(names):
 	"""The keys named, as `keys` lists them: KEY_FIELDS (`masked` is the prefix and four characters,
 	kept on the key at mint, so nothing is decrypted here) plus the endpoint, the limits,
-	`month_spent` and `revocable_at`. Live keys first, newest first within each. A handful of
+	`month_spent`, `revocable_at` and `expires_at` (UTC). Live keys first, newest first within each. A handful of
 	queries however many keys."""
 	from grove.billing.pricing import month_spent_by
 	from grove.grove.doctype.grove_api_key.grove_api_key import REVOKE_AFTER_HOURS
@@ -186,6 +201,7 @@ def key_rows(names):
 		row["limits"] = limits.get(row.name, [])
 		row["revocable_at"] = utc_timestamp(frappe.utils.add_to_date(row.creation, hours=REVOKE_AFTER_HOURS))
 		row["month_spent"] = flt(month.get(row.name, 0), 9)
+		row["expires_at"] = utc_timestamp(row.expires_at) if row.expires_at else None
 	rows.sort(key=lambda row: row.status == "revoked")
 	return rows
 

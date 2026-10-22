@@ -11,6 +11,8 @@
   "status",
   "column_break_pcmc",
   "cap",
+  "expiry",
+  "expires_at",
   "key_hash",
   "api_secret",
   "masked",
@@ -74,6 +76,23 @@
    "in_list_view": 1,
    "label": "Cap (USD)",
    "precision": "9"
+  },
+  {
+   "default": "Never",
+   "description": "When this key retires on its own: never, or so many days after the mint, when the hourly sweep revokes it and the next tick prunes it off the boxes. Set at the mint and fixed after.",
+   "fieldname": "expiry",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Expiry",
+   "options": "Never\n1 Day\n7 Days\n14 Days\n30 Days",
+   "set_only_once": 1
+  },
+  {
+   "description": "The moment Expiry names, set once at the mint; empty is never.",
+   "fieldname": "expires_at",
+   "fieldtype": "Datetime",
+   "label": "Expires At",
+   "read_only": 1
   },
   {
    "fieldname": "key_hash",
@@ -149,7 +168,7 @@
    "link_fieldname": "api_key"
   }
  ],
- "modified": "2026-10-22 16:00:00.000000",
+ "modified": "2026-10-23 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove API Key",

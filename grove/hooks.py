@@ -31,6 +31,9 @@ scheduler_events = {
 			"grove.grove.doctype.gateway_store.gateway_store.backup_all",
 		],
 	},
+	"hourly": [
+		"grove.grove.doctype.grove_api_key.grove_api_key.revoke_expired",
+	],
 	"hourly_long": [
 		"grove.pathway.usage.pull_all",
 		"grove.tls.renew_fleet_certificate",

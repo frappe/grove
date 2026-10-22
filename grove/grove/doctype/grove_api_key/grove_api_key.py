@@ -6,13 +6,15 @@ import secrets
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import flt
+from frappe.utils import add_days, flt, now_datetime
 
 from grove.access import team_limits, validate_limit_rows, validate_model_geography
 from grove.billing.pricing import committed, forget_figures, lock_team, usd
 
 KEY_PREFIX = "gr_"
 REVOKE_AFTER_HOURS = 6
+# The expiry rules, days after the mint; Never is not in it.
+EXPIRY_DAYS = {"1 Day": 1, "7 Days": 7, "14 Days": 14, "30 Days": 30}
 
 
 def hash_secret(secret: str) -> str:
@@ -24,7 +26,7 @@ class GroveAPIKey(Document):
 	"""A credential and the whole policy behind it: which models (its groups, plus its own
 	Allow, less its Deny), the one geography it works in, its rate limits (its team's Tier's, with
 	its own rows replacing the tier's on the metrics they name), and `cap` — what it may spend a
-	month, within its team's spend limit. The gateway holds it as one record, so every gate reads the key and nothing else; a key
+	month, within its team's spend limit, and `expiry`, when it retires on its own. The gateway holds it as one record, so every gate reads the key and nothing else; a key
 	lives on one geography's store, which counts its spend per month and gates its cap exactly
 	however many keys the team holds elsewhere.
 
@@ -47,6 +49,8 @@ class GroveAPIKey(Document):
 		api_secret: DF.Password | None
 		cap: DF.Currency
 		deny: DF.TableMultiSelect[GroveModelRow]
+		expires_at: DF.Datetime | None
+		expiry: DF.Literal["Never", "1 Day", "7 Days", "14 Days", "30 Days"]
 		geography: DF.Link
 		key_hash: DF.Data | None
 		limits: DF.Table[ModelLimit]
@@ -59,7 +63,8 @@ class GroveAPIKey(Document):
 
 	def before_insert(self):
 		"""A new key starts in its geography's default Model Group unless the insert names its own
-		groups. With no limit rows of its own it runs under its team's Tier."""
+		groups. With no limit rows of its own it runs under its team's Tier. `expires_at` is the mint
+		plus its expiry rule's days, none for Never."""
 		self.check_key_count()
 		# Blank is no title: NULL, which the (team, title) unique index never counts as a twin.
 		self.title = self.title or None
@@ -67,6 +72,8 @@ class GroveAPIKey(Document):
 		self.key_hash = hash_secret(full_key)
 		self.api_secret = full_key
 		self.masked = f"{full_key[: len(KEY_PREFIX) + 4]}…"
+		days = EXPIRY_DAYS.get(self.expiry)
+		self.expires_at = add_days(self.creation, days) if days else None
 		self.set_geography()
 		default = frappe.db.get_value("Model Group", {"is_default": 1, "geography": self.geography})
 		if default and not self.model_groups:
@@ -179,6 +186,19 @@ def capped(team, except_key=None):
 		[team, except_key or ""],
 	)
 	return flt(rows[0][0], 9)
+
+
+def revoke_expired():
+	"""Hourly: every live key past its `expires_at` is revoked, and the next tick prunes it off the
+	boxes. Every rule is a day or more, so the six-hour guard never meets one."""
+	# `is set` first: a bare `<=` reads a NULL as year 1 and would take every Never key.
+	due = frappe.get_all(
+		"Grove API Key",
+		filters=[["status", "=", "active"], ["expires_at", "is", "set"], ["expires_at", "<=", now_datetime()]],
+		pluck="name",
+	)
+	for name in due:
+		frappe.get_doc("Grove API Key", name).revoke()
 
 
 def on_doctype_update():

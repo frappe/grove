@@ -14,10 +14,12 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from grove.access import limit_entries
+from grove.api import keys
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_api_key import grove_api_key
 from grove.grove.doctype.grove_api_key.grove_api_key import GroveAPIKey
 from grove.grove.doctype.model_provider.test_model_provider import our_model, provider, vendor_model
+from grove.pathway.routes import utc_timestamp
 from grove.pathway.snapshot import effective_keys
 
 
@@ -531,3 +533,43 @@ class TestTwoMintsAtTheLimitSerialize(unittest.TestCase):
 			unittest.mock.patch.object(frappe, "db", SimpleNamespace()),
 		):
 			GroveAPIKey.check_key_count(SimpleNamespace(team="TEAM-00001"))
+
+
+class IntegrationTestExpiry(IntegrationTestCase):
+	"""A key retires on its own: a rule at the mint, the moment it names on the key, the hourly sweep."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		make_test_geography()
+		frappe.db.set_single_value("Grove Settings", "default_tier", "")
+
+	def test_the_rule_at_the_mint_names_the_moment_and_never_is_the_default(self):
+		doc = key("key-probe-expiry", expiry="7 Days")
+		doc.reload()
+		self.assertEqual(doc.expires_at, frappe.utils.add_days(doc.creation, 7))
+		forever = key("key-probe-expiry")
+		self.assertEqual((forever.expiry, forever.expires_at), ("Never", None))
+		row = keys.key_rows([doc.name])[0]
+		self.assertEqual((row.expiry, row.expires_at), ("7 Days", utc_timestamp(doc.expires_at)))
+		with self.assertRaises(frappe.ValidationError):
+			key("key-probe-expiry", expiry="2 Days")
+		doc.expiry = "Never"
+		with self.assertRaises(frappe.CannotChangeConstantError):
+			doc.save()
+
+	def test_the_sweep_revokes_every_key_past_its_moment_and_no_other(self):
+		due, later, forever = (key("key-probe-sweep", expiry=rule) for rule in ("1 Day", "30 Days", "Never"))
+		two_days_ago = frappe.utils.add_days(None, -2)
+		frappe.db.set_value(
+			"Grove API Key",
+			due.name,
+			{"creation": two_days_ago, "expires_at": frappe.utils.add_days(two_days_ago, 1)},
+			update_modified=False,
+		)
+		grove_api_key.revoke_expired()
+		self.assertEqual(
+			[frappe.db.get_value("Grove API Key", d.name, "status") for d in (due, later, forever)],
+			["revoked", "active", "active"],
+		)
+		self.assertEqual([k for k in effective_keys() if k["prefix"] == due.name], [])
