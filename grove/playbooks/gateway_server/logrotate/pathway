@@ -16,8 +16,9 @@
 	su frappe frappe
 }
 
-# Customer content (opted-in users' prompts and outputs), so its retention is deliberately shorter
-# than the metadata's and stays a policy decision — do not fold it into the block above.
+# Customer content (opted-in users' prompts and outputs), so its retention on the box is deliberately
+# shorter than the metadata's and stays a policy decision — do not fold it into the block above. Vector
+# ships it to datum like the other two, so what is kept off-box is datum's retention, not this.
 /var/log/pathway/payload.log {
 	daily
 	rotate 7

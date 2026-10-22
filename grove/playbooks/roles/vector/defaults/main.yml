@@ -1,0 +1,23 @@
+---
+vector_version: "0.60.0"
+vector_api_address: 127.0.0.1:8686
+vector_metrics_interval_seconds: 15
+# Off where the provider's own agent already ships them (an Atlas machine runs Pilot). Logs always go.
+vector_ship_host_metrics: true
+
+# datum buffers nothing, so the box must: one disk buffer per sink.
+vector_buffer_max_bytes: 268435456
+# datum caps a batch at 10,000 lines or samples, and its proxy caps a body at 32 MB.
+vector_batch_max_events: 1000
+vector_batch_max_bytes: 4000000
+
+vector_log_files:
+  - /var/log/pathway/*.log
+  - /var/log/redis/*.log
+
+vector_metrics_url: ""
+vector_logs_url: ""
+vector_token: ""
+vector_server: ""
+vector_machine: ""
+vector_region: ""

@@ -35,6 +35,7 @@ class GatewayStore(NamedHost, Document):
 
 		frappe_public_key: DF.Code | None
 		geography: DF.Link | None
+		is_vector_setup: DF.Check
 		last_backup_at: DF.Datetime | None
 		last_backup_key: DF.Data | None
 		machine: DF.Link
@@ -43,6 +44,7 @@ class GatewayStore(NamedHost, Document):
 		public_ip: DF.Data | None
 		redis_password: DF.Password | None
 		region: DF.Link | None
+		ship_host_metrics: DF.Check
 		status: DF.Literal["Pending", "Installing", "Active", "Broken", "Terminated"]
 	# end: auto-generated types
 
@@ -125,6 +127,7 @@ class GatewayStore(NamedHost, Document):
 		if rc == 0:
 			# Redis is up whatever Route53 says next: a DNS failure must not roll that back.
 			frappe.db.commit()
+			self.queue_vector()
 			self.sync_dns_records()
 		return play_name, rc
 

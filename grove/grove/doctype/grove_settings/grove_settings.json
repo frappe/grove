@@ -27,12 +27,16 @@
   "weights_s3_write_secret_access_key",
   "monitoring_tab",
   "section_monitoring",
-  "metrics_remote_write_url",
   "monitoring_extra_labels",
   "column_break_monitoring",
   "sd_token",
   "scrape_password",
   "scrape_password_hash",
+  "section_central",
+  "central_url",
+  "column_break_central",
+  "central_api_key",
+  "central_api_secret",
   "pod_tab",
   "pod_geography"
  ],
@@ -56,14 +60,14 @@
    "label": "Pathway Release"
   },
   {
-   "description": "GitHub repo the release is downloaded from, as owner/name \u2014 a fork of pathway points this at itself. Its releases must carry the same assets (pathway-linux-amd64, pathway-linux-arm64, sha256sums.txt) and be public. Required: Deploy Agent and Setup refuse a blank one.",
+   "description": "GitHub repo the release is downloaded from, as owner/name — a fork of pathway points this at itself. Its releases must carry the same assets (pathway-linux-amd64, pathway-linux-arm64, sha256sums.txt) and be public. Required: Deploy Agent and Setup refuse a blank one.",
    "fieldname": "pathway_repo",
    "fieldtype": "Data",
    "label": "Pathway Repo"
   },
   {
    "default": "0",
-   "description": "How long a client that names no session of its own stays pinned to one engine. 0 balances every such request across the engines serving a model, which is the point of running two. A duration (30m, 2m) trades that for a warm prefix cache per API key \u2014 30m is what every gateway did before this field existed. A client that sends X-Grove-Session or a `user` field is always pinned and is not affected either way. Reaches a box on Deploy Agent.",
+   "description": "How long a client that names no session of its own stays pinned to one engine. 0 balances every such request across the engines serving a model, which is the point of running two. A duration (30m, 2m) trades that for a warm prefix cache per API key — 30m is what every gateway did before this field existed. A client that sends X-Grove-Session or a `user` field is always pinned and is not affected either way. Reaches a box on Deploy Agent.",
    "fieldname": "synthetic_session_ttl",
    "fieldtype": "Data",
    "label": "Synthetic Session TTL"
@@ -73,7 +77,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Whose credentials own every Geography's zone: they answer each DNS-01 challenge and write each box's records. AWS only \u2014 every zone must be a public Route53 hosted zone in that account.",
+   "description": "Whose credentials own every Geography's zone: they answer each DNS-01 challenge and write each box's records. AWS only — every zone must be a public Route53 hosted zone in that account.",
    "fieldname": "dns_provider",
    "fieldtype": "Link",
    "label": "DNS Provider",
@@ -92,23 +96,17 @@
    "label": "Monitoring"
   },
   {
-   "description": "Where a Monitoring Agent pushes when its Region names no endpoint of its own, e.g. http://13.206.253.38:8000/v1/write. Prefer https \u2014 the agent's token crosses the network on every push. The token itself lives on each agent.",
-   "fieldname": "metrics_remote_write_url",
-   "fieldtype": "Data",
-   "label": "Metrics Remote Write URL"
-  },
-  {
    "fieldname": "column_break_monitoring",
    "fieldtype": "Column Break"
   },
   {
-   "description": "16+ characters of A-Z a-z 0-9 - _ . ~ \u2014 e.g. `openssl rand -hex 32`. Every Monitoring Agent sends it to fetch its target list, and it is the only thing guarding that list; unset, the endpoint refuses everyone. It travels in the query string, so it appears in this site's access log \u2014 rotate it here and hit Install on each agent.",
+   "description": "16+ characters of A-Z a-z 0-9 - _ . ~ — e.g. `openssl rand -hex 32`. Every Monitoring Agent sends it to fetch its target list, and it is the only thing guarding that list; unset, the endpoint refuses everyone. It travels in the query string, so it appears in this site's access log — rotate it here and hit Install on each agent.",
    "fieldname": "sd_token",
    "fieldtype": "Password",
    "label": "Service Discovery Token"
   },
   {
-   "description": "Guards /metrics/node and /metrics/gpu on every box \u2014 e.g. `openssl rand -hex 32`. Boxes get its hash, the agent gets the password. Unset, a box writes no htpasswd at all and nginx refuses the endpoint. Rotating it means re-running each box's play (Setup, Update Engine Config, Deploy Latest Agent) and Install on each agent.",
+   "description": "Guards /metrics/node and /metrics/gpu on every box — e.g. `openssl rand -hex 32`. Boxes get its hash, the agent gets the password. Unset, a box writes no htpasswd at all and nginx refuses the endpoint. Rotating it means re-running each box's play (Setup, Update Engine Config, Deploy Latest Agent) and Install on each agent.",
    "fieldname": "scrape_password",
    "fieldtype": "Password",
    "label": "Metrics Scrape Password"
@@ -216,11 +214,37 @@
    "fieldname": "usage_retention",
    "fieldtype": "Data",
    "label": "Usage Retention"
+  },
+  {
+   "description": "Grove asks Central for each box's datum write token with this user's API key — the mirror of the Grove key Central holds. Minted inside the job, never stored; refreshed daily.",
+   "fieldname": "section_central",
+   "fieldtype": "Section Break",
+   "label": "Central (datum tokens)"
+  },
+  {
+   "description": "e.g. https://central.example.com",
+   "fieldname": "central_url",
+   "fieldtype": "Data",
+   "label": "Central URL"
+  },
+  {
+   "fieldname": "column_break_central",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "central_api_key",
+   "fieldtype": "Data",
+   "label": "Central API Key"
+  },
+  {
+   "fieldname": "central_api_secret",
+   "fieldtype": "Password",
+   "label": "Central API Secret"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-15 18:00:00.000000",
+ "modified": "2026-10-22 16:48:44.446671",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove Settings",

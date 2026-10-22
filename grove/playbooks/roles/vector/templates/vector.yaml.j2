@@ -1,0 +1,100 @@
+{# Rendered by the vector role — do not edit on the box. Both sinks are datum routes; the token names this machine. #}
+data_dir: /var/lib/vector
+api:
+  enabled: true
+  address: "{{ vector_api_address }}"
+
+sources:
+{% if vector_ship_host_metrics %}
+  host:
+    type: host_metrics
+    scrape_interval_secs: {{ vector_metrics_interval_seconds }}
+{% endif %}
+  # Queue depth and errors: how a broken pipeline announces itself. Ships whatever the switch says.
+  vector_self:
+    type: internal_metrics
+    scrape_interval_secs: {{ vector_metrics_interval_seconds }}
+  journal:
+    type: journald
+    current_boot_only: true
+  files:
+    type: file
+    include: {{ vector_log_files | tojson }}
+    ignore_older_secs: 86400
+
+transforms:
+  labelled_metrics:
+    type: remap
+    inputs: [{% if vector_ship_host_metrics %}host, {% endif %}vector_self]
+    source: |
+      .tags.server = "{{ vector_server }}"
+      .tags.machine = "{{ vector_machine }}"
+      .tags.region = "{{ vector_region }}"
+  # datum's line: ts, product, service, level, source, message (8 KiB at most), attributes. Nothing else.
+  datum_lines:
+    type: remap
+    inputs: [journal, files]
+    source: |
+      if .source_type == "journald" {
+        service = string(._SYSTEMD_UNIT) ?? "journal"
+        source = "journald"
+        level = to_syslog_level(to_int(.PRIORITY) ?? 6) ?? "info"
+      } else {
+        parts = split(string!(.file), "/")
+        service = parts[-2]
+        source = parts[-1]
+        level = if source == "error.log" { "error" } else { "info" }
+      }
+      message = string(.message) ?? ""
+      message = truncate(message, 8000)
+      if length(message) > 8192 { message = truncate(message, 2048) }
+      . = {
+        "ts": format_timestamp!(.timestamp, "%+"),
+        "product": "grove",
+        "service": service,
+        "level": level,
+        "source": source,
+        "message": message,
+        "attributes": {
+          "host": .host,
+          "server": "{{ vector_server }}",
+          "machine": "{{ vector_machine }}",
+          "region": "{{ vector_region }}"
+        }
+      }
+
+# Healthchecks off on both: datum answers 405 to a GET on an ingest route, and `vector validate`
+# in the unit's ExecStartPre would refuse to start on that.
+sinks:
+  metrics:
+    type: prometheus_remote_write
+    inputs: [labelled_metrics]
+    endpoint: "{{ vector_metrics_url }}"
+    auth:
+      strategy: bearer
+      token: "{{ vector_token }}"
+    batch:
+      max_events: {{ vector_batch_max_events }}
+    healthcheck:
+      enabled: false
+    buffer:
+      type: disk
+      max_size: {{ vector_buffer_max_bytes }}
+  logs:
+    type: http
+    inputs: [datum_lines]
+    uri: "{{ vector_logs_url }}"
+    auth:
+      strategy: bearer
+      token: "{{ vector_token }}"
+    # One batch goes as one JSON array, which datum accepts bare.
+    encoding:
+      codec: json
+    batch:
+      max_events: {{ vector_batch_max_events }}
+      max_bytes: {{ vector_batch_max_bytes }}
+    healthcheck:
+      enabled: false
+    buffer:
+      type: disk
+      max_size: {{ vector_buffer_max_bytes }}
