@@ -142,7 +142,7 @@ class TestEveryKeyCarriesItsPin(unittest.TestCase):
 		def get_all(doctype, **kwargs):
 			if doctype == "Grove API Key":
 				return [frappe._dict(row) for row in rows]
-			if doctype == "Central Team":
+			if doctype == "Grove Team":
 				return [frappe._dict(name="T-1", log_payloads=0, suspended=0)]
 			return []
 

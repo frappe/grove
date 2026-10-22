@@ -11,6 +11,7 @@
   "status",
   "column_break_pcmc",
   "cap",
+  "cap_window",
   "key_hash",
   "api_secret",
   "masked",
@@ -24,10 +25,12 @@
  ],
  "fields": [
   {
+   "description": "A label to tell the team's keys apart, set once at the mint and used once per team, ever: a second key with the same title is refused, revoked ones included. Press titles a trial site's key by the site.",
    "fieldname": "title",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Title"
+   "label": "Title",
+   "set_only_once": 1
   },
   {
    "description": "The team this key spends for. Its payload-log opt-in and credit verdict ride on the key to the gateway.",
@@ -35,7 +38,7 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Team",
-   "options": "Central Team",
+   "options": "Grove Team",
    "reqd": 1,
    "search_index": 1,
    "set_only_once": 1
@@ -66,12 +69,22 @@
   },
   {
    "default": "0",
-   "description": "What this key may spend a month: the gateway counts its spend per month and refuses it at 402 once this month's reaches it. 0 until a cap is set, and the key is refused until then. Across the team's live keys the caps add up to no more than the team's Spend Limit.",
+   "description": "What this key may spend over its Cap Window — this UTC month, or everything since the mint: the gateway counts its spend and refuses it at 402 once that reaches the cap. 0 until a cap is set, and the key is refused until then. Across the team's live keys the caps add up to no more than the team's Spend Limit.",
    "fieldname": "cap",
    "fieldtype": "Currency",
    "in_list_view": 1,
-   "label": "Cap (USD / month)",
+   "label": "Cap (USD)",
    "precision": "9"
+  },
+  {
+   "default": "Monthly",
+   "description": "What the cap counts: this UTC month's spend, reset on the 1st, or everything since the mint, so a spent key stays spent (a trial). Set at the mint and fixed after: the gateway keeps a different counter per window, so a change would restart the count. Pushed on the key as budget_window. Under the team's Spend Limit a Total key counts its cap like any other.",
+   "fieldname": "cap_window",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Cap Window",
+   "options": "Monthly\nTotal",
+   "set_only_once": 1
   },
   {
    "fieldname": "key_hash",
@@ -147,7 +160,7 @@
    "link_fieldname": "api_key"
   }
  ],
- "modified": "2026-10-21 12:00:00.000000",
+ "modified": "2026-10-22 21:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove API Key",

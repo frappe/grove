@@ -16,7 +16,7 @@ DOCTYPE = Path(__file__).parent / "ingress_server.json"
 
 TENANT_DOCTYPES = {
 	"Grove API Key",
-	"Central Team",
+	"Grove Team",
 	"Model",
 	"Model Group",
 	"Usage Record",

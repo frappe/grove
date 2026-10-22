@@ -1,8 +1,8 @@
 {
  "actions": [],
  "autoname": "Prompt",
- "creation": "2026-10-08 00:00:00",
- "description": "Named by Central's id for the team (TEAM-00520). One team per id: the tier limits are the team's.",
+ "creation": "2026-10-22 01:36:41.697618",
+ "description": "Named by the control client's id for the team: Central's TEAM-00520, Press's Press Team. One team per id: the tier limits are the team's.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -11,6 +11,7 @@
   "override_max_keys",
   "max_keys",
   "column_break_head",
+  "created_by",
   "suspended",
   "last_reported_at"
  ],
@@ -23,7 +24,7 @@
    "label": "Log Prompts & Outputs"
   },
   {
-   "description": "The Tier the team runs under: its key count, monthly spend limit and, for keys with no limits of their own, rate limits. Named by Central from the team's trust tier; blank is the default tier in Grove Settings.",
+   "description": "The Tier the team runs under: its key count, monthly spend limit and, for keys with no limits of their own, rate limits. Named by the control client (Central from the team's trust tier); blank is the default tier in Grove Settings.",
    "fieldname": "tier",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -52,8 +53,20 @@
    "fieldtype": "Column Break"
   },
   {
+   "default": "__user",
+   "description": "Who made the team: the control client that provisioned it (Central's or Press's user) or the operator in Desk. Stamped at the insert and fixed.",
+   "fieldname": "created_by",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Created By",
+   "options": "User",
+   "read_only": 1,
+   "set_only_once": 1
+  },
+  {
    "default": "0",
-   "description": "Set by Central when the team's invoice goes unpaid; an edit here would be overwritten on the next sync. Pushed as limited on every key of the team, which the gateways then refuse whatever its own cap says.",
+   "description": "Set by the control client (Central, when the team's invoice goes unpaid); an edit here would be overwritten on the next sync. Pushed as limited on every key of the team, which the gateways then refuse whatever its own cap says.",
    "fieldname": "suspended",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -90,10 +103,10 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-10-19 12:00:00.000000",
+ "modified": "2026-10-22 21:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
- "name": "Central Team",
+ "name": "Grove Team",
  "naming_rule": "Set by user",
  "owner": "Administrator",
  "permissions": [

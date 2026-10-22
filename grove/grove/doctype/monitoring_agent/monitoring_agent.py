@@ -65,11 +65,10 @@ class MonitoringAgent(Server, Document):
 
 	@property
 	def remote_write_url(self):
-		"""Where this agent pushes: its Region's own endpoint, else the fleet-wide one in Grove
-		Settings. Resolved on every read; the column of the same name is what the last install
-		wrote, for the form."""
-		regional = frappe.db.get_value("Region", self.region, "remote_write_url") if self.region else ""
-		return regional or frappe.get_single("Grove Settings").metrics_remote_write_url or ""
+		"""Where this agent pushes: its Region's Metrics Endpoint, the one owner of that address.
+		Resolved on every read; the column of the same name is what the last install wrote, for
+		the form."""
+		return (frappe.db.get_value("Region", self.region, "metrics_url") if self.region else "") or ""
 
 	@property
 	def ansible_variables(self):
@@ -106,8 +105,7 @@ class MonitoringAgent(Server, Document):
 
 		if not self.remote_write_url:
 			problems.append(
-				f"Nowhere to push — set a Remote Write URL on Region {self.region or '(unset)'}, "
-				f"or the fleet-wide one in Grove Settings."
+				f"Nowhere to push — set the Metrics Endpoint on Region {self.region or '(unset)'}'s Monitoring tab."
 			)
 		if not self.get_password("metrics_token", raise_exception=False):
 			problems.append("Metrics Token is empty — the ingestion service would reject the push.")

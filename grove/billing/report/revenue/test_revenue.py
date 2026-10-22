@@ -25,7 +25,7 @@ class TestRevenue(IntegrationTestCase):
 			.name
 		)
 		cls.team = (
-			frappe.get_doc({"doctype": "Central Team", "__newname": "revenue"})
+			frappe.get_doc({"doctype": "Grove Team", "__newname": "revenue"})
 			.insert(ignore_permissions=True)
 			.name
 		)

@@ -8,7 +8,7 @@ from grove.access import team_limits
 from grove.api.control import ALLOWED_ROLES
 from grove.api.teams import get_team
 
-KEY_FIELDS = ["name", "title", "status", "creation", "key_hash", "masked", "geography", "cap"]
+KEY_FIELDS = ["name", "title", "status", "creation", "key_hash", "masked", "geography", "cap", "cap_window"]
 
 
 @frappe.whitelist()
@@ -19,14 +19,18 @@ def provision_key(
 	cap: float | None = None,
 	models: list[str] | None = None,
 	limits: list[dict] | None = None,
+	cap_window: str | None = None,
 ):
 	"""Mint a key for `team` in `geography` — the default one when none is given; every other
-	geography's gateway refuses it."""
+	geography's gateway refuses it. `cap_window` is what the cap counts, Monthly when not given or
+	Total (everything since the mint, so a spent key stays spent), fixed after."""
 	frappe.only_for(ALLOWED_ROLES)
 	key = frappe.new_doc("Grove API Key")
 	key.team, key.title, key.status = get_team(team), title, "active"
 	if geography:
 		key.geography = geography
+	if cap_window:
+		key.cap_window = cap_window
 	set_key_policy(key, cap, models, limits)
 	key.insert()
 	gateway_url = get_gateway_url(key.geography)
@@ -61,7 +65,7 @@ def update_key(
 
 @frappe.whitelist()
 def update_caps(team: str, caps: dict[str, float]):
-	"""Set several monthly caps of `team`'s live keys at once, {key: USD}. Lowered caps are saved
+	"""Set several caps of `team`'s live keys at once, {key: USD}. Lowered caps are saved
 	first, so moving a cap from one key to another fits the spend limit midway as well; any
 	refusal leaves every cap as it was. What the limit holds is this month's spend and the caps
 	together (`pricing.committed`), with what the boxes count read under the team row: a cap a key already
@@ -196,6 +200,6 @@ def limit_rows_of(names):
 
 	keys = frappe.get_list("Grove API Key", filters={"name": ("in", names)}, fields=["name", "team"])
 	tiers = frappe.get_list(
-		"Central Team", filters={"name": ("in", [k.team for k in keys] or [""])}, fields=["name", "tier"]
+		"Grove Team", filters={"name": ("in", [k.team for k in keys] or [""])}, fields=["name", "tier"]
 	)
 	return effective_limits(keys, limit_entries("Grove API Key", names), {t.name: t.tier for t in tiers})

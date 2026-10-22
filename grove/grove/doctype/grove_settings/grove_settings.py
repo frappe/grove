@@ -34,8 +34,10 @@ class GroveSettings(Document):
 		from frappe.types import DF
 
 		acme_email: DF.Data | None
+		central_api_key: DF.Data | None
+		central_api_secret: DF.Password | None
+		central_url: DF.Data | None
 		dns_provider: DF.Link | None
-		metrics_remote_write_url: DF.Data | None
 		monitoring_extra_labels: DF.SmallText | None
 		pathway_release: DF.Data | None
 		pathway_repo: DF.Data | None
@@ -54,17 +56,6 @@ class GroveSettings(Document):
 	# end: auto-generated types
 
 	def validate(self):
-		url = self.metrics_remote_write_url or ""
-		if url and not url.startswith(("http://", "https://")):
-			frappe.throw("Metrics Remote Write URL must start with http:// or https://.")
-		if url.startswith("http://"):
-			# Warned, not refused: the ingestion service is plain HTTP today.
-			frappe.msgprint(
-				"Metrics Remote Write URL is plain HTTP — the bearer token crosses the network "
-				"in cleartext on every push. Ask the ingestion team for an HTTPS endpoint.",
-				indicator="orange",
-				alert=True,
-			)
 		self.validate_sd_token()
 		self.set_scrape_password_hash()
 		if self.monitoring_extra_labels:
@@ -111,7 +102,7 @@ class GroveSettings(Document):
 	@property
 	def monitoring_variables(self):
 		"""The fleet-wide half of a Monitoring Agent's vars. What identifies ONE agent — its token,
-		its region's endpoint, its intervals — comes from its own doc."""
+		its intervals — comes from its own doc, and where it pushes from its Region."""
 		return {
 			"monitoring_extra_labels": json.loads(self.monitoring_extra_labels or "{}"),
 			"monitoring_sd_url": f"{get_url()}/api/method/grove.monitoring.targets",

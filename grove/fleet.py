@@ -16,7 +16,7 @@ import frappe
 import requests
 from frappe.utils import escape_html
 
-from grove import failure
+from grove import datum, failure
 from grove.cloud_provider.dns import Route53Client, Route53Error
 from grove.monitoring import run_exporters_play
 from grove.pathway.run import Target
@@ -53,7 +53,8 @@ def gateway_agent_release():
 
 class NamedHost(Server):
 	"""A box with its own A record at <short name>.<fleet zone>, and nothing else from the fleet.
-	A Gateway Store stops here: operators SSH to it by name, but nothing dials it over HTTP."""
+	A Gateway Store stops here: operators SSH to it by name, but nothing dials it over HTTP.
+	Every named box ships its logs and host metrics with Vector, so that lives here too."""
 
 	dns_fields = ("public_ip",)
 
@@ -120,6 +121,58 @@ class NamedHost(Server):
 			if e.code != "InvalidChangeBatch":
 				raise
 			return None
+
+	@frappe.whitelist()
+	def install_vector(self):
+		"""Button: put Vector on this box, pushing its logs — and host metrics when ticked — to its
+		Region's datum. Run again to re-render the config; the daily refresh does the same for the
+		token."""
+		if self.status != "Active":
+			frappe.throw(f"{self.name} is {self.status} — set it up before installing Vector.")
+		self.check_vector_ready()
+		self.queue_vector()
+		frappe.msgprint(f"Installing Vector on {self.name} — watch its Ansible Plays.", alert=True)
+
+	def check_vector_ready(self):
+		"""Everything Vector needs before a play is queued, thrown together: the Region's endpoints
+		and Grove's Central credential."""
+		problems = frappe.get_doc("Region", self.region).vector_problems + datum.credential_problems()
+		if problems:
+			frappe.throw("<br>".join(problems), title=f"{self.name} is not ready for Vector")
+
+	def queue_vector(self):
+		"""Vector as its own job — after Setup too, so a datum problem never marks a freshly set-up
+		box Broken."""
+		frappe.enqueue_doc(self.doctype, self.name, "provision_vector", queue="long", timeout=1200)
+
+	@property
+	def vector_variables(self):
+		"""What the vector role reads: the Region's endpoints, a token minted now for the Central
+		Region that datum belongs to, this box's labels. Read inside the job only — the token must
+		never sit in a Redis payload."""
+		region = frappe.get_doc("Region", self.region)
+		return {
+			"vector_metrics_url": region.metrics_url or "",
+			"vector_logs_url": region.logs_url or "",
+			"vector_token": datum.mint_token(region.central_region, f"grove:{self.machine}"),
+			"vector_ship_host_metrics": bool(self.ship_host_metrics),
+			"vector_server": self.name,
+			"vector_machine": self.machine,
+			"vector_region": self.region,
+		}
+
+	@failure.reports_failure(mark_broken=False)
+	def provision_vector(self):
+		"""Job: vector.yml. Status is left alone — a box that cannot ship its logs still serves.
+		Readiness is checked here too: queued after Setup, this is the first thing that looks."""
+		self.check_vector_ready()
+		play_name, rc = self.run_playbook(
+			"vector.yml", project="Monitoring Agent", extravars=self.vector_variables
+		)
+		if rc != 0:
+			frappe.throw(f"vector.yml failed on {self.name} (Ansible Play {play_name}).")
+		self.db_set("is_vector_setup", 1)
+		return play_name, rc
 
 
 class FleetHost(NamedHost):

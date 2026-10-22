@@ -40,7 +40,7 @@
  "links": [
   {
    "group": "Teams",
-   "link_doctype": "Central Team",
+   "link_doctype": "Grove Team",
    "link_fieldname": "tier"
   }
  ],

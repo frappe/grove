@@ -33,6 +33,7 @@ class GatewayServer(PathwayHost, Document):
 		health_check_id: DF.Data | None
 		is_in_maintenance: DF.Check
 		is_static_ip: DF.Check
+		is_vector_setup: DF.Check
 		is_store_writer: DF.Check
 		machine: DF.Link
 		memory_limit_mb: DF.Int
@@ -41,6 +42,7 @@ class GatewayServer(PathwayHost, Document):
 		private_ip: DF.Data | None
 		public_ip: DF.Data | None
 		region: DF.Link | None
+		ship_host_metrics: DF.Check
 		status: DF.Literal["Pending", "Installing", "Active", "Broken", "Terminated"]
 	# end: auto-generated types
 
@@ -318,5 +320,6 @@ class GatewayServer(PathwayHost, Document):
 		frappe.db.commit()
 
 		if rc == 0:
+			self.queue_vector()
 			self.sync_dns_records()
 		return play_name, rc

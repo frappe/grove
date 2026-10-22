@@ -1,0 +1,24 @@
+---
+# Install Vector on one box: host metrics to the Region's datum remote write, journald and every
+# pathway and redis log to its log route (Setup chains it, Install Vector re-runs it, the daily token
+# refresh re-runs it). extra-vars: vector_metrics_url, vector_logs_url, vector_token,
+# vector_ship_host_metrics, vector_server, vector_machine, vector_region.
+- name: Install Vector
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    monitoring_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+  pre_tasks:
+    - name: Check the endpoints and token were passed
+      ansible.builtin.assert:
+        that:
+          - vector_metrics_url | default('') | trim | length > 0
+          - vector_logs_url | default('') | trim | length > 0
+          - vector_token | default('') | trim | length > 0
+        fail_msg: >-
+          vector_metrics_url, vector_logs_url and vector_token are required — run from the Install
+          Vector button, which reads the endpoints off the box's Region and mints the token.
+  roles:
+    - grove_user
+    - vector

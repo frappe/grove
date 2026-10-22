@@ -46,7 +46,7 @@ class PullCase(IntegrationTestCase):
 		cls.day = utc_today()
 		cls.today = str(cls.day)
 		cls.store = a_store(f"{cls.box}-store")
-		cls.team = cls.central_team(cls.email)
+		cls.team = cls.grove_team(cls.email)
 		model_id = f"{cls.box}-7b"
 		doc = (
 			frappe.db.exists("Model", {"model_id": model_id})
@@ -74,11 +74,11 @@ class PullCase(IntegrationTestCase):
 			)
 
 	@classmethod
-	def central_team(cls, email):
+	def grove_team(cls, email):
 		return (
 			frappe.get_doc(
 				{
-					"doctype": "Central Team",
+					"doctype": "Grove Team",
 					"__newname": email,
 					"override_max_keys": 1,
 					"max_keys": 0,
@@ -323,7 +323,7 @@ class TestAStuckTeamHoldsOnlyItselfBack(PullCase):
 		return frappe.get_doc("Stuck Usage", {"team": self.team, "gateway_store": store or self.store})
 
 	def test_the_failed_team_is_rolled_back_logged_and_left_unacknowledged(self):
-		other = self.central_team("usage-stuck-2@grove.test")
+		other = self.grove_team("usage-stuck-2@grove.test")
 		bad, good = self.key(), self.key(other)
 		drained = {"request_count": "1", f"m:completion_tokens:{self.model}": "9"}
 		with self.failing(self.team):
@@ -413,7 +413,7 @@ class TestAPullForOneTeam(PullCase):
 		self.assertEqual(sorted(pull.hashes.values()), keys)
 
 	def test_a_team_with_no_keys_pulls_nothing(self):
-		self.assertEqual(usage.Usage(team=self.central_team("usage-one-nokeys@grove.test")).units(), [])
+		self.assertEqual(usage.Usage(team=self.grove_team("usage-one-nokeys@grove.test")).units(), [])
 
 
 class TestTheCheckReadsTheBoxesForRealKeys(PullCase):

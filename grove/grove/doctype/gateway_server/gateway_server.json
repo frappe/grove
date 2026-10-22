@@ -21,6 +21,8 @@
   "agent_version",
   "last_synced_at",
   "monitoring_agent",
+  "ship_host_metrics",
+  "is_vector_setup",
   "memory_limit_mb",
   "gateway_store",
   "is_store_writer",
@@ -69,7 +71,7 @@
   },
   {
    "default": "0",
-   "description": "Whether this box's address survives a stop. Owned by the Machine \u2014 set it there.",
+   "description": "Whether this box's address survives a stop. Owned by the Machine — set it there.",
    "fetch_from": "machine.is_static_ip",
    "fieldname": "is_static_ip",
    "fieldtype": "Check",
@@ -123,7 +125,7 @@
    "read_only": 1
   },
   {
-   "description": "The pathway release this box last installed successfully. Written by the deploy, not typed \u2014 it is what makes a fleet running mixed versions visible.",
+   "description": "The pathway release this box last installed successfully. Written by the deploy, not typed — it is what makes a fleet running mixed versions visible.",
    "fieldname": "agent_version",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -131,11 +133,11 @@
    "read_only": 1
   },
   {
+   "description": "Written only on a gateway not on a Gateway Store; one on a store is stamped on the store. When a Projection tick last confirmed this box holds the desired state: stamped with the tick's read time on every in-sync check and every successful push, never on failure. The next tick rebuilds only the key buckets saved since it; blank, it rebuilds all.",
    "fieldname": "last_synced_at",
    "fieldtype": "Datetime",
    "label": "Last Synced At",
-   "read_only": 1,
-   "description": "Written only on a gateway not on a Gateway Store; one on a store is stamped on the store. When a Projection tick last confirmed this box holds the desired state: stamped with the tick's read time on every in-sync check and every successful push, never on failure. The next tick rebuilds only the key buckets saved since it; blank, it rebuilds all."
+   "read_only": 1
   },
   {
    "default": "0",
@@ -181,10 +183,26 @@
    "fieldtype": "Password",
    "label": "Admin Token",
    "read_only": 1
+  },
+  {
+   "default": "1",
+   "description": "Vector pushes this box's host metrics to the Region's datum. Untick on a machine whose provider already does (an Atlas machine runs Pilot); logs ship either way. Takes effect at the next Install/Update Vector or daily refresh.",
+   "fieldname": "ship_host_metrics",
+   "fieldtype": "Check",
+   "label": "Ship Host Metrics"
+  },
+  {
+   "default": "0",
+   "description": "Set once Vector has been installed on this box (Setup chains it; Install Vector for an older box). It pushes logs, and host metrics when ticked, to the Region's datum; its token is refreshed daily.",
+   "fieldname": "is_vector_setup",
+   "fieldtype": "Check",
+   "in_standard_filter": 1,
+   "label": "Vector Setup",
+   "read_only": 1
   }
  ],
  "links": [],
- "modified": "2026-10-15 03:38:19.395603",
+ "modified": "2026-10-22 16:28:36.679371",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Gateway Server",

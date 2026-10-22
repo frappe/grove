@@ -184,7 +184,7 @@ def lock_team(team):
 	"""The team row, held until this transaction ends. The pull and a correction take it before
 	landing money, and a cap check reads the team FOR UPDATE, so the check sees a drain landed
 	whole or not at all."""
-	frappe.db.get_value("Central Team", team, "name", for_update=True)
+	frappe.db.get_value("Grove Team", team, "name", for_update=True)
 
 
 def usd(amount):

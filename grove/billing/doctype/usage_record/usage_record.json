@@ -36,7 +36,7 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Team",
-   "options": "Central Team",
+   "options": "Grove Team",
    "read_only": 1
   },
   {

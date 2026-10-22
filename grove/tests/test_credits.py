@@ -77,7 +77,7 @@ class CreditsCase(IntegrationTestCase):
 		if not frappe.db.exists("Tier", "credits-tier"):
 			frappe.get_doc({"doctype": "Tier", "__newname": "credits-tier", "spend_limit": 100}).insert()
 		doc = frappe.get_doc(
-			{"doctype": "Central Team", "__newname": f"credits-{CreditsCase.counter}", "tier": "credits-tier"}
+			{"doctype": "Grove Team", "__newname": f"credits-{CreditsCase.counter}", "tier": "credits-tier"}
 		).insert(ignore_permissions=True)
 		return doc.name, self.key(doc.name, cap)
 
@@ -115,7 +115,7 @@ class CreditsCase(IntegrationTestCase):
 	def state(self, team):
 		"""What the team was charged, off the records and corrections, and whether it is suspended."""
 		spent = pricing.month_spent_by("team", [team]).get(team, D(0))
-		return spent, frappe.db.get_value("Central Team", team, "suspended")
+		return spent, frappe.db.get_value("Grove Team", team, "suspended")
 
 	def discrepancies(self, team):
 		return frappe.get_all(
@@ -274,7 +274,7 @@ class TestWhatTheGatewayDidNotCharge(CreditsCase):
 
 	def test_a_stale_form_keeps_the_databases_spent(self):
 		team, key = self.team(cap=1)
-		doc = frappe.get_doc("Central Team", team)
+		doc = frappe.get_doc("Grove Team", team)
 		self.pull({key: self.hash(70_000)})
 		doc.log_payloads = 1
 		doc.save()
@@ -565,7 +565,7 @@ class TestThePushCarriesTheCap(CreditsCase):
 	def test_a_suspended_teams_keys_are_pushed_limited(self):
 		team, key = self.team(cap=0.5)
 		other = self.key(team, 0.5)
-		frappe.db.set_value("Central Team", team, "suspended", 1)
+		frappe.db.set_value("Grove Team", team, "suspended", 1)
 		keys = self.keys()
 		self.assertEqual(
 			(keys[key]["limited"], keys[other]["limited"]),

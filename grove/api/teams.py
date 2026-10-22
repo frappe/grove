@@ -22,10 +22,10 @@ def provision_team(team: str):
 	frappe.only_for(ALLOWED_ROLES)
 	if not team:
 		frappe.throw("A team needs an id.")
-	if frappe.db.exists("Central Team", team):
-		doc = frappe.get_doc("Central Team", team)
+	if frappe.db.exists("Grove Team", team):
+		doc = frappe.get_doc("Grove Team", team)
 	else:
-		doc = frappe.get_doc({"doctype": "Central Team", "__newname": team})
+		doc = frappe.get_doc({"doctype": "Grove Team", "__newname": team})
 	doc.save()
 	return {"team": doc.name, "max_keys": team_limits(doc.name).max_keys}
 
@@ -41,7 +41,7 @@ def update_team(
 	frappe.only_for(ALLOWED_ROLES)
 	from grove.grove.doctype.tier.tier import ensure
 
-	doc = frappe.get_doc("Central Team", get_team(team))
+	doc = frappe.get_doc("Grove Team", get_team(team))
 	if is_not_newer(observed_at, doc.last_reported_at):
 		return {"team": doc.name, "ignored": "not newer", **team_limits(doc.name)}
 	if tier:
@@ -77,7 +77,7 @@ def team_webhook(
 	A team Grove does not know has AI off; it is ignored, not refused, so Central stops retrying."""
 	user = _webhook_user()
 	frappe.set_user(user)
-	if not team or not frappe.db.exists("Central Team", team):
+	if not team or not frappe.db.exists("Grove Team", team):
 		return None
 	return update_team(team, suspended=suspended, tier=tier, observed_at=observed_at)
 
@@ -109,6 +109,6 @@ def rename_tier(old: str, new: str):
 
 
 def get_team(team):
-	if not team or not frappe.db.exists("Central Team", team):
-		frappe.throw(f"No Central Team {team!r}.")
+	if not team or not frappe.db.exists("Grove Team", team):
+		frappe.throw(f"No Grove Team {team!r}.")
 	return team

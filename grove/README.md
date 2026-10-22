@@ -55,9 +55,10 @@ gateways cannot jointly overrun one replica.
 | `naming.py` | A Machine's `<prefix><n>-<region>.<geography zone>`, e.g. `gw2-ap-south-1.local.frappe.dev` (no domain for a box whose geography has no zone, or one named before this), which its server doc takes. Its `short_name` (first label) is the DNS label under the zone and the request-id / agent id. |
 | `ansible.py` / `ansible_runner.py` | Running a playbook against a box, tracked as docs. |
 | `tls.py` | Each Geography's zone wildcard: issue over DNS-01, renew, push to that geography's boxes. |
-| `monitoring.py` / `log_relay.py` | Exporters on every box, and shipping their output. |
+| `monitoring.py` / `log_relay.py` | The scrape targets a Monitoring Agent pulls, and streaming an engine's log onto an open form. |
+| `datum.py` | datum's write token for one box, minted from Central inside the job (never stored), and the daily refresh that re-runs `vector.yml` so no box pushes with a stale one. The role itself: `playbooks/README.md` → Vector → datum. |
 | `failure.py` | `@reports_failure` — a long job that dies marks its doc Broken and says why. |
-| `api/` | The whitelisted surface Central calls, one module per subject: `control` (enrollment), `teams`, `keys`, `catalog` (geographies, models), `usage` (usage, figures, pulls). |
+| `api/` | The whitelisted surface the control clients (Central, Press) call, one module per subject: `control` (enrollment), `teams`, `keys`, `catalog` (geographies, models), `usage` (usage, figures, pulls). What is one client's alone — Press's trial-key policy — is Server Scripts on the site (`server_script_enabled`), not code here. |
 | `net.py` / `utils.py` | Addresses, slugs, paths. |
 
 ## What gets pushed, and under which key
@@ -238,6 +239,7 @@ prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south
 | `*/5` | `gateway_store.backup_all` | one `redis-cli --rdb` snapshot per Active store, over SSH, into its Geography's backup bucket (Store Backups tab) under `gateway-store/<store>/<utc stamp>.rdb`, the doc's Last Backup Key pointing at it; usage leaves a store only on the hourly pull, so this is what a lost disk costs: 5 minutes. Skipped in a Geography with no backup bucket; Restore never crosses geographies; prune with a bucket lifecycle rule |
 | hourly | `pathway.usage.pull_all` | a store is drained once, through its first writer that answers; recorded, billed, then what landed is acked. A failed pull loses nothing: the box re-sends every unacked pair. Also Gateway Server → **Pull Usage**, Stuck Usage → **Pull Now**, and `api.usage.pull_usage(team)` for one team, which answers its `figures` afresh (2 an hour per team, counted in the site cache; the rest are not limited) |
 | hourly | `tls.renew_fleet_certificate`, `cloud_provider.schedule.run_due_pods` | renew runs certbot only when it says the certificate is due, and pushes only when the certificate changed |
+| daily | `datum.refresh_tokens` | re-runs `vector.yml` on every Active Gateway Server and Store with `is_vector_setup`, so the datum token Vector pushes with (Central-signed, 7 days, no revocation) is never older than a day; one job per box |
 
 Nothing else pushes. A doctype hook, a provision and a pod lifecycle all just write state; the
 tick carries it within a minute. The only manual paths are Gateway Server → **Full Sync**, Ingress

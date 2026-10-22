@@ -36,6 +36,9 @@ scheduler_events = {
 		"grove.tls.renew_fleet_certificate",
 		"grove.cloud_provider.schedule.run_due_pods",
 	],
+	"daily_long": [
+		"grove.datum.refresh_tokens",
+	],
 }
 
 export_python_type_annotations = True

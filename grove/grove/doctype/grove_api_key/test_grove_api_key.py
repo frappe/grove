@@ -24,7 +24,7 @@ from grove.pathway.snapshot import effective_keys
 def team(name, **fields):
 	"""`max_keys` / `spend_limit` given here go on a Tier of the team's own; without one, no cap
 	fits, and the keys stay at 0."""
-	if frappe.db.exists("Central Team", name):
+	if frappe.db.exists("Grove Team", name):
 		return name
 	if "max_keys" in fields or "spend_limit" in fields:
 		numbers = {k: fields.pop(k) for k in ("max_keys", "spend_limit") if k in fields}
@@ -34,7 +34,7 @@ def team(name, **fields):
 	return (
 		frappe.get_doc(
 			{
-				"doctype": "Central Team",
+				"doctype": "Grove Team",
 				"__newname": name,
 				**fields,
 			}
@@ -78,9 +78,50 @@ class IntegrationTestGroveAPIKey(IntegrationTestCase):
 			(record["team"], record["budget"], record["limited"], record["log_payloads"]),
 			(name, 1_000_000_000, False, True),
 		)
-		frappe.db.set_value("Central Team", name, {"log_payloads": 0})
+		frappe.db.set_value("Grove Team", name, {"log_payloads": 0})
 		record = projected(doc.name)
 		self.assertEqual((record["budget"], record["log_payloads"]), (1_000_000_000, False))
+
+	def test_the_cap_window_is_set_once_and_rides_on_the_key_as_the_budget_window(self):
+		"""Monthly unless the mint says Total; fixed after, since a change would restart the
+		gateway's count. Under the spend limit a Total key counts its cap like any other."""
+		name = team("key-probe-window", spend_limit=3)
+		monthly = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 1}).insert()
+		self.assertEqual((monthly.cap_window, projected(monthly.name)["budget_window"]), ("Monthly", "month"))
+		total = frappe.get_doc(
+			{"doctype": "Grove API Key", "team": name, "cap": 2, "cap_window": "Total"}
+		).insert()
+		self.assertEqual(projected(total.name)["budget_window"], "total")
+		total.cap_window = "Monthly"
+		with self.assertRaises(frappe.CannotChangeConstantError):
+			total.save()
+		with self.assertRaises(frappe.ValidationError):
+			frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap_window": "Weekly"}).insert()
+		with self.assertRaisesRegex(frappe.ValidationError, "spend limit of 3"):
+			frappe.get_doc(
+				{"doctype": "Grove API Key", "team": name, "cap": 1, "cap_window": "Total"}
+			).insert()
+
+	def test_a_title_is_used_once_per_team_revoked_keys_included(self):
+		name = team("key-probe-titles")
+		first = frappe.get_doc({"doctype": "Grove API Key", "team": name, "title": "ci"}).insert()
+		with self.assertRaises(frappe.UniqueValidationError):
+			frappe.get_doc({"doctype": "Grove API Key", "team": name, "title": "ci"}).insert()
+		frappe.db.set_value("Grove API Key", first.name, "status", "revoked")
+		with self.assertRaises(frappe.UniqueValidationError):
+			frappe.get_doc({"doctype": "Grove API Key", "team": name, "title": "ci"}).insert()
+		frappe.get_doc(
+			{"doctype": "Grove API Key", "team": team("key-probe-titles-2"), "title": "ci"}
+		).insert()
+		untitled = [
+			frappe.get_doc({"doctype": "Grove API Key", "team": name, "title": blank}).insert()
+			for blank in (None, "")
+		]
+		self.assertEqual([k.title for k in untitled], [None, None])
+		first.reload()
+		first.title = "ci-2"
+		with self.assertRaises(frappe.CannotChangeConstantError):
+			first.save()
 
 	def test_a_revoked_key_is_not_projected(self):
 		doc = key("key-probe-revoked")
@@ -460,11 +501,11 @@ class IntegrationTestCapsFitTheSpendLimit(IntegrationTestCase):
 	def test_a_lowered_limit_stops_no_key_and_refuses_only_a_raise(self):
 		name = team("key-cap-demoted", spend_limit=10)
 		doc = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 8}).insert()
-		tier = frappe.get_doc("Tier", frappe.db.get_value("Central Team", name, "tier"))
+		tier = frappe.get_doc("Tier", frappe.db.get_value("Grove Team", name, "tier"))
 		tier.spend_limit = 5
 		tier.save()
 		self.assertEqual(projected(doc.name)["budget"], 8_000_000_000)
-		doc.title = "renamed"
+		doc.append("limits", {"metric": "requests", "window": "1m", "value": 5})
 		doc.save()
 		doc.cap = 9
 		with self.assertRaises(frappe.ValidationError):
