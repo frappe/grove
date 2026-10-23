@@ -83,6 +83,20 @@ class IntegrationTestGroveTeam(IntegrationTestCase):
 		self.assertEqual((team_limits(doc.name).max_keys, team_limits(doc.name).spend_limit), (0, 5))
 		frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert()
 
+	def test_suspend_keys_pushes_every_key_limited_until_resumed(self):
+		from grove.pathway import snapshot
+
+		doc = team("team-probe-suspend")
+		names = [frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert().name for _ in range(2)]
+
+		def limited():
+			return {record["limited"] for record in snapshot.effective_keys(names)}
+
+		doc.set_suspended(True)
+		self.assertEqual((doc.reload().suspended, limited()), (1, {True}))
+		doc.set_suspended(False)
+		self.assertEqual((doc.reload().suspended, limited()), (0, {False}))
+
 	def test_a_spend_limit_cannot_be_negative(self):
 		with self.assertRaises(frappe.ValidationError):
 			team("team-probe-negative", spend_limit=-1)

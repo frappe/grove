@@ -54,7 +54,7 @@
   },
   {
    "default": "0",
-   "description": "Set by the control client (Central, when the team's invoice goes unpaid); an edit here would be overwritten on the next sync. Pushed as limited on every key of the team, which the gateways then refuse whatever its own cap says.",
+   "description": "Set by the control client (Central, when the team's invoice goes unpaid) or by Suspend Keys here; Central's next sync overwrites it for its teams. Pushed as limited on every key of the team, which the gateways then refuse whatever its own cap says.",
    "fieldname": "suspended",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -100,7 +100,7 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-10-22 19:00:00.000000",
+ "modified": "2026-10-23 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove Team",

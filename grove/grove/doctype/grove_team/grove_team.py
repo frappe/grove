@@ -43,6 +43,14 @@ class GroveTeam(Document):
 	def on_update(self):
 		forget_figures(self.name)
 
+	@frappe.whitelist()
+	def set_suspended(self, suspended: bool):
+		"""Desk's Suspend Keys / Resume Keys. `suspended` rides on every key of the team as `limited`,
+		so the next tick has the gateways refuse them all, cap or no cap; nothing is revoked. Central
+		overwrites it for its teams on the next sync."""
+		self.suspended = suspended
+		self.save()
+
 	@property
 	def active_keys(self):
 		return frappe.db.count("Grove API Key", {"team": self.name, "status": "active"})
