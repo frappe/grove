@@ -4,12 +4,12 @@
 frappe.ui.form.on("Grove Team", {
 	refresh(frm) {
 		if (frm.is_new()) return;
-		if (frm.doc.suspended) {
+		if (frm.doc.suspended_at_grove) {
 			frm.add_custom_button(__("Resume Keys"), () =>
 				grove.confirm_call(
 					frm,
-					__("Resume every key of this team? The gateways take them again on the next sync."),
-					"set_suspended",
+					__("Lift the suspension? The gateways take this team's keys again on the next sync. Central puts it back on its next sync if the invoice is still unpaid."),
+					"set_suspended_at_grove",
 					{ suspended: false }
 				)
 			);
@@ -19,9 +19,9 @@ frappe.ui.form.on("Grove Team", {
 			grove.confirm_call(
 				frm,
 				__(
-					"Suspend every key of this team? The gateways refuse them all on the next sync, whatever their caps, until Resume Keys. Nothing is revoked. Central overwrites this for its teams on its next sync."
+					"Suspend every key of this team? The gateways refuse them all on the next sync, whatever their caps, until Resume Keys. Nothing is revoked, and Central's sync cannot lift it."
 				),
-				"set_suspended",
+				"set_suspended_at_grove",
 				{ suspended: true }
 			)
 		);

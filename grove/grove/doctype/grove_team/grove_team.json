@@ -13,6 +13,7 @@
   "key_cap_window",
   "column_break_head",
   "suspended",
+  "suspended_at_grove",
   "last_reported_at"
  ],
  "fields": [
@@ -54,7 +55,7 @@
   },
   {
    "default": "0",
-   "description": "Set by the control client (Central, when the team's invoice goes unpaid) or by Suspend Keys here; Central's next sync overwrites it for its teams. Pushed as limited on every key of the team, which the gateways then refuse whatever its own cap says.",
+   "description": "The team's keys are refused: pushed as limited on every one, which the gateways refuse whatever its own cap says. Set by Central when the team's invoice goes unpaid, or by Suspend Keys here (Suspended at Grove ticked too). Central's sync cannot lift Grove's hold.",
    "fieldname": "suspended",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -76,6 +77,15 @@
    "label": "Key Cap Window",
    "options": "Monthly\nTotal",
    "set_only_once": 1
+  },
+  {
+   "default": "0",
+   "description": "The suspension is Grove's own, from Suspend Keys here: Central's sync cannot lift it. Resume Keys clears both; Central puts Suspended back on its next sync if the invoice is still unpaid.",
+   "fieldname": "suspended_at_grove",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Suspended at Grove",
+   "read_only": 1
   }
  ],
  "links": [
@@ -100,7 +110,7 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-10-23 18:00:00.000000",
+ "modified": "2026-10-23 19:30:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove Team",

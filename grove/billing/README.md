@@ -151,7 +151,8 @@ it holds no money that must not run out. What gates is:
   before Grove has one is created as a copy of it. **Override Max Keys** on the team pins its own
   key count instead (`access.team_limits` resolves which apply).
   Central also sets **`suspended`**.
-- **`suspended`**, set by Central when an invoice goes unpaid or by Desk's Suspend Keys on the team, pushed as `limited` on every key
+- **`suspended`**, set by Central when an invoice goes unpaid or by Desk's Suspend Keys on the team
+  (then marked `suspended_at_grove`, which Central's sync cannot lift), pushed as `limited` on every key
   of the team (402 whatever the cap says).
 
 **What Central reads.** `api.usage.figures(team)`: `spend` (`month_spent`, this UTC month's

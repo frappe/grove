@@ -84,6 +84,7 @@ class IntegrationTestGroveTeam(IntegrationTestCase):
 		frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert()
 
 	def test_suspend_keys_pushes_every_key_limited_until_resumed(self):
+		from grove.api import usage
 		from grove.pathway import snapshot
 
 		doc = team("team-probe-suspend")
@@ -92,10 +93,27 @@ class IntegrationTestGroveTeam(IntegrationTestCase):
 		def limited():
 			return {record["limited"] for record in snapshot.effective_keys(names)}
 
-		doc.set_suspended(True)
-		self.assertEqual((doc.reload().suspended, limited()), (1, {True}))
-		doc.set_suspended(False)
-		self.assertEqual((doc.reload().suspended, limited()), (0, {False}))
+		doc.set_suspended_at_grove(True)
+		doc.reload()
+		self.assertEqual((doc.suspended, doc.suspended_at_grove, limited()), (1, 1, {True}))
+		self.assertTrue(usage.figures(doc.name)["spend"]["suspended"])
+		doc.set_suspended_at_grove(False)
+		doc.reload()
+		self.assertEqual((doc.suspended, doc.suspended_at_grove, limited()), (0, 0, {False}))
+
+	def test_central_cannot_lift_groves_hold_but_grove_lifts_any(self):
+		from grove.api import teams
+
+		doc = team("team-probe-hold")
+		doc.set_suspended_at_grove(True)
+		teams.update_team(doc.name, suspended=False)
+		self.assertEqual(doc.reload().suspended, 1, "Central's sync does not lift Grove's hold")
+		doc.set_suspended_at_grove(False)
+		teams.update_team(doc.name, suspended=True)
+		self.assertEqual(doc.reload().suspended, 1, "with no hold, Central's standing is taken")
+		doc.set_suspended_at_grove(True)
+		doc.reload().set_suspended_at_grove(False)
+		self.assertEqual(doc.reload().suspended, 0, "Resume Keys clears both; Central re-asserts on its next sync")
 
 	def test_a_spend_limit_cannot_be_negative(self):
 		with self.assertRaises(frappe.ValidationError):
