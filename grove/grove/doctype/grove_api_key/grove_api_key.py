@@ -188,6 +188,20 @@ def capped(team, except_key=None):
 	return flt(rows[0][0], 9)
 
 
+def start_expiry(team, keys):
+	"""A usage record landed for each of `keys` of `team`: the ones minted with expiry Never get
+	their `expires_at` from the team's Key Expiry After First Use, once; a key that has its moment
+	keeps it, and a team at Never sets none. The key's `expiry` stays Never: the rule is the team's."""
+	days = EXPIRY_DAYS.get(frappe.db.get_value("Grove Team", team, "key_expiry_after_first_use"))
+	if not days or not keys:
+		return
+	frappe.db.sql(
+		"""update `tabGrove API Key` set expires_at = %s
+		where team = %s and name in %s and status = 'active' and expiry = 'Never' and expires_at is null""",
+		[add_days(now_datetime(), days), team, tuple(keys)],
+	)
+
+
 def revoke_expired():
 	"""Hourly: every live key past its `expires_at` is revoked, and the next tick prunes it off the
 	boxes. Every rule is a day or more, so the six-hour guard never meets one."""

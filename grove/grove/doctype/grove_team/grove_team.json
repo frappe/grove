@@ -11,6 +11,7 @@
   "override_max_keys",
   "max_keys",
   "key_cap_window",
+  "key_expiry_after_first_use",
   "column_break_head",
   "suspended",
   "suspended_at_grove",
@@ -79,6 +80,14 @@
    "set_only_once": 1
   },
   {
+   "default": "Never",
+   "description": "A key of this team minted with expiry Never retires so many days after its first usage record lands, not after the mint, so a key minted ahead and held in stock does not age on the shelf. Never: such a key never retires on its own. A key minted with a rule of its own counts from the mint as before.",
+   "fieldname": "key_expiry_after_first_use",
+   "fieldtype": "Select",
+   "label": "Key Expiry After First Use",
+   "options": "Never\n1 Day\n7 Days\n14 Days\n30 Days"
+  },
+  {
    "default": "0",
    "description": "The suspension is Grove's own, from Suspend Keys here: Central's sync cannot lift it. Resume Keys clears both; Central puts Suspended back on its next sync if the invoice is still unpaid.",
    "fieldname": "suspended_at_grove",
@@ -110,7 +119,7 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-10-23 19:30:00.000000",
+ "modified": "2026-10-24 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove Team",

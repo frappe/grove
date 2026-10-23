@@ -8,6 +8,7 @@ tests, so anything registered here is still there for the next one."""
 
 import unittest
 import unittest.mock
+from datetime import timedelta
 from types import SimpleNamespace
 
 import frappe
@@ -573,3 +574,24 @@ class IntegrationTestExpiry(IntegrationTestCase):
 			["revoked", "active", "active"],
 		)
 		self.assertEqual([k for k in effective_keys() if k["prefix"] == due.name], [])
+
+	def test_the_teams_setting_starts_a_never_keys_clock_at_its_first_record_once(self):
+		name = team("key-probe-first-use")
+		frappe.db.set_value("Grove Team", name, "key_expiry_after_first_use", "7 Days")
+		never, ruled = key(name), key(name, expiry="1 Day")
+		ruled.reload()
+		grove_api_key.start_expiry(name, [never.name, ruled.name])
+		first = frappe.db.get_value("Grove API Key", never.name, "expires_at")
+		self.assertAlmostEqual(
+			first, frappe.utils.add_days(frappe.utils.now_datetime(), 7), delta=timedelta(seconds=5)
+		)
+		self.assertEqual(frappe.db.get_value("Grove API Key", never.name, "expiry"), "Never")
+		# A rule of the key's own counts from the mint; the team's setting never moves it.
+		self.assertEqual(frappe.db.get_value("Grove API Key", ruled.name, "expires_at"), ruled.expires_at)
+		grove_api_key.start_expiry(name, [never.name])
+		self.assertEqual(frappe.db.get_value("Grove API Key", never.name, "expires_at"), first)
+
+	def test_a_team_at_never_starts_no_clock(self):
+		doc = key("key-probe-no-first-use")
+		grove_api_key.start_expiry(doc.team, [doc.name])
+		self.assertIsNone(frappe.db.get_value("Grove API Key", doc.name, "expires_at"))

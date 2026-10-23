@@ -13,6 +13,7 @@ from frappe.model.naming import make_autoname
 
 from grove.billing.doctype.credit_discrepancy.credit_discrepancy import record
 from grove.billing.pricing import NANO, forget_figures, lock_team
+from grove.grove.doctype.grove_api_key.grove_api_key import start_expiry
 from grove.utils import utc_today
 
 DEAD = "dead:"
@@ -62,6 +63,8 @@ class Reconciler:
 			if not self.has_landed(prefix)
 		]
 		frappe.db.bulk_insert("Usage Record", FIELDS, [[row[field] for field in FIELDS] for row in rows])
+		if rows:
+			start_expiry(team, [row.api_key for row in rows])
 		for row in rows:
 			self.audit(row)
 		forget_figures(team)
