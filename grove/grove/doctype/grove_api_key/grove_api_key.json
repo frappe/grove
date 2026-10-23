@@ -12,6 +12,7 @@
   "column_break_pcmc",
   "cap",
   "expiry",
+  "expiry_from_first_use",
   "expires_at",
   "key_hash",
   "api_secret",
@@ -70,7 +71,7 @@
   },
   {
    "default": "0",
-   "description": "What this key may spend over its team's Key Cap Window \u2014 this UTC month, or everything since the mint: the gateway counts its spend and refuses it at 402 once that reaches the cap. 0 until a cap is set, and the key is refused until then. Across the team's live keys the caps add up to no more than the team's Spend Limit.",
+   "description": "What this key may spend over its team's Key Cap Window — this UTC month, or everything since the mint: the gateway counts its spend and refuses it at 402 once that reaches the cap. 0 until a cap is set, and the key is refused until then. Across the team's live keys the caps add up to no more than the team's Spend Limit.",
    "fieldname": "cap",
    "fieldtype": "Currency",
    "in_list_view": 1,
@@ -88,7 +89,16 @@
    "set_only_once": 1
   },
   {
-   "description": "The moment Expiry names, set once at the mint; empty is never.",
+   "default": "0",
+   "depends_on": "eval:doc.expiry != \"Never\"",
+   "description": "Expiry counts from this key's first usage record, not from the mint, so a key minted ahead and held in stock does not age on the shelf. Set at the mint and fixed after.",
+   "fieldname": "expiry_from_first_use",
+   "fieldtype": "Check",
+   "label": "Expiry From First Use",
+   "set_only_once": 1
+  },
+  {
+   "description": "The moment Expiry names: set at the mint, or at the first usage record for a key that expires from first use. Empty is never, or not used yet.",
    "fieldname": "expires_at",
    "fieldtype": "Datetime",
    "label": "Expires At",
@@ -133,7 +143,7 @@
    "options": "Grove Model Row"
   },
   {
-   "description": "Models this key may never call. Deny wins over everything \u2014 a group grant and a Public release both lose to it.",
+   "description": "Models this key may never call. Deny wins over everything — a group grant and a Public release both lose to it.",
    "fieldname": "deny",
    "fieldtype": "Table MultiSelect",
    "label": "Deny",
@@ -168,7 +178,7 @@
    "link_fieldname": "api_key"
   }
  ],
- "modified": "2026-10-23 12:00:00.000000",
+ "modified": "2026-10-24 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove API Key",

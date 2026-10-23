@@ -64,7 +64,7 @@ class Reconciler:
 		]
 		frappe.db.bulk_insert("Usage Record", FIELDS, [[row[field] for field in FIELDS] for row in rows])
 		if rows:
-			start_expiry(team, [row.api_key for row in rows])
+			start_expiry([row.api_key for row in rows])
 		for row in rows:
 			self.audit(row)
 		forget_figures(team)

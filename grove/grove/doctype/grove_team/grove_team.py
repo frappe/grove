@@ -12,10 +12,9 @@ class GroveTeam(Document):
 	client's id for it. Policy — models, geography, rate limits, the cap — sits on each Grove API Key; what is
 	the team's is what its `tier` allows (`max_keys`, `spend_limit`, the rate limits its unpinned
 	keys run under; its own `max_keys` under Override Max Keys), what its keys' caps count
-	(`key_cap_window`: the month, or everything since the mint), when a key minted with no expiry
-	of its own retires (`key_expiry_after_first_use`: so many days after its first usage record)
-	and whether it is suspended. What its keys spent is the Usage Records'; who the team is, its
-	contacts, credit and invoices are the client's.
+	(`key_cap_window`: the month, or everything since the mint) and whether it is suspended. What
+	its keys spent is the Usage Records'; who the team is, its contacts, credit and invoices are
+	the client's.
 
 	The gateway holds no team record: `log_payloads` and the suspension ride on every key of the
 	team, so suspending it refuses every key with one field each. `suspended` is the one flag the
@@ -31,7 +30,6 @@ class GroveTeam(Document):
 		from frappe.types import DF
 
 		key_cap_window: DF.Literal["Monthly", "Total"]
-		key_expiry_after_first_use: DF.Literal["Never", "1 Day", "7 Days", "14 Days", "30 Days"]
 		last_reported_at: DF.Datetime | None
 		log_payloads: DF.Check
 		max_keys: DF.Int

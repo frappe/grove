@@ -51,6 +51,7 @@ class GroveAPIKey(Document):
 		deny: DF.TableMultiSelect[GroveModelRow]
 		expires_at: DF.Datetime | None
 		expiry: DF.Literal["Never", "1 Day", "7 Days", "14 Days", "30 Days"]
+		expiry_from_first_use: DF.Check
 		geography: DF.Link
 		key_hash: DF.Data | None
 		limits: DF.Table[ModelLimit]
@@ -64,7 +65,8 @@ class GroveAPIKey(Document):
 	def before_insert(self):
 		"""A new key starts in its geography's default Model Group unless the insert names its own
 		groups. With no limit rows of its own it runs under its team's Tier. `expires_at` is the mint
-		plus its expiry rule's days, none for Never."""
+		plus its expiry rule's days; none for Never, and none yet for a key that expires from first
+		use (`start_expiry` sets it when its first usage record lands)."""
 		self.check_key_count()
 		# Blank is no title: NULL, which the (team, title) unique index never counts as a twin.
 		self.title = self.title or None
@@ -73,7 +75,7 @@ class GroveAPIKey(Document):
 		self.api_secret = full_key
 		self.masked = f"{full_key[: len(KEY_PREFIX) + 4]}…"
 		days = EXPIRY_DAYS.get(self.expiry)
-		self.expires_at = add_days(self.creation, days) if days else None
+		self.expires_at = add_days(self.creation, days) if days and not self.expiry_from_first_use else None
 		self.set_geography()
 		default = frappe.db.get_value("Model Group", {"is_default": 1, "geography": self.geography})
 		if default and not self.model_groups:
@@ -188,18 +190,29 @@ def capped(team, except_key=None):
 	return flt(rows[0][0], 9)
 
 
-def start_expiry(team, keys):
-	"""A usage record landed for each of `keys` of `team`: the ones minted with expiry Never get
-	their `expires_at` from the team's Key Expiry After First Use, once; a key that has its moment
-	keeps it, and a team at Never sets none. The key's `expiry` stays Never: the rule is the team's."""
-	days = EXPIRY_DAYS.get(frappe.db.get_value("Grove Team", team, "key_expiry_after_first_use"))
-	if not days or not keys:
-		return
-	frappe.db.sql(
-		"""update `tabGrove API Key` set expires_at = %s
-		where team = %s and name in %s and status = 'active' and expiry = 'Never' and expires_at is null""",
-		[add_days(now_datetime(), days), team, tuple(keys)],
+def start_expiry(keys):
+	"""A usage record landed for each of `keys`: the ones minted to expire from first use get their
+	`expires_at` now, from their own rule, once; a key that has its moment keeps it."""
+	due = frappe.get_all(
+		"Grove API Key",
+		filters=[
+			["name", "in", keys],
+			["status", "=", "active"],
+			["expiry_from_first_use", "=", 1],
+			["expiry", "!=", "Never"],
+			["expires_at", "is", "not set"],
+		],
+		fields=["name", "expiry"],
 	)
+	for key in due:
+		# No `modified` bump: the wire carries no expiry, so the boxes have nothing to learn.
+		frappe.db.set_value(
+			"Grove API Key",
+			key.name,
+			"expires_at",
+			add_days(now_datetime(), EXPIRY_DAYS[key.expiry]),
+			update_modified=False,
+		)
 
 
 def revoke_expired():

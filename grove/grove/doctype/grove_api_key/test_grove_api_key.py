@@ -575,23 +575,31 @@ class IntegrationTestExpiry(IntegrationTestCase):
 		)
 		self.assertEqual([k for k in effective_keys() if k["prefix"] == due.name], [])
 
-	def test_the_teams_setting_starts_a_never_keys_clock_at_its_first_record_once(self):
+	def test_a_key_minted_to_expire_from_first_use_gets_its_moment_at_its_first_record_once(self):
 		name = team("key-probe-first-use")
-		frappe.db.set_value("Grove Team", name, "key_expiry_after_first_use", "7 Days")
-		never, ruled = key(name), key(name, expiry="1 Day")
+		minted = keys.provision_key(name, expiry="7 Days", expiry_from_first_use=True)
+		first_use = frappe.get_doc("Grove API Key", minted["name"])
+		ruled = key(name, expiry="1 Day")
 		ruled.reload()
-		grove_api_key.start_expiry(name, [never.name, ruled.name])
-		first = frappe.db.get_value("Grove API Key", never.name, "expires_at")
-		self.assertAlmostEqual(
-			first, frappe.utils.add_days(frappe.utils.now_datetime(), 7), delta=timedelta(seconds=5)
-		)
-		self.assertEqual(frappe.db.get_value("Grove API Key", never.name, "expiry"), "Never")
-		# A rule of the key's own counts from the mint; the team's setting never moves it.
-		self.assertEqual(frappe.db.get_value("Grove API Key", ruled.name, "expires_at"), ruled.expires_at)
-		grove_api_key.start_expiry(name, [never.name])
-		self.assertEqual(frappe.db.get_value("Grove API Key", never.name, "expires_at"), first)
+		self.assertEqual((first_use.expiry, first_use.expiry_from_first_use, first_use.expires_at), ("7 Days", 1, None))
+		row = keys.key_rows([first_use.name])[0]
+		self.assertEqual((row.expiry_from_first_use, row.expires_at), (True, None))
 
-	def test_a_team_at_never_starts_no_clock(self):
-		doc = key("key-probe-no-first-use")
-		grove_api_key.start_expiry(doc.team, [doc.name])
+		grove_api_key.start_expiry([first_use.name, ruled.name])
+
+		moment = frappe.db.get_value("Grove API Key", first_use.name, "expires_at")
+		self.assertAlmostEqual(
+			moment, frappe.utils.add_days(frappe.utils.now_datetime(), 7), delta=timedelta(seconds=5)
+		)
+		# A key counting from the mint keeps its moment; a second record moves nothing.
+		self.assertEqual(frappe.db.get_value("Grove API Key", ruled.name, "expires_at"), ruled.expires_at)
+		grove_api_key.start_expiry([first_use.name])
+		self.assertEqual(frappe.db.get_value("Grove API Key", first_use.name, "expires_at"), moment)
+
+	def test_never_takes_no_moment_at_first_use_and_the_flag_is_fixed(self):
+		doc = key("key-probe-first-use-never", expiry_from_first_use=1)
+		grove_api_key.start_expiry([doc.name])
 		self.assertIsNone(frappe.db.get_value("Grove API Key", doc.name, "expires_at"))
+		doc.expiry_from_first_use = 0
+		with self.assertRaises(frappe.CannotChangeConstantError):
+			doc.save()
