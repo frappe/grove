@@ -49,8 +49,11 @@ class SpendLimitCase(IntegrationTestCase):
 		teams.update_team(name, tier=tier(f"{name}-tier", spend_limit=spend_limit))
 		return name
 
-	def key(self, team, cap=0, title="key"):
-		return keys.provision_key(team, title=title, cap=cap)["name"]
+	def key(self, team, cap=0, title=None):
+		"""A key of `team`, titled apart from its siblings: a team's live titles are distinct."""
+		return keys.provision_key(team, title=title or f"key-{frappe.generate_hash(length=6)}", cap=cap)[
+			"name"
+		]
 
 	def refused(self, fn, *words):
 		with self.assertRaises(frappe.ValidationError) as caught:

@@ -2,13 +2,25 @@
 # For license information, please see license.txt
 
 import frappe
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 from grove.access import team_limits
 from grove.api.control import ALLOWED_ROLES
 from grove.api.teams import get_team
 
-KEY_FIELDS = ["name", "title", "status", "creation", "key_hash", "masked", "geography", "cap"]
+KEY_FIELDS = [
+	"name",
+	"title",
+	"status",
+	"creation",
+	"key_hash",
+	"masked",
+	"geography",
+	"cap",
+	"expiry",
+	"expiry_from_first_use",
+	"expires_at",
+]
 
 
 @frappe.whitelist()
@@ -19,14 +31,25 @@ def provision_key(
 	cap: float | None = None,
 	models: list[str] | None = None,
 	limits: list[dict] | None = None,
+	expiry: str | None = None,
+	expiry_from_first_use: bool = False,
+	model_group: str | None = None,
 ):
 	"""Mint a key for `team` in `geography` — the default one when none is given; every other
-	geography's gateway refuses it."""
+	geography's gateway refuses it. `expiry` is when it retires on its own, one of the key's rules
+	(Never, 1 Day, 7 Days, 14 Days, 30 Days), Never when not given, fixed after; counted from the
+	mint, or from the key's first usage record with `expiry_from_first_use`. `model_group` puts it in
+	that group instead of its geography's default."""
 	frappe.only_for(ALLOWED_ROLES)
 	key = frappe.new_doc("Grove API Key")
 	key.team, key.title, key.status = get_team(team), title, "active"
 	if geography:
 		key.geography = geography
+	if model_group:
+		key.append("model_groups", {"model_group": model_group})
+	if expiry:
+		key.expiry = expiry
+		key.expiry_from_first_use = int(bool(expiry_from_first_use))
 	set_key_policy(key, cap, models, limits)
 	key.insert()
 	gateway_url = get_gateway_url(key.geography)
@@ -77,6 +100,8 @@ def update_caps(team: str, caps: dict[str, float]):
 		frappe.throw(f"{', '.join(revoked)} is revoked.")
 	raised = any(flt(caps[doc.name]) > flt(doc.cap) for doc in docs)
 	team_doc = team_limits(team, for_update=True)
+	# A Total team has no spend limit: its caps are for life, the month binds nothing.
+	raised = raised and team_doc.key_cap_window != "Total"
 	box_spent = peek_team(team) if raised else {}
 	total = committed(team, {doc.name: flt(caps[doc.name]) for doc in docs}, box_spent=box_spent)
 	if raised and total > flt(team_doc.spend_limit, 9):
@@ -104,6 +129,16 @@ def revoke_key(team: str, key: str):
 	frappe.only_for(ALLOWED_ROLES)
 	get_api_key(team, key).revoke()
 	return "Revoked. Might take some time to reflect."
+
+
+@frappe.whitelist()
+def extend_key(team: str, key: str, days: int):
+	"""`days` more on the key's `expires_at`, from now or from its moment, whichever is later; a key
+	without a moment is left as it is, a revoked one refused. → the key as `keys` lists it."""
+	frappe.only_for(ALLOWED_ROLES)
+	doc = get_api_key(team, key)
+	doc.extend_expiry(cint(days))
+	return key_rows([doc.name])[0]
 
 
 @frappe.whitelist()
@@ -166,7 +201,7 @@ def set_key_policy(doc, cap=None, models=None, limits=None):
 def key_rows(names):
 	"""The keys named, as `keys` lists them: KEY_FIELDS (`masked` is the prefix and four characters,
 	kept on the key at mint, so nothing is decrypted here) plus the endpoint, the limits,
-	`month_spent` and `revocable_at`. Live keys first, newest first within each. A handful of
+	`month_spent`, `revocable_at`, `expires_at` (UTC) and whether the expiry counts from first use. Live keys first, newest first within each. A handful of
 	queries however many keys."""
 	from grove.billing.pricing import month_spent_by
 	from grove.grove.doctype.grove_api_key.grove_api_key import REVOKE_AFTER_HOURS
@@ -184,6 +219,8 @@ def key_rows(names):
 		row["limits"] = limits.get(row.name, [])
 		row["revocable_at"] = utc_timestamp(frappe.utils.add_to_date(row.creation, hours=REVOKE_AFTER_HOURS))
 		row["month_spent"] = flt(month.get(row.name, 0), 9)
+		row["expires_at"] = utc_timestamp(row.expires_at) if row.expires_at else None
+		row["expiry_from_first_use"] = bool(row.expiry_from_first_use)
 	rows.sort(key=lambda row: row.status == "revoked")
 	return rows
 
@@ -196,6 +233,6 @@ def limit_rows_of(names):
 
 	keys = frappe.get_list("Grove API Key", filters={"name": ("in", names)}, fields=["name", "team"])
 	tiers = frappe.get_list(
-		"Central Team", filters={"name": ("in", [k.team for k in keys] or [""])}, fields=["name", "tier"]
+		"Grove Team", filters={"name": ("in", [k.team for k in keys] or [""])}, fields=["name", "tier"]
 	)
 	return effective_limits(keys, limit_entries("Grove API Key", names), {t.name: t.tier for t in tiers})

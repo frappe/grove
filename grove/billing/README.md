@@ -115,7 +115,7 @@ with `as_of` = when the newest usage in the range was pulled. `pulled_after`/`pu
 over `usage_record.money_rows`: `JSON_TABLE` of the records (one column per Usage Counter) in a UNION ALL with the Usage Corrections, on
 the (team, day) and (api_key, day) indexes of both tables: nothing is summed in Python.
 
-**Nothing here is deleted.** No role holds `delete` on Central Team, Grove API Key, Usage Record, Stuck Usage, Credit Discrepancy, Model Pricing, Model or Model Provider
+**Nothing here is deleted.** No role holds `delete` on Grove Team, Grove API Key, Usage Record, Stuck Usage, Credit Discrepancy, Model Pricing, Model or Model Provider
 (`tests/test_delete_permissions.py` pins the list). A key is revoked and a pricing is superseded.
 DocPerm does not bind Administrator or `ignore_permissions`. Two exceptions, both through Log Settings and never by hand: a resolved Stuck Usage row is
 history and is cleared after 90 days; a Usage Record served more than 90 days ago (its UTC `day`, `usage_record.RETENTION_DAYS`) is purged in chunks, except one a Credit Discrepancy names, which stays as that correction's evidence.
@@ -124,10 +124,14 @@ No money read needs a record that old (`month_spent` is this month's, an invoice
 **Postpaid, under the tier.** AI is billed in arrears by Central. Grove meters, prices and gates;
 it holds no money that must not run out. What gates is:
 
-- **Each key's monthly `cap`.** The gateway holds `budget` = `cap` in nano-USD on the key's
+- **Each key's `cap`.** The gateway holds `budget` = `cap` in nano-USD on the key's
   record, counts the key's spend per UTC month on the same record (`spent:<YYYY-MM>`; a new month
   is a field not yet written, which reads 0, so nothing resets and nothing runs at midnight), and
-  refuses at `spent >= budget` (402). Every key is pinned to one geography, so all its spend lands
+  refuses at `spent >= budget` (402). A team whose **Key Cap Window** is Total has its keys pushed
+  with `budget_window: total`: the box counts their spend in one field (`spent:total`) that never
+  turns over, so a key spent is spent for good — a trial team's budget. Such a team has no
+  spend limit: its caps are for life, so the month binds nothing, the checks below skip it and
+  `figures` reports `spend_limit` null; `max_keys` and the revokes bound it instead. Every key is pinned to one geography, so all its spend lands
   on one store and that store gates it exactly. A key is minted at 0 and refused until
   `api.keys.update_key(cap=)` gives it one.
 - **The team's `Tier`**, named by Central from the team's trust tier (`api.teams.update_team`, by
@@ -147,7 +151,8 @@ it holds no money that must not run out. What gates is:
   before Grove has one is created as a copy of it. **Override Max Keys** on the team pins its own
   key count instead (`access.team_limits` resolves which apply).
   Central also sets **`suspended`**.
-- **`suspended`**, set by Central when an invoice goes unpaid, pushed as `limited` on every key
+- **`suspended`**, set by Central when an invoice goes unpaid or by Desk's Suspend Keys on the team
+  (then marked `suspended_at_grove`, which Central's sync cannot lift), pushed as `limited` on every key
   of the team (402 whatever the cap says).
 
 **What Central reads.** `api.usage.figures(team)`: `spend` (`month_spent`, this UTC month's

@@ -11,6 +11,9 @@
   "status",
   "column_break_pcmc",
   "cap",
+  "expiry",
+  "expiry_from_first_use",
+  "expires_at",
   "key_hash",
   "api_secret",
   "masked",
@@ -24,10 +27,12 @@
  ],
  "fields": [
   {
+   "description": "A label to tell the team's keys apart, set once at the mint and used once per team, ever: a second key with the same title is refused, revoked ones included. Press titles a trial site's key by the site.",
    "fieldname": "title",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Title"
+   "label": "Title",
+   "set_only_once": 1
   },
   {
    "description": "The team this key spends for. Its payload-log opt-in and credit verdict ride on the key to the gateway.",
@@ -35,7 +40,7 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Team",
-   "options": "Central Team",
+   "options": "Grove Team",
    "reqd": 1,
    "search_index": 1,
    "set_only_once": 1
@@ -66,12 +71,38 @@
   },
   {
    "default": "0",
-   "description": "What this key may spend a month: the gateway counts its spend per month and refuses it at 402 once this month's reaches it. 0 until a cap is set, and the key is refused until then. Across the team's live keys the caps add up to no more than the team's Spend Limit.",
+   "description": "What this key may spend over its team's Key Cap Window — this UTC month, or everything since the mint: the gateway counts its spend and refuses it at 402 once that reaches the cap. 0 until a cap is set, and the key is refused until then. Across the team's live keys the caps add up to no more than the team's Spend Limit.",
    "fieldname": "cap",
    "fieldtype": "Currency",
    "in_list_view": 1,
-   "label": "Cap (USD / month)",
+   "label": "Cap (USD)",
    "precision": "9"
+  },
+  {
+   "default": "Never",
+   "description": "When this key retires on its own: never, or so many days after the mint, when the hourly sweep revokes it and the next tick prunes it off the boxes. Set at the mint and fixed after.",
+   "fieldname": "expiry",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Expiry",
+   "options": "Never\n1 Day\n7 Days\n14 Days\n30 Days",
+   "set_only_once": 1
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.expiry != \"Never\"",
+   "description": "Expiry counts from this key's first usage record, not from the mint, so a key minted ahead and held in stock does not age on the shelf. Set at the mint and fixed after.",
+   "fieldname": "expiry_from_first_use",
+   "fieldtype": "Check",
+   "label": "Expiry From First Use",
+   "set_only_once": 1
+  },
+  {
+   "description": "The moment Expiry names: set at the mint, or at the first usage record for a key that expires from first use. Empty is never, or not used yet.",
+   "fieldname": "expires_at",
+   "fieldtype": "Datetime",
+   "label": "Expires At",
+   "read_only": 1
   },
   {
    "fieldname": "key_hash",
@@ -147,7 +178,7 @@
    "link_fieldname": "api_key"
   }
  ],
- "modified": "2026-10-21 12:00:00.000000",
+ "modified": "2026-10-24 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove API Key",

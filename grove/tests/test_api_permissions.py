@@ -218,6 +218,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 				"team": team,
 				"suspended": 0,
 				"log_payloads": 1,
+				"key_cap_window": "Monthly",
 				"tier": "probe-cap-tier",
 				"override_max_keys": 0,
 				"max_keys": 5,
@@ -238,6 +239,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 				"max_keys": 5,
 				"suspended": False,
 				"log_payloads": True,
+				"key_cap_window": "Monthly",
 			},
 		)
 		self.assertEqual(keys.update_key(team, second, cap=2)["cap"], 2)
@@ -370,6 +372,18 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		)
 		keys.revoke_key(team, key)
 		self.assertEqual(frappe.db.get_value("Grove API Key", key, "status"), "revoked")
+
+	def test_a_key_is_extended_by_name_only_for_the_team_holding_it(self):
+		team, other = "probe-extender", "probe-extender-other"
+		for each in (team, other):
+			teams.provision_team(each)
+		key = keys.provision_key(team, title="ci", expiry="7 Days")["name"]
+		moment = frappe.db.get_value("Grove API Key", key, "expires_at")
+
+		with self.assertRaises(frappe.DoesNotExistError):
+			keys.extend_key(other, key, 3)
+		row = keys.extend_key(team, key, 3)
+		self.assertEqual(row.expires_at, utc_timestamp(frappe.utils.add_days(moment, 3)))
 
 	def test_a_teams_live_keys_are_handed_out_with_their_secrets_for_its_servers(self):
 		team, other = "probe-secrets", "probe-secrets-other"
@@ -518,7 +532,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		applied = deliver(team=team, tier="probe-hook-a", observed_at="2026-10-15 10:00:00.000001")
 		self.assertEqual((applied["tier"], frappe.session.user), ("probe-hook-a", PROBE))
 		self.assertEqual(
-			str(frappe.db.get_value("Central Team", team, "last_reported_at")), "2026-10-15 10:00:00.000001"
+			str(frappe.db.get_value("Grove Team", team, "last_reported_at")), "2026-10-15 10:00:00.000001"
 		)
 		for stale in ("2026-10-15 10:00:00.000001", "2026-10-15 09:59:59"):
 			replay = deliver(team=team, tier="probe-hook-b", observed_at=stale)
@@ -528,7 +542,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		)
 		frappe.set_user("Guest")
 		self.assertIsNone(deliver(team="probe-hook-unknown", tier="probe-hook-a"))
-		self.assertFalse(frappe.db.exists("Central Team", "probe-hook-unknown"))
+		self.assertFalse(frappe.db.exists("Grove Team", "probe-hook-unknown"))
 
 		for forged in (
 			{teams.WEBHOOK_SECRET_HEADER: "bm90IHRoZSBzaWduYXR1cmU="},
@@ -538,7 +552,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			frappe.set_user("Guest")
 			with self.assertRaises(frappe.AuthenticationError):
 				deliver(forged, team=team, tier="probe-hook-a")
-		self.assertEqual(frappe.db.get_value("Central Team", team, "tier"), "probe-hook-b")
+		self.assertEqual(frappe.db.get_value("Grove Team", team, "tier"), "probe-hook-b")
 
 	def test_a_renamed_tier_label_follows_at_grove(self):
 		team = "probe-rename"
@@ -549,7 +563,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		key = keys.provision_key(team, title="follows")["name"]
 
 		teams.rename_tier("probe-ren-a", "probe-ren-b")
-		self.assertEqual(frappe.db.get_value("Central Team", team, "tier"), "probe-ren-b")
+		self.assertEqual(frappe.db.get_value("Grove Team", team, "tier"), "probe-ren-b")
 		self.assertFalse(frappe.db.exists("Tier", "probe-ren-a"))
 		self.assertEqual((teams.update_team(team)["max_keys"], keys.limits(team, key)), (2, rows))
 		self.assertIsNone(teams.rename_tier("probe-ren-unseen", "probe-ren-c"))

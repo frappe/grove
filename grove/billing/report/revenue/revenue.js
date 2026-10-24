@@ -30,6 +30,6 @@ frappe.query_reports["Revenue"] = {
 			fieldtype: "Link",
 			options: "Grove API Key",
 		},
-		{ fieldname: "team", label: __("Team"), fieldtype: "Link", options: "Central Team" },
+		{ fieldname: "team", label: __("Team"), fieldtype: "Link", options: "Grove Team" },
 	],
 };
