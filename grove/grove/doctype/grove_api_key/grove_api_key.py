@@ -128,6 +128,12 @@ class GroveAPIKey(Document):
 		if self.needs_cap_check:
 			self.validate_cap()
 
+	def validate_set_only_once(self):
+		"""`team`, `title` and the expiry rule are set once — except by `transfer`, the one move
+		that changes hands."""
+		if not self.flags.transfer:
+			super().validate_set_only_once()
+
 	def check_if_latest(self):
 		"""Frappe locks this row from here. A raise takes the team row ahead of it, so two raises
 		queue on the team rather than deadlock on each other's row."""
@@ -184,6 +190,36 @@ class GroveAPIKey(Document):
 
 		self.status = "revoked"
 		self.save(ignore_permissions=True)
+
+	def transfer(self, to_team: str, title: str | None = None):
+		"""Hand this key to `to_team`, titled `title` when given. The trial's rules go with the
+		trial: its groups make way for the geography's default, its expiry is lifted (the key is the
+		customer's now, for as long as they keep it); cap, geography and limit rows stay. Counted
+		against the new team like a mint: its key count, and the cap within the spend limit of a
+		Monthly team (that check reads the team's boxes, as a mint does; nothing is drained). One
+		save, versioned even under test, so the Version holds the move and the next tick re-pushes
+		team, window and limits — the push at which the box closes the old team's books. A key
+		already here is left as it is."""
+		if to_team == self.team:
+			return
+		if self.status != "active":
+			frappe.throw("A revoked key stays revoked. Mint a new one.")
+		if title and frappe.db.exists("Grove API Key", {"team": to_team, "title": title}):
+			frappe.throw(f"{to_team} already has a key titled {title!r}.")
+		old_team, self.team = self.team, to_team
+		self.check_key_count()
+		if team_limits(to_team).key_cap_window != "Total":
+			self.validate_cap()
+		self.title = title or self.title
+		self.expiry, self.expiry_from_first_use, self.expires_at = "Never", 0, None
+		self.set("model_groups", [])
+		default = frappe.db.get_value("Model Group", {"is_default": 1, "geography": self.geography})
+		if default:
+			self.append("model_groups", {"model_group": default})
+		self.flags.transfer = True
+		self.save(ignore_version=False)
+		self.add_comment("Info", f"Handed over from {old_team}.")
+		forget_figures(old_team)
 
 	def extend_expiry(self, days: int):
 		"""`days` more from now, or from its moment when that is later — the arithmetic of the trial

@@ -218,18 +218,21 @@ def store_of(gateway):
 def record_drains(proxy_name, drains, dead=(), gateway_store=None):
 	"""Record one gateway's answer — {drain id: {key: {day: hash}}}, each hash on its day — and
 	commit. Everything lands under the store drained: the boxes on a store share one set of
-	counters. → (hashes pulled, {drain id: {key: days}} to acknowledge, dead line ids to
-	acknowledge, teams stuck)."""
+	counters. A hash lands under the team the box stamped on it (`team`: a key that changed hands
+	has its books closed at the push, under the team charged), else under the key's team now.
+	→ (hashes pulled, {drain id: {key: days}} to acknowledge, dead line ids to acknowledge, teams
+	stuck)."""
 	gateway_store = gateway_store or store_of(proxy_name)
 	acks, dead_acks, by_team, pulled = {}, [], {}, 0
 	team_of = teams_of_keys(drains)
 	for drain_id, keys in drains.items():
 		for prefix, days in keys.items():
 			pulled += len(days)
-			if team := team_of.get(prefix):
-				by_team.setdefault(team, {}).setdefault(drain_id, {})[prefix] = days
-			else:
-				acks.setdefault(drain_id, {})[prefix] = list(days)
+			for day, h in days.items():
+				if team := h.get("team") or team_of.get(prefix):
+					by_team.setdefault(team, {}).setdefault(drain_id, {}).setdefault(prefix, {})[day] = h
+				else:
+					acks.setdefault(drain_id, {}).setdefault(prefix, []).append(day)
 	for line in dead:
 		pulled += 1
 		if landing := read_dead_line(line, gateway_store):

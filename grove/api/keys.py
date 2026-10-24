@@ -142,6 +142,26 @@ def extend_key(team: str, key: str, days: int):
 
 
 @frappe.whitelist()
+def transfer_key(team: str, key: str, to_team: str, title: str | None = None):
+	"""Hand a key of `team` to `to_team` — what Central sends when a trial converts, so the secret
+	the customer's server holds keeps working. The team and the title (`title`, when given) move,
+	the trial's rules go: the geography's default group in place of its groups, its expiry lifted;
+	cap, geography and limit rows stay as minted. Counted against `to_team` like a mint: its key
+	count, and the cap within a Monthly team's spend limit. The box closes the old team's books at
+	the push. A key `to_team` already holds is answered as it is, so a lost reply is retried
+	safely. → the key as `keys` lists it."""
+	frappe.only_for(ALLOWED_ROLES)
+	to_team = get_team(to_team)
+	holders = [get_team(team), to_team]
+	name = frappe.db.get_value("Grove API Key", {"name": key or "", "team": ("in", holders)})
+	if not name:
+		frappe.throw("no such API key", frappe.DoesNotExistError)
+	doc = frappe.get_doc("Grove API Key", name)
+	doc.transfer(to_team, title)
+	return key_rows([doc.name])[0]
+
+
+@frappe.whitelist()
 def secrets(team: str):
 	"""Every live key of `team` with its secret, for the control client to hand the team's servers:
 	`name`, `title`, `geography`, `gateway_url` and `api_key` each, newest first. A revoked key is

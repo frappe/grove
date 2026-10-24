@@ -385,6 +385,35 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		row = keys.extend_key(team, key, 3)
 		self.assertEqual(row.expires_at, utc_timestamp(frappe.utils.add_days(moment, 3)))
 
+	def test_a_key_is_handed_over_by_name_only_for_the_team_holding_it(self):
+		team, other, third = "probe-handover", "probe-handover-to", "probe-handover-third"
+		for each in (team, other, third):
+			teams.provision_team(each)
+		key = keys.provision_key(team, title="ci")["name"]
+
+		with self.assertRaises(frappe.DoesNotExistError):
+			keys.transfer_key(third, key, other)
+		row = keys.transfer_key(team, key, other, title="site.example.test")
+		self.assertEqual((row.name, row.title), (key, "site.example.test"))
+		self.assertEqual(frappe.db.get_value("Grove API Key", key, "team"), other)
+		# The sender may ask again after a lost reply: the receiving team holds it, nothing moves.
+		again = keys.transfer_key(team, key, other, title="site.example.test")
+		self.assertEqual(again.title, "site.example.test")
+		with self.assertRaises(frappe.DoesNotExistError):
+			keys.transfer_key(team, key, third)
+
+	def test_a_handed_over_keys_month_spent_is_its_records_under_its_team_now(self):
+		trial, customer = "probe-handover-spent", "probe-handover-spent-to"
+		for each in (trial, customer):
+			teams.provision_team(each)
+		key = keys.provision_key(trial, title="trial")["name"]
+		billed_record(key, trial, utc_today(), 2)
+		keys.transfer_key(trial, key, customer)
+		billed_record(key, customer, utc_today(), 1, drain="-paid")
+		[listed] = usage.figures(customer)["keys"]
+		self.assertEqual((listed["month_spent"], usage.figures(customer)["spend"]["month_spent"]), (1, 1))
+		self.assertEqual(usage.figures(trial)["spend"]["month_spent"], 2)
+
 	def test_a_teams_live_keys_are_handed_out_with_their_secrets_for_its_servers(self):
 		team, other = "probe-secrets", "probe-secrets-other"
 		for each in (team, other):

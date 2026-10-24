@@ -655,3 +655,82 @@ class IntegrationTestExpiry(IntegrationTestCase):
 			gone.extend_expiry(3)
 		with self.assertRaises(frappe.ValidationError):
 			forever.extend_expiry(0)
+
+
+class IntegrationTestTransfer(IntegrationTestCase):
+	"""A trial's key becomes the customer's at conversion: the same credential under the new team,
+	titled, in the default group; cap, geography and expiry as minted."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.enterClassContext(unittest.mock.patch("grove.pathway.usage.peek_team", return_value={}))
+		make_test_geography()
+		frappe.db.set_single_value("Grove Settings", "default_tier", "")
+		frappe.db.set_value("Model Group", {"is_default": 1}, "is_default", 0)
+		cls.default = IntegrationTestNewKeysStartInTheDefaultGroup.group("key-handover-default", is_default=1)
+		cls.trial_group = IntegrationTestNewKeysStartInTheDefaultGroup.group("key-handover-trial-models")
+
+	def trial_key(self, team_name, **fields):
+		groups = [{"model_group": self.trial_group}]
+		return key(team(team_name, key_cap_window="Total"), model_groups=groups, **fields)
+
+	def test_team_and_title_move_and_the_trials_rules_go_in_one_save_the_version_and_the_wire_record(self):
+		customer = team("key-handover-customer", spend_limit=10)
+		doc = self.trial_key("key-handover-trial", cap=2, expiry="30 Days", expiry_from_first_use=1)
+		grove_api_key.start_expiry([doc.name])
+		doc.reload()
+		trial, stamp = doc.team, doc.modified
+		self.assertIsNotNone(doc.expires_at)
+
+		doc.transfer(customer, title="site.example.test")
+
+		doc.reload()
+		self.assertEqual(
+			(doc.team, doc.title, [row.model_group for row in doc.model_groups]),
+			(customer, "site.example.test", [self.default]),
+		)
+		self.assertEqual((doc.expiry, doc.expiry_from_first_use, doc.expires_at), ("Never", 0, None))
+		self.assertGreater(doc.modified, frappe.utils.get_datetime(stamp))
+		record = projected(doc.name)
+		self.assertEqual(
+			(record["team"], record["budget_window"], record["budget"], record["group"]),
+			(customer, "month", 2_000_000_000, self.default),
+		)
+		[version] = frappe.get_all(
+			"Version", filters={"ref_doctype": "Grove API Key", "docname": doc.name}, pluck="data"
+		)
+		self.assertIn(["team", trial, customer], frappe.parse_json(version)["changed"])
+		comment = {"reference_doctype": "Grove API Key", "reference_name": doc.name}
+		self.assertTrue(frappe.db.exists("Comment", {**comment, "content": f"Handed over from {trial}."}))
+		# Already there: nothing moves, the title asked for is not taken.
+		row = keys.transfer_key(trial, doc.name, customer, title="other")
+		self.assertEqual(row.title, "site.example.test")
+		self.assertEqual(frappe.db.get_value("Grove API Key", doc.name, "modified"), doc.modified)
+
+	def test_a_full_team_a_title_twin_and_a_revoked_key_are_refused_and_nothing_moves(self):
+		full = team("key-handover-full", max_keys=1)
+		key(full)
+		doc = self.trial_key("key-handover-refused")
+		with self.assertRaisesRegex(frappe.ValidationError, "live keys"):
+			doc.transfer(full)
+		doc.reload()
+		taken = team("key-handover-taken")
+		key(taken, title="site.example.test")
+		with self.assertRaisesRegex(frappe.ValidationError, "titled"):
+			doc.transfer(taken, title="site.example.test")
+		doc.reload()
+		self.assertEqual((doc.team, doc.title), (team("key-handover-refused"), None))
+		gone = self.trial_key("key-handover-refused")
+		frappe.db.set_value("Grove API Key", gone.name, "status", "revoked")
+		gone.reload()
+		with self.assertRaisesRegex(frappe.ValidationError, "stays revoked"):
+			gone.transfer(taken)
+
+	def test_the_cap_must_fit_a_monthly_teams_spend_limit(self):
+		tight = team("key-handover-tight", spend_limit=5)
+		frappe.get_doc({"doctype": "Grove API Key", "team": tight, "cap": 4}).insert()
+		doc = self.trial_key("key-handover-capped", cap=2)
+		with self.assertRaisesRegex(frappe.ValidationError, "spend limit"):
+			doc.transfer(tight)
+		self.assertEqual(frappe.db.get_value("Grove API Key", doc.name, "team"), team("key-handover-capped"))
