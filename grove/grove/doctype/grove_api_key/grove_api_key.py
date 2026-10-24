@@ -6,7 +6,7 @@ import secrets
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import add_days, flt, now_datetime
+from frappe.utils import add_days, flt, get_datetime, now_datetime
 
 from grove.access import team_limits, validate_limit_rows, validate_model_geography
 from grove.billing.pricing import committed, forget_figures, lock_team, usd
@@ -108,6 +108,12 @@ class GroveAPIKey(Document):
 
 	def validate(self):
 		validate_model_geography([*self.allow, *self.deny], self.geography)
+		for row in self.model_groups:
+			geography = frappe.db.get_value("Model Group", row.model_group, "geography")
+			if geography != self.geography:
+				frappe.throw(
+					f"Model Group {row.model_group!r} is of {geography}, not this key's {self.geography}."
+				)
 		both = {row.model_key for row in self.allow} & {row.model_key for row in self.deny}
 		if both:
 			frappe.throw(f"{', '.join(sorted(both))} is in both Allow and Deny")
@@ -178,6 +184,20 @@ class GroveAPIKey(Document):
 
 		self.status = "revoked"
 		self.save(ignore_permissions=True)
+
+	def extend_expiry(self, days: int):
+		"""`days` more from now, or from its moment when that is later — the arithmetic of the trial
+		it follows. A key without a moment (Never, or from first use and unused) keeps none. No
+		`modified` bump, as `start_expiry`: the boxes have nothing to learn."""
+		if self.status != "active":
+			frappe.throw("A revoked key stays revoked. Mint a new one.")
+		if days <= 0:
+			frappe.throw("Enter a positive number of days.")
+		if not self.expires_at:
+			return
+		later = max(get_datetime(self.expires_at), now_datetime())
+		self.db_set("expires_at", add_days(later, days), update_modified=False)
+		forget_figures(self.team)
 
 
 def capped(team, except_key=None):

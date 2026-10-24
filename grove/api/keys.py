@@ -2,7 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 from grove.access import team_limits
 from grove.api.control import ALLOWED_ROLES
@@ -33,16 +33,20 @@ def provision_key(
 	limits: list[dict] | None = None,
 	expiry: str | None = None,
 	expiry_from_first_use: bool = False,
+	model_group: str | None = None,
 ):
 	"""Mint a key for `team` in `geography` — the default one when none is given; every other
 	geography's gateway refuses it. `expiry` is when it retires on its own, one of the key's rules
 	(Never, 1 Day, 7 Days, 14 Days, 30 Days), Never when not given, fixed after; counted from the
-	mint, or from the key's first usage record with `expiry_from_first_use`."""
+	mint, or from the key's first usage record with `expiry_from_first_use`. `model_group` puts it in
+	that group instead of its geography's default."""
 	frappe.only_for(ALLOWED_ROLES)
 	key = frappe.new_doc("Grove API Key")
 	key.team, key.title, key.status = get_team(team), title, "active"
 	if geography:
 		key.geography = geography
+	if model_group:
+		key.append("model_groups", {"model_group": model_group})
 	if expiry:
 		key.expiry = expiry
 		key.expiry_from_first_use = int(bool(expiry_from_first_use))
@@ -125,6 +129,16 @@ def revoke_key(team: str, key: str):
 	frappe.only_for(ALLOWED_ROLES)
 	get_api_key(team, key).revoke()
 	return "Revoked. Might take some time to reflect."
+
+
+@frappe.whitelist()
+def extend_key(team: str, key: str, days: int):
+	"""`days` more on the key's `expires_at`, from now or from its moment, whichever is later; a key
+	without a moment is left as it is, a revoked one refused. → the key as `keys` lists it."""
+	frappe.only_for(ALLOWED_ROLES)
+	doc = get_api_key(team, key)
+	doc.extend_expiry(cint(days))
+	return key_rows([doc.name])[0]
 
 
 @frappe.whitelist()

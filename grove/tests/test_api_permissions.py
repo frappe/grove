@@ -373,6 +373,18 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		keys.revoke_key(team, key)
 		self.assertEqual(frappe.db.get_value("Grove API Key", key, "status"), "revoked")
 
+	def test_a_key_is_extended_by_name_only_for_the_team_holding_it(self):
+		team, other = "probe-extender", "probe-extender-other"
+		for each in (team, other):
+			teams.provision_team(each)
+		key = keys.provision_key(team, title="ci", expiry="7 Days")["name"]
+		moment = frappe.db.get_value("Grove API Key", key, "expires_at")
+
+		with self.assertRaises(frappe.DoesNotExistError):
+			keys.extend_key(other, key, 3)
+		row = keys.extend_key(team, key, 3)
+		self.assertEqual(row.expires_at, utc_timestamp(frappe.utils.add_days(moment, 3)))
+
 	def test_a_teams_live_keys_are_handed_out_with_their_secrets_for_its_servers(self):
 		team, other = "probe-secrets", "probe-secrets-other"
 		for each in (team, other):

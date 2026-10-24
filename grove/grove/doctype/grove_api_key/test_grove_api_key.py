@@ -172,6 +172,24 @@ class IntegrationTestNewKeysStartInTheDefaultGroup(IntegrationTestCase):
 		minted = keys.provision_key("key-group-provisioned")
 		self.assertEqual(self.groups_of(frappe.get_doc("Grove API Key", minted["name"])), [self.default])
 
+	def test_provisioning_into_a_named_group_skips_the_default(self):
+		from grove.api import keys, teams
+
+		picked = self.group("key-group-named")
+		teams.provision_team("key-group-named")
+		minted = keys.provision_key("key-group-named", model_group=picked)
+		self.assertEqual(self.groups_of(frappe.get_doc("Grove API Key", minted["name"])), [picked])
+
+	def test_a_group_of_another_geography_is_refused(self):
+		away = make_test_geography("key-group-elsewhere")
+		theirs = (
+			frappe.get_doc({"doctype": "Model Group", "__newname": "key-group-elsewhere", "geography": away})
+			.insert()
+			.name
+		)
+		with self.assertRaisesRegex(frappe.ValidationError, "not this key's"):
+			key("key-group-elsewhere", model_groups=[{"model_group": theirs}])
+
 	def test_a_new_key_starts_in_its_own_geographys_default(self):
 		away = make_test_geography("key-default-away")
 		theirs = (
@@ -603,3 +621,37 @@ class IntegrationTestExpiry(IntegrationTestCase):
 		doc.expiry_from_first_use = 0
 		with self.assertRaises(frappe.CannotChangeConstantError):
 			doc.save()
+
+	def test_extending_moves_the_moment_by_days_from_the_later_of_it_and_now(self):
+		ahead, lapsed = key("key-probe-extend", expiry="7 Days"), key("key-probe-extend", expiry="1 Day")
+		yesterday = frappe.utils.add_days(frappe.utils.now_datetime(), -1)
+		frappe.db.set_value("Grove API Key", lapsed.name, "expires_at", yesterday, update_modified=False)
+		ahead.reload()
+		moment, stamp = ahead.expires_at, ahead.modified
+
+		ahead.extend_expiry(3)
+		row = keys.extend_key(ahead.team, lapsed.name, 3)
+
+		self.assertEqual(
+			frappe.db.get_value("Grove API Key", ahead.name, "expires_at"), frappe.utils.add_days(moment, 3)
+		)
+		self.assertEqual(frappe.db.get_value("Grove API Key", ahead.name, "modified"), stamp)
+		fresh = frappe.db.get_value("Grove API Key", lapsed.name, "expires_at")
+		self.assertAlmostEqual(
+			fresh, frappe.utils.add_days(frappe.utils.now_datetime(), 3), delta=timedelta(seconds=5)
+		)
+		self.assertEqual(row.expires_at, utc_timestamp(fresh))
+
+	def test_a_key_without_a_moment_is_not_extended_and_a_revoked_one_refuses(self):
+		unused = key("key-probe-extend-none", expiry="7 Days", expiry_from_first_use=1)
+		forever = key("key-probe-extend-none")
+		for doc in (unused, forever):
+			doc.extend_expiry(3)
+			self.assertIsNone(frappe.db.get_value("Grove API Key", doc.name, "expires_at"))
+		gone = key("key-probe-extend-none", expiry="7 Days")
+		frappe.db.set_value("Grove API Key", gone.name, "status", "revoked")
+		gone.reload()
+		with self.assertRaisesRegex(frappe.ValidationError, "revoked"):
+			gone.extend_expiry(3)
+		with self.assertRaises(frappe.ValidationError):
+			forever.extend_expiry(0)
