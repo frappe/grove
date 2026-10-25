@@ -708,7 +708,7 @@ class IntegrationTestTransfer(IntegrationTestCase):
 		self.assertEqual(row.title, "site.example.test")
 		self.assertEqual(frappe.db.get_value("Grove API Key", doc.name, "modified"), doc.modified)
 
-	def test_a_full_team_a_title_twin_and_a_revoked_key_are_refused_and_nothing_moves(self):
+	def test_a_full_team_a_title_twin_same_window_and_a_revoked_key_are_refused_and_nothing_moves(self):
 		full = team("key-handover-full", max_keys=1)
 		key(full)
 		doc = self.trial_key("key-handover-refused")
@@ -721,6 +721,10 @@ class IntegrationTestTransfer(IntegrationTestCase):
 			doc.transfer(taken, title="site.example.test")
 		doc.reload()
 		self.assertEqual((doc.team, doc.title), (team("key-handover-refused"), None))
+		same = team("key-handover-same-window", key_cap_window="Total")
+		with self.assertRaisesRegex(frappe.ValidationError, "would follow"):
+			doc.transfer(same)
+		self.assertEqual(frappe.db.get_value("Grove API Key", doc.name, "team"), team("key-handover-refused"))
 		gone = self.trial_key("key-handover-refused")
 		frappe.db.set_value("Grove API Key", gone.name, "status", "revoked")
 		gone.reload()

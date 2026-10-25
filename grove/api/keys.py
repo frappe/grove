@@ -149,7 +149,8 @@ def transfer_key(team: str, key: str, to_team: str, title: str | None = None):
 	cap, geography and limit rows stay as minted. Counted against `to_team` like a mint: its key
 	count, and the cap within a Monthly team's spend limit. The box closes the old team's books at
 	the push. A key `to_team` already holds is answered as it is, so a lost reply is retried
-	safely. → the key as `keys` lists it."""
+	safely; one between two teams of one cap window is refused, its spend would follow it. → the
+	key as `keys` lists it."""
 	frappe.only_for(ALLOWED_ROLES)
 	to_team = get_team(to_team)
 	holders = [get_team(team), to_team]

@@ -199,16 +199,23 @@ class GroveAPIKey(Document):
 		Monthly team (that check reads the team's boxes, as a mint does; nothing is drained). One
 		save, versioned even under test, so the Version holds the move and the next tick re-pushes
 		team, window and limits — the push at which the box closes the old team's books. A key
-		already here is left as it is."""
+		already here is left as it is. Refused between two teams of one cap window: the box keeps a key's
+		spend under one field per window, so it would follow the key."""
 		if to_team == self.team:
 			return
 		if self.status != "active":
 			frappe.throw("A revoked key stays revoked. Mint a new one.")
+		window = team_limits(to_team).key_cap_window
+		if window == team_limits(self.team).key_cap_window:
+			frappe.throw(
+				f"{to_team} caps keys over the same window as {self.team} ({window}): what this key spent "
+				"would follow it. Mint a new one."
+			)
 		if title and frappe.db.exists("Grove API Key", {"team": to_team, "title": title}):
 			frappe.throw(f"{to_team} already has a key titled {title!r}.")
 		old_team, self.team = self.team, to_team
 		self.check_key_count()
-		if team_limits(to_team).key_cap_window != "Total":
+		if window != "Total":
 			self.validate_cap()
 		self.title = title or self.title
 		self.expiry, self.expiry_from_first_use, self.expires_at = "Never", 0, None

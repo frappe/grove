@@ -389,6 +389,8 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		team, other, third = "probe-handover", "probe-handover-to", "probe-handover-third"
 		for each in (team, other, third):
 			teams.provision_team(each)
+		# A hand-over crosses cap windows: the sending team counts a key's spend for life.
+		frappe.db.set_value("Grove Team", team, "key_cap_window", "Total")
 		key = keys.provision_key(team, title="ci")["name"]
 
 		with self.assertRaises(frappe.DoesNotExistError):
@@ -406,6 +408,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		trial, customer = "probe-handover-spent", "probe-handover-spent-to"
 		for each in (trial, customer):
 			teams.provision_team(each)
+		frappe.db.set_value("Grove Team", trial, "key_cap_window", "Total")
 		key = keys.provision_key(trial, title="trial")["name"]
 		billed_record(key, trial, utc_today(), 2)
 		keys.transfer_key(trial, key, customer)
