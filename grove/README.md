@@ -141,7 +141,8 @@ There is no single `modality` word any more: everything that read it reads the l
 `deploy:<key>` carries both as `input_modalities` and `output_modalities`; the gateway reads which
 surfaces the model answers on off the outputs (`text` for chat, `embeddings` for `/v1/embeddings`,
 `transcription` for `/v1/audio`); the inputs it only carries. `available_models` answers
-the two lists per model. An engine we launch is `--language-model-only` when it is text in and
+the two lists per model, and whether its provider keeps nothing of a request (`zero_data_retention`,
+the Self Hosted one always). An engine we launch is `--language-model-only` when it is text in and
 text out, and a pooling model when it gives `embeddings`.
 
 The provider is not only a prefix. Give a `Model Provider` a Base URL and a key and its published
