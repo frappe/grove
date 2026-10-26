@@ -45,6 +45,7 @@ class ModelProvider(Document):
 		is_self_hosted: DF.Check
 		key_selection: DF.Literal["Round Robin"]
 		provider_name: DF.Data
+		zero_data_retention: DF.Check
 	# end: auto-generated types
 
 	def validate(self):
@@ -66,7 +67,9 @@ class ModelProvider(Document):
 		self.validate_key_titles()
 
 	def validate_self_hosted(self):
-		"""One provider is ours, and it dials nothing — a URL is what makes a vendor."""
+		"""One provider is ours, and it dials nothing — a URL is what makes a vendor. It keeps
+		nothing either: our engines store no request."""
+		self.zero_data_retention = 1
 		if self.base_url or self.anthropic_base_url:
 			frappe.throw(f"{self.provider_name} is Self Hosted, so there is no vendor URL to dial.")
 		other = frappe.db.get_value(

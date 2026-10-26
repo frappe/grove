@@ -101,6 +101,14 @@ class TestOneProviderIsSelfHosted(IntegrationTestCase):
 			).insert()
 		self.assertIn("Self Hosted", str(caught.exception))
 
+	def test_it_keeps_nothing_and_a_vendor_says_so_itself(self):
+		ours = frappe.get_doc("Model Provider", self_hosted_provider())
+		ours.zero_data_retention = 0
+		ours.save()
+		self.assertTrue(ours.zero_data_retention)
+		self.assertFalse(provider("probe-keeper").insert().zero_data_retention)
+		self.assertTrue(provider("probe-forgetter", zero_data_retention=1).insert().zero_data_retention)
+
 
 class TestAKeyIsKnownByItsTitle(IntegrationTestCase):
 	def test_two_keys_of_one_provider_cannot_share_a_title(self):

@@ -135,18 +135,32 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			{row["name"] for row in rows}, {f"{row['provider']}/{row['model_id']}" for row in rows}
 		)
 		here = make_test_geography()
+		keeper = frappe.get_doc(
+			{"doctype": "Model Provider", "provider_name": "probe-keeper", "geography": here}
+		).insert(ignore_permissions=True)
+		kept = (
+			frappe.get_doc({"doctype": "Model", "model_id": "probe-reach-kept", "provider": keeper.name})
+			.insert(ignore_permissions=True)
+			.name
+		)
+		frappe.db.set_value("Model", kept, "published", 1)
 		frappe.get_doc(
 			{
 				"doctype": "Model Group",
 				"__newname": "probe-reach-default",
 				"geography": here,
 				"is_default": 1,
-				"models": [{"model": other}, {"model": grouped}],
+				"models": [{"model": other}, {"model": grouped}, {"model": kept}],
 			}
 		).insert(ignore_permissions=True)
+		rows = catalog.available_models(geography=here)
 		self.assertEqual(
-			sorted(row["name"] for row in catalog.available_models(geography=here)),
-			sorted([model_key(grouped), model_key(other)]),
+			sorted(row["name"] for row in rows), sorted([model_key(grouped), model_key(other), model_key(kept)])
+		)
+		# Ours keep nothing; a vendor says so itself.
+		self.assertEqual(
+			{row["name"]: row["zero_data_retention"] for row in rows},
+			{model_key(grouped): True, model_key(other): True, model_key(kept): False},
 		)
 		self.assertEqual(catalog.available_models(geography=make_test_geography("probe-reach-away")), [])
 
