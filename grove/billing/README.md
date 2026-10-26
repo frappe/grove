@@ -18,8 +18,8 @@ and the drain are in [`../README.md`](../README.md).
 
 | Doctype | Owns |
 |---|---|
-| `Usage Counter` | One counter usage is counted and priced under, named by its key. A root row has a unit (Mtok or request) and may be a part of a container root; a derived row is a root plus `min_prompt_tokens`, counted instead of its base when the whole prompt exceeds it and billed at the base's rate when a pricing holds none. Never edited after insert; never deleted while a Usage Record names it. Shipped in the catalog; pushed inside every pricing. Grove Control reads. |
-| `Model Pricing` | A model's SELL price: one Enabled doc per model, one rate per counter. Enabling one disables the last; the next push carries it to every gateway, which tags each request with the id it charged. A Disabled draft is editable; once enabled it is never edited, disabled by hand or re-enabled, and its form is read only. Duplicate starts a new Disabled draft with its own window. A counter with no row bills 0, except a derived counter, which then bills at its base counter's row; a derived row needs that base row. A model cannot be published without one, so free on purpose is a pricing with rates 0; enabling one never publishes. The Model form shows a banner while no pricing is enabled. Carries its model's Geography, fetched, so the pricings of one key — a doc per geography — tell apart in the list. |
+| `Usage Counter` | One counter usage is counted and priced under, named by its key. A root row has a unit (Mtok or request) and may be a part of a container root; a derived row is a root plus `min_prompt_tokens`, counted instead of its base when the whole prompt exceeds it and billed at the base's rate when a pricing holds none. Never edited after insert; never deleted while a Usage Record names it. Shipped in the catalog; the roots are pushed inside every pricing, a derived row inside the pricings that rate it. Grove Control reads. |
+| `Model Pricing` | A model's SELL price: one Enabled doc per model, one rate per counter. Enabling one disables the last; the next push carries it to every gateway, which tags each request with the id it charged. A Disabled draft is editable; once enabled it is never edited, disabled by hand or re-enabled, and its form is read only. Duplicate starts a new Disabled draft with its own window. A counter with no row bills 0, except a derived counter, which then bills at its base counter's row; a derived row needs that base row, and a part's variant its container's. A model cannot be published without one, so free on purpose is a pricing with rates 0; enabling one never publishes. The Model form shows a banner while no pricing is enabled. Carries its model's Geography, fetched, so the pricings of one key — a doc per geography — tell apart in the list. |
 | `Model Pricing Rate` | One counter's sell rate (child). |
 | `Usage Record` | One key's usage in one drain of one store on one UTC day — the day the gateway served it, off the gateway's clock, so a day or a month here is the gateway's own (unique on drain id + key + `day`), inserted by the pull and never updated: the key and its team, the store (Link), the drain id, the day, requests, `total_tokens` (prompt and completion once each, no part again: a cheap read beside the JSON), `cost` (Grove's price) and `gateway_cost`. Every record is audited and counts as revenue; a model served without a pricing is in it at no cost. The per-model detail — pricing, requests, counters and Grove's cost — is one hidden JSON field (`usage`) the form renders as a table, so a record is one row however many models it touched. A name Grove holds as a Model (published or not) gets an entry; the gateway's deployment-keyed metrics do not. |
 | `Stuck Usage` | Usage on one store the pull keeps failing to record. For a team: the gateway holds the usage and re-sends it every pull; this row says which keys, since when, how many attempts, the last error and payload — one open row per (team, store), resolved by the pull that lands it, which lists the Usage Records it wrote on the row; **Pull Now** pulls just that team. For a dead line (`dead_line` set, team blank when unreadable): the gateway has dropped it and this row is the only copy; **Mark Resolved** closes it. An open row is never deleted; Log Settings clears resolved ones, and their list, after 90 days. |
@@ -90,13 +90,16 @@ tokens away, and an audio-out model needs a `completion_audio_tokens` row.
 
 - **Counting**, in pathway, from the pushed table. A request whose prompt (plain, cached, written
   and audio together) is strictly past a derived counter's threshold is counted under that counter
-  instead of its base, whatever the pricing. A root with no derived row at that threshold stays
-  where it is: hour writes and audio have one rate at any prompt size, so a long request's are
-  counted in `prompt_tokens`, its audio output in `completion_tokens`, and only the rest above
-  272k. That keeps a summed drain priced as its requests would be apart.
+  instead of its base. The table is the pricing's own: every root, and the derived rows the
+  pricing rates (`CounterTable.get_priced`), so a pricing with no 272k rates never splits. A root
+  with no derived row at that threshold stays where it is: hour writes and audio have one rate at
+  any prompt size, so a long request's are counted in `prompt_tokens`, its audio output in
+  `completion_tokens`, and only the rest above 272k. That keeps a summed drain priced as its
+  requests would be apart.
 - **Charging**, the same on both sides (`pricing.cost`, pathway `domain.CounterTable.Cost`). A
   counter bills at its own rate. A derived counter the pricing holds no row for bills at its base's
-  rate, so a pricing without those rows charges as it always did.
+  rate: a drain counted under an older table, which split for every pricing, prices as the box
+  charged it.
 
 A derived row needs its base row (`Model Pricing` refuses it otherwise): a shorter prompt bills
 there. A part is bracketed exactly like its container or not at all (`CounterTable.validate`,

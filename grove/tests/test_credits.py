@@ -584,7 +584,7 @@ class TestThePushCarriesTheCap(CreditsCase):
 			frappe._dict(name=unpublished, model_key="frappe/unpublished", published=0),
 			frappe._dict(name="no-doc", model_key="unpriced/model", published=1),
 		]
-		counters = pricing.CounterTable.load().published
+		counters = pricing.CounterTable.load().get_priced({"completion_tokens"}).published
 		self.assertEqual(
 			routes.published_routes(table, models),
 			{
@@ -600,12 +600,14 @@ class TestThePushCarriesTheCap(CreditsCase):
 				]
 			},
 		)
-		self.assertIn(
-			{
-				"name": "prompt_tokens_above_272k",
-				"divisor": 10**6,
-				"base": "prompt_tokens",
-				"min_prompt_tokens": 272000,
-			},
-			counters,
-		)
+		self.assertNotIn("prompt_tokens_above_272k", [row["name"] for row in counters])
+
+	def test_a_pricing_carries_only_the_derived_rows_it_rates(self):
+		model, _retired = self.priced_model("credits-split-7b", 5)
+		enabled_pricing(model, prompt_tokens=2, prompt_tokens_above_272k=4)
+		key = frappe.db.get_value("Model", model, "model_key")
+		models = [frappe._dict(name=model, model_key=key, published=1)]
+		(row,) = routes.published_routes({key: [{"deployment": "d1"}]}, models)[key]
+		names = [counter["name"] for counter in row["pricing"]["counters"]]
+		self.assertIn("prompt_tokens_above_272k", names)
+		self.assertNotIn("completion_tokens_above_272k", names)

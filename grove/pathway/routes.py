@@ -246,13 +246,18 @@ def published_routes(routes, models):
 	"""The table the gateways get: only a Published model's rows, each carrying its Enabled
 	pricing. Published without one is dropped too — never served unpriced. Rates are nano-USD
 	per unit; the gateway tags each request with the pricing id, which is what the pull prices.
-	The counter table rides inside each pricing, validated first: an inconsistent table reaches no
-	gateway. A pricing names a doc, so a model in two geographies is priced in each."""
+	The counter table rides inside each pricing, validated first, as its roots and the derived rows
+	that pricing rates. A pricing names a doc, so a model in two geographies is priced in each."""
 	book = PriceBook.load()
-	counters = book.counters.validate().published
+	counters = book.counters.validate()
 	enabled = frappe.get_all("Model Pricing", filters={"status": "Enabled"}, fields=["name", "model"])
 	pricing = {
-		p.model: {"id": p.name, "rates": book.nano_rates(p.name), "counters": counters} for p in enabled
+		p.model: {
+			"id": p.name,
+			"rates": book.nano_rates(p.name),
+			"counters": counters.get_priced(book.pricing(p.name).rates).published,
+		}
+		for p in enabled
 	}
 	by_key = {m.model_key: m for m in models}
 	return {

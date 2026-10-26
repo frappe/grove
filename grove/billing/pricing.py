@@ -22,9 +22,9 @@ FIGURES_SECONDS = 30 * 60
 
 class CounterTable:
 	"""Every Usage Counter the site holds: roots first, each group in catalog order. Built from rows (`name` or `counter_name`, `unit`, `part_of`, `base_counter`,
-	`min_prompt_tokens`), so the catalog's rows serve the pure tests. The same table is pushed to
-	the gateways inside each pricing; `parts` of a derived counter are the variants of its base's
-	parts at the same threshold, which is what `validate` guarantees exist."""
+	`min_prompt_tokens`), so the catalog's rows serve the pure tests. Each pricing is pushed with its
+	own rows (`get_priced`); `parts` of a derived counter are the variants of its base's parts at
+	the same threshold, which is what `validate` guarantees exist."""
 
 	FIELDS = ("name", "label", "unit", "part_of", "base_counter", "min_prompt_tokens")
 
@@ -50,6 +50,11 @@ class CounterTable:
 	@property
 	def roots(self):
 		return [row.name for row in self.rows if not row.base_counter]
+
+	def get_priced(self, rated):
+		"""The rows a pricing carries: every root, and the derived rows in `rated`. A pricing with no
+		272k rate never splits at 272k."""
+		return CounterTable([row for row in self.rows if not row.base_counter or row.name in rated])
 
 	@property
 	def whole(self):
