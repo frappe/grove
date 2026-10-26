@@ -13,6 +13,6 @@ def execute():
 		if frappe.db.has_column("Grove Team", column):
 			frappe.db.sql_ddl(f"alter table `tabGrove Team` drop column `{column}`")
 	frappe.db.sql(
-		"""update `tabCredit Discrepancy` set resolved_on = modified
+		"""update `tabCost Discrepancy` set resolved_on = modified
 		where ifnull(resolution, '') != '' and resolved_on is null"""
 	)
