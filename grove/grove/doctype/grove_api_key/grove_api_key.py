@@ -23,16 +23,6 @@ def hash_secret(secret: str) -> str:
 
 
 class GroveAPIKey(Document):
-	"""A credential and the whole policy behind it: which models (its groups, plus its own
-	Allow, less its Deny), the one geography it works in, its rate limits (its team's Tier's, with
-	its own rows replacing the tier's on the metrics they name), and `cap` — what it may spend a
-	month, within its team's spend limit, and `expiry`, when it retires on its own. The gateway holds it as one record, so every gate reads the key and nothing else; a key
-	lives on one geography's store, which counts its spend per month and gates its cap exactly
-	however many keys the team holds elsewhere.
-
-	No sync hook: only ACTIVE keys are projected, so revoking one moves its bucket's snapshot hash
-	and the next tick prunes it off every box."""
-
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -63,10 +53,6 @@ class GroveAPIKey(Document):
 	# end: auto-generated types
 
 	def before_insert(self):
-		"""A new key starts in its geography's default Model Group unless the insert names its own
-		groups. With no limit rows of its own it runs under its team's Tier. `expires_at` is the mint
-		plus its expiry rule's days; none for Never, and none yet for a key that expires from first
-		use (`start_expiry` sets it when its first usage record lands)."""
 		self.check_key_count()
 		# Blank is no title: NULL, which the (team, title) unique index never counts as a twin.
 		self.title = self.title or None
@@ -107,6 +93,20 @@ class GroveAPIKey(Document):
 		forget_figures(self.team)
 
 	def validate(self):
+		self.validate_models()
+		validate_limit_rows(self.limits)
+		if flt(self.cap) < 0:
+			frappe.throw("A cap cannot be negative.")
+
+		before = self.get_doc_before_save()
+		if before and before.status == "revoked" and self.status != "revoked":
+			frappe.throw("A revoked key stays revoked. Mint a new one.")
+		if self.needs_cap_check:
+			self.validate_cap()
+
+	def validate_models(self):
+		"""Every model and group named is of this key's geography, and no model is both allowed
+		and denied."""
 		validate_model_geography([*self.allow, *self.deny], self.geography)
 		for row in self.model_groups:
 			geography = frappe.db.get_value("Model Group", row.model_group, "geography")
@@ -117,16 +117,6 @@ class GroveAPIKey(Document):
 		both = {row.model_key for row in self.allow} & {row.model_key for row in self.deny}
 		if both:
 			frappe.throw(f"{', '.join(sorted(both))} is in both Allow and Deny")
-
-		validate_limit_rows(self.limits)
-		if flt(self.cap) < 0:
-			frappe.throw("A cap cannot be negative.")
-
-		before = self.get_doc_before_save()
-		if before and before.status == "revoked" and self.status != "revoked":
-			frappe.throw("A revoked key stays revoked. Mint a new one.")
-		if self.needs_cap_check:
-			self.validate_cap()
 
 	def validate_set_only_once(self):
 		"""`team`, `title` and the expiry rule are set once — except by `transfer`, the one move
