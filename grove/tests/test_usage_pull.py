@@ -202,6 +202,19 @@ class TestADrainIsOneRecordPerKey(PullCase):
 			[("d-closed", trial, 2), ("d-live", self.team, 1)],
 		)
 
+	def test_one_drain_that_splits_a_key_between_two_teams_acks_every_day(self):
+		key, trial = self.key(), self.grove_team("usage-pull-split@grove.test")
+		yesterday = str(frappe.utils.add_days(self.day, -1))
+		days = {yesterday: {"request_count": "2", "team": trial}, self.today: {"request_count": "1"}}
+		drains = {"d-split": {key: days}}
+		with unittest.mock.patch.object(frappe.db, "commit"):
+			pulled, acks, _dead, stuck = usage.record_drains(self.gateway, drains, gateway_store=self.store)
+		self.assertEqual((pulled, stuck), (2, 0))
+		self.assertEqual(sorted(acks["d-split"][key]), sorted([yesterday, self.today]))
+		self.assertEqual(
+			sorted((r.team, r.request_count) for r in self.records(key)), sorted([(trial, 2), (self.team, 1)])
+		)
+
 	def test_a_key_used_on_two_stores_gets_a_record_on_each(self):
 		key, other_store = self.key(), a_store("usage-pull-other-store")
 		self.pull({key: {"request_count": "1"}}, drain_id="d-a")
