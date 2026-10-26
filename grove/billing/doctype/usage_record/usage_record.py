@@ -40,7 +40,7 @@ class UsageRecord(Document):
 	@staticmethod
 	def clear_old_logs(days=RETENTION_DAYS):
 		"""Log Settings: records served more than `days` UTC days ago, and landed that long ago too, a
-		chunk at a time. One a Credit Discrepancy names stays: it is that correction's evidence. One
+		chunk at a time. One a Cost Discrepancy names stays: it is that correction's evidence. One
 		that landed late stays as long: Central invoices by when a record landed, and a drain not yet
 		acknowledged must find the record it left. No money read needs a record this old — the month
 		is this month's, an invoice is a landing window — so what goes is
@@ -48,7 +48,7 @@ class UsageRecord(Document):
 		cutoff = add_days(utc_today(), -cint(days))
 		while names := frappe.db.sql_list(
 			"""select name from `tabUsage Record` where day < %(cutoff)s and creation < %(cutoff)s
-			and name not in (select usage_record from `tabCredit Discrepancy` where usage_record is not null)
+			and name not in (select usage_record from `tabCost Discrepancy` where usage_record is not null)
 			order by day limit %(chunk)s""",
 			{"cutoff": cutoff, "chunk": PURGE_CHUNK},
 		):

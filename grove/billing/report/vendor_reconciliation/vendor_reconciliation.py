@@ -78,11 +78,6 @@ def model_keys(providers):
 
 
 def grove_rows(model_keys, from_date, to_date):
-	"""{(day, model key): requests, input_tokens, cached_tokens, output_tokens, charged} off the
-	records' per-model detail. A derived counter (a long prompt's tokens) is summed into its base,
-	as the vendor counts it."""
-	# ponytail: resolved Credit Discrepancy corrections are left out (~1e-6 USD on vendor models);
-	# the Revenue report has them.
 	if not model_keys:
 		return {}
 	counters = CounterTable.load()

@@ -22,9 +22,9 @@ FIGURES_SECONDS = 30 * 60
 
 class CounterTable:
 	"""Every Usage Counter the site holds: roots first, each group in catalog order. Built from rows (`name` or `counter_name`, `unit`, `part_of`, `base_counter`,
-	`min_prompt_tokens`), so the catalog's rows serve the pure tests. The same table is pushed to
-	the gateways inside each pricing; `parts` of a derived counter are the variants of its base's
-	parts at the same threshold, which is what `validate` guarantees exist."""
+	`min_prompt_tokens`), so the catalog's rows serve the pure tests. Each pricing is pushed with its
+	own rows (`get_priced`); `parts` of a derived counter are the variants of its base's parts at
+	the same threshold, which is what `validate` guarantees exist."""
 
 	FIELDS = ("name", "label", "unit", "part_of", "base_counter", "min_prompt_tokens")
 
@@ -50,6 +50,11 @@ class CounterTable:
 	@property
 	def roots(self):
 		return [row.name for row in self.rows if not row.base_counter]
+
+	def get_priced(self, rated):
+		"""The rows a pricing carries: every root, and the derived rows in `rated`. A pricing with no
+		272k rate never splits at 272k."""
+		return CounterTable([row for row in self.rows if not row.base_counter or row.name in rated])
 
 	@property
 	def whole(self):
@@ -184,7 +189,7 @@ def lock_team(team):
 	"""The team row, held until this transaction ends. The pull and a correction take it before
 	landing money, and a cap check reads the team FOR UPDATE, so the check sees a drain landed
 	whole or not at all."""
-	frappe.db.get_value("Central Team", team, "name", for_update=True)
+	frappe.db.get_value("Grove Team", team, "name", for_update=True)
 
 
 def usd(amount):
@@ -223,22 +228,25 @@ def month_spent_by(field, names):
 	"""{name: USD spent this month} by `field` (team or api_key): Σ the Usage Records served
 	on a day of this UTC month — the gateway's own day, so the month its `spent:<month>` counts —
 	plus the Usage Corrections Grove made on one. A revoked key counts: what it spent is still
-	the team's. Two grouped queries however many names."""
+	the team's. A key's sum is its records under the team holding it now: what a handed-over key
+	spent as a trial's stays the trial team's (`GroveAPIKey.transfer`). Two grouped queries
+	however many names."""
 	if field not in MONTH_SPENT_BY:
 		raise ValueError(f"month_spent_by sums by one of {MONTH_SPENT_BY}, not {field!r}")
 	if not names:
 		return {}
 	first = utc_today().replace(day=1)
+	own = "" if field == "team" else "join `tabGrove API Key` k on k.name = r.api_key and k.team = r.team"
 	spent = dict(
 		frappe.db.sql(
-			f"""select `{field}`, sum(cost) from `tabUsage Record`
-		where `{field}` in %(names)s and day >= %(first)s group by `{field}`""",
+			f"""select r.`{field}`, sum(r.cost) from `tabUsage Record` r {own}
+		where r.`{field}` in %(names)s and r.day >= %(first)s group by r.`{field}`""",
 			{"names": names, "first": first},
 		)
 	)
 	corrected = frappe.db.sql(
-		f"""select `{field}`, sum(cost) from `tabUsage Correction`
-		where `{field}` in %(names)s and day >= %(first)s group by `{field}`""",
+		f"""select r.`{field}`, sum(r.cost) from `tabUsage Correction` r {own}
+		where r.`{field}` in %(names)s and r.day >= %(first)s group by r.`{field}`""",
 		{"names": names, "first": first},
 	)
 	for name, correction in corrected:

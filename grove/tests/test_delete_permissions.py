@@ -11,10 +11,10 @@ from pathlib import Path
 
 APP = Path(__file__).resolve().parents[1]
 PROTECTED = (
-	"Central Team",
+	"Grove Team",
 	"Grove API Key",
 	"Usage Record",
-	"Credit Discrepancy",
+	"Cost Discrepancy",
 	"Usage Correction",
 	"Gateway Spend Adjustment",
 	"Model Pricing",

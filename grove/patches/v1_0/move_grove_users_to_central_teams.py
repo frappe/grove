@@ -1,4 +1,4 @@
-"""Grove User → Central Team, with the policy moved onto each key.
+"""Grove User → Grove Team, with the policy moved onto each key.
 
 A user becomes a team named by its Central id (its old doc name when it had none). Every key of
 the user gets the team, the user's geography, groups, allow/deny and limits; every key starts at a cap of 0 and is capped by hand. Records, stuck rows and discrepancies move to the team. Runs once: a site with no Grove User doctype left (moved by hand) is left alone."""
@@ -12,7 +12,7 @@ SKIP = ("name", "parent", "parenttype", "creation", "modified", "owner", "modifi
 RELINK = (
 	("Usage Record", "user"),
 	("Stuck Usage", "grove_user"),
-	("Credit Discrepancy", "grove_user"),
+	("Cost Discrepancy", "grove_user"),
 )
 
 
@@ -32,7 +32,7 @@ def execute():
 			for old, new in teams.items():
 				frappe.db.sql(f"update `tab{doctype}` set team = %s where `{field}` = %s", [new, old])
 	frappe.db.sql(
-		"""update `tabCredit Discrepancy` d join `tabGrove API Key` k on k.name = d.api_key
+		"""update `tabCost Discrepancy` d join `tabGrove API Key` k on k.name = d.api_key
 		set d.team = k.team where ifnull(d.team, '') = ''"""
 	)
 	for child in CHILDREN:
@@ -42,12 +42,12 @@ def execute():
 
 def make_team(user):
 	name = user.reference or user.name
-	if frappe.db.exists("Central Team", name):
+	if frappe.db.exists("Grove Team", name):
 		return name
 	return (
 		frappe.get_doc(
 			{
-				"doctype": "Central Team",
+				"doctype": "Grove Team",
 				"__newname": name,
 				"log_payloads": user.log_payloads,
 			}

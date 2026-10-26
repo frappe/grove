@@ -1,5 +1,3 @@
-"""What every doc standing on a box shares."""
-
 import frappe
 
 from grove.ansible import AnsibleHost
@@ -8,16 +6,10 @@ from grove.utils import validate_label_name
 
 
 class Server(GeneratedName, AnsibleHost):
-	"""A name off its Machine, plays against the box, and retirement with it. A doctype says
-	what still depends on it in `archive_blockers`; the rest is the same for all of them."""
-
 	def get_generated_name(self):
-		"""The Machine's name: the box was named once, when it was created."""
 		return self.machine
 
 	def autoname(self):
-		"""Checked here, once the name exists: frappe runs before_insert with a generated name still
-		blank."""
 		super().autoname()
 		validate_label_name(self.doctype, self.short_name)
 		if self.short_name != self.name and self.name != f"{self.short_name}.{self.fleet_zone}":
@@ -32,8 +24,7 @@ class Server(GeneratedName, AnsibleHost):
 
 	@property
 	def fleet_zone(self):
-		"""The zone this box is named under: its Geography's. Blank without one."""
-		return frappe.db.get_value("Geography", self.geography, "fleet_zone") if self.geography else ""
+		return frappe.db.get_value("Geography", self.geography, "fleet_zone")
 
 	@property
 	def archive_blockers(self):
@@ -41,11 +32,9 @@ class Server(GeneratedName, AnsibleHost):
 
 	@frappe.whitelist()
 	def archive(self):
-		"""Button: retire this server and destroy its box. Refused while anything still depends
-		on it. A cloud Machine is terminated, which already cascades Terminated onto this row and
-		drops its DNS records; an on-prem box has nothing to destroy, so only the row is retired."""
 		if blockers := self.archive_blockers:
 			frappe.throw("<br>".join(blockers), title=f"{self.name} cannot be archived")
+
 		machine = frappe.get_doc("Machine", self.machine) if self.machine else None
 		if machine and machine.cloud_provider:
 			machine.terminate()
@@ -53,4 +42,5 @@ class Server(GeneratedName, AnsibleHost):
 		if self.status != "Terminated":
 			self.status = "Terminated"
 			self.save()
+
 		frappe.msgprint(f"Archiving {self.name}.", alert=True)

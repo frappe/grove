@@ -250,7 +250,7 @@ class TestEffectiveKeys(unittest.TestCase):
 			seen[doctype] = filters
 			if doctype == "Grove API Key":
 				return list(keys)
-			if doctype == "Central Team":
+			if doctype == "Grove Team":
 				return list(teams)
 			if doctype == "Grove Model Row":
 				return list(rows)
@@ -307,6 +307,7 @@ class TestEffectiveKeys(unittest.TestCase):
 				"log_payloads": True,
 				"geography": "in",
 				"budget": 0,
+				"budget_window": "month",
 				"limits": "requests:1m:20,total_tokens:1m:100000",
 			},
 		)
@@ -365,7 +366,7 @@ class TestEffectiveKeys(unittest.TestCase):
 			self.calls,
 			{
 				"Grove API Key": 1,
-				"Central Team": 1,
+				"Grove Team": 1,
 				"Grove Model Row": 1,
 				"Model Group Row": 1,
 				"Model Limit": 2,
@@ -436,7 +437,7 @@ class TestEffectiveKeys(unittest.TestCase):
 	def test_named_keys_narrow_every_read_to_them_and_their_teams(self):
 		self.keys([self.key()], names=["KEY-1"])
 		self.assertEqual(self.filters["Grove API Key"], {"status": "active", "name": ("in", ["KEY-1"])})
-		self.assertEqual(self.filters["Central Team"], {"name": ("in", ["T-1"])})
+		self.assertEqual(self.filters["Grove Team"], {"name": ("in", ["T-1"])})
 		self.assertEqual(self.filters["Grove Model Row"]["parent"], ("in", ["KEY-1"]))
 		self.assertEqual(self.filters["Model Group Row"]["parent"], ("in", ["KEY-1"]))
 

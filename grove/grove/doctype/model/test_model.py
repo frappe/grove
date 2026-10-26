@@ -76,7 +76,7 @@ class TestGranted(IntegrationTestCase):
 			frappe.get_doc({"doctype": "Model Group", "__newname": "probe-granted-group"}).insert().name
 		)
 		team = (
-			frappe.get_doc({"doctype": "Central Team", "__newname": "probe-granted"})
+			frappe.get_doc({"doctype": "Grove Team", "__newname": "probe-granted"})
 			.insert(ignore_permissions=True)
 			.name
 		)

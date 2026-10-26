@@ -46,7 +46,7 @@ class PullCase(IntegrationTestCase):
 		cls.day = utc_today()
 		cls.today = str(cls.day)
 		cls.store = a_store(f"{cls.box}-store")
-		cls.team = cls.central_team(cls.email)
+		cls.team = cls.grove_team(cls.email)
 		model_id = f"{cls.box}-7b"
 		doc = (
 			frappe.db.exists("Model", {"model_id": model_id})
@@ -74,11 +74,11 @@ class PullCase(IntegrationTestCase):
 			)
 
 	@classmethod
-	def central_team(cls, email):
+	def grove_team(cls, email):
 		return (
 			frappe.get_doc(
 				{
-					"doctype": "Central Team",
+					"doctype": "Grove Team",
 					"__newname": email,
 					"override_max_keys": 1,
 					"max_keys": 0,
@@ -191,6 +191,29 @@ class TestADrainIsOneRecordPerKey(PullCase):
 			}
 		)
 		self.assertEqual([e["model"] for e in self.detail(self.records(key)[0])], [self.model])
+
+	def test_a_hash_the_box_stamped_with_a_team_lands_under_it_and_one_without_under_the_keys(self):
+		"""A key that changed hands has its books closed at the push, stamped with the team charged."""
+		key, trial = self.key(), self.grove_team("usage-pull-trial@grove.test")
+		self.pull({key: {"request_count": "2", "team": trial}}, drain_id="d-closed")
+		self.pull({key: {"request_count": "1"}}, drain_id="d-live")
+		self.assertEqual(
+			sorted((r.drain_id, r.team, r.request_count) for r in self.records(key)),
+			[("d-closed", trial, 2), ("d-live", self.team, 1)],
+		)
+
+	def test_one_drain_that_splits_a_key_between_two_teams_acks_every_day(self):
+		key, trial = self.key(), self.grove_team("usage-pull-split@grove.test")
+		yesterday = str(frappe.utils.add_days(self.day, -1))
+		days = {yesterday: {"request_count": "2", "team": trial}, self.today: {"request_count": "1"}}
+		drains = {"d-split": {key: days}}
+		with unittest.mock.patch.object(frappe.db, "commit"):
+			pulled, acks, _dead, stuck = usage.record_drains(self.gateway, drains, gateway_store=self.store)
+		self.assertEqual((pulled, stuck), (2, 0))
+		self.assertEqual(sorted(acks["d-split"][key]), sorted([yesterday, self.today]))
+		self.assertEqual(
+			sorted((r.team, r.request_count) for r in self.records(key)), sorted([(trial, 2), (self.team, 1)])
+		)
 
 	def test_a_key_used_on_two_stores_gets_a_record_on_each(self):
 		key, other_store = self.key(), a_store("usage-pull-other-store")
@@ -323,7 +346,7 @@ class TestAStuckTeamHoldsOnlyItselfBack(PullCase):
 		return frappe.get_doc("Stuck Usage", {"team": self.team, "gateway_store": store or self.store})
 
 	def test_the_failed_team_is_rolled_back_logged_and_left_unacknowledged(self):
-		other = self.central_team("usage-stuck-2@grove.test")
+		other = self.grove_team("usage-stuck-2@grove.test")
 		bad, good = self.key(), self.key(other)
 		drained = {"request_count": "1", f"m:completion_tokens:{self.model}": "9"}
 		with self.failing(self.team):
@@ -413,7 +436,7 @@ class TestAPullForOneTeam(PullCase):
 		self.assertEqual(sorted(pull.hashes.values()), keys)
 
 	def test_a_team_with_no_keys_pulls_nothing(self):
-		self.assertEqual(usage.Usage(team=self.central_team("usage-one-nokeys@grove.test")).units(), [])
+		self.assertEqual(usage.Usage(team=self.grove_team("usage-one-nokeys@grove.test")).units(), [])
 
 
 class TestTheCheckReadsTheBoxesForRealKeys(PullCase):

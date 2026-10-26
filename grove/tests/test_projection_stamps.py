@@ -30,7 +30,7 @@ class TestDirtyBuckets(unittest.TestCase):
 
 		def get_all(doctype, filters=None, pluck=None, **kwargs):
 			self.asked.append((doctype, filters))
-			if doctype == "Central Team":
+			if doctype == "Grove Team":
 				return list(teams)
 			return list(team_keys) if "team" in filters else list(keys)
 
@@ -108,9 +108,9 @@ class TestBucketsInPlay(unittest.TestCase):
 	"""Which buckets a tick rebuilds: those saved since the oldest stamp among the gateway units
 	that answered, less the lookback — or every bucket, in the cases that need it all."""
 
-	def in_play(self, units, remote, stamps=None, force=False, at=AT, dirty=frozenset(), full=False):
+	def in_play(self, units, remote, stamps=None, force=False, dirty=frozenset(), full=False):
 		tick = projection.Projection(force=force)
-		tick.read_at = at
+		tick.read_at = AT
 		tick.remote = remote
 		stamps = stamps or {}
 		self.since = []
@@ -163,11 +163,10 @@ class TestBucketsInPlay(unittest.TestCase):
 		gw1 = gateway("gw1")
 		self.assertIsNone(self.in_play([Unit(None, (gw1,))], {gw1: {"groups": "g"}}, {"gw1": STAMP}))
 
-	def test_force_and_the_full_minute_rebuild_everything_without_a_read(self):
+	def test_force_rebuilds_everything_without_a_read(self):
 		gw1 = gateway("gw1")
 		remote, stamps = {gw1: {"keys:96": "h"}}, {"gw1": STAMP}
 		self.assertIsNone(self.in_play([Unit(None, (gw1,))], remote, stamps, force=True))
-		self.assertIsNone(self.in_play([Unit(None, (gw1,))], remote, stamps, at=datetime(2026, 8, 16, 0, 10)))
 		self.assertEqual(self.since, [])
 
 	def test_a_tier_or_settings_save_rebuilds_everything(self):

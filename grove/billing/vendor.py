@@ -1,8 +1,3 @@
-"""What a vendor billed Grove, read live off the vendor's own billing API, so a report can set it
-beside what Grove charged. Baseten only so far: its usage API gives requests and tokens per UTC day
-and model, its cost API the billed subtotal per UTC day and model. Both page, and both cap a range
-at 90 days, which is also how long a Usage Record is kept."""
-
 from datetime import timedelta
 from decimal import Decimal
 

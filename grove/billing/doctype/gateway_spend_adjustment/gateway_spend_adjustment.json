@@ -5,7 +5,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "credit_discrepancy",
+  "cost_discrepancy",
   "team",
   "api_key",
   "gateway_store",
@@ -17,11 +17,11 @@
  ],
  "fields": [
   {
-   "description": "The decision this adjustment came from: the Credit Discrepancy a System Manager resolved as the gateway's error. One adjustment per decision, and the id the box applies it under.",
-   "fieldname": "credit_discrepancy",
+   "description": "The decision this adjustment came from: the Cost Discrepancy a System Manager resolved as the gateway's error. One adjustment per decision, and the id the box applies it under.",
+   "fieldname": "cost_discrepancy",
    "fieldtype": "Link",
-   "label": "Credit Discrepancy",
-   "options": "Credit Discrepancy",
+   "label": "Cost Discrepancy",
+   "options": "Cost Discrepancy",
    "read_only": 1,
    "reqd": 1,
    "unique": 1
@@ -32,7 +32,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Team",
-   "options": "Central Team",
+   "options": "Grove Team",
    "read_only": 1,
    "reqd": 1
   },
@@ -97,7 +97,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-18 00:00:00.000000",
+ "modified": "2026-10-25 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Gateway Spend Adjustment",

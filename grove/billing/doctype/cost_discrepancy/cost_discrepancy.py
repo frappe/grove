@@ -6,7 +6,7 @@ from frappe.model.document import Document
 from grove.utils import utc_today
 
 
-class CreditDiscrepancy(Document):
+class CostDiscrepancy(Document):
 	"""The gateway charged a drain differently from Grove's price of the same counters at the same
 	pricing. Logged by the pull: a person decides which side is wrong and corrects that side's
 	spend, which brings the two balances back together. The one the pull decides itself is a dead
@@ -47,7 +47,7 @@ class CreditDiscrepancy(Document):
 		frappe.get_doc(
 			{
 				"doctype": "Usage Correction",
-				"credit_discrepancy": self.name,
+				"cost_discrepancy": self.name,
 				"team": self.team,
 				"api_key": self.api_key,
 				"model": model_key_of(self.pricing),
@@ -74,7 +74,7 @@ class CreditDiscrepancy(Document):
 		frappe.get_doc(
 			{
 				"doctype": "Gateway Spend Adjustment",
-				"credit_discrepancy": self.name,
+				"cost_discrepancy": self.name,
 				"team": self.team,
 				"api_key": self.api_key,
 				"gateway_store": self.gateway_store,
@@ -104,4 +104,4 @@ def model_key_of(pricing):
 def record(**facts):
 	"""The one writer: one row per (Usage Record, pricing) the gateway charged differently."""
 	facts = {k: float(v) if isinstance(v, Decimal) else v for k, v in facts.items()}
-	return frappe.get_doc({"doctype": "Credit Discrepancy", **facts}).insert(ignore_permissions=True)
+	return frappe.get_doc({"doctype": "Cost Discrepancy", **facts}).insert(ignore_permissions=True)
