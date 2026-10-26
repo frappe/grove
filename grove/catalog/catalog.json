@@ -349,7 +349,8 @@
    "anthropic_base_url": "https://inference.baseten.co",
    "base_url": "https://inference.baseten.co",
    "geography": "Main",
-   "provider_name": "baseten"
+   "provider_name": "baseten",
+   "zero_data_retention": 1
   },
   {
    "is_self_hosted": 1,
