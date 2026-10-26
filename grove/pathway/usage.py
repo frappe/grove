@@ -12,7 +12,7 @@ other one next pull. A pull that fails before the commit gets the same counters 
 landed twice records nothing twice (unique drain id + key + day).
 
 Each touched team is landed in one step: its records, priced by Grove at the pricing the gateway
-tagged each request with, a Credit Discrepancy per pricing the gateway charged differently, and
+tagged each request with, a Cost Discrepancy per pricing the gateway charged differently, and
 the verdict. A team whose step fails is rolled back alone, left unacknowledged,
 and logged as Stuck Usage until a later pull lands it. One bad team never holds anyone else's
 usage back.

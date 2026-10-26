@@ -119,7 +119,7 @@ class CreditsCase(IntegrationTestCase):
 
 	def discrepancies(self, team):
 		return frappe.get_all(
-			"Credit Discrepancy",
+			"Cost Discrepancy",
 			filters={"team": team, "resolution": ("is", "not set")},
 			fields=["name", "usage_record", "pricing", "gateway_value", "grove_value", "delta"],
 		)
@@ -372,7 +372,7 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		team, key = self.team(cap=5)
 		self.pull({key: self.hash(50_000, cost=600_000_000)})
 		[row] = self.discrepancies(team)
-		return team, frappe.get_doc("Credit Discrepancy", row.name)
+		return team, frappe.get_doc("Cost Discrepancy", row.name)
 
 	def test_grove_is_wrong_lands_a_correction_of_the_delta(self):
 		team, row = self.discrepancy()
@@ -388,7 +388,7 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		self.assertEqual(D(str(frappe.db.get_value("Usage Record", row.usage_record, "cost"))), D("0.5"))
 		[correction] = frappe.get_all(
 			"Usage Correction",
-			filters={"credit_discrepancy": row.name},
+			filters={"cost_discrepancy": row.name},
 			fields=["team", "api_key", "model", "pricing", "day", "cost"],
 		)
 		self.assertEqual(
@@ -402,7 +402,7 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 	def test_a_row_with_no_pricing_counts_under_no_model(self):
 		"""A discrepancy from before pricings were tagged: its money still counts, under no model."""
 		team, row = self.discrepancy()
-		frappe.db.set_value("Credit Discrepancy", row.name, "pricing", None)
+		frappe.db.set_value("Cost Discrepancy", row.name, "pricing", None)
 		row.reload()
 		row.correct_grove()
 		self.assertEqual(self.money(team), (0.6, 0.6, 0.6))
@@ -420,7 +420,7 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		self.assertIsNotNone(row.resolved_on)
 		[adjustment] = frappe.get_all(
 			"Gateway Spend Adjustment",
-			filters={"credit_discrepancy": row.name},
+			filters={"cost_discrepancy": row.name},
 			fields=["team", "api_key", "gateway_store", "adjustment", "status"],
 		)
 		self.assertEqual(
@@ -429,7 +429,7 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		)
 		self.assertEqual(D(str(adjustment.adjustment)), D("-0.1"))
 		self.assertEqual(self.state(team)[0], D("0.5"), "Grove's own spend is untouched")
-		self.assertFalse(frappe.db.exists("Usage Correction", {"credit_discrepancy": row.name}))
+		self.assertFalse(frappe.db.exists("Usage Correction", {"cost_discrepancy": row.name}))
 
 	def test_a_decided_row_takes_neither_button(self):
 		_team, row = self.discrepancy()
@@ -443,8 +443,8 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		row.gateway_store = None
 		with self.assertRaises(frappe.ValidationError):
 			row.correct_gateway()
-		self.assertFalse(frappe.db.exists("Gateway Spend Adjustment", {"credit_discrepancy": row.name}))
-		self.assertFalse(frappe.db.get_value("Credit Discrepancy", row.name, "resolution"))
+		self.assertFalse(frappe.db.exists("Gateway Spend Adjustment", {"cost_discrepancy": row.name}))
+		self.assertFalse(frappe.db.get_value("Cost Discrepancy", row.name, "resolution"))
 
 	def test_the_tick_is_handed_a_pending_adjustment_under_its_store_and_the_discrepancys_name(self):
 		_team, row = self.discrepancy()
@@ -461,7 +461,7 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		mark_corrected({row.name: 500_000_000})
 		adjustment = frappe.db.get_value(
 			"Gateway Spend Adjustment",
-			{"credit_discrepancy": row.name},
+			{"cost_discrepancy": row.name},
 			["status", "gateway_spent", "applied_on"],
 			as_dict=True,
 		)
@@ -470,7 +470,7 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		self.assertNotIn(row.name, self.owed_ids())
 		self.assertEqual(self.state(team)[0], D("0.5"), "Grove's own spend is untouched")
 		self.assertEqual(self.money(team), (0.5, 0.5, 0.5), "and so is every money read")
-		self.assertFalse(frappe.db.exists("Usage Correction", {"credit_discrepancy": row.name}))
+		self.assertFalse(frappe.db.exists("Usage Correction", {"cost_discrepancy": row.name}))
 
 	def test_a_store_that_no_longer_holds_the_key_is_owed_no_more(self):
 		_team, row = self.discrepancy()
@@ -478,7 +478,7 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		mark_corrected({row.name: None})
 		adjustment = frappe.db.get_value(
 			"Gateway Spend Adjustment",
-			{"credit_discrepancy": row.name},
+			{"cost_discrepancy": row.name},
 			["status", "gateway_spent", "applied_on"],
 			as_dict=True,
 		)
@@ -515,7 +515,7 @@ class TestADeadLineIsOwedToTheBox(CreditsCase):
 		post.assert_not_called()
 		self.assertEqual(self.state(team)[0], D("0.5"))
 		[row] = frappe.get_all(
-			"Credit Discrepancy",
+			"Cost Discrepancy",
 			filters={"team": team},
 			fields=["name", "resolution", "gateway_value", "grove_value", "delta"],
 		)
@@ -534,13 +534,13 @@ class TestADeadLineIsOwedToTheBox(CreditsCase):
 		frappe.db.set_value("Grove API Key", key, "status", "revoked")
 		self.dead(key, 50_000)
 		self.assertEqual(self.state(team)[0], D("0.5"))
-		self.assertFalse(frappe.db.exists("Credit Discrepancy", {"team": team}))
+		self.assertFalse(frappe.db.exists("Cost Discrepancy", {"team": team}))
 
 	def test_a_dead_line_of_a_past_month_lands_and_lifts_nothing(self):
 		team, key = self.team(cap=5)
 		self.dead(key, 50_000, at="2026-09-15T10:00:00Z")
 		self.assertTrue(frappe.db.get_value("Usage Record", {"api_key": key}, "drain_id").startswith("dead:"))
-		self.assertFalse(frappe.db.exists("Credit Discrepancy", {"team": team}))
+		self.assertFalse(frappe.db.exists("Cost Discrepancy", {"team": team}))
 
 	def test_the_pull_decides_it_under_whoever_pulled(self):
 		team, key = self.team(cap=5)

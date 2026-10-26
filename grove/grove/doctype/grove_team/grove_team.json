@@ -101,7 +101,7 @@
   },
   {
    "group": "Usage",
-   "link_doctype": "Credit Discrepancy",
+   "link_doctype": "Cost Discrepancy",
    "link_fieldname": "team"
   },
   {
@@ -110,7 +110,7 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-10-24 16:00:00.000000",
+ "modified": "2026-10-25 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove Team",

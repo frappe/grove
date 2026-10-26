@@ -5,11 +5,11 @@ from frappe.model.document import Document
 
 
 class GatewaySpendAdjustment(Document):
-	"""The gateway side of a Credit Discrepancy resolved as the gateway's error: what the box's
+	"""The gateway side of a Cost Discrepancy resolved as the gateway's error: what the box's
 	spend counter for the key on that store is owed, sent by the projection tick until the box
-	answers, then the counter it reported. Written by `CreditDiscrepancy.adjust_gateway`, moved to
+	answers, then the counter it reported. Written by `CostDiscrepancy.adjust_gateway`, moved to
 	Applied by `mark_corrected` (with no counter when the store no longer holds the key: revoked
-	since, nothing left to lift), never edited by hand. The decision stays on the Credit Discrepancy,
+	since, nothing left to lift), never edited by hand. The decision stays on the Cost Discrepancy,
 	and Grove's own money never moves on this side."""
 
 	# begin: auto-generated types
@@ -23,7 +23,7 @@ class GatewaySpendAdjustment(Document):
 		adjustment: DF.Currency
 		api_key: DF.Link
 		applied_on: DF.Datetime | None
-		credit_discrepancy: DF.Link
+		cost_discrepancy: DF.Link
 		gateway_spent: DF.Currency
 		gateway_store: DF.Link
 		status: DF.Literal["Pending", "Applied"]
@@ -41,7 +41,7 @@ def pending_adjustments():
 	rows = frappe.get_all(
 		"Gateway Spend Adjustment",
 		filters={"status": "Pending"},
-		fields=["credit_discrepancy", "api_key", "gateway_store", "adjustment"],
+		fields=["cost_discrepancy", "api_key", "gateway_store", "adjustment"],
 		order_by="creation asc",
 	)
 	hashes = dict(
@@ -57,7 +57,7 @@ def pending_adjustments():
 		body = {
 			"key": hashes.get(row.api_key, ""),
 			"delta": nano(row.adjustment),
-			"id": row.credit_discrepancy,
+			"id": row.cost_discrepancy,
 		}
 		owed.setdefault(row.gateway_store, []).append(body)
 	return owed
@@ -72,4 +72,4 @@ def mark_corrected(spent_by_id):
 		outcome = {"status": "Applied", "applied_on": frappe.utils.now_datetime()}
 		if spent is not None:
 			outcome["gateway_spent"] = Decimal(spent) / NANO
-		frappe.db.set_value("Gateway Spend Adjustment", {"credit_discrepancy": name}, outcome)
+		frappe.db.set_value("Gateway Spend Adjustment", {"cost_discrepancy": name}, outcome)
