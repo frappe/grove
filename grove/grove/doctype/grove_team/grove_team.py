@@ -49,10 +49,6 @@ class GroveTeam(Document):
 	def on_update(self):
 		forget_figures(self.name)
 
-	def on_trash(self):
-		# Every key, usage record and summary is billed to it; the stamp a box echoes back names it.
-		frappe.throw("A Grove Team is never deleted. Suspend it instead.")
-
 	@frappe.whitelist()
 	def set_suspended_at_grove(self, suspended: bool):
 		"""Desk's Suspend Keys / Resume Keys: suspends the team as Central would, marked as Grove's
