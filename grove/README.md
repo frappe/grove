@@ -161,9 +161,8 @@ vendor across all its models, so the limits the keys share are drawn on evenly �
 vendor answers 429 for the next (each tried once, then once more round), skips one answering
 401/402/403 for the rest of that request — an exhausted account reported under a 400 or 429
 (Anthropic's "credit balance", OpenAI's `insufficient_quota`) counts as the 402 it is — and answers
-such a refusal with its own 502 (`upstream credential rejected` / `upstream account
-unpaid` / `upstream credential lacks permission`), never the vendor's words, which go to its error
-log. It counts what every key answered: `requests`, `ok`, `rate_limited`, `unauthorized`, `unpaid`,
+such a refusal with its own 502 `upstream unavailable` — neither the vendor's words nor which
+refusal it was, both of which go to its error log. It counts what every key answered: `requests`, `ok`, `rate_limited`, `unauthorized`, `unpaid`,
 `forbidden` (`rejected` is those three together), `failed`, `last_used`, `last_rate_limited`. Every 6
 hours `grove.pathway.key_stats.pull_all` reads them off every store into **Provider Key Stats**, one row
 per key per store with what it answered since the pull before, in one `stats` JSON field (the
