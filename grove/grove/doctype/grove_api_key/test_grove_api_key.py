@@ -593,6 +593,24 @@ class IntegrationTestExpiry(IntegrationTestCase):
 		)
 		self.assertEqual([k for k in effective_keys() if k["prefix"] == due.name], [])
 
+	def test_one_key_the_guard_refuses_does_not_hold_the_rest_of_the_sweep_back(self):
+		fresh, due = (key("key-probe-sweep-guard", expiry="1 Day") for _ in range(2))
+		yesterday = frappe.utils.add_days(None, -1)
+		# A moment moved by hand under the six-hour guard: minted now, past its moment already.
+		frappe.db.set_value("Grove API Key", fresh.name, "expires_at", yesterday, update_modified=False)
+		frappe.db.set_value(
+			"Grove API Key",
+			due.name,
+			{"creation": frappe.utils.add_days(None, -2), "expires_at": yesterday},
+			update_modified=False,
+		)
+		with unittest.mock.patch("frappe.log_error") as logged:
+			grove_api_key.revoke_expired()
+		self.assertEqual(
+			[frappe.db.get_value("Grove API Key", d.name, "status") for d in (fresh, due)], ["active", "revoked"]
+		)
+		logged.assert_called_once_with(title=f"Expired key {fresh.name} could not be revoked")
+
 	def test_a_key_minted_to_expire_from_first_use_gets_its_moment_at_its_first_record_once(self):
 		name = team("key-probe-first-use")
 		minted = keys.provision_key(name, expiry="7 Days", expiry_from_first_use=True)

@@ -271,7 +271,8 @@ def start_expiry(keys):
 
 def revoke_expired():
 	"""Hourly: every live key past its `expires_at` is revoked, and the next tick prunes it off the
-	boxes. Every rule is a day or more, so the six-hour guard never meets one."""
+	boxes. Every rule is a day or more, so the six-hour guard meets none minted by the rules; one it
+	does refuse (a moment moved by hand) is logged and left for the next hour, the rest still go."""
 	# `is set` first: a bare `<=` reads a NULL as year 1 and would take every Never key.
 	due = frappe.get_all(
 		"Grove API Key",
@@ -279,7 +280,10 @@ def revoke_expired():
 		pluck="name",
 	)
 	for name in due:
-		frappe.get_doc("Grove API Key", name).revoke()
+		try:
+			frappe.get_doc("Grove API Key", name).revoke()
+		except Exception:
+			frappe.log_error(title=f"Expired key {name} could not be revoked")
 
 
 def on_doctype_update():
