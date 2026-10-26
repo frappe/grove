@@ -731,6 +731,14 @@ class IntegrationTestTransfer(IntegrationTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "stays revoked"):
 			gone.transfer(taken)
 
+	def test_a_titled_key_meets_the_title_twin_check_though_no_new_title_is_asked(self):
+		taken = team("key-handover-taken-quiet")
+		key(taken, title="site.example.test")
+		doc = self.trial_key("key-handover-titled", title="site.example.test")
+		with self.assertRaisesRegex(frappe.ValidationError, "titled"):
+			doc.transfer(taken)
+		self.assertEqual(frappe.db.get_value("Grove API Key", doc.name, "team"), team("key-handover-titled"))
+
 	def test_the_cap_must_fit_a_monthly_teams_spend_limit(self):
 		tight = team("key-handover-tight", spend_limit=5)
 		frappe.get_doc({"doctype": "Grove API Key", "team": tight, "cap": 4}).insert()

@@ -153,11 +153,10 @@ def transfer_key(team: str, key: str, to_team: str, title: str | None = None):
 	key as `keys` lists it."""
 	frappe.only_for(ALLOWED_ROLES)
 	to_team = get_team(to_team)
-	holders = [get_team(team), to_team]
-	name = frappe.db.get_value("Grove API Key", {"name": key or "", "team": ("in", holders)})
-	if not name:
-		frappe.throw("no such API key", frappe.DoesNotExistError)
-	doc = frappe.get_doc("Grove API Key", name)
+	# A retry after a lost reply finds the key moved already: answered as it is, nothing moves.
+	if frappe.db.get_value("Grove API Key", key or "", "team") == to_team:
+		return key_rows([key])[0]
+	doc = get_api_key(team, key)
 	doc.transfer(to_team, title)
 	return key_rows([doc.name])[0]
 

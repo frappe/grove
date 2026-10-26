@@ -211,13 +211,14 @@ class GroveAPIKey(Document):
 				f"{to_team} caps keys over the same window as {self.team} ({window}): what this key spent "
 				"would follow it. Mint a new one."
 			)
+		title = title or self.title
 		if title and frappe.db.exists("Grove API Key", {"team": to_team, "title": title}):
 			frappe.throw(f"{to_team} already has a key titled {title!r}.")
 		old_team, self.team = self.team, to_team
 		self.check_key_count()
 		if window != "Total":
 			self.validate_cap()
-		self.title = title or self.title
+		self.title = title
 		self.expiry, self.expiry_from_first_use, self.expires_at = "Never", 0, None
 		self.set("model_groups", [])
 		default = frappe.db.get_value("Model Group", {"is_default": 1, "geography": self.geography})

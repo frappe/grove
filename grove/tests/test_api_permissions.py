@@ -385,6 +385,14 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		row = keys.extend_key(team, key, 3)
 		self.assertEqual(row.expires_at, utc_timestamp(frappe.utils.add_days(moment, 3)))
 
+	def test_expiry_from_first_use_is_read_as_a_flag_however_the_caller_spells_it(self):
+		team = "probe-flag"
+		teams.provision_team(team)
+		off = keys.provision_key(team, expiry="7 Days", expiry_from_first_use="false")["name"]
+		on = keys.provision_key(team, expiry="7 Days", expiry_from_first_use="true")["name"]
+		self.assertEqual(frappe.db.get_value("Grove API Key", off, "expiry_from_first_use"), 0)
+		self.assertEqual(frappe.db.get_value("Grove API Key", on, "expiry_from_first_use"), 1)
+
 	def test_a_key_is_handed_over_by_name_only_for_the_team_holding_it(self):
 		team, other, third = "probe-handover", "probe-handover-to", "probe-handover-third"
 		for each in (team, other, third):
