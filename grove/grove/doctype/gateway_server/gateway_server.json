@@ -20,7 +20,6 @@
   "admin_token",
   "agent_version",
   "last_synced_at",
-  "monitoring_agent",
   "ship_host_metrics",
   "is_vector_setup",
   "memory_limit_mb",
@@ -71,7 +70,7 @@
   },
   {
    "default": "0",
-   "description": "Whether this box's address survives a stop. Owned by the Machine — set it there.",
+   "description": "Whether this box's address survives a stop. Owned by the Machine \u2014 set it there.",
    "fetch_from": "machine.is_static_ip",
    "fieldname": "is_static_ip",
    "fieldtype": "Check",
@@ -107,13 +106,6 @@
    "read_only": 1
   },
   {
-   "description": "The agent that scrapes this box. Blank = not scraped.",
-   "fieldname": "monitoring_agent",
-   "fieldtype": "Link",
-   "label": "Monitoring Agent",
-   "options": "Monitoring Agent"
-  },
-  {
    "fieldname": "column_break_admin",
    "fieldtype": "Column Break"
   },
@@ -125,7 +117,7 @@
    "read_only": 1
   },
   {
-   "description": "The pathway release this box last installed successfully. Written by the deploy, not typed — it is what makes a fleet running mixed versions visible.",
+   "description": "The pathway release this box last installed successfully. Written by the deploy, not typed \u2014 it is what makes a fleet running mixed versions visible.",
    "fieldname": "agent_version",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -189,7 +181,8 @@
    "description": "Vector pushes this box's host metrics to the Region's datum. Untick on a machine whose provider already does (an Atlas machine runs Pilot); logs ship either way. Takes effect at the next Install/Update Vector or daily refresh.",
    "fieldname": "ship_host_metrics",
    "fieldtype": "Check",
-   "label": "Ship Host Metrics"
+   "label": "Ship Host Metrics",
+   "set_only_once": 1
   },
   {
    "default": "0",
@@ -202,7 +195,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-22 16:28:36.679371",
+ "modified": "2026-10-27 02:30:45.766290",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Gateway Server",

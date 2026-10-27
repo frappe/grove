@@ -6,7 +6,7 @@ against. `grove.utils.ansible_project_dir("Gateway Server")` is literally
 
 ```
 playbooks/
-  gateway_server/     gateway.yml  deploy_agent.yml  deploy_tls.yml  config.yml   + config.json.j2, systemd/
+  gateway_server/     gateway.yml  deploy_agent.yml  deploy_tls.yml  retire_exporter.yml  config.yml   + config.json.j2, systemd/
   ingress_server/     ingress.yml  deploy_agent.yml  config.yml
   inference_server/   provision.yml  serve.yml  reconfigure.yml  container_state.yml  teardown.yml  deploy_tls.yml
   machine/            ping.yml  grow_root.yml  scan_gpus.yml     — box-level, no role layered on yet
@@ -18,12 +18,12 @@ playbooks/
 A project's own `roles/` is searched first, then `playbooks/roles/`. So a shared role is written once
 and named from anywhere, with no copy and no symlink to keep pointing.
 
-Two plays deliberately live in a project that is not the doctype they run for, because they are the
-same work on either kind of box: `deploy_tls.yml` sits under `gateway_server/` and an **Ingress**
-Server runs it with `project="Gateway Server"` (a standalone Inference Server has its own, because
+Some plays deliberately live in a project that is not the doctype they run for, because they are the
+same work on either kind of box: `deploy_tls.yml` and `retire_exporter.yml` sit under `gateway_server/`
+and an **Ingress** Server runs them with `project="Gateway Server"` (a standalone Inference Server has its own, because
 its nginx needs a reload that pathway does not), and `exporters.yml` and `vector.yml` belong to Monitoring Agent but
-run against the fleet's boxes (`exporters.yml` on Inference and Gateway Servers, `vector.yml` on Gateway
-Servers and Stores).
+run against the fleet's boxes (`exporters.yml` on Inference Servers, `vector.yml` on Gateway Servers,
+Gateway Stores and Ingress Servers).
 
 ## How a play is actually run
 
@@ -118,18 +118,20 @@ the box cannot reach — same entries and labels (`machine`, `region`, `server`,
 that goes stale until Push Targets is pressed again. The agent box installs its own node_exporter, bound
 to localhost, since no Setup play would, and scrapes itself.
 
-Every box answers on one port and its exporters are re-published as paths behind it (`/metrics/node`,
-`/metrics/gpu`), so a box needs nothing open but 22 and that port; the exporters still listen on
-9100/9400, just not from outside. Every target is https on the box's TLS front with a self-signed
-certificate, so both scrape jobs skip verification: the scrape is encrypted, the box is not
-authenticated. Only the host job authenticates — the two exporter paths sit behind basic auth
-(the Scrape Password, rotated by a server's Update Scrape Auth button through `exporters.yml`),
-because an exporter answers anyone who reaches it. An engine's `/metrics` under `/e/<slug>/` is guarded
-by nothing, exactly as when its port was open: vLLM's auth middleware covers `/v1`, not `/metrics`.
+Only inference boxes are scraped; a Gateway Server, Gateway Store or Ingress Server ships its host
+metrics with Vector instead (below) and carries no exporter. An inference box answers on one port and
+its exporters are re-published as paths behind it (`/metrics/node`, `/metrics/gpu`), so it needs nothing
+open but 22 and that port; the exporters still listen on 9100/9400, just not from outside. Every target
+is https on the box's TLS front with a self-signed certificate, so both scrape jobs skip verification:
+the scrape is encrypted, the box is not authenticated. Only the host job authenticates — the two
+exporter paths sit behind basic auth (the Scrape Password, rotated by the Inference Server's Update
+Scrape Auth button through `exporters.yml`), because an exporter answers anyone who reaches it. An
+engine's `/metrics` under `/e/<slug>/` is guarded by nothing, exactly as when its port was open: vLLM's
+auth middleware covers `/v1`, not `/metrics`.
 
 ### Vector → datum
 
-Every Gateway Server and Gateway Store runs Vector (`monitoring_agent/vector.yml`, shared role
+Every Gateway Server, Gateway Store and Ingress Server runs Vector (`monitoring_agent/vector.yml`, shared role
 `roles/vector`, pinned deb, the package's own unit). It pushes to **datum**, the write door in front of
 ClickHouse, at the two routes its Region's Monitoring tab names: `host_metrics` plus Vector's own
 `internal_metrics` by Prometheus remote write (`Metrics Endpoint`), and journald plus every
@@ -144,7 +146,9 @@ The token is datum's: a JWT Central signs for one `resource_id` (`grove:<machine
 with no revocation, addressed to the Region's `central_region` (Central's own name for it). Grove mints
 it from Central (`grove.datum.mint_token`, Grove Settings → Central) inside the job and never stores it; `grove.datum.refresh_tokens` re-runs the play daily on every box
 with `is_vector_setup`. Setup chains the play as its own job; **Install Vector** (then **Update
-Vector**) re-runs it by hand. `ship_host_metrics` off drops the `host_metrics` source and nothing else:
+Vector**) re-runs it by hand. A Gateway or Ingress Server set up before Vector shows **Migrate to Vector**
+instead until `is_vector_setup`: vector.yml, then `gateway_server/retire_exporter.yml` stops and removes the
+node_exporter and scrape htpasswd its old play installed — Vector first, so the box is never unwatched. `ship_host_metrics` off drops the `host_metrics` source and nothing else:
 an Atlas machine's Pilot already ships those, and nobody else ships the logs.
 
 ## Running one by hand

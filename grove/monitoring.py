@@ -25,8 +25,8 @@ GPU_METRICS_PATH = "/metrics/gpu"
 
 
 def run_exporters_play(server):
-	"""The exporters play — htpasswd, node, and DCGM when the Machine has GPU rows — as the Update
-	Scrape Auth button re-runs it. Shared by every server doc; only which one owns the button differs.
+	"""The exporters play — htpasswd, node, and DCGM when the Machine has GPU rows — as an Inference
+	Server's Update Scrape Auth button re-runs it. Gateway and Ingress Servers ship with Vector instead.
 
 	The exporters only LISTEN; nothing installed here is told which agent scrapes them."""
 	machine = frappe.get_doc("Machine", server.machine)
@@ -46,7 +46,7 @@ def run_exporters_play(server):
 def targets(agent: str, kind: str = "engine", token: str = ""):
 	"""Prometheus http_sd list for one Monitoring Agent.
 
-	kind='host'   → the node and GPU exporters on every box that names this agent.
+	kind='host'   → the node and GPU exporters on every inference box that names this agent.
 	kind='engine' → the vLLM engines on those boxes, plus every pod that names it.
 
 	Two kinds because they are scraped at different intervals. A raw Response, not a return
@@ -80,10 +80,9 @@ def authenticate(token):
 
 
 def host_targets(agent):
-	"""Exporter targets for every box this agent owns, including its own."""
-	network = agent_network(agent)
-	boxes = inference_boxes(agent) + front_boxes(agent)
-	return build_host_targets(boxes, network) + agent_targets(agent)
+	"""Exporter targets for every inference box this agent owns, and its own. Gateway and Ingress
+	Servers are never here: they ship their host metrics with Vector."""
+	return build_host_targets(inference_boxes(agent), agent_network(agent)) + agent_targets(agent)
 
 
 def agent_network(agent):
@@ -163,21 +162,6 @@ def inference_boxes(agent):
 		fields=["name", "machine", "machine_ip as ip", "region"],
 	)
 	return _with_gpu_flag(_with_machine_address(servers))
-
-
-def front_boxes(agent):
-	"""Gateway and Ingress Servers. Both run the same OpenResty in front of the same
-	node_exporter, so they are one query shape twice over. Never GPU boxes."""
-	servers = [
-		server
-		for doctype in ("Gateway Server", "Ingress Server")
-		for server in frappe.get_all(
-			doctype,
-			filters={"monitoring_agent": agent, "status": ("!=", _GONE_STATUS)},
-			fields=["name", "machine", "public_ip as ip", "region"],
-		)
-	]
-	return [{**server, "has_gpu": False} for server in _with_machine_address(servers)]
 
 
 def _with_gpu_flag(servers):

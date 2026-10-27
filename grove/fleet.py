@@ -18,7 +18,6 @@ from frappe.utils import escape_html
 
 from grove import datum, failure
 from grove.cloud_provider.dns import Route53Client, Route53Error
-from grove.monitoring import run_exporters_play
 from grove.pathway.run import Target
 from grove.server import Server
 from grove.tls import dns_credentials
@@ -176,8 +175,7 @@ class NamedHost(Server):
 
 
 class FleetHost(NamedHost):
-	"""Everything a named fleet box does the same way past its name: admin URL, certificate and
-	exporters."""
+	"""Everything a named fleet box does the same way past its name: admin URL and certificate."""
 
 	@property
 	def tls_variables(self):
@@ -232,19 +230,6 @@ class FleetHost(NamedHost):
 			extravars=self.tls_variables,
 		)
 
-	@frappe.whitelist()
-	def update_scrape_auth(self):
-		"""Button: rewrite this box's metrics htpasswd from the current scrape hash, re-running the
-		exporters with it (and DCGM if cards have appeared since Setup). Setup installs all of that
-		already; this is the path after a Scrape Password rotation, which no box learns of by itself."""
-		if not self.machine:
-			frappe.throw("Set a Machine before updating its scrape auth.")
-		frappe.enqueue_doc(self.doctype, self.name, "provision_exporters", queue="long", timeout=1800)
-		frappe.msgprint(f"Updating scrape auth on {self.name} — watch its Ansible Plays.", alert=True)
-
-	def provision_exporters(self):
-		return run_exporters_play(self)
-
 
 class PathwayHost(FleetHost):
 	"""A fleet box that runs pathway — a Gateway or an Ingress Server. Its maintenance is a
@@ -258,6 +243,25 @@ class PathwayHost(FleetHost):
 			**frappe.get_single("Grove Settings").gateway_variables,
 			"gateway_maintenance": bool(self.is_in_maintenance),
 		}
+
+	@frappe.whitelist()
+	def migrate_to_vector(self):
+		"""Button: move a box set up before Vector onto it — vector.yml, then retire the node_exporter
+		and scrape htpasswd its old play installed. A box set up since has neither."""
+		if self.status != "Active":
+			frappe.throw(f"{self.name} is {self.status} — set it up before migrating to Vector.")
+		self.check_vector_ready()
+		frappe.enqueue_doc(self.doctype, self.name, "migrate_vector", queue="long", timeout=1800)
+		frappe.msgprint(f"Migrating {self.name} to Vector — watch its Ansible Plays.", alert=True)
+
+	@failure.reports_failure(mark_broken=False)
+	def migrate_vector(self):
+		"""Job: Vector first, so the box is never unwatched; the exporter goes only once it has landed."""
+		self.provision_vector()
+		play_name, rc = self.run_playbook("retire_exporter.yml", project="Gateway Server")
+		if rc != 0:
+			frappe.throw(f"retire_exporter.yml failed on {self.name} (Ansible Play {play_name}).")
+		return play_name, rc
 
 	@frappe.whitelist()
 	def set_maintenance(self, on: int):

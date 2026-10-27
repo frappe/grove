@@ -14,7 +14,7 @@ import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from grove import datum
-from grove.fleet import NamedHost
+from grove.fleet import NamedHost, PathwayHost
 from grove.grove.doctype.region.region import Region
 
 PLAYBOOKS = Path(__file__).parent.parent / "playbooks"
@@ -224,7 +224,7 @@ class TestTheButton(unittest.TestCase):
 
 class TestTheRefresh(unittest.TestCase):
 	def test_every_active_box_with_vector_gets_a_fresh_token(self):
-		boxes = {"Gateway Server": ["gw-1", "gw-2"], "Gateway Store": ["store-1"]}
+		boxes = {"Gateway Server": ["gw-1", "gw-2"], "Gateway Store": ["store-1"], "Ingress Server": ["ing-1"]}
 
 		def get_all(doctype, filters, pluck):
 			self.assertEqual({"status": "Active", "is_vector_setup": 1}, filters)
@@ -233,7 +233,7 @@ class TestTheRefresh(unittest.TestCase):
 		with patch("frappe.get_all", side_effect=get_all), patch("frappe.enqueue_doc") as enqueue:
 			datum.refresh_tokens()
 		self.assertEqual(
-			[("Gateway Server", "gw-1"), ("Gateway Server", "gw-2"), ("Gateway Store", "store-1")],
+			[("Gateway Server", "gw-1"), ("Gateway Server", "gw-2"), ("Gateway Store", "store-1"), ("Ingress Server", "ing-1")],
 			[call.args[:2] for call in enqueue.call_args_list],
 		)
 		self.assertTrue(all(call.args[2] == "provision_vector" for call in enqueue.call_args_list))
@@ -312,3 +312,33 @@ class TestRegion(unittest.TestCase):
 			Region.validate(fake_region_doc(logs_url="datum.test/v1/logs/ingest"))
 		with patch("frappe.throw", side_effect=frappe.ValidationError):
 			Region.validate(fake_region_doc(logs_url="https://datum.test/v1/logs/ingest"))
+
+
+class TestTheMigration(unittest.TestCase):
+	"""Migrate to Vector on a box set up before it: vector.yml first, the exporter's retirement after."""
+
+	def test_vector_lands_before_the_exporter_goes(self):
+		doc = SimpleNamespace(name="gw-1", provision_vector=Mock(), run_playbook=Mock(return_value=("play-2", 0)))
+		PathwayHost.migrate_vector(doc)
+		doc.provision_vector.assert_called_once_with()
+		doc.run_playbook.assert_called_once_with("retire_exporter.yml", project="Gateway Server")
+
+	def test_a_failed_vector_install_leaves_the_exporter_in_place(self):
+		doc = SimpleNamespace(
+			name="gw-1",
+			doctype="Gateway Server",
+			provision_vector=Mock(side_effect=frappe.ValidationError("vector.yml failed")),
+			run_playbook=Mock(),
+		)
+		with patch("grove.failure.report"), self.assertRaises(frappe.ValidationError):
+			PathwayHost.migrate_vector(doc)
+		doc.run_playbook.assert_not_called()
+
+	def test_the_retirement_removes_exactly_what_the_old_plays_installed(self):
+		tasks = yaml.safe_load((PLAYBOOKS / "gateway_server" / "retire_exporter.yml").read_text())[0]["tasks"]
+		removed = next(task for task in tasks if "ansible.builtin.file" in task)["loop"]
+		https_defaults = yaml.safe_load((PLAYBOOKS / "roles" / "grove_https" / "defaults" / "main.yml").read_text())
+		self.assertEqual(
+			{"/etc/systemd/system/node_exporter.service", "/usr/local/bin/node_exporter", https_defaults["grove_metrics_htpasswd"]},
+			set(removed),
+		)

@@ -1,0 +1,33 @@
+---
+# Retire what the pre-Vector gateway and ingress plays installed: node_exporter and the scrape
+# htpasswd. Migrate to Vector runs it after vector.yml has landed. A box that never had them is
+# left as it is.
+- hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: look for the node_exporter unit
+      ansible.builtin.stat:
+        path: /etc/systemd/system/node_exporter.service
+      register: node_exporter_unit
+
+    - name: stop and disable node_exporter
+      when: node_exporter_unit.stat.exists
+      ansible.builtin.systemd:
+        name: node_exporter
+        state: stopped
+        enabled: false
+
+    - name: remove node_exporter and the scrape htpasswd
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/systemd/system/node_exporter.service
+        - /usr/local/bin/node_exporter
+        - /etc/grove/nginx/metrics.htpasswd
+
+    - name: forget the removed unit
+      ansible.builtin.systemd:
+        daemon_reload: true

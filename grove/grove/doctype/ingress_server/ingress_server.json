@@ -15,11 +15,12 @@
   "geography",
   "status",
   "column_break_admin",
-  "monitoring_agent",
   "admin_url",
   "agent_version",
   "is_in_maintenance",
   "memory_limit_mb",
+  "ship_host_metrics",
+  "is_vector_setup",
   "last_synced_at",
   "admin_token",
   "data_token"
@@ -100,13 +101,6 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "The agent that scrapes this box. Blank = not scraped.",
-   "fieldname": "monitoring_agent",
-   "fieldtype": "Link",
-   "label": "Monitoring Agent",
-   "options": "Monitoring Agent"
-  },
-  {
    "description": "Where the control plane pushes this ingress's replica table. Derived from this box's name inside the Fleet Zone once one is set (https, /grove-admin), else from its public IP over plain http.",
    "fieldname": "admin_url",
    "fieldtype": "Data",
@@ -137,6 +131,22 @@
    "read_only": 1
   },
   {
+   "default": "1",
+   "description": "Vector pushes this box's host metrics to the Region's datum. Untick on a machine whose provider already does (an Atlas machine runs Pilot); logs ship either way. Takes effect at the next Install/Update Vector or daily refresh.",
+   "fieldname": "ship_host_metrics",
+   "fieldtype": "Check",
+   "label": "Ship Host Metrics"
+  },
+  {
+   "default": "0",
+   "description": "Set once Vector has been installed on this box (Setup chains it; Install Vector for an older box). It pushes logs, and host metrics when ticked, to the Region's datum; its token is refreshed daily.",
+   "fieldname": "is_vector_setup",
+   "fieldtype": "Check",
+   "in_standard_filter": 1,
+   "label": "Vector Setup",
+   "read_only": 1
+  },
+  {
    "fieldname": "last_synced_at",
    "fieldtype": "Datetime",
    "label": "Last Synced At",
@@ -159,7 +169,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-04 01:10:00.000000",
+ "modified": "2026-10-27 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Ingress Server",

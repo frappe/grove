@@ -46,7 +46,7 @@ class MonitoringAgent(Server, Document):
 	def archive_blockers(self):
 		"""Whatever this agent scrapes would go dark, engines on Pods included."""
 		blockers = []
-		for doctype in ("Inference Server", "Ingress Server", "Gateway Server", "Pod"):
+		for doctype in ("Inference Server", "Pod"):
 			names = frappe.get_all(
 				doctype,
 				filters={"monitoring_agent": self.name, "status": ("!=", "Terminated")},

@@ -8,7 +8,7 @@ import requests
 
 TOKEN_ROUTE = "/api/method/central.api.grove.datum_token"
 CREDENTIAL_FIELDS = ("central_url", "central_api_key", "central_api_secret")
-VECTOR_HOSTS = ("Gateway Server", "Gateway Store")
+VECTOR_HOSTS = ("Gateway Server", "Gateway Store", "Ingress Server")
 
 
 def mint_token(region: str, resource_id: str) -> str:

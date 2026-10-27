@@ -82,17 +82,6 @@ frappe.ui.form.on("Ingress Server", {
 				__("Ingress")
 			);
 
-			frm.add_custom_button(__("Update Scrape Auth"), () =>
-				grove.confirm_call(
-					frm,
-					__(
-						"Rewrite {0}'s exporter password from Grove Settings? Scrapes with the old one fail from then on.",
-						[frm.doc.name]
-					),
-					"update_scrape_auth"
-				)
-			);
-
 			frm.add_custom_button(
 				__("Sync Replicas"),
 				() =>
@@ -129,6 +118,25 @@ frappe.ui.form.on("Ingress Server", {
 						"deploy_tls"
 					),
 				__("TLS")
+			);
+		}
+
+		if (frm.doc.status === "Active") {
+			const migrate = !frm.doc.is_vector_setup;
+			frm.add_custom_button(migrate ? __("Migrate to Vector") : __("Update Vector"), () =>
+				grove.confirm_call(
+					frm,
+					migrate
+						? __(
+								"Migrate {0} to Vector? It installs Vector, pushing logs — and host metrics when Ship Host Metrics is ticked — to Region {1}'s datum, then removes node_exporter and the scrape htpasswd.",
+								[frm.doc.name, frm.doc.region]
+							)
+						: __(
+								"Re-render Vector on {0}? It pushes logs — and host metrics when Ship Host Metrics is ticked — to Region {1}'s datum.",
+								[frm.doc.name, frm.doc.region]
+							),
+					migrate ? "migrate_to_vector" : "install_vector"
+				)
 			);
 		}
 
