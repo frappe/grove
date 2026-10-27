@@ -282,8 +282,3 @@ automatically. The first gateway set up on or moved onto a store is marked for y
   attempts, last error and payload — updated each failing pull and resolved by the pull that lands
   it. **Pull Now** on the row pulls just that user. The usage itself lives only on the gateway
   until then, so a Redis flush loses it; Log Settings clears resolved rows after 90 days.
-- **Ansible swallows whatever a callback raises**, logging `Failure using method (…)` and running
-  on. So a play's own docs are written best-effort: each write carries Frappe's
-  `dangerously_reconnect_on_connection_abort` (Ansible forks a worker per task, and a child closing
-  the inherited socket takes this process's connection with it), and the rc a caller acts on is
-  Ansible's, never the doc's status.
