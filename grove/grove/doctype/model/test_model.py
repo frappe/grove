@@ -62,7 +62,7 @@ class TestPublishing(IntegrationTestCase):
 
 
 class TestGranted(IntegrationTestCase):
-	"""A route is not a grant: a published model no Allow or peopled Model Group names reaches no key."""
+	"""A route is not a grant: a published model no team's Allow or Model Group names reaches no key."""
 
 	@classmethod
 	def setUpClass(cls):
@@ -75,36 +75,33 @@ class TestGranted(IntegrationTestCase):
 		cls.group = (
 			frappe.get_doc({"doctype": "Model Group", "__newname": "probe-granted-group"}).insert().name
 		)
-		team = (
+		cls.team = (
 			frappe.get_doc({"doctype": "Grove Team", "__newname": "probe-granted"})
 			.insert(ignore_permissions=True)
 			.name
-		)
-		cls.key = (
-			frappe.get_doc({"doctype": "Grove API Key", "team": team}).insert(ignore_permissions=True).name
 		)
 
 	def is_granted(self):
 		return frappe.get_doc("Model", self.model).is_granted
 
-	def test_a_grant_is_an_allow_or_a_group_with_someone_in_it(self):
+	def test_a_grant_is_an_allow_or_a_group_with_a_team_in_it(self):
 		self.assertFalse(self.is_granted())
-		key = frappe.get_doc("Grove API Key", self.key)
-		key.model_groups = []
-		key.append("deny", {"model": self.model})
-		key.save()
+		team = frappe.get_doc("Grove Team", self.team)
+		team.model_groups = []
+		team.append("deny", {"model": self.model})
+		team.save()
 		self.assertFalse(self.is_granted(), "a deny is not a grant")
 		group = frappe.get_doc("Model Group", self.group)
 		group.append("models", {"model": self.model})
 		group.save()
-		self.assertFalse(self.is_granted(), "a group nobody is in grants nothing")
-		key.append("model_groups", {"model_group": self.group})
-		key.save()
+		self.assertFalse(self.is_granted(), "a group no team is in grants nothing")
+		team.append("model_groups", {"model_group": self.group})
+		team.save()
 		self.assertTrue(self.is_granted())
-		key.model_groups, key.deny = [], []
-		key.append("allow", {"model": self.model})
-		key.save()
-		self.assertTrue(self.is_granted(), "the user's own allow")
+		team.model_groups, team.deny = [], []
+		team.append("allow", {"model": self.model})
+		team.save()
+		self.assertTrue(self.is_granted(), "the team's own allow")
 
 
 class TestLoadPricing(IntegrationTestCase):

@@ -15,7 +15,15 @@ import json
 
 import frappe
 
-from grove.access import effective_limits, group_rows, limit_entries, model_rows
+from grove.access import (
+	effective_limits,
+	group_geographies,
+	group_rows,
+	limit_entries,
+	model_rows,
+	reaching,
+	team_grants,
+)
 from grove.billing.pricing import nano
 from grove.pathway import routes
 
@@ -35,7 +43,8 @@ def effective_groups():
 
 def effective_keys(names=None):
 	"""Every LIVE API Key projected for the gateway, with the whole policy the gates read: its
-	groups and own allow/deny, its geography, its rate limits (its team's tier's, else the defaults,
+	team's groups of its geography and the team's allow/deny that reach it (a model of ours reaches
+	every geography), its geography, its rate limits (its team's tier's, else the defaults,
 	with its own rows replacing the tier's on the metrics they name) and `budget` — its cap, with
 	`budget_window`, what the box counts it over: the UTC month, or everything since the mint (the
 	team's Key Cap Window); the box refuses the key once that reaches the cap. What is the team's
@@ -64,8 +73,10 @@ def effective_keys(names=None):
 			fields=["name", "log_payloads", "suspended", "tier", "key_cap_window"],
 		)
 	}
-	deltas = model_rows("Grove API Key", names)
-	memberships = group_rows(names)
+	team_names = None if names is None else sorted(teams)
+	grants = team_grants(team_names)
+	memberships = group_rows(team_names)
+	where = group_geographies()
 	limits = effective_limits(
 		keys, limit_entries("Grove API Key", names), {name: t.tier for name, t in teams.items()}
 	)
@@ -74,15 +85,16 @@ def effective_keys(names=None):
 		team = teams.get(k.team)
 		if not k.key_hash or team is None:
 			continue
+		own = grants.get(k.team, {})
 		records.append(
 			{
 				"key_hash": k.key_hash,
 				"prefix": k.name,
 				"team": k.team,
 				"status": k.status or "active",
-				"group": ",".join(memberships.get(k.name, [])),
-				"allow": ",".join(deltas.get(k.name, {}).get("allow", [])),
-				"deny": ",".join(deltas.get(k.name, {}).get("deny", [])),
+				"group": ",".join(g for g in memberships.get(k.team, []) if where.get(g) == k.geography),
+				"allow": ",".join(reaching(own.get("allow", []), k.geography)),
+				"deny": ",".join(reaching(own.get("deny", []), k.geography)),
 				"limited": bool(team.suspended),
 				"log_payloads": bool(team.log_payloads),
 				"geography": k.geography or "",

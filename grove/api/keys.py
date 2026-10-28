@@ -29,28 +29,24 @@ def provision_key(
 	title: str | None = None,
 	geography: str | None = None,
 	cap: float | None = None,
-	models: list[str] | None = None,
 	limits: list[dict] | None = None,
 	expiry: str | None = None,
 	expiry_from_first_use: bool = False,
-	model_group: str | None = None,
 ):
 	"""Mint a key for `team` in `geography` — the default one when none is given; every other
 	geography's gateway refuses it. `expiry` is when it retires on its own, one of the key's rules
 	(Never, 1 Day, 7 Days, 14 Days, 30 Days), Never when not given, fixed after; counted from the
-	mint, or from the key's first usage record with `expiry_from_first_use`. `model_group` puts it in
-	that group instead of its geography's default."""
+	mint, or from the key's first usage record with `expiry_from_first_use`. What it may call is
+	the team's, not sent here."""
 	frappe.only_for(ALLOWED_ROLES)
 	key = frappe.new_doc("Grove API Key")
 	key.team, key.title, key.status = get_team(team), title, "active"
 	if geography:
 		key.geography = geography
-	if model_group:
-		key.append("model_groups", {"model_group": model_group})
 	if expiry:
 		key.expiry = expiry
 		key.expiry_from_first_use = int(bool(expiry_from_first_use))
-	set_key_policy(key, cap, models, limits)
+	set_key_policy(key, cap, limits)
 	key.insert()
 	gateway_url = get_gateway_url(key.geography)
 	if not gateway_url:
@@ -68,16 +64,15 @@ def update_key(
 	team: str,
 	key: str,
 	cap: float | None = None,
-	models: list[str] | None = None,
 	limits: list[dict] | None = None,
 ):
-	"""Change what a key of `team` may spend or call: `cap`, `models` (replacing its own Allow)
-	and `limits` (replacing its own rate limits; `[]` puts it back under its team's tier alone),
-	each kept when not given. Its geography never changes — mint another key for that. → the key as
-	`keys` lists it."""
+	"""Change what a key of `team` may spend: `cap`, and `limits` (replacing its own rate limits;
+	`[]` puts it back under its team's tier alone), each kept when not given. Its geography never
+	changes — mint another key for that — and what it may call is its team's. → the key as `keys`
+	lists it."""
 	frappe.only_for(ALLOWED_ROLES)
 	doc = get_api_key(team, key)
-	set_key_policy(doc, cap, models, limits)
+	set_key_policy(doc, cap, limits)
 	doc.save()
 	return key_rows([doc.name])[0]
 
@@ -145,8 +140,8 @@ def extend_key(team: str, key: str, days: int):
 def transfer_key(team: str, key: str, to_team: str, title: str | None = None):
 	"""Hand a key of `team` to `to_team` — what Central sends when a trial converts, so the secret
 	the customer's server holds keeps working. The team and the title (`title`, when given) move,
-	the trial's rules go: the geography's default group in place of its groups, its expiry lifted;
-	cap, geography and limit rows stay as minted. Counted against `to_team` like a mint: its key
+	the trial's rules go: its expiry is lifted, and what it may call is `to_team`'s; cap,
+	geography and limit rows stay as minted. Counted against `to_team` like a mint: its key
 	count, and the cap within a Monthly team's spend limit. The box closes the old team's books at
 	the push. A key `to_team` already holds is answered as it is, so a lost reply is retried
 	safely; one between two teams of one cap window is refused, its spend would follow it. → the
@@ -196,24 +191,10 @@ def get_api_key(team, key):
 	return frappe.get_doc("Grove API Key", name)
 
 
-def set_key_policy(doc, cap=None, models=None, limits=None):
-	"""Write onto `doc` what was given: `cap`; `models`, replacing its own Allow with that
-	geography's docs; `limits`, replacing its rate limits."""
+def set_key_policy(doc, cap=None, limits=None):
+	"""Write onto `doc` what was given: `cap`; `limits`, replacing its rate limits."""
 	if cap is not None:
 		doc.cap = cap
-	if models is not None:
-		from grove.access import model_doc
-
-		doc.allow = []
-		for model in models:
-			doc.append(
-				"allow",
-				{
-					"model": model_doc(
-						model, doc.geography or frappe.db.get_value("Geography", {"is_default": 1})
-					)
-				},
-			)
 	if limits is not None:
 		doc.set("limits", limits)
 
