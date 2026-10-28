@@ -8,7 +8,7 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import add_days, flt, get_datetime, now_datetime
 
-from grove.access import team_limits, validate_limit_rows, validate_model_geography
+from grove.access import team_limits, validate_limit_rows
 from grove.billing.pricing import committed, forget_figures, lock_team, usd
 
 KEY_PREFIX = "gr_"
@@ -31,14 +31,10 @@ class GroveAPIKey(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		from grove.grove.doctype.grove_model_row.grove_model_row import GroveModelRow
-		from grove.grove.doctype.model_group_row.model_group_row import ModelGroupRow
 		from grove.grove.doctype.model_limit.model_limit import ModelLimit
 
-		allow: DF.TableMultiSelect[GroveModelRow]
 		api_secret: DF.Password | None
 		cap: DF.Currency
-		deny: DF.TableMultiSelect[GroveModelRow]
 		expires_at: DF.Datetime | None
 		expiry: DF.Literal["Never", "1 Day", "7 Days", "14 Days", "30 Days"]
 		expiry_from_first_use: DF.Check
@@ -46,7 +42,6 @@ class GroveAPIKey(Document):
 		key_hash: DF.Data | None
 		limits: DF.Table[ModelLimit]
 		masked: DF.Data | None
-		model_groups: DF.TableMultiSelect[ModelGroupRow]
 		status: DF.Literal["active", "revoked"]
 		team: DF.Link
 		title: DF.Data | None
@@ -63,9 +58,6 @@ class GroveAPIKey(Document):
 		days = EXPIRY_DAYS.get(self.expiry)
 		self.expires_at = add_days(self.creation, days) if days and not self.expiry_from_first_use else None
 		self.set_geography()
-		default = frappe.db.get_value("Model Group", {"is_default": 1, "geography": self.geography})
-		if default and not self.model_groups:
-			self.append("model_groups", {"model_group": default})
 
 	def check_key_count(self):
 		"""Rate limits are per key, so the team's key count is what bounds its throughput. A team with
@@ -93,7 +85,6 @@ class GroveAPIKey(Document):
 		forget_figures(self.team)
 
 	def validate(self):
-		self.validate_models()
 		validate_limit_rows(self.limits)
 		if flt(self.cap) < 0:
 			frappe.throw("A cap cannot be negative.")
@@ -103,20 +94,6 @@ class GroveAPIKey(Document):
 			frappe.throw("A revoked key stays revoked. Mint a new one.")
 		if self.needs_cap_check:
 			self.validate_cap()
-
-	def validate_models(self):
-		"""Every model and group named is of this key's geography, and no model is both allowed
-		and denied."""
-		validate_model_geography([*self.allow, *self.deny], self.geography)
-		for row in self.model_groups:
-			geography = frappe.db.get_value("Model Group", row.model_group, "geography")
-			if geography != self.geography:
-				frappe.throw(
-					f"Model Group {row.model_group!r} is of {geography}, not this key's {self.geography}."
-				)
-		both = {row.model_key for row in self.allow} & {row.model_key for row in self.deny}
-		if both:
-			frappe.throw(f"{', '.join(sorted(both))} is in both Allow and Deny")
 
 	def validate_set_only_once(self):
 		"""`team`, `title` and the expiry rule are set once — except by `transfer`, the one move
@@ -183,8 +160,8 @@ class GroveAPIKey(Document):
 
 	def transfer(self, to_team: str, title: str | None = None):
 		"""Hand this key to `to_team`, titled `title` when given. The trial's rules go with the
-		trial: its groups make way for the geography's default, its expiry is lifted (the key is the
-		customer's now, for as long as they keep it); cap, geography and limit rows stay. Counted
+		trial: its expiry is lifted (the key is the customer's now, for as long as they keep it), and
+		what it may call is the new team's; cap, geography and limit rows stay. Counted
 		against the new team like a mint: its key count, and the cap within the spend limit of a
 		Monthly team (that check reads the team's boxes, as a mint does; nothing is drained). One
 		save, versioned even under test, so the Version holds the move and the next tick re-pushes
@@ -210,10 +187,6 @@ class GroveAPIKey(Document):
 			self.validate_cap()
 		self.title = title
 		self.expiry, self.expiry_from_first_use, self.expires_at = "Never", 0, None
-		self.set("model_groups", [])
-		default = frappe.db.get_value("Model Group", {"is_default": 1, "geography": self.geography})
-		if default:
-			self.append("model_groups", {"model_group": default})
 		self.flags.transfer = True
 		self.save(ignore_version=False)
 		self.add_comment("Info", f"Handed over from {old_team}.")

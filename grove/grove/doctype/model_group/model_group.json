@@ -33,14 +33,14 @@
   },
   {
    "default": "0",
-   "description": "Every new Grove API Key in this group's geography starts in it. One default per geography: ticking it here unticks the others there.",
+   "description": "Every new Grove Team starts in it, so its keys in this geography reach these models. One default per geography: ticking it here unticks the others there.",
    "fieldname": "is_default",
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Is Default"
   },
   {
-   "description": "Models the members may call. This is the main way access is granted \u2014 add the model here and every key in the group can reach it. Membership is set on each Grove API Key, not here.",
+   "description": "Models the members may call. This is the main way access is granted \u2014 add the model here and every key of every team in the group reaches it, in this group's geography. Membership is set on each Grove Team, not here.",
    "fieldname": "section_models",
    "fieldtype": "Section Break",
    "label": "Model Access"
@@ -57,7 +57,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-04 19:00:00.000000",
+ "modified": "2026-10-27 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model Group",

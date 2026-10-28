@@ -1,7 +1,7 @@
 # Copyright (c) 2026, developers@frappe.io and Contributors
 # See license.txt
-"""A key carries its own policy — groups, allow/deny, rate limits, geography, cap — and the wire
-record the gateway reads is built from it.
+"""A key carries its own rate limits, geography and cap; what it may call is its team's, sliced to
+the key's geography; the wire record the gateway reads is built from both.
 
 A team id per test: IntegrationTestCase rolls back once when the class is done, not between
 tests, so anything registered here is still there for the next one."""
@@ -67,10 +67,8 @@ class IntegrationTestGroveAPIKey(IntegrationTestCase):
 		for name in ("key-probe-zeta", "key-probe-acme"):
 			if not frappe.db.exists("Model Group", name):
 				frappe.get_doc({"doctype": "Model Group", "__newname": name}).insert()
-		doc = key(
-			"key-probe-groups",
-			model_groups=[{"model_group": "key-probe-zeta"}, {"model_group": "key-probe-acme"}],
-		)
+		groups = [{"model_group": name} for name in ("key-probe-zeta", "key-probe-acme")]
+		doc = key(team("key-probe-groups", model_groups=groups))
 		self.assertEqual(projected(doc.name)["group"], "key-probe-acme,key-probe-zeta")
 
 	def test_the_teams_flags_ride_on_the_key(self):
@@ -127,89 +125,59 @@ class IntegrationTestGroveAPIKey(IntegrationTestCase):
 			sent_back.revoke()
 
 
-class IntegrationTestNewKeysStartInTheDefaultGroup(IntegrationTestCase):
-	"""What a key may call is decided here, by group, not sent by whoever provisions it."""
+class IntegrationTestNewTeamsStartInTheDefaultGroups(IntegrationTestCase):
+	"""What a key may call is decided by its team's groups, not sent by whoever provisions it: a
+	new team is put in every geography's default, and a key takes the ones of its own geography."""
 
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		make_test_geography()
+		cls.here, cls.away = make_test_geography(), make_test_geography("key-default-away")
 		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 		frappe.db.set_value("Model Group", {"is_default": 1}, "is_default", 0)
 		cls.default = cls.group("key-default-one", is_default=1)
+		cls.away_default = cls.group("key-default-away", is_default=1, geography=cls.away)
 
 	@staticmethod
-	def group(name, is_default=0):
-		return (
-			frappe.get_doc({"doctype": "Model Group", "__newname": name, "is_default": is_default})
-			.insert()
-			.name
-		)
+	def group(name, is_default=0, geography=None):
+		doc = {"doctype": "Model Group", "__newname": name, "is_default": is_default}
+		if geography:
+			doc["geography"] = geography
+		return frappe.get_doc(doc).insert().name
 
-	def groups_of(self, doc):
-		return [row.model_group for row in doc.model_groups]
+	def groups_of(self, name):
+		return [row.model_group for row in frappe.get_doc("Grove Team", name).model_groups]
 
-	def test_a_new_key_is_put_in_the_default_group(self):
-		doc = key("key-group-new")
-		self.assertEqual(self.groups_of(doc), [self.default])
-		self.assertEqual(projected(doc.name)["group"], self.default)
+	def test_a_new_team_is_put_in_every_geographys_default_and_a_key_takes_its_own(self):
+		name = team("key-group-new")
+		self.assertEqual(self.groups_of(name), [self.away_default, self.default])
+		here, away = key(name), key(name, geography=self.away)
+		self.assertEqual(projected(here.name)["group"], self.default)
+		self.assertEqual(projected(away.name)["group"], self.away_default)
 
 	def test_groups_named_on_the_insert_are_kept(self):
 		picked = self.group("key-default-picked")
-		doc = key("key-group-picked", model_groups=[{"model_group": picked}])
-		self.assertEqual(self.groups_of(doc), [picked])
+		name = team("key-group-picked", model_groups=[{"model_group": picked}])
+		self.assertEqual(self.groups_of(name), [picked])
+		self.assertEqual(projected(key(name).name)["group"], picked)
 
-	def test_a_key_taken_out_of_every_group_stays_out(self):
-		doc = key("key-group-out")
+	def test_a_team_taken_out_of_every_group_stays_out(self):
+		doc = frappe.get_doc("Grove Team", team("key-group-out"))
 		doc.model_groups = []
 		doc.save()
-		self.assertEqual(self.groups_of(doc.reload()), [])
+		self.assertEqual(self.groups_of(doc.name), [])
+		self.assertEqual(projected(key(doc.name).name)["group"], "")
 
-	def test_provisioning_a_key_puts_it_in_the_default_group(self):
-		from grove.api import keys, teams
+	def test_provisioning_a_team_puts_it_in_the_defaults(self):
+		from grove.api import teams
 
 		teams.provision_team("key-group-provisioned")
-		minted = keys.provision_key("key-group-provisioned")
-		self.assertEqual(self.groups_of(frappe.get_doc("Grove API Key", minted["name"])), [self.default])
-
-	def test_provisioning_into_a_named_group_skips_the_default(self):
-		from grove.api import keys, teams
-
-		picked = self.group("key-group-named")
-		teams.provision_team("key-group-named")
-		minted = keys.provision_key("key-group-named", model_group=picked)
-		self.assertEqual(self.groups_of(frappe.get_doc("Grove API Key", minted["name"])), [picked])
-
-	def test_a_group_of_another_geography_is_refused(self):
-		away = make_test_geography("key-group-elsewhere")
-		theirs = (
-			frappe.get_doc({"doctype": "Model Group", "__newname": "key-group-elsewhere", "geography": away})
-			.insert()
-			.name
-		)
-		with self.assertRaisesRegex(frappe.ValidationError, "not this key's"):
-			key("key-group-elsewhere", model_groups=[{"model_group": theirs}])
-
-	def test_a_new_key_starts_in_its_own_geographys_default(self):
-		away = make_test_geography("key-default-away")
-		theirs = (
-			frappe.get_doc(
-				{
-					"doctype": "Model Group",
-					"__newname": "key-default-away",
-					"geography": away,
-					"is_default": 1,
-				}
-			)
-			.insert()
-			.name
-		)
-		doc = key("key-group-away", geography=away)
-		self.assertEqual(self.groups_of(doc), [theirs])
+		self.assertEqual(self.groups_of("key-group-provisioned"), [self.away_default, self.default])
 
 
-class IntegrationTestOwnGrantsAreTheKeysGeographys(IntegrationTestCase):
-	"""An Allow or Deny row names the vendor doc the key's own geography serves."""
+class IntegrationTestATeamsGrantsReachTheKeysOfTheirGeography(IntegrationTestCase):
+	"""An Allow or Deny row names a Model doc: a vendor's is one geography's and reaches the team's
+	keys there; ours reaches every key."""
 
 	KEY = "allow-vendor/allow-big"
 
@@ -224,27 +192,27 @@ class IntegrationTestOwnGrantsAreTheKeysGeographys(IntegrationTestCase):
 			).insert()
 			cls.docs[geography] = vendor_model("allow-big", vendor.name).insert().name
 		cls.ours = our_model("allow-ours-7b").insert().name
+		cls.ours_key = frappe.db.get_value("Model", cls.ours, "model_key")
 
-	def key(self, name, **fields):
-		return frappe.get_doc(
-			{"doctype": "Grove API Key", "team": team(name), "geography": self.here, **fields}
+	def test_a_vendor_row_rides_on_its_geographys_keys_and_ours_on_every_key(self):
+		from grove.access import get_reachable_models
+
+		name = team(
+			"key-allow-team",
+			allow=[{"model": self.docs[self.here]}, {"model": self.ours}],
+			deny=[{"model": self.docs[self.away]}],
 		)
+		here = projected(key(name, geography=self.here).name)
+		away = projected(key(name, geography=self.away).name)
+		both = ",".join(sorted([self.KEY, self.ours_key]))
+		self.assertEqual((here["allow"], here["deny"]), (both, ""))
+		self.assertEqual((away["allow"], away["deny"]), (self.ours_key, self.KEY))
+		self.assertEqual(get_reachable_models(name, self.here), both.split(","))
+		self.assertEqual(get_reachable_models(name, self.away), [self.ours_key])
 
-	def test_a_vendor_model_of_another_geography_is_refused_and_ours_is_not(self):
-		self.key("key-allow-here", allow=[{"model": self.docs[self.here]}, {"model": self.ours}]).insert()
-		for field in ("allow", "deny"):
-			with self.assertRaises(frappe.ValidationError):
-				self.key(f"key-{field}-away", **{field: [{"model": self.docs[self.away]}]}).insert()
-
-	def test_provisioning_by_key_allows_the_keys_geographys_doc(self):
-		from grove.api import keys, teams
-
-		teams.provision_team("key-allow-keyed")
-		minted = keys.provision_key("key-allow-keyed", geography=self.away, models=[self.KEY])
-		allowed = frappe.get_all(
-			"Grove Model Row", filters={"parent": minted["name"], "parentfield": "allow"}, pluck="model"
-		)
-		self.assertEqual(allowed, [self.docs[self.away]])
+	def test_a_model_in_both_allow_and_deny_is_refused(self):
+		with self.assertRaisesRegex(frappe.ValidationError, "both Allow and Deny"):
+			team("key-allow-both", allow=[{"model": self.ours}], deny=[{"model": self.ours}])
 
 
 class IntegrationTestRateLimits(IntegrationTestCase):
@@ -677,7 +645,7 @@ class IntegrationTestExpiry(IntegrationTestCase):
 
 class IntegrationTestTransfer(IntegrationTestCase):
 	"""A trial's key becomes the customer's at conversion: the same credential under the new team,
-	titled, in the default group; cap, geography and expiry as minted."""
+	titled, calling what the customer's team may; cap, geography and limits as minted."""
 
 	@classmethod
 	def setUpClass(cls):
@@ -686,12 +654,12 @@ class IntegrationTestTransfer(IntegrationTestCase):
 		make_test_geography()
 		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 		frappe.db.set_value("Model Group", {"is_default": 1}, "is_default", 0)
-		cls.default = IntegrationTestNewKeysStartInTheDefaultGroup.group("key-handover-default", is_default=1)
-		cls.trial_group = IntegrationTestNewKeysStartInTheDefaultGroup.group("key-handover-trial-models")
+		cls.default = IntegrationTestNewTeamsStartInTheDefaultGroups.group("key-handover-default", is_default=1)
+		cls.trial_group = IntegrationTestNewTeamsStartInTheDefaultGroups.group("key-handover-trial-models")
 
 	def trial_key(self, team_name, **fields):
 		groups = [{"model_group": self.trial_group}]
-		return key(team(team_name, key_cap_window="Total"), model_groups=groups, **fields)
+		return key(team(team_name, key_cap_window="Total", model_groups=groups), **fields)
 
 	def test_team_and_title_move_and_the_trials_rules_go_in_one_save_the_version_and_the_wire_record(self):
 		customer = team("key-handover-customer", spend_limit=10)
@@ -704,10 +672,7 @@ class IntegrationTestTransfer(IntegrationTestCase):
 		doc.transfer(customer, title="site.example.test")
 
 		doc.reload()
-		self.assertEqual(
-			(doc.team, doc.title, [row.model_group for row in doc.model_groups]),
-			(customer, "site.example.test", [self.default]),
-		)
+		self.assertEqual((doc.team, doc.title), (customer, "site.example.test"))
 		self.assertEqual((doc.expiry, doc.expiry_from_first_use, doc.expires_at), ("Never", 0, None))
 		self.assertGreater(doc.modified, frappe.utils.get_datetime(stamp))
 		record = projected(doc.name)

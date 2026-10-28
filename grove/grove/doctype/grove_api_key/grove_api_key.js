@@ -2,10 +2,6 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on("Grove API Key", {
-	setup(frm) {
-		frm.set_query("model_groups", () => ({ filters: { geography: frm.doc.geography } }));
-	},
-
 	refresh(frm) {
 		if (frm.is_new() || frm.doc.status !== "active") return;
 

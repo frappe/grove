@@ -14,7 +14,12 @@
   "column_break_head",
   "suspended",
   "suspended_at_grove",
-  "last_reported_at"
+  "last_reported_at",
+  "section_access",
+  "model_groups",
+  "column_break_access",
+  "allow",
+  "deny"
  ],
  "fields": [
   {
@@ -86,6 +91,37 @@
    "in_list_view": 1,
    "label": "Suspended at Grove",
    "read_only": 1
+  },
+  {
+   "description": "What this team's keys may call. A Model Group and a vendor model are one geography's, so each reaches only the team's keys in that geography; a model of ours reaches them everywhere. Deny wins over everything.",
+   "fieldname": "section_access",
+   "fieldtype": "Section Break",
+   "label": "Model Access"
+  },
+  {
+   "description": "Groups this team's keys run under, each reaching the keys of its own geography. A new team starts in every geography's default group.",
+   "fieldname": "model_groups",
+   "fieldtype": "Table MultiSelect",
+   "label": "Model Groups",
+   "options": "Model Group Row"
+  },
+  {
+   "fieldname": "column_break_access",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Models the team's keys may call on top of their groups'. A vendor model reaches the keys of its geography, a model of ours every key.",
+   "fieldname": "allow",
+   "fieldtype": "Table MultiSelect",
+   "label": "Allow",
+   "options": "Grove Model Row"
+  },
+  {
+   "description": "Models the team's keys may never call. Deny wins over everything \u2014 a group grant and a Public release both lose to it.",
+   "fieldname": "deny",
+   "fieldtype": "Table MultiSelect",
+   "label": "Deny",
+   "options": "Grove Model Row"
   }
  ],
  "links": [
@@ -110,7 +146,7 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-10-26 00:00:00.000000",
+ "modified": "2026-10-27 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove Team",

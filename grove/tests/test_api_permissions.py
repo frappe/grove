@@ -113,20 +113,21 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		team = "probe-reach"
 		teams.provision_team(team)
 		key = frappe.get_doc("Grove API Key", keys.provision_key(team)["name"])
-		key.model_groups = []
-		key.save()
+		policy = frappe.get_doc("Grove Team", team)
+		policy.model_groups = []
+		policy.save()
 		self.assertEqual(catalog.available_models(team, key.name), [])
 		with self.assertRaises(frappe.DoesNotExistError):
 			catalog.available_models("nobody-reach", key.name)
 
-		key.update(
+		policy.update(
 			{
 				"model_groups": [{"model_group": "probe-reach"}],
 				"allow": [{"model": allowed}],
 				"deny": [{"model": denied}],
 			}
 		)
-		key.save()
+		policy.save()
 		model_key = lambda doc: frappe.db.get_value("Model", doc, "model_key")  # noqa: E731
 		reach = sorted([model_key(grouped), model_key(allowed)])
 		rows = catalog.available_models(team, key.name)

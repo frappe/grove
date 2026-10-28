@@ -239,11 +239,27 @@ class TestEffectiveGroups(unittest.TestCase):
 
 class TestEffectiveKeys(unittest.TestCase):
 	"""key:<hash> — the one record the gateway reads: the credential and the whole policy behind
-	it, with what is the team's (payload logging, suspension) riding on each key."""
+	it, with what is the team's (its models, payload logging, suspension) riding on each key."""
 
-	def keys(self, keys=(), rows=(), groups=(), limits=(), teams=None, default_tier=None, names=None):
+	def keys(
+		self,
+		keys=(),
+		rows=(),
+		groups=(),
+		limits=(),
+		teams=None,
+		default_tier=None,
+		names=None,
+		models=(),
+		group_docs=None,
+	):
+		"""`rows` and `groups` are the teams' Allow/Deny and membership rows; `models` the docs the
+		rows name (none: every row is a model of ours, reaching every key); `group_docs` the
+		groups with their geography (none: every group named is the keys' `in`)."""
 		self.calls, seen = {}, {}
 		teams = [frappe._dict(name="T-1", log_payloads=0, suspended=0)] if teams is None else teams
+		if group_docs is None:
+			group_docs = [frappe._dict(name=g, geography="in") for g in dict.fromkeys(r.model_group for r in groups)]
 
 		def get_all(doctype, filters=None, **kwargs):
 			self.calls[doctype] = self.calls.get(doctype, 0) + 1
@@ -256,6 +272,10 @@ class TestEffectiveKeys(unittest.TestCase):
 				return list(rows)
 			if doctype == "Model Group Row":
 				return list(groups)
+			if doctype == "Model":
+				return list(models)
+			if doctype == "Model Group":
+				return list(group_docs)
 			if doctype == "Model Limit":
 				return [
 					row for row in limits if row.get("parenttype", "Grove API Key") == filters["parenttype"]
@@ -283,14 +303,14 @@ class TestEffectiveKeys(unittest.TestCase):
 			}
 		)
 
-	def test_a_key_carries_its_groups_its_deltas_and_its_teams_verdict(self):
+	def test_a_key_carries_its_teams_groups_deltas_and_verdict(self):
 		[key] = self.keys(
 			[self.key()],
 			[
-				frappe._dict(parent="KEY-1", model_key="qwen3-4b", parentfield="allow"),
-				frappe._dict(parent="KEY-1", model_key="qwen3-35b", parentfield="deny"),
+				frappe._dict(parent="T-1", model_key="qwen3-4b", parentfield="allow"),
+				frappe._dict(parent="T-1", model_key="qwen3-35b", parentfield="deny"),
 			],
-			[frappe._dict(parent="KEY-1", model_group="acme")],
+			[frappe._dict(parent="T-1", model_group="acme")],
 			teams=[frappe._dict(name="T-1", log_payloads=1, suspended=1)],
 		)
 		self.assertEqual(
@@ -316,12 +336,12 @@ class TestEffectiveKeys(unittest.TestCase):
 		[key] = self.keys(
 			[self.key()],
 			[
-				frappe._dict(parent="KEY-1", model_key="b", parentfield="allow"),
-				frappe._dict(parent="KEY-1", model_key="a", parentfield="allow"),
+				frappe._dict(parent="T-1", model_key="b", parentfield="allow"),
+				frappe._dict(parent="T-1", model_key="a", parentfield="allow"),
 			],
 			[
-				frappe._dict(parent="KEY-1", model_group="zeta"),
-				frappe._dict(parent="KEY-1", model_group="acme"),
+				frappe._dict(parent="T-1", model_group="zeta"),
+				frappe._dict(parent="T-1", model_group="acme"),
 			],
 		)
 		self.assertEqual(key["allow"], "a,b")
@@ -332,8 +352,8 @@ class TestEffectiveKeys(unittest.TestCase):
 			[self.key()],
 			[],
 			[
-				frappe._dict(parent="KEY-1", model_group="acme"),
-				frappe._dict(parent="KEY-1", model_group="acme"),
+				frappe._dict(parent="T-1", model_group="acme"),
+				frappe._dict(parent="T-1", model_group="acme"),
 			],
 		)
 		self.assertEqual(key["group"], "acme")
@@ -350,15 +370,16 @@ class TestEffectiveKeys(unittest.TestCase):
 
 	def test_one_row_query_covers_every_key(self):
 		keys = self.keys(
-			[self.key("KEY-1", "abc"), self.key("KEY-2", "abd")],
+			[self.key("KEY-1", "abc"), self.key("KEY-2", "abd", team="T-2")],
 			[
-				frappe._dict(parent="KEY-1", model_key="m1", parentfield="allow"),
-				frappe._dict(parent="KEY-2", model_key="m2", parentfield="allow"),
+				frappe._dict(parent="T-1", model_key="m1", parentfield="allow"),
+				frappe._dict(parent="T-2", model_key="m2", parentfield="allow"),
 			],
 			[
-				frappe._dict(parent="KEY-1", model_group="acme"),
-				frappe._dict(parent="KEY-2", model_group="beta"),
+				frappe._dict(parent="T-1", model_group="acme"),
+				frappe._dict(parent="T-2", model_group="beta"),
 			],
+			teams=[frappe._dict(name=t, log_payloads=0, suspended=0) for t in ("T-1", "T-2")],
 		)
 		self.assertEqual([k["allow"] for k in keys], ["m1", "m2"])
 		self.assertEqual([k["group"] for k in keys], ["acme", "beta"])
@@ -368,9 +389,33 @@ class TestEffectiveKeys(unittest.TestCase):
 				"Grove API Key": 1,
 				"Grove Team": 1,
 				"Grove Model Row": 1,
+				"Model": 1,
 				"Model Group Row": 1,
+				"Model Group": 1,
 				"Model Limit": 2,
 			},
+		)
+
+	def test_what_is_one_geographys_rides_only_on_the_keys_there(self):
+		"""A group and a vendor's doc are one geography's; a model of ours has none and is every key's."""
+		keys = self.keys(
+			[self.key("KEY-1", "abc", geography="in"), self.key("KEY-2", "abd", geography="eu")],
+			[
+				frappe._dict(parent="T-1", model="M-IN", model_key="openai/gpt-5", parentfield="allow"),
+				frappe._dict(parent="T-1", model="M-OURS", model_key="frappe/qwen3-4b", parentfield="allow"),
+				frappe._dict(parent="T-1", model="M-EU", model_key="openai/gpt-5-eu", parentfield="deny"),
+			],
+			[frappe._dict(parent="T-1", model_group="acme"), frappe._dict(parent="T-1", model_group="europa")],
+			models=[
+				frappe._dict(name="M-IN", geography="in"),
+				frappe._dict(name="M-OURS", geography=None),
+				frappe._dict(name="M-EU", geography="eu"),
+			],
+			group_docs=[frappe._dict(name="acme", geography="in"), frappe._dict(name="europa", geography="eu")],
+		)
+		self.assertEqual(
+			[(k["group"], k["allow"], k["deny"]) for k in keys],
+			[("acme", "frappe/qwen3-4b,openai/gpt-5", ""), ("europa", "frappe/qwen3-4b", "openai/gpt-5-eu")],
 		)
 
 	def test_limits_are_one_sorted_comma_list(self):
@@ -438,8 +483,8 @@ class TestEffectiveKeys(unittest.TestCase):
 		self.keys([self.key()], names=["KEY-1"])
 		self.assertEqual(self.filters["Grove API Key"], {"status": "active", "name": ("in", ["KEY-1"])})
 		self.assertEqual(self.filters["Grove Team"], {"name": ("in", ["T-1"])})
-		self.assertEqual(self.filters["Grove Model Row"]["parent"], ("in", ["KEY-1"]))
-		self.assertEqual(self.filters["Model Group Row"]["parent"], ("in", ["KEY-1"]))
+		self.assertEqual(self.filters["Grove Model Row"], {"parenttype": "Grove Team", "parent": ("in", ["T-1"])})
+		self.assertEqual(self.filters["Model Group Row"], {"parenttype": "Grove Team", "parent": ("in", ["T-1"])})
 
 	def test_no_names_is_no_key_and_no_query(self):
 		self.assertEqual(self.keys([self.key()], names=[]), [])
