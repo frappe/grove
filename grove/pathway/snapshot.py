@@ -49,7 +49,8 @@ def effective_keys(names=None):
 	`budget_window`, what the box counts it over: the UTC month, or everything since the mint (the
 	team's Key Cap Window); the box refuses the key once that reaches the cap. What is the team's
 	rides on each key: `log_payloads`, `limited` — the team is suspended, which refuses every key
-	whatever its own cap says — and the window.
+	whatever its own cap says — the window, and `cap_message`, what the box's 402 says once the
+	cap is spent (blank: the box's own text).
 
 	`names` narrows it to those keys, with their teams and rows: what a tick rebuilds. Revoked
 	keys are not projected: absent from their bucket, the push prunes them off every box. The row
@@ -70,7 +71,7 @@ def effective_keys(names=None):
 		for t in frappe.get_all(
 			"Grove Team",
 			filters=team_filter,
-			fields=["name", "log_payloads", "suspended", "tier", "key_cap_window"],
+			fields=["name", "log_payloads", "suspended", "tier", "key_cap_window", "cap_message"],
 		)
 	}
 	team_names = None if names is None else sorted(teams)
@@ -100,6 +101,7 @@ def effective_keys(names=None):
 				"geography": k.geography or "",
 				"budget": nano(k.cap or 0),
 				"budget_window": "total" if team.key_cap_window == "Total" else "month",
+				"cap_message": team.cap_message or "",
 				# Blank when none: the box merges fields, so leaving it out would keep a removed limit in force.
 				"limits": ",".join(
 					f"{r['metric']}:{r['window']}:{r['value']}" for r in limits.get(k.name, [])

@@ -25,6 +25,7 @@ class GroveTeam(Document):
 		from grove.grove.doctype.model_group_row.model_group_row import ModelGroupRow
 
 		allow: DF.TableMultiSelect[GroveModelRow]
+		cap_message: DF.SmallText | None
 		deny: DF.TableMultiSelect[GroveModelRow]
 		key_cap_window: DF.Literal["Monthly", "Total"]
 		last_reported_at: DF.Datetime | None

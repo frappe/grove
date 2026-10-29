@@ -311,7 +311,7 @@ class TestEffectiveKeys(unittest.TestCase):
 				frappe._dict(parent="T-1", model_key="qwen3-35b", parentfield="deny"),
 			],
 			[frappe._dict(parent="T-1", model_group="acme")],
-			teams=[frappe._dict(name="T-1", log_payloads=1, suspended=1)],
+			teams=[frappe._dict(name="T-1", log_payloads=1, suspended=1, cap_message="trial over")],
 		)
 		self.assertEqual(
 			key,
@@ -328,6 +328,7 @@ class TestEffectiveKeys(unittest.TestCase):
 				"geography": "in",
 				"budget": 0,
 				"budget_window": "month",
+				"cap_message": "trial over",
 				"limits": "requests:1m:20,total_tokens:1m:100000",
 			},
 		)
