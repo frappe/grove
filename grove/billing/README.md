@@ -130,7 +130,7 @@ it holds no money that must not run out. What gates is:
 - **Each key's `cap`.** The gateway holds `budget` = `cap` in nano-USD on the key's
   record, counts the key's spend per UTC month on the same record (`spent:<YYYY-MM>`; a new month
   is a field not yet written, which reads 0, so nothing resets and nothing runs at midnight), and
-  refuses at `spent >= budget` (402). A team whose **Key Cap Window** is Total has its keys pushed
+  refuses at `spent >= budget` (402, saying the team's `cap_message` when it has one). A team whose **Key Cap Window** is Total has its keys pushed
   with `budget_window: total`: the box counts their spend in one field (`spent:total`) that never
   turns over, so a key spent is spent for good — a trial team's budget. Such a team has no
   spend limit: its caps are for life, so the month binds nothing, the checks below skip it and
