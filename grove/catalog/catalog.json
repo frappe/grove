@@ -183,8 +183,7 @@
     "anthropic/claude-sonnet-5-5",
     "baseten/deepseek-v4.1-flash",
     "openai/gpt-6-luna",
-    "openai/gpt-6-sol",
-    "openai/gpt-6.1-sol"
+    "openai/gpt-6-sol"
    ],
    "name": "catalog"
   }
@@ -269,51 +268,6 @@
     {
      "counter": "cached_tokens_above_272k",
      "rate": 0.4
-    },
-    {
-     "counter": "cache_write_tokens_above_272k",
-     "rate": 5.0
-    },
-    {
-     "counter": "completion_tokens_above_272k",
-     "rate": 15.0
-    }
-   ]
-  },
-  {
-   "input_modalities": [
-    "Text",
-    "Image"
-   ],
-   "model_id": "gpt-6.1-sol",
-   "output_modalities": [
-    "Text"
-   ],
-   "provider": "openai",
-   "rates": [
-    {
-     "counter": "prompt_tokens",
-     "rate": 2.0
-    },
-    {
-     "counter": "cached_tokens",
-     "rate": 0.1
-    },
-    {
-     "counter": "cache_write_tokens",
-     "rate": 2.5
-    },
-    {
-     "counter": "completion_tokens",
-     "rate": 10.0
-    },
-    {
-     "counter": "prompt_tokens_above_272k",
-     "rate": 4.0
-    },
-    {
-     "counter": "cached_tokens_above_272k",
-     "rate": 0.2
     },
     {
      "counter": "cache_write_tokens_above_272k",
