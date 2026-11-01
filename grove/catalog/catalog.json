@@ -184,7 +184,9 @@
     "baseten/deepseek-v4.1-flash",
     "openai/gpt-6-luna",
     "openai/gpt-6-sol",
-    "openai/gpt-6.1-sol"
+    "openai/gpt-6.1-sol",
+    "openai/text-embedding-3-large",
+    "openai/text-embedding-3-small"
    ],
    "name": "catalog"
   }
@@ -383,6 +385,38 @@
     }
    ],
    "upstream_model_id": "deepseek-ai/DeepSeek-V4.1-Flash"
+  },
+  {
+   "input_modalities": [
+    "Text"
+   ],
+   "model_id": "text-embedding-3-small",
+   "output_modalities": [
+    "Embeddings"
+   ],
+   "provider": "openai",
+   "rates": [
+    {
+     "counter": "prompt_tokens",
+     "rate": 0.02
+    }
+   ]
+  },
+  {
+   "input_modalities": [
+    "Text"
+   ],
+   "model_id": "text-embedding-3-large",
+   "output_modalities": [
+    "Embeddings"
+   ],
+   "provider": "openai",
+   "rates": [
+    {
+     "counter": "prompt_tokens",
+     "rate": 0.13
+    }
+   ]
   }
  ],
  "providers": [

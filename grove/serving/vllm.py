@@ -169,7 +169,10 @@ class VllmEngine(Engine):
 			args.append("--language-model-only")
 		if self.model.get("enable_prefix_caching"):
 			args.append("--enable-prefix-caching")
-		if not self.is_embedding:
+		if self.is_embedding:
+			# Said, not left to vLLM: a decoder-arch embedder (Qwen3-Embedding) auto-picks generate.
+			args += ["--runner", "pooling"]
+		else:
 			if self.model.get("enable_auto_tool_choice"):
 				args.append("--enable-auto-tool-choice")
 			if self.model.get("tool_call_parser"):

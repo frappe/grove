@@ -38,6 +38,7 @@ MODELS = [
 	model_row("dual/mix-1", "dual", model_id="mix-1"),
 	model_row("kimi/k2", "kimi", model_id="k2"),
 	model_row("kimi-eu/k2", "kimi", "eu", model_key="kimi/k2", model_id="k2", upstream_model_id="k2-eu"),
+	model_row("kimi/embed", "kimi", model_id="embed", output_modalities=["embeddings"]),
 ]
 PROVIDERS = {
 	# `keys` becomes the Keys table: (row id, secret[, disabled]) rows, a blank secret standing for
@@ -238,6 +239,9 @@ class TestWhichSurfacesReachAModel(unittest.TestCase):
 		self.assertEqual(dialects["anthropic/claude-4-5"], ["anthropic"])
 		self.assertEqual(dialects["deepseek/deepseek-chat"], ["openai"])
 		self.assertEqual(dialects["kimi/k2"], ["openai", "anthropic"])
+
+	def test_a_vendor_embedding_model_answers_on_openai_only(self):
+		self.assertEqual(self.dialects()["kimi/embed"], ["openai"])
 
 
 class TestWhatTheUpstreamIsAskedFor(unittest.TestCase):

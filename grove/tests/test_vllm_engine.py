@@ -188,6 +188,8 @@ class TestVllmArgs(unittest.TestCase):
 			self.assertNotIn(flag, args)
 		self.assertNotIn("--language-model-only", args)
 		self.assertIn("--enable-prefix-caching", args)
+		self.assertEqual(args[args.index("--runner") + 1], "pooling")
+		self.assertNotIn("--runner", serve().args)
 
 	def test_thinking_off_drops_reasoning_parser(self):
 		args = serve(dict(CHAT_MODEL, thinking=False)).args

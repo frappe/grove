@@ -145,7 +145,9 @@ surfaces the model answers on off the outputs (`text` for chat, `embeddings` for
 `transcription` for `/v1/audio`); the inputs it only carries. `available_models` answers
 the two lists per model, and whether its provider keeps nothing of a request (`zero_data_retention`,
 the Self Hosted one always). An engine we launch is `--language-model-only` when it is text in and
-text out, and a pooling model when it gives `embeddings`.
+text out, and a pooling model (`--runner pooling`) when it gives `embeddings`. A vendor's embedding
+model answers on `/openai` alone and is priced on `prompt_tokens` alone — the only counter its
+usage carries.
 
 The provider is not only a prefix. Give a `Model Provider` a Base URL and a key and its published
 models route straight to that vendor — a `kind: "provider"` row naming the provider as the placement,
