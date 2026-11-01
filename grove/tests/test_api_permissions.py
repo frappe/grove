@@ -117,6 +117,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		policy.model_groups = []
 		policy.save()
 		self.assertEqual(catalog.available_models(team, key.name), [])
+		self.assertEqual(catalog.available_models(team), [])
 		with self.assertRaises(frappe.DoesNotExistError):
 			catalog.available_models("nobody-reach", key.name)
 
@@ -132,6 +133,8 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		reach = sorted([model_key(grouped), model_key(allowed)])
 		rows = catalog.available_models(team, key.name)
 		self.assertEqual(sorted(row["name"] for row in rows), reach)
+		# The team alone is shown its own reach, never the default group's or another team's.
+		self.assertEqual(sorted(row["name"] for row in catalog.available_models(team)), reach)
 		self.assertEqual(
 			{row["name"] for row in rows}, {f"{row['provider']}/{row['model_id']}" for row in rows}
 		)
@@ -162,6 +165,10 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertEqual(
 			{row["name"]: row["zero_data_retention"] for row in rows},
 			{model_key(grouped): True, model_key(other): True, model_key(kept): False},
+		)
+		# The team alone, elsewhere: its Allow of a model of ours reaches there, the default group does not.
+		self.assertEqual(
+			[row["name"] for row in catalog.available_models(team, geography=here)], [model_key(allowed)]
 		)
 		self.assertEqual(catalog.available_models(geography=make_test_geography("probe-reach-away")), [])
 

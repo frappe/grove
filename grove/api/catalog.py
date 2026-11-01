@@ -35,6 +35,10 @@ def available_models(team: str | None = None, key: str | None = None, geography:
 	if key:
 		api_key = get_api_key(team, key)
 		geography, reachable = api_key.geography, set(get_reachable_models(api_key.team, api_key.geography))
+	elif team:
+		# The team's own reach, as a key of theirs would have it: never another team's, nor the
+		# default group's unless the team is in it.
+		reachable = set(get_reachable_models(team, geography))
 	else:
 		default = frappe.db.get_value("Model Group", {"is_default": 1, "geography": geography})
 		reachable = (
