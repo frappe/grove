@@ -24,7 +24,7 @@
  ],
  "fields": [
   {
-   "description": "A label to tell the team's keys apart, set once at the mint and used once per team, ever: a second key with the same title is refused, revoked ones included. Press titles a trial site's key by the site.",
+   "description": "A label to tell the team's keys apart, set once at the mint and used once per team, ever: a second key with the same title is refused, revoked ones included. A control client titles a pool key by its own record's id.",
    "fieldname": "title",
    "fieldtype": "Data",
    "in_list_view": 1,

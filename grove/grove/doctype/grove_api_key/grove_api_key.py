@@ -281,6 +281,6 @@ def on_doctype_update():
 	collision, however unlikely at 192 random bits, refuses the insert rather than merging two
 	keys into one, and indexed, so a lookup by hash does not scan the table."""
 	frappe.db.add_unique("Grove API Key", ["key_hash"], constraint_name="unique_key_hash")
-	# A title is set once and used once per team, ever, revoked keys included: Press titles a trial
-	# site's key by the site, and a site must never get a second. NULL titles do not collide.
+	# A title is set once and used once per team, ever, revoked keys included: a control client
+	# titles a pool key by its own record's id, which must never name a second. NULL titles do not collide.
 	frappe.db.add_unique("Grove API Key", ["team", "title"], constraint_name="unique_team_title")
