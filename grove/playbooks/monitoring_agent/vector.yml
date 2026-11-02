@@ -1,7 +1,7 @@
 ---
 # Install Vector on one box: host metrics to the Region's datum remote write, journald and every
-# pathway and redis log to its log route (Setup chains it, Install Vector re-runs it, the daily token
-# refresh re-runs it). extra-vars: vector_metrics_url, vector_logs_url, vector_token,
+# pathway and redis log to its log route (Setup chains it, Install Vector re-runs it, the hourly token
+# refresh re-runs it with a day left). extra-vars: vector_metrics_url, vector_logs_url, vector_token,
 # vector_ship_host_metrics, vector_server, vector_machine, vector_region.
 - name: Install Vector
   hosts: all

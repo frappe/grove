@@ -124,8 +124,8 @@ class NamedHost(Server):
 	@frappe.whitelist()
 	def install_vector(self):
 		"""Button: put Vector on this box, pushing its logs — and host metrics when ticked — to its
-		Region's datum. Run again to re-render the config; the daily refresh does the same for the
-		token."""
+		Region's datum. Run again to re-render the config; the hourly tick does the same for a
+		token about to run out."""
 		if self.status != "Active":
 			frappe.throw(f"{self.name} is {self.status} — set it up before installing Vector.")
 		self.check_vector_ready()
@@ -144,33 +144,28 @@ class NamedHost(Server):
 		box Broken."""
 		frappe.enqueue_doc(self.doctype, self.name, "provision_vector", queue="long", timeout=1200)
 
-	@property
-	def vector_variables(self):
-		"""What the vector role reads: the Region's endpoints, a token minted now for the Central
-		Region that datum belongs to, this box's labels. Read inside the job only — the token must
-		never sit in a Redis payload."""
+	@failure.reports_failure(mark_broken=False)
+	def provision_vector(self):
+		"""Job: vector.yml with the Region's endpoints, a token minted now for the Central Region
+		that datum belongs to, and this box's labels — minted inside the job only, so the token
+		never sits in a Redis payload. Status is left alone: a box that cannot ship its logs still
+		serves. Readiness is checked here too: queued after Setup, this is the first thing that looks."""
+		self.check_vector_ready()
 		region = frappe.get_doc("Region", self.region)
-		return {
+		token, expires_at = datum.mint_token(region.central_region, f"grove:{self.machine}")
+		extravars = {
 			"vector_metrics_url": region.metrics_url or "",
 			"vector_logs_url": region.logs_url or "",
-			"vector_token": datum.mint_token(region.central_region, f"grove:{self.machine}"),
+			"vector_token": token,
 			"vector_ship_host_metrics": bool(self.ship_host_metrics),
 			"vector_server": self.name,
 			"vector_machine": self.machine,
 			"vector_region": self.region,
 		}
-
-	@failure.reports_failure(mark_broken=False)
-	def provision_vector(self):
-		"""Job: vector.yml. Status is left alone — a box that cannot ship its logs still serves.
-		Readiness is checked here too: queued after Setup, this is the first thing that looks."""
-		self.check_vector_ready()
-		play_name, rc = self.run_playbook(
-			"vector.yml", project="Monitoring Agent", extravars=self.vector_variables
-		)
+		play_name, rc = self.run_playbook("vector.yml", project="Monitoring Agent", extravars=extravars)
 		if rc != 0:
 			frappe.throw(f"vector.yml failed on {self.name} (Ansible Play {play_name}).")
-		self.db_set("is_vector_setup", 1)
+		self.db_set({"is_vector_setup": 1, "datum_token_expires_at": expires_at})
 		return play_name, rc
 
 

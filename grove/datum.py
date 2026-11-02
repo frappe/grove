@@ -1,20 +1,25 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""datum's write token for one box, minted by Central. Short-lived (7 days, no revocation) and never
-stored: minted inside the job that writes it to the box, and re-minted by the daily refresh."""
+"""datum's write token for one box, minted by Central. Short-lived (Central says how long, no
+revocation) and never stored: minted inside the job that writes it to the box, which keeps only when it
+runs out, and minted again by the hourly tick with a day left."""
+
+from datetime import datetime
 
 import frappe
 import requests
+from frappe.utils import add_to_date, now_datetime
 
 TOKEN_ROUTE = "/api/method/central.api.grove.datum_token"
 CREDENTIAL_FIELDS = ("central_url", "central_api_key", "central_api_secret")
 VECTOR_HOSTS = ("Gateway Server", "Gateway Store", "Ingress Server")
 
+RENEW_AHEAD_DAYS = 1
 
-def mint_token(region: str, resource_id: str) -> str:
-	"""Ask Central for the JWT `resource_id` presents to `region`'s datum — `region` is Central's
-	name for it (Region.central_region), not Grove's. Thrown on anything but 200, naming Central's
-	answer: a box with no token is a box that ships nothing."""
+def mint_token(region: str, resource_id: str) -> tuple[str, datetime]:
+	"""Ask Central for the JWT `resource_id` presents to `region`'s datum, and the moment it runs
+	out — `region` is Central's name for it (Region.central_region), not Grove's. Thrown on anything
+	but 200, naming Central's answer: a box with no token is a box that ships nothing."""
 	settings = frappe.get_single("Grove Settings")
 	secret = settings.get_password("central_api_secret", raise_exception=False) or ""
 	response = requests.get(
@@ -28,7 +33,8 @@ def mint_token(region: str, resource_id: str) -> str:
 			f"Central refused a datum token for {resource_id} in {region}: "
 			f"{response.status_code} {response.text[:200]}"
 		)
-	return response.json()["message"]["token"]
+	answer = response.json()["message"]
+	return answer["token"], add_to_date(now_datetime(), seconds=answer["expires_in"])
 
 
 def credential_problems() -> list[str]:
@@ -44,8 +50,15 @@ def credential_problems() -> list[str]:
 
 
 def refresh_tokens():
-	"""Tick: re-run the install play on every Active box that has Vector, so no token is older than a
-	day against datum's 7-day TTL. One job per box, so one unreachable box blocks nothing."""
+	"""Tick: re-run the install play on every Active box with Vector whose token runs out within a
+	day, or whose expiry is unknown. One job per box, so one unreachable box blocks nothing."""
+	due = add_to_date(now_datetime(), days=RENEW_AHEAD_DAYS)
 	for doctype in VECTOR_HOSTS:
-		for name in frappe.get_all(doctype, filters={"status": "Active", "is_vector_setup": 1}, pluck="name"):
+		names = frappe.get_all(
+			doctype,
+			filters={"status": "Active", "is_vector_setup": 1},
+			or_filters=[["datum_token_expires_at", "is", "not set"], ["datum_token_expires_at", "<=", due]],
+			pluck="name",
+		)
+		for name in names:
 			frappe.enqueue_doc(doctype, name, "provision_vector", queue="long", timeout=1200)

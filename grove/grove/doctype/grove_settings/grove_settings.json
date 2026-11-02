@@ -216,7 +216,7 @@
    "label": "Usage Retention"
   },
   {
-   "description": "Grove asks Central for each box's datum write token with this user's API key — the mirror of the Grove key Central holds. Minted inside the job, never stored; refreshed daily.",
+   "description": "Grove asks Central for each box's datum write token with this user's API key — the mirror of the Grove key Central holds. Minted inside the job, never stored; minted again with a day left.",
    "fieldname": "section_central",
    "fieldtype": "Section Break",
    "label": "Central (datum tokens)"

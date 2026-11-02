@@ -142,10 +142,11 @@ cut at 8 KiB, `attributes` = `host`, `server`, `machine`, `region`). Batches sta
 cap, sink healthchecks are off (datum answers 405 to a GET), and each sink keeps a disk buffer because
 datum buffers nothing. Host metrics arrive as `host_*` series, not node_exporter's `node_*`.
 
-The token is datum's: a JWT Central signs for one `resource_id` (`grove:<machine>`), good for 7 days
-with no revocation, addressed to the Region's `central_region` (Central's own name for it). Grove mints
-it from Central (`grove.datum.mint_token`, Grove Settings → Central) inside the job and never stores it; `grove.datum.refresh_tokens` re-runs the play daily on every box
-with `is_vector_setup`. Setup chains the play as its own job; **Install Vector** (then **Update
+The token is datum's: a JWT Central signs for one `resource_id` (`grove:<machine>`), good for as long
+as Central says (`expires_in`, 7 days today) with no revocation, addressed to the Region's `central_region`
+(Central's own name for it). Grove mints it from Central (`grove.datum.mint_token`, Grove Settings → Central)
+inside the job and stores only when it runs out (`datum_token_expires_at`); `grove.datum.refresh_tokens`,
+hourly, re-runs the play on every box with `is_vector_setup` whose token has a day or less left. Setup chains the play as its own job; **Install Vector** (then **Update
 Vector**) re-runs it by hand. A Gateway or Ingress Server set up before Vector shows **Migrate to Vector**
 instead until `is_vector_setup`: vector.yml, then `gateway_server/retire_exporter.yml` stops and removes the
 node_exporter and scrape htpasswd its old play installed — Vector first, so the box is never unwatched. `ship_host_metrics` off drops the `host_metrics` source and nothing else:

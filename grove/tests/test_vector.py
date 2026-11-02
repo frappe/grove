@@ -1,10 +1,11 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
 """Vector on a gateway box: what the role renders for datum, the play that carries it, what the Install
-Vector button, the Setup chain and the daily token refresh run. Pure — no site, no SSH, no Central."""
+Vector button, the Setup chain and the hourly token refresh run. Pure — no site, no SSH, no Central."""
 
 import re
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -18,6 +19,8 @@ from grove.fleet import NamedHost, PathwayHost
 from grove.grove.doctype.region.region import Region
 
 PLAYBOOKS = Path(__file__).parent.parent / "playbooks"
+NOW = datetime(2026, 11, 2, 9, 30)
+EXPIRY = NOW + timedelta(days=7)
 ROLE = PLAYBOOKS / "roles" / "vector"
 DEFAULTS = yaml.safe_load((ROLE / "defaults" / "main.yml").read_text())
 DATUM_LINE = ("ts", "product", "service", "level", "source", "message", "attributes")
@@ -129,7 +132,6 @@ class FakeHost(SimpleNamespace):
 	install_vector = NamedHost.install_vector
 	check_vector_ready = NamedHost.check_vector_ready
 	queue_vector = NamedHost.queue_vector
-	vector_variables = NamedHost.vector_variables
 	provision_vector = NamedHost.provision_vector
 
 
@@ -154,7 +156,7 @@ class TestTheButton(unittest.TestCase):
 		patches = [
 			patch("frappe.get_doc", return_value=fake_region()),
 			patch("grove.datum.credential_problems", return_value=[]),
-			patch("grove.datum.mint_token", return_value="jwt-1"),
+			patch("grove.datum.mint_token", return_value=("jwt-1", EXPIRY)),
 			patch("frappe.throw", side_effect=lambda msg, *a, **k: (_ for _ in ()).throw(frappe.ValidationError(msg))),
 			patch("frappe.msgprint"),
 			patch("grove.failure.report"),
@@ -186,7 +188,7 @@ class TestTheButton(unittest.TestCase):
 		self.assertIn("Central URL", str(caught.exception))
 		enqueue.assert_not_called()
 
-	def test_the_job_mints_for_the_machine_in_centrals_region_and_runs_the_shared_play(self):
+	def test_the_job_mints_for_the_machine_in_centrals_region_runs_the_shared_play_and_keeps_the_expiry(self):
 		doc = fake_host(ship_host_metrics=0)
 		doc.provision_vector()
 		self.mint_token.assert_called_once_with("blr-1", "grove:mc-1")
@@ -205,7 +207,7 @@ class TestTheButton(unittest.TestCase):
 			},
 			call.kwargs["extravars"],
 		)
-		doc.db_set.assert_called_once_with("is_vector_setup", 1)
+		doc.db_set.assert_called_once_with({"is_vector_setup": 1, "datum_token_expires_at": EXPIRY})
 
 	def test_a_failed_play_is_an_error_and_records_nothing(self):
 		doc = fake_host(rc=2)
@@ -223,14 +225,22 @@ class TestTheButton(unittest.TestCase):
 
 
 class TestTheRefresh(unittest.TestCase):
-	def test_every_active_box_with_vector_gets_a_fresh_token(self):
+	def test_every_active_box_with_vector_whose_token_has_a_day_left_or_no_known_expiry_gets_a_fresh_one(self):
 		boxes = {"Gateway Server": ["gw-1", "gw-2"], "Gateway Store": ["store-1"], "Ingress Server": ["ing-1"]}
 
-		def get_all(doctype, filters, pluck):
+		def get_all(doctype, filters, or_filters, pluck):
 			self.assertEqual({"status": "Active", "is_vector_setup": 1}, filters)
+			self.assertEqual(
+				[["datum_token_expires_at", "is", "not set"], ["datum_token_expires_at", "<=", NOW + timedelta(days=1)]],
+				or_filters,
+			)
 			return boxes[doctype]
 
-		with patch("frappe.get_all", side_effect=get_all), patch("frappe.enqueue_doc") as enqueue:
+		with (
+			patch("grove.datum.now_datetime", return_value=NOW),
+			patch("frappe.get_all", side_effect=get_all),
+			patch("frappe.enqueue_doc") as enqueue,
+		):
 			datum.refresh_tokens()
 		self.assertEqual(
 			[("Gateway Server", "gw-1"), ("Gateway Server", "gw-2"), ("Gateway Store", "store-1"), ("Ingress Server", "ing-1")],
@@ -251,10 +261,14 @@ def fake_settings(url="https://central.test/", key="key-1", secret="secret-1"):
 
 
 class TestMintToken(unittest.TestCase):
-	def test_it_asks_central_as_the_grove_user_for_this_machine(self):
+	def test_it_asks_central_with_its_own_token_for_this_machine_and_keeps_when_the_answer_runs_out(self):
 		response = Mock(status_code=200, json=lambda: {"message": {"token": "jwt-1", "expires_in": 604800}})
-		with patch("frappe.get_single", return_value=fake_settings()), patch("grove.datum.requests.get", return_value=response) as get:
-			self.assertEqual("jwt-1", datum.mint_token("ap-south-1", "grove:mc-1"))
+		with (
+			patch("frappe.get_single", return_value=fake_settings()),
+			patch("grove.datum.now_datetime", return_value=NOW),
+			patch("grove.datum.requests.get", return_value=response) as get,
+		):
+			self.assertEqual(("jwt-1", EXPIRY), datum.mint_token("ap-south-1", "grove:mc-1"))
 		call = get.call_args
 		self.assertEqual("https://central.test/api/method/central.api.grove.datum_token", call.args[0])
 		self.assertEqual({"region": "ap-south-1", "resource_id": "grove:mc-1"}, call.kwargs["params"])

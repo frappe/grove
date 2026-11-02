@@ -56,7 +56,7 @@ gateways cannot jointly overrun one replica.
 | `ansible.py` / `ansible_runner.py` | Running a playbook against a box, tracked as docs. |
 | `tls.py` | Each Geography's zone wildcard: issue over DNS-01, renew, push to that geography's boxes. |
 | `monitoring.py` / `log_relay.py` | The scrape targets a Monitoring Agent pulls, and streaming an engine's log onto an open form. |
-| `datum.py` | datum's write token for one box, minted from Central inside the job (never stored), and the daily refresh that re-runs `vector.yml` so no box pushes with a stale one. The role itself: `playbooks/README.md` → Vector → datum. |
+| `datum.py` | datum's write token for one box, minted from Central inside the job (never stored; only when it runs out is, as `datum_token_expires_at`), and the hourly tick that re-runs `vector.yml` on a box whose token has a day left. The role itself: `playbooks/README.md` → Vector → datum. |
 | `failure.py` | `@reports_failure` — a long job that dies marks its doc Broken and says why. |
 | `api/` | The whitelisted surface the control clients (Central, Press) call, one module per subject: `control` (enrollment), `teams`, `keys`, `catalog` (geographies, models), `usage` (usage, figures, pulls). What is one client's alone — Press's trial policy, Central's pool of pre-minted trial keys — is what it sends per mint (title, cap, expiry and whether it counts from first use), not code here. `keys.transfer_key` hands a trial's key to the team that converted; what moves is in the `Grove API Key` row of [`grove/doctype/README.md`](grove/doctype/README.md). |
 | `net.py` / `utils.py` | Addresses, slugs, paths. |
@@ -246,7 +246,7 @@ prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south
 | hourly | `pathway.usage.pull_all` | a store is drained once, through its first writer that answers; recorded, billed, then what landed is acked. A failed pull loses nothing: the box re-sends every unacked pair. Also Gateway Server → **Pull Usage**, Stuck Usage → **Pull Now**, and `api.usage.pull_usage(team)` for one team, which answers its `figures` afresh (2 an hour per team, counted in the site cache; the rest are not limited) |
 | hourly | `grove_api_key.revoke_expired` | every live key past its `expires_at` (its rule counted from the mint, or from its first usage record when it was minted to expire from first use) is revoked; the next tick prunes it off the boxes |
 | hourly | `tls.renew_fleet_certificate`, `cloud_provider.schedule.run_due_pods` | renew runs certbot only when it says the certificate is due, and pushes only when the certificate changed |
-| daily | `datum.refresh_tokens` | re-runs `vector.yml` on every Active Gateway Server and Store with `is_vector_setup`, so the datum token Vector pushes with (Central-signed, 7 days, no revocation) is never older than a day; one job per box |
+| hourly | `datum.refresh_tokens` | re-runs `vector.yml` on every Active Gateway Server, Store and Ingress Server with `is_vector_setup` whose `datum_token_expires_at` (Central's `expires_in` at the mint; blank is unknown) is within a day, so the datum token Vector pushes with (Central-signed, no revocation) is minted again before it runs out; one job per box |
 
 Nothing else pushes. A doctype hook, a provision and a pod lifecycle all just write state; the
 tick carries it within a minute. The only manual paths are Gateway Server → **Full Sync**, Ingress

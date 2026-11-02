@@ -22,6 +22,7 @@
   "last_synced_at",
   "ship_host_metrics",
   "is_vector_setup",
+  "datum_token_expires_at",
   "memory_limit_mb",
   "gateway_store",
   "is_store_writer",
@@ -178,7 +179,7 @@
   },
   {
    "default": "1",
-   "description": "Vector pushes this box's host metrics to the Region's datum. Untick on a machine whose provider already does (an Atlas machine runs Pilot); logs ship either way. Takes effect at the next Install/Update Vector or daily refresh.",
+   "description": "Vector pushes this box's host metrics to the Region's datum. Untick on a machine whose provider already does (an Atlas machine runs Pilot); logs ship either way. Takes effect at the next Install/Update Vector or token refresh.",
    "fieldname": "ship_host_metrics",
    "fieldtype": "Check",
    "label": "Ship Host Metrics",
@@ -186,11 +187,18 @@
   },
   {
    "default": "0",
-   "description": "Set once Vector has been installed on this box (Setup chains it; Install Vector for an older box). It pushes logs, and host metrics when ticked, to the Region's datum; its token is refreshed daily.",
+   "description": "Set once Vector has been installed on this box (Setup chains it; Install Vector for an older box). It pushes logs, and host metrics when ticked, to the Region's datum; its token is minted again with a day left (Datum Token Expires At).",
    "fieldname": "is_vector_setup",
    "fieldtype": "Check",
    "in_standard_filter": 1,
    "label": "Vector Setup",
+   "read_only": 1
+  },
+  {
+   "description": "When the datum token Vector pushes with runs out — Central's expires_in at the mint. The hourly tick mints a new one with a day left.",
+   "fieldname": "datum_token_expires_at",
+   "fieldtype": "Datetime",
+   "label": "Datum Token Expires At",
    "read_only": 1
   }
  ],

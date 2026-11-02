@@ -33,14 +33,12 @@ scheduler_events = {
 	},
 	"hourly": [
 		"grove.grove.doctype.grove_api_key.grove_api_key.revoke_expired",
+		"grove.datum.refresh_tokens",
 	],
 	"hourly_long": [
 		"grove.pathway.usage.pull_all",
 		"grove.tls.renew_fleet_certificate",
 		"grove.cloud_provider.schedule.run_due_pods",
-	],
-	"daily_long": [
-		"grove.datum.refresh_tokens",
 	],
 }
 
