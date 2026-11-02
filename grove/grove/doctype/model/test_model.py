@@ -11,6 +11,7 @@ from frappe.tests import IntegrationTestCase
 
 from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing
 from grove.catalog import seed
+from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.model import model as model_module
 
 
@@ -67,6 +68,7 @@ class TestGranted(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
+		make_test_geography()
 		cls.model = (
 			frappe.get_doc({"doctype": "Model", "model_id": "probe-granted", "hf_repo": "org/probe-granted"})
 			.insert(ignore_permissions=True)
@@ -102,6 +104,13 @@ class TestGranted(IntegrationTestCase):
 		team.append("allow", {"model": self.model})
 		team.save()
 		self.assertTrue(self.is_granted(), "the team's own allow")
+		team.allow = []
+		team.save()
+		self.assertFalse(self.is_granted())
+		frappe.get_doc(
+			{"doctype": "Grove API Key", "team": self.team, "model_groups": [{"model_group": self.group}]}
+		).insert()
+		self.assertTrue(self.is_granted(), "a key in the group")
 
 
 class TestLoadPricing(IntegrationTestCase):

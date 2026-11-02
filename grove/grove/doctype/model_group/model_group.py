@@ -8,8 +8,8 @@ from grove.access import validate_model_geography
 
 
 class ModelGroup(Document):
-	"""A named set of models in one geography. Membership lives on Grove API Key, and a key reaches
-	the union of every group it lists.
+	"""A named set of models in one geography. Membership lives on Grove Team, and on a Grove API Key
+	on top of its team's; a key reaches the union of every group it is in.
 
 	The gateway holds this as its own Redis record and each member key names it, so an edit here
 	is ONE push however many members the group has."""

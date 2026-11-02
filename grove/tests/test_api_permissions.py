@@ -138,6 +138,15 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertEqual(
 			{row["name"] for row in rows}, {f"{row['provider']}/{row['model_id']}" for row in rows}
 		)
+		# A key's own group adds to the team's.
+		frappe.get_doc(
+			{"doctype": "Model Group", "__newname": "probe-reach-own", "models": [{"model": other}]}
+		).insert(ignore_permissions=True)
+		own = keys.provision_key(team, model_groups=["probe-reach-own"])["name"]
+		self.assertEqual(
+			sorted(row["name"] for row in catalog.available_models(team, own)),
+			sorted([*reach, model_key(other)]),
+		)
 		here = make_test_geography()
 		keeper = frappe.get_doc(
 			{"doctype": "Model Provider", "provider_name": "probe-keeper", "geography": here}
@@ -159,7 +168,8 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		).insert(ignore_permissions=True)
 		rows = catalog.available_models(geography=here)
 		self.assertEqual(
-			sorted(row["name"] for row in rows), sorted([model_key(grouped), model_key(other), model_key(kept)])
+			sorted(row["name"] for row in rows),
+			sorted([model_key(grouped), model_key(other), model_key(kept)]),
 		)
 		# Ours keep nothing; a vendor says so itself.
 		self.assertEqual(

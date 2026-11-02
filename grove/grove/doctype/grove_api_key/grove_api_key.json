@@ -17,6 +17,8 @@
   "key_hash",
   "api_secret",
   "masked",
+  "section_access",
+  "model_groups",
   "section_limits",
   "limits"
  ],
@@ -119,6 +121,18 @@
    "read_only": 1
   },
   {
+   "fieldname": "section_access",
+   "fieldtype": "Section Break",
+   "label": "Access"
+  },
+  {
+   "description": "Groups this key is in on top of its team's: the catalog a product's trial sees. Blank: the team's alone. Each is a group of the key's geography. Cleared at a hand-over.",
+   "fieldname": "model_groups",
+   "fieldtype": "Table MultiSelect",
+   "label": "Model Groups",
+   "options": "Model Group Row"
+  },
+  {
    "fieldname": "section_limits",
    "fieldtype": "Section Break",
    "label": "Rate limits"
@@ -143,7 +157,7 @@
    "link_fieldname": "api_key"
   }
  ],
- "modified": "2026-10-27 00:00:00.000000",
+ "modified": "2026-11-01 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove API Key",

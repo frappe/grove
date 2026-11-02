@@ -32,12 +32,14 @@ def provision_key(
 	limits: list[dict] | None = None,
 	expiry: str | None = None,
 	expiry_from_first_use: bool = False,
+	model_groups: list[str] | None = None,
 ):
 	"""Mint a key for `team` in `geography` — the default one when none is given; every other
 	geography's gateway refuses it. `expiry` is when it retires on its own, one of the key's rules
 	(Never, 1 Day, 7 Days, 14 Days, 30 Days), Never when not given, fixed after; counted from the
 	mint, or from the key's first usage record with `expiry_from_first_use`. What it may call is
-	the team's, not sent here."""
+	the team's, plus `model_groups`: groups of its geography it is in on top of the team's — a
+	product's trial catalog."""
 	frappe.only_for(ALLOWED_ROLES)
 	key = frappe.new_doc("Grove API Key")
 	key.team, key.title, key.status = get_team(team), title, "active"
@@ -46,6 +48,7 @@ def provision_key(
 	if expiry:
 		key.expiry = expiry
 		key.expiry_from_first_use = int(bool(expiry_from_first_use))
+	key.set("model_groups", [{"model_group": group} for group in model_groups or []])
 	set_key_policy(key, cap, limits)
 	key.insert()
 	gateway_url = get_gateway_url(key.geography)
@@ -140,7 +143,7 @@ def extend_key(team: str, key: str, days: int):
 def transfer_key(team: str, key: str, to_team: str, title: str | None = None):
 	"""Hand a key of `team` to `to_team` — what Central sends when a trial converts, so the secret
 	the customer's server holds keeps working. The team and the title (`title`, when given) move,
-	the trial's rules go: its expiry is lifted, and what it may call is `to_team`'s; cap,
+	the trial's rules go: its own groups and its expiry are lifted, and what it may call is `to_team`'s; cap,
 	geography and limit rows stay as minted. Counted against `to_team` like a mint: its key
 	count, and the cap within a Monthly team's spend limit. The box closes the old team's books at
 	the push. A key `to_team` already holds is answered as it is, so a lost reply is retried

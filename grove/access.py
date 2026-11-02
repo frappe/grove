@@ -60,9 +60,9 @@ def model_rows(parenttype, parents=None):
 	return grouped
 
 
-def group_rows(parents=None):
-	"""{Grove Team: [group, ...]}, sorted."""
-	filters = {"parenttype": "Grove Team"}
+def group_rows(parents=None, parenttype="Grove Team"):
+	"""{parent: [group, ...]}, sorted: the groups every Grove Team, or every Grove API Key, is in."""
+	filters = {"parenttype": parenttype}
 	if parents is not None:
 		filters["parent"] = ("in", list(parents))
 	rows = frappe.get_all("Model Group Row", filters=filters, fields=["parent", "model_group"])
@@ -160,12 +160,12 @@ def validate_limit_rows(rows):
 		seen.add((row.metric, row.window))
 
 
-def get_reachable_models(team, geography):
+def get_reachable_models(team, geography, groups=()):
 	"""What a key of `team` in `geography` may call, resolved the way the gateway does it: every
-	grant of the team's groups there and the Allow that reaches there, less the Deny that does. For
-	showing a person their models; the gateway never reads this."""
+	grant of the team's groups there and of `groups`, the key's own, and the Allow that reaches
+	there, less the Deny that does. For showing a person their models; the gateway never reads this."""
 	where = group_geographies()
-	groups = [g for g in group_rows([team]).get(team, []) if where.get(g) == geography]
+	groups = [g for g in {*group_rows([team]).get(team, []), *groups} if where.get(g) == geography]
 	granted = set()
 	for group in model_rows("Model Group", groups).values() if groups else ():
 		granted.update(group.get("models", []))
