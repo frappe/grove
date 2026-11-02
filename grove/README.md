@@ -105,7 +105,7 @@ fleet gets re-pushed over row order. Order means nothing on the wire; it exists 
 
 | Redis key | Written by | Holds |
 |---|---|---|
-| `key:<sha256(secret)>` | state push (keys) + the agent | the whole policy: `team`, `group` (comma list: its team's groups of its geography), `allow`/`deny` (its team's rows that reach its geography; a model of ours reaches every geography), `geography`, `limits` (its team's Tier's, else the default tier's, else the defaults, with the key's own rows replacing the tier's on the metrics they name), `budget` (its monthly cap), `limited`, `log_payloads`; the agent's own `spent:<YYYY-MM>`, this month's spend |
+| `key:<sha256(secret)>` | state push (keys) + the agent | the whole policy: `team`, `group` (comma list: its team's groups of its geography, and its own), `allow`/`deny` (its team's rows that reach its geography; a model of ours reaches every geography), `geography`, `limits` (its team's Tier's, else the default tier's, else the defaults, with the key's own rows replacing the tier's on the metrics they name), `budget` (its monthly cap), `limited`, `log_payloads`; the agent's own `spent:<YYYY-MM>`, this month's spend |
 | `model_group:<name>` | state push (groups) | the model grant for everyone in it |
 | `deploy:<model>` | state push (routes) | every placement of one model |
 | `grove:state_hash` | state push | per-section/bucket hashes of what the box holds |
@@ -120,7 +120,9 @@ carries everything else — the agent resolves the two at request time, unioning
 names before applying its allow/deny. The policy is the team's (`Grove Team.model_groups`, `allow`,
 `deny`; a key is revoked and minted again at will, the team is not), and a key's record carries the
 slice that reaches its geography: a Model Group and a vendor's doc are one geography's, a model of
-ours is every key's. The team is not a record on the box: what is the team's (its models, payload
+ours is every key's. A key may add groups of its own on top of the team's (`Grove API Key.model_groups`,
+`provision_key(model_groups=)`): a product's trial catalog, cleared at a hand-over. The team is not a
+record on the box: what is the team's (its models, payload
 logging, suspension) is stamped on each of its keys, so a team edit is one record per key.
 
 A model id is always `<provider>/<name>` (`frappe/qwen3.5-4b`) — the Model's **key**, not its doc

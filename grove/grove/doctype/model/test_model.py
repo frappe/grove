@@ -84,7 +84,7 @@ class TestGranted(IntegrationTestCase):
 	def is_granted(self):
 		return frappe.get_doc("Model", self.model).is_granted
 
-	def test_a_grant_is_an_allow_or_a_group_with_a_team_in_it(self):
+	def test_a_grant_is_an_allow_or_a_group_naming_it(self):
 		self.assertFalse(self.is_granted())
 		team = frappe.get_doc("Grove Team", self.team)
 		team.model_groups = []
@@ -94,14 +94,16 @@ class TestGranted(IntegrationTestCase):
 		group = frappe.get_doc("Model Group", self.group)
 		group.append("models", {"model": self.model})
 		group.save()
-		self.assertFalse(self.is_granted(), "a group no team is in grants nothing")
-		team.append("model_groups", {"model_group": self.group})
-		team.save()
-		self.assertTrue(self.is_granted())
-		team.model_groups, team.deny = [], []
+		self.assertTrue(self.is_granted(), "a group names it, whoever is in it")
+		group.models = []
+		group.save()
+		team.deny = []
 		team.append("allow", {"model": self.model})
 		team.save()
 		self.assertTrue(self.is_granted(), "the team's own allow")
+		team.allow = []
+		team.save()
+		self.assertFalse(self.is_granted())
 
 
 class TestLoadPricing(IntegrationTestCase):

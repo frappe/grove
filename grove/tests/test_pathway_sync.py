@@ -271,7 +271,7 @@ class TestEffectiveKeys(unittest.TestCase):
 			if doctype == "Grove Model Row":
 				return list(rows)
 			if doctype == "Model Group Row":
-				return list(groups)
+				return [row for row in groups if row.get("parenttype", "Grove Team") == filters["parenttype"]]
 			if doctype == "Model":
 				return list(models)
 			if doctype == "Model Group":
@@ -348,6 +348,16 @@ class TestEffectiveKeys(unittest.TestCase):
 		self.assertEqual(key["allow"], "a,b")
 		self.assertEqual(key["group"], "acme,zeta")
 
+	def test_a_keys_own_groups_join_its_teams(self):
+		[key] = self.keys(
+			[self.key()],
+			groups=[
+				frappe._dict(parent="T-1", model_group="acme"),
+				frappe._dict(parenttype="Grove API Key", parent="KEY-1", model_group="raven"),
+			],
+		)
+		self.assertEqual(key["group"], "acme,raven")
+
 	def test_the_same_group_twice_is_one_membership(self):
 		[key] = self.keys(
 			[self.key()],
@@ -391,7 +401,7 @@ class TestEffectiveKeys(unittest.TestCase):
 				"Grove Team": 1,
 				"Grove Model Row": 1,
 				"Model": 1,
-				"Model Group Row": 1,
+				"Model Group Row": 2,
 				"Model Group": 1,
 				"Model Limit": 2,
 			},
@@ -485,7 +495,10 @@ class TestEffectiveKeys(unittest.TestCase):
 		self.assertEqual(self.filters["Grove API Key"], {"status": "active", "name": ("in", ["KEY-1"])})
 		self.assertEqual(self.filters["Grove Team"], {"name": ("in", ["T-1"])})
 		self.assertEqual(self.filters["Grove Model Row"], {"parenttype": "Grove Team", "parent": ("in", ["T-1"])})
-		self.assertEqual(self.filters["Model Group Row"], {"parenttype": "Grove Team", "parent": ("in", ["T-1"])})
+		# The last membership read is the keys' own rows, narrowed to the keys named.
+		self.assertEqual(
+			self.filters["Model Group Row"], {"parenttype": "Grove API Key", "parent": ("in", ["KEY-1"])}
+		)
 
 	def test_no_names_is_no_key_and_no_query(self):
 		self.assertEqual(self.keys([self.key()], names=[]), [])

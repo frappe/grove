@@ -43,7 +43,7 @@ def effective_groups():
 
 def effective_keys(names=None):
 	"""Every LIVE API Key projected for the gateway, with the whole policy the gates read: its
-	team's groups of its geography and the team's allow/deny that reach it (a model of ours reaches
+	team's groups of its geography and its own, and the team's allow/deny that reach it (a model of ours reaches
 	every geography), its geography, its rate limits (its team's tier's, else the defaults,
 	with its own rows replacing the tier's on the metrics they name) and `budget` — its cap, with
 	`budget_window`, what the box counts it over: the UTC month, or everything since the mint (the
@@ -77,6 +77,7 @@ def effective_keys(names=None):
 	team_names = None if names is None else sorted(teams)
 	grants = team_grants(team_names)
 	memberships = group_rows(team_names)
+	own_groups = group_rows(None if names is None else [k.name for k in keys], "Grove API Key")
 	where = group_geographies()
 	limits = effective_limits(
 		keys, limit_entries("Grove API Key", names), {name: t.tier for name, t in teams.items()}
@@ -93,7 +94,15 @@ def effective_keys(names=None):
 				"prefix": k.name,
 				"team": k.team,
 				"status": k.status or "active",
-				"group": ",".join(g for g in memberships.get(k.team, []) if where.get(g) == k.geography),
+				"group": ",".join(
+					sorted(
+						{
+							g
+							for g in memberships.get(k.team, []) + own_groups.get(k.name, [])
+							if where.get(g) == k.geography
+						}
+					)
+				),
 				"allow": ",".join(reaching(own.get("allow", []), k.geography)),
 				"deny": ",".join(reaching(own.get("deny", []), k.geography)),
 				"limited": bool(team.suspended),

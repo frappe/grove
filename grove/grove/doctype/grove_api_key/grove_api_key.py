@@ -31,6 +31,7 @@ class GroveAPIKey(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		from grove.grove.doctype.model_group_row.model_group_row import ModelGroupRow
 		from grove.grove.doctype.model_limit.model_limit import ModelLimit
 
 		api_secret: DF.Password | None
@@ -42,6 +43,7 @@ class GroveAPIKey(Document):
 		key_hash: DF.Data | None
 		limits: DF.Table[ModelLimit]
 		masked: DF.Data | None
+		model_groups: DF.TableMultiSelect[ModelGroupRow]
 		status: DF.Literal["active", "revoked"]
 		team: DF.Link
 		title: DF.Data | None
@@ -86,6 +88,7 @@ class GroveAPIKey(Document):
 
 	def validate(self):
 		validate_limit_rows(self.limits)
+		self.validate_groups()
 		if flt(self.cap) < 0:
 			frappe.throw("A cap cannot be negative.")
 
@@ -94,6 +97,21 @@ class GroveAPIKey(Document):
 			frappe.throw("A revoked key stays revoked. Mint a new one.")
 		if self.needs_cap_check:
 			self.validate_cap()
+
+	def validate_groups(self):
+		"""A group is one geography's, as the key is: every group named here is of the key's."""
+		if not self.model_groups:
+			return
+		groups = frappe.get_all(
+			"Model Group",
+			filters={"name": ("in", [row.model_group for row in self.model_groups])},
+			fields=["name", "geography"],
+		)
+		for group in groups:
+			if group.geography != self.geography:
+				frappe.throw(
+					f"Model Group {group.name!r} is of {group.geography}, not this key's {self.geography}."
+				)
 
 	def validate_set_only_once(self):
 		"""`team`, `title` and the expiry rule are set once — except by `transfer`, the one move
@@ -160,8 +178,8 @@ class GroveAPIKey(Document):
 
 	def transfer(self, to_team: str, title: str | None = None):
 		"""Hand this key to `to_team`, titled `title` when given. The trial's rules go with the
-		trial: its expiry is lifted (the key is the customer's now, for as long as they keep it), and
-		what it may call is the new team's; cap, geography and limit rows stay. Counted
+		trial: its own groups are cleared and its expiry lifted (the key is the customer's now, for as
+		long as they keep it), so what it may call is the new team's; cap, geography and limit rows stay. Counted
 		against the new team like a mint: its key count, and the cap within the spend limit of a
 		Monthly team (that check reads the team's boxes, as a mint does; nothing is drained). One
 		save, versioned even under test, so the Version holds the move and the next tick re-pushes
@@ -179,14 +197,13 @@ class GroveAPIKey(Document):
 				"would follow it. Mint a new one."
 			)
 		title = title or self.title
-		if title and frappe.db.exists("Grove API Key", {"team": to_team, "title": title}):
-			frappe.throw(f"{to_team} already has a key titled {title!r}.")
 		old_team, self.team = self.team, to_team
 		self.check_key_count()
 		if window != "Total":
 			self.validate_cap()
 		self.title = title
 		self.expiry, self.expiry_from_first_use, self.expires_at = "Never", 0, None
+		self.set("model_groups", [])
 		self.flags.transfer = True
 		self.save(ignore_version=False)
 		self.add_comment("Info", f"Handed over from {old_team}.")

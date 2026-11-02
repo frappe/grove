@@ -174,6 +174,13 @@ class IntegrationTestNewTeamsStartInTheDefaultGroups(IntegrationTestCase):
 		teams.provision_team("key-group-provisioned")
 		self.assertEqual(self.groups_of("key-group-provisioned"), [self.away_default, self.default])
 
+	def test_a_key_adds_groups_of_its_own_geography_on_top_of_its_teams(self):
+		own = self.group("key-default-own")
+		doc = key(team("key-group-own"), model_groups=[{"model_group": own}])
+		self.assertEqual(projected(doc.name)["group"], ",".join(sorted([self.default, own])))
+		with self.assertRaisesRegex(frappe.ValidationError, "not this key's"):
+			key("key-group-own", model_groups=[{"model_group": self.away_default}])
+
 
 class IntegrationTestATeamsGrantsReachTheKeysOfTheirGeography(IntegrationTestCase):
 	"""An Allow or Deny row names a Model doc: a vendor's is one geography's and reaches the team's
@@ -451,7 +458,7 @@ class IntegrationTestCapsFitTheSpendLimit(IntegrationTestCase):
 	def test_caps_past_the_limit_are_refused_and_a_revoke_frees_its_share(self):
 		name = team("key-cap-team", spend_limit=10)
 		first = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 6}).insert()
-		with self.assertRaisesRegex(frappe.ValidationError, "Lower another key's cap"):
+		with self.assertRaisesRegex(frappe.ValidationError, "would add up to"):
 			frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 6}).insert()
 		second = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 4}).insert()
 		self.assertEqual(
@@ -658,8 +665,9 @@ class IntegrationTestTransfer(IntegrationTestCase):
 		cls.trial_group = IntegrationTestNewTeamsStartInTheDefaultGroups.group("key-handover-trial-models")
 
 	def trial_key(self, team_name, **fields):
+		"""A key of a Total team, in the trial group on top of the team's default: a product's."""
 		groups = [{"model_group": self.trial_group}]
-		return key(team(team_name, key_cap_window="Total", model_groups=groups), **fields)
+		return key(team(team_name, key_cap_window="Total"), model_groups=groups, **fields)
 
 	def test_team_and_title_move_and_the_trials_rules_go_in_one_save_the_version_and_the_wire_record(self):
 		customer = team("key-handover-customer", spend_limit=10)
@@ -668,12 +676,14 @@ class IntegrationTestTransfer(IntegrationTestCase):
 		doc.reload()
 		trial, stamp = doc.team, doc.modified
 		self.assertIsNotNone(doc.expires_at)
+		self.assertEqual(projected(doc.name)["group"], ",".join(sorted([self.default, self.trial_group])))
 
 		doc.transfer(customer, title="site.example.test")
 
 		doc.reload()
 		self.assertEqual((doc.team, doc.title), (customer, "site.example.test"))
 		self.assertEqual((doc.expiry, doc.expiry_from_first_use, doc.expires_at), ("Never", 0, None))
+		self.assertEqual(doc.model_groups, [])
 		self.assertGreater(doc.modified, frappe.utils.get_datetime(stamp))
 		record = projected(doc.name)
 		self.assertEqual(
@@ -700,7 +710,7 @@ class IntegrationTestTransfer(IntegrationTestCase):
 		doc.reload()
 		taken = team("key-handover-taken")
 		key(taken, title="site.example.test")
-		with self.assertRaisesRegex(frappe.ValidationError, "titled"):
+		with self.assertRaises(frappe.UniqueValidationError):
 			doc.transfer(taken, title="site.example.test")
 		doc.reload()
 		self.assertEqual((doc.team, doc.title), (team("key-handover-refused"), None))
@@ -718,7 +728,7 @@ class IntegrationTestTransfer(IntegrationTestCase):
 		taken = team("key-handover-taken-quiet")
 		key(taken, title="site.example.test")
 		doc = self.trial_key("key-handover-titled", title="site.example.test")
-		with self.assertRaisesRegex(frappe.ValidationError, "titled"):
+		with self.assertRaises(frappe.UniqueValidationError):
 			doc.transfer(taken)
 		self.assertEqual(frappe.db.get_value("Grove API Key", doc.name, "team"), team("key-handover-titled"))
 

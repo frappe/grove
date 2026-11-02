@@ -104,6 +104,24 @@ class TestInsertMissing(CatalogCase):
 		self.load(**self.CATALOG)
 		self.assertEqual([frappe.db.count(doctype) for doctype in COUNTED], counts)
 
+	def test_what_is_held_gains_the_models_the_catalog_adds(self):
+		# Named to run after the test above: the class rolls back once, and that one asserts the
+		# first group in the geography is the default and counts rows.
+		make_test_geography()
+		group = {"name": "catalog-grown", "description": "Grown", "models": ["catalog-vendor/big-1"]}
+		self.load(**{**self.CATALOG, "model_groups": [group]})
+		grown_2 = {"provider": "catalog-vendor", "model_id": "grown-2", "rates": []}
+		grown = {
+			**self.CATALOG,
+			"models": [*self.CATALOG["models"], grown_2],
+			"model_groups": [{**group, "models": ["catalog-vendor/big-1", "catalog-vendor/grown-2"]}],
+		}
+		self.load(**grown)
+		rows = [row.model_key for row in frappe.get_doc("Model Group", "catalog-grown").models]
+		self.assertEqual(rows, ["catalog-vendor/big-1", "catalog-vendor/grown-2"])
+		self.load(**grown)
+		self.assertEqual(len(frappe.get_doc("Model Group", "catalog-grown").models), 2)
+
 	def test_a_provider_the_site_holds_is_left_as_it_is(self):
 		held = provider("catalog-held", base_url="https://held.test/v1", api_key="held-secret").insert()
 		self.load(
