@@ -160,12 +160,12 @@ def validate_limit_rows(rows):
 		seen.add((row.metric, row.window))
 
 
-def get_reachable_models(team, geography, groups=()):
-	"""What a key of `team` in `geography` may call, resolved the way the gateway does it: every
-	grant of the team's groups there and of `groups`, the key's own, and the Allow that reaches
-	there, less the Deny that does. For showing a person their models; the gateway never reads this."""
+def get_reachable_models(team, geography):
+	"""What a key of `team` in `geography` may call off the team's policy alone: every grant of the
+	team's groups there and the Allow that reaches there, less the Deny that does. A key's own
+	groups are not counted. For showing a person their models; the gateway never reads this."""
 	where = group_geographies()
-	groups = [g for g in {*group_rows([team]).get(team, []), *groups} if where.get(g) == geography]
+	groups = [g for g in group_rows([team]).get(team, []) if where.get(g) == geography]
 	granted = set()
 	for group in model_rows("Model Group", groups).values() if groups else ():
 		granted.update(group.get("models", []))

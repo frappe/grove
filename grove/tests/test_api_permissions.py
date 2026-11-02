@@ -82,7 +82,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		return f"https://{frappe.db.get_value('Geography', geography, 'endpoint')}"
 
 	def test_the_catalogue_and_the_usage_report_are_readable(self):
-		self.assertIsInstance(catalog.available_models(), list)
+		self.assertIsInstance(catalog.available_models("nobody"), list)
 		self.assertEqual(usage.usage(["nobody"])["model_summary"], [])
 		[geography] = [g for g in catalog.geographies() if g["name"] == make_test_geography()]
 		self.assertEqual(geography["endpoint"], self.endpoint(geography["name"]))
@@ -112,14 +112,10 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		).insert(ignore_permissions=True)
 		team = "probe-reach"
 		teams.provision_team(team)
-		key = frappe.get_doc("Grove API Key", keys.provision_key(team)["name"])
 		policy = frappe.get_doc("Grove Team", team)
 		policy.model_groups = []
 		policy.save()
-		self.assertEqual(catalog.available_models(team, key.name), [])
 		self.assertEqual(catalog.available_models(team), [])
-		with self.assertRaises(frappe.DoesNotExistError):
-			catalog.available_models("nobody-reach", key.name)
 
 		policy.update(
 			{
@@ -131,22 +127,18 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		policy.save()
 		model_key = lambda doc: frappe.db.get_value("Model", doc, "model_key")  # noqa: E731
 		reach = sorted([model_key(grouped), model_key(allowed)])
-		rows = catalog.available_models(team, key.name)
+		rows = catalog.available_models(team)
+		# The team's own reach, never the default group's or another team's.
 		self.assertEqual(sorted(row["name"] for row in rows), reach)
-		# The team alone is shown its own reach, never the default group's or another team's.
-		self.assertEqual(sorted(row["name"] for row in catalog.available_models(team)), reach)
 		self.assertEqual(
 			{row["name"] for row in rows}, {f"{row['provider']}/{row['model_id']}" for row in rows}
 		)
-		# A key's own group adds to the team's.
+		# A key's own group (a trial's) is that key's alone: the team's catalog does not show it.
 		frappe.get_doc(
 			{"doctype": "Model Group", "__newname": "probe-reach-own", "models": [{"model": other}]}
 		).insert(ignore_permissions=True)
-		own = keys.provision_key(team, model_groups=["probe-reach-own"])["name"]
-		self.assertEqual(
-			sorted(row["name"] for row in catalog.available_models(team, own)),
-			sorted([*reach, model_key(other)]),
-		)
+		keys.provision_key(team, model_groups=["probe-reach-own"])
+		self.assertEqual(sorted(row["name"] for row in catalog.available_models(team)), reach)
 		here = make_test_geography()
 		keeper = frappe.get_doc(
 			{"doctype": "Model Provider", "provider_name": "probe-keeper", "geography": here}
@@ -166,21 +158,27 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 				"models": [{"model": other}, {"model": grouped}, {"model": kept}],
 			}
 		).insert(ignore_permissions=True)
-		rows = catalog.available_models(geography=here)
+		# Elsewhere: its Allow of a model of ours reaches there, that geography's default group does not.
+		self.assertEqual(
+			[row["name"] for row in catalog.available_models(team, geography=here)], [model_key(allowed)]
+		)
+		policy.append("model_groups", {"model_group": "probe-reach-default"})
+		policy.save()
+		rows = catalog.available_models(team, geography=here)
 		self.assertEqual(
 			sorted(row["name"] for row in rows),
-			sorted([model_key(grouped), model_key(other), model_key(kept)]),
+			sorted([model_key(allowed), model_key(grouped), model_key(other), model_key(kept)]),
 		)
 		# Ours keep nothing; a vendor says so itself.
 		self.assertEqual(
 			{row["name"]: row["zero_data_retention"] for row in rows},
-			{model_key(grouped): True, model_key(other): True, model_key(kept): False},
+			{
+				model_key(allowed): True,
+				model_key(grouped): True,
+				model_key(other): True,
+				model_key(kept): False,
+			},
 		)
-		# The team alone, elsewhere: its Allow of a model of ours reaches there, the default group does not.
-		self.assertEqual(
-			[row["name"] for row in catalog.available_models(team, geography=here)], [model_key(allowed)]
-		)
-		self.assertEqual(catalog.available_models(geography=make_test_geography("probe-reach-away")), [])
 
 	def test_usage_is_read_off_the_replica_when_the_site_has_one(self):
 		with (
