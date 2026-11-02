@@ -83,20 +83,10 @@ class Model(Document):
 
 	@property
 	def is_granted(self):
-		"""Someone can call it: a team's Allow names it, or a Model Group with a team or a key in it
-		does. A group nobody is in grants nothing yet, the default one included."""
-		rows = frappe.get_all(
-			"Grove Model Row",
-			filters={"model_key": self.model_key, "parentfield": ("in", ("allow", "models"))},
-			fields=["parenttype", "parent"],
-		)
-		if any(row.parenttype == "Grove Team" for row in rows):
-			return True
-		groups = [row.parent for row in rows if row.parenttype == "Model Group"]
-		return bool(groups) and bool(
+		"""Someone can call it: a team's Allow or a Model Group names it. A Deny does not."""
+		return bool(
 			frappe.db.exists(
-				"Model Group Row",
-				{"parenttype": ("in", ("Grove Team", "Grove API Key")), "model_group": ("in", groups)},
+				"Grove Model Row", {"model": self.name, "parentfield": ("in", ("allow", "models"))}
 			)
 		)
 

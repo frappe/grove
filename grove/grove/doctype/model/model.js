@@ -16,7 +16,7 @@ frappe.ui.form.on("Model", {
 		if (frm.doc.published && frm.doc.__onload && frm.doc.__onload.is_granted === false) {
 			frm.dashboard.set_headline(
 				__(
-					"Published, but no Model Group with a user and no user Allow names {0} — nobody can call it. {1}",
+					"Published, but no Model Group has {0} — nobody can call it. {1}",
 					[frm.doc.model_key, `<a href="/app/model-group">${__("Model Groups")}</a>`]
 				),
 				"orange"
