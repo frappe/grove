@@ -451,7 +451,7 @@ class IntegrationTestCapsFitTheSpendLimit(IntegrationTestCase):
 	def test_caps_past_the_limit_are_refused_and_a_revoke_frees_its_share(self):
 		name = team("key-cap-team", spend_limit=10)
 		first = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 6}).insert()
-		with self.assertRaisesRegex(frappe.ValidationError, "Lower another key's cap"):
+		with self.assertRaisesRegex(frappe.ValidationError, "would add up to"):
 			frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 6}).insert()
 		second = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 4}).insert()
 		self.assertEqual(
