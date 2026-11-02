@@ -34,8 +34,7 @@ class GroveSettings(Document):
 		from frappe.types import DF
 
 		acme_email: DF.Data | None
-		central_api_key: DF.Data | None
-		central_api_secret: DF.Password | None
+		central_token: DF.Password | None
 		central_url: DF.Data | None
 		dns_provider: DF.Link | None
 		monitoring_extra_labels: DF.SmallText | None

@@ -249,13 +249,12 @@ class TestTheRefresh(unittest.TestCase):
 		self.assertTrue(all(call.args[2] == "provision_vector" for call in enqueue.call_args_list))
 
 
-def fake_settings(url="https://central.test/", key="key-1", secret="secret-1"):
-	labels = {"central_url": "Central URL", "central_api_key": "Central API Key", "central_api_secret": "Central API Secret"}
+def fake_settings(url="https://central.test/", token="token-1"):
+	labels = {"central_url": "Central URL", "central_token": "Central Token"}
 	return SimpleNamespace(
 		central_url=url,
-		central_api_key=key,
-		get_password=lambda field, raise_exception=True: secret,
-		get=lambda field: {"central_url": url, "central_api_key": key}[field],
+		get_password=lambda field, raise_exception=True: token,
+		get=lambda field: {"central_url": url}[field],
 		meta=SimpleNamespace(get_label=labels.__getitem__),
 	)
 
@@ -272,7 +271,7 @@ class TestMintToken(unittest.TestCase):
 		call = get.call_args
 		self.assertEqual("https://central.test/api/method/central.api.grove.datum_token", call.args[0])
 		self.assertEqual({"region": "ap-south-1", "resource_id": "grove:mc-1"}, call.kwargs["params"])
-		self.assertEqual({"Authorization": "token key-1:secret-1"}, call.kwargs["headers"])
+		self.assertEqual({"X-Grove-Token": "token-1"}, call.kwargs["headers"])
 
 	def test_a_refusal_is_an_error_naming_centrals_answer(self):
 		response = Mock(status_code=401, text="not permitted")
@@ -288,9 +287,9 @@ class TestMintToken(unittest.TestCase):
 
 class TestCredentialProblems(unittest.TestCase):
 	def test_each_blank_field_is_named(self):
-		with patch("frappe.get_single", return_value=fake_settings(url="", secret="")):
+		with patch("frappe.get_single", return_value=fake_settings(url="", token="")):
 			problems = datum.credential_problems()
-		self.assertEqual(["Set Central URL in Grove Settings.", "Set Central API Secret in Grove Settings."], problems)
+		self.assertEqual(["Set Central URL in Grove Settings.", "Set Central Token in Grove Settings."], problems)
 
 	def test_a_filled_credential_has_none(self):
 		with patch("frappe.get_single", return_value=fake_settings()):

@@ -35,8 +35,7 @@
   "section_central",
   "central_url",
   "column_break_central",
-  "central_api_key",
-  "central_api_secret",
+  "central_token",
   "pod_tab",
   "pod_geography"
  ],
@@ -216,7 +215,7 @@
    "label": "Usage Retention"
   },
   {
-   "description": "Grove asks Central for each box's datum write token with this user's API key — the mirror of the Grove key Central holds. Minted inside the job, never stored; minted again with a day left.",
+   "description": "Grove asks Central for each box's datum write token, presenting Central Token as X-Grove-Token; Central's AI Settings holds its SHA-256 (Grove Token Hash). Minted inside the job, never stored; minted again with a day left.",
    "fieldname": "section_central",
    "fieldtype": "Section Break",
    "label": "Central (datum tokens)"
@@ -232,14 +231,10 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "central_api_key",
-   "fieldtype": "Data",
-   "label": "Central API Key"
-  },
-  {
-   "fieldname": "central_api_secret",
+   "description": "A random secret of Grove's own. Paste its SHA-256 (hex) into Central's AI Settings as Grove Token Hash.",
+   "fieldname": "central_token",
    "fieldtype": "Password",
-   "label": "Central API Secret"
+   "label": "Central Token"
   }
  ],
  "issingle": 1,

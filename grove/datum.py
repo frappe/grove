@@ -11,21 +11,22 @@ import requests
 from frappe.utils import add_to_date, now_datetime
 
 TOKEN_ROUTE = "/api/method/central.api.grove.datum_token"
-CREDENTIAL_FIELDS = ("central_url", "central_api_key", "central_api_secret")
+TOKEN_HEADER = "X-Grove-Token"
+CREDENTIAL_FIELDS = ("central_url", "central_token")
 VECTOR_HOSTS = ("Gateway Server", "Gateway Store", "Ingress Server")
-
 RENEW_AHEAD_DAYS = 1
+
 
 def mint_token(region: str, resource_id: str) -> tuple[str, datetime]:
 	"""Ask Central for the JWT `resource_id` presents to `region`'s datum, and the moment it runs
 	out — `region` is Central's name for it (Region.central_region), not Grove's. Thrown on anything
 	but 200, naming Central's answer: a box with no token is a box that ships nothing."""
 	settings = frappe.get_single("Grove Settings")
-	secret = settings.get_password("central_api_secret", raise_exception=False) or ""
+	token = settings.get_password("central_token", raise_exception=False) or ""
 	response = requests.get(
 		f"{(settings.central_url or '').rstrip('/')}{TOKEN_ROUTE}",
 		params={"region": region, "resource_id": resource_id},
-		headers={"Authorization": f"token {settings.central_api_key}:{secret}"},
+		headers={TOKEN_HEADER: token},
 		timeout=15,
 	)
 	if response.status_code != 200:
@@ -41,9 +42,7 @@ def credential_problems() -> list[str]:
 	"""Each blank Central credential in Grove Settings, named."""
 	settings = frappe.get_single("Grove Settings")
 	values = {
-		field: settings.get_password(field, raise_exception=False)
-		if field == "central_api_secret"
-		else settings.get(field)
+		field: settings.get_password(field, raise_exception=False) if field == "central_token" else settings.get(field)
 		for field in CREDENTIAL_FIELDS
 	}
 	return [f"Set {settings.meta.get_label(field)} in Grove Settings." for field, value in values.items() if not value]
