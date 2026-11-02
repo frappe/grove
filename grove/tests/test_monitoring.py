@@ -181,20 +181,26 @@ class TestWhichBoxesAreScraped(unittest.TestCase):
 		filters = self.filters_for(monitoring.inference_boxes)["Inference Server"]
 		self.assertEqual(filters["status"], ("!=", "Terminated"))
 
-	def test_a_terminated_front_box_is_not_a_target_either(self):
-		captured = self.filters_for(monitoring.front_boxes)
-		for doctype in ("Gateway Server", "Ingress Server"):
-			with self.subTest(doctype):
-				self.assertEqual(captured[doctype]["status"], ("!=", "Terminated"))
-
 	def test_a_broken_box_is_still_scraped(self):
-		for boxes, doctype in (
-			(monitoring.inference_boxes, "Inference Server"),
-			(monitoring.front_boxes, "Gateway Server"),
-			(monitoring.front_boxes, "Ingress Server"),
+		filters = self.filters_for(monitoring.inference_boxes)["Inference Server"]
+		self.assertNotIn("Active", str(filters["status"]))
+
+	def test_a_gateway_or_ingress_server_is_never_a_host_target(self):
+		"""Those ship their host metrics with Vector; a vmagent target for one could only ever be down."""
+		captured = {}
+
+		def get_all(doctype, filters=None, **kwargs):
+			captured[doctype] = filters
+			return []
+
+		with (
+			unittest.mock.patch.object(frappe, "get_all", side_effect=get_all),
+			unittest.mock.patch.object(frappe, "db", unittest.mock.Mock(**{"get_value.return_value": None})),
 		):
-			with self.subTest(doctype):
-				self.assertNotIn("Active", str(self.filters_for(boxes)[doctype]["status"]))
+			self.assertEqual(monitoring.host_targets("MA-1"), [])
+		self.assertIn("Inference Server", captured)
+		self.assertNotIn("Gateway Server", captured)
+		self.assertNotIn("Ingress Server", captured)
 
 
 class TestEngineTargets(unittest.TestCase):

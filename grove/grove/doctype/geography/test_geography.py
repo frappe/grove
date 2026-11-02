@@ -122,7 +122,10 @@ class TestTlsVariables(unittest.TestCase):
 class TestARegionsGeography(unittest.TestCase):
 	def validate(self, is_new=False, changed=True, boxes=()):
 		doc = SimpleNamespace(
-			name="eu-central-1", is_new=lambda: is_new, has_value_changed=lambda field: changed
+			name="eu-central-1",
+			is_new=lambda: is_new,
+			has_value_changed=lambda field: changed,
+			get=lambda field: None,
 		)
 		with (
 			patch.object(frappe, "db", SimpleNamespace(exists=lambda doctype, filters: doctype in boxes)),

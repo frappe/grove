@@ -1,0 +1,58 @@
+---
+- name: Read the installed Vector version
+  ansible.builtin.command: vector --version
+  register: vector_probe
+  changed_when: false
+  failed_when: false
+
+- name: Install Vector {{ vector_version }}
+  when: vector_version not in (vector_probe.stdout | default('')) + (vector_probe.stderr | default(''))
+  ansible.builtin.apt:
+    deb: "https://github.com/vectordotdev/vector/releases/download/v{{ vector_version }}/vector_{{ vector_version }}-1_{{ monitoring_arch }}.deb"
+  notify: restart vector
+
+# The deb's unit runs Vector as `vector`; the logs are 0640 to the grove user's group, the journal to systemd-journal.
+- name: Let vector read the logs and the journal
+  ansible.builtin.user:
+    name: vector
+    groups: ["{{ grove_user }}", systemd-journal]
+    append: true
+  notify: restart vector
+
+# The token is inline — Vector's bearer auth reads no file — so the whole file is a secret.
+- name: Write the Vector config
+  ansible.builtin.template:
+    src: vector.yaml.j2
+    dest: /etc/vector/vector.yaml
+    owner: root
+    group: vector
+    mode: "0640"
+  no_log: true
+  notify: restart vector
+
+- name: Enable and start Vector
+  ansible.builtin.systemd:
+    name: vector
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Flush handlers so the health check sees the current config
+  ansible.builtin.meta: flush_handlers
+
+- name: Check Vector answers
+  ansible.builtin.uri:
+    url: "http://{{ vector_api_address }}/health"
+    return_content: false
+    status_code: 200
+  retries: 15
+  delay: 4
+  register: vector_health
+  until: vector_health.status == 200
+  failed_when: false
+
+- name: Report why Vector is not answering
+  when: vector_health.status != 200
+  ansible.builtin.command: journalctl -u vector -n 30 --no-pager
+  changed_when: false
+  failed_when: true

@@ -22,6 +22,18 @@ frappe.ui.form.on("Gateway Store", {
 					"sync_dns_records"
 				)
 			);
+			frm.add_custom_button(
+				frm.doc.is_vector_setup ? __("Update Vector") : __("Install Vector"),
+				() =>
+					grove.confirm_call(
+						frm,
+						__(
+							"Install Vector on {0}? It pushes logs — and host metrics when Ship Host Metrics is ticked — to Region {1}'s datum.",
+							[frm.doc.name, frm.doc.region]
+						),
+						"install_vector"
+					)
+			);
 		}
 		if (frm.doc.status !== "Terminated") {
 			frm.add_custom_button(

@@ -20,7 +20,9 @@
   "admin_token",
   "agent_version",
   "last_synced_at",
-  "monitoring_agent",
+  "ship_host_metrics",
+  "is_vector_setup",
+  "datum_token_expires_at",
   "memory_limit_mb",
   "gateway_store",
   "is_store_writer",
@@ -105,13 +107,6 @@
    "read_only": 1
   },
   {
-   "description": "The agent that scrapes this box. Blank = not scraped.",
-   "fieldname": "monitoring_agent",
-   "fieldtype": "Link",
-   "label": "Monitoring Agent",
-   "options": "Monitoring Agent"
-  },
-  {
    "fieldname": "column_break_admin",
    "fieldtype": "Column Break"
   },
@@ -131,11 +126,11 @@
    "read_only": 1
   },
   {
+   "description": "Written only on a gateway not on a Gateway Store; one on a store is stamped on the store. When a Projection tick last confirmed this box holds the desired state: stamped with the tick's read time on every in-sync check and every successful push, never on failure. The next tick rebuilds only the key buckets saved since it; blank, it rebuilds all.",
    "fieldname": "last_synced_at",
    "fieldtype": "Datetime",
    "label": "Last Synced At",
-   "read_only": 1,
-   "description": "Written only on a gateway not on a Gateway Store; one on a store is stamped on the store. When a Projection tick last confirmed this box holds the desired state: stamped with the tick's read time on every in-sync check and every successful push, never on failure. The next tick rebuilds only the key buckets saved since it; blank, it rebuilds all."
+   "read_only": 1
   },
   {
    "default": "0",
@@ -181,10 +176,34 @@
    "fieldtype": "Password",
    "label": "Admin Token",
    "read_only": 1
+  },
+  {
+   "default": "1",
+   "description": "Vector pushes this box's host metrics to the Region's datum. Untick on a machine whose provider already does (an Atlas machine runs Pilot); logs ship either way. Takes effect at the next Install/Update Vector or token refresh.",
+   "fieldname": "ship_host_metrics",
+   "fieldtype": "Check",
+   "label": "Ship Host Metrics",
+   "set_only_once": 1
+  },
+  {
+   "default": "0",
+   "description": "Set once Vector has been installed on this box (Setup chains it; Install Vector for an older box). It pushes logs, and host metrics when ticked, to the Region's datum; its token is minted again with a day left (Datum Token Expires At).",
+   "fieldname": "is_vector_setup",
+   "fieldtype": "Check",
+   "in_standard_filter": 1,
+   "label": "Vector Setup",
+   "read_only": 1
+  },
+  {
+   "description": "When the datum token Vector pushes with runs out — Central's expires_in at the mint. The hourly tick mints a new one with a day left.",
+   "fieldname": "datum_token_expires_at",
+   "fieldtype": "Datetime",
+   "label": "Datum Token Expires At",
+   "read_only": 1
   }
  ],
  "links": [],
- "modified": "2026-10-15 03:38:19.395603",
+ "modified": "2026-10-27 02:30:45.766290",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Gateway Server",

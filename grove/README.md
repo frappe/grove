@@ -55,7 +55,8 @@ gateways cannot jointly overrun one replica.
 | `naming.py` | A Machine's `<prefix><n>-<region>.<geography zone>`, e.g. `gw2-ap-south-1.local.frappe.dev` (no domain for a box whose geography has no zone, or one named before this), which its server doc takes. Its `short_name` (first label) is the DNS label under the zone and the request-id / agent id. |
 | `ansible.py` / `ansible_runner.py` | Running a playbook against a box, tracked as docs. |
 | `tls.py` | Each Geography's zone wildcard: issue over DNS-01, renew, push to that geography's boxes. |
-| `monitoring.py` / `log_relay.py` | Exporters on every box, and shipping their output. |
+| `monitoring.py` / `log_relay.py` | The scrape targets a Monitoring Agent pulls, and streaming an engine's log onto an open form. |
+| `datum.py` | datum's write token for one box, minted from Central inside the job (never stored; only when it runs out is, as `datum_token_expires_at`), and the hourly tick that re-runs `vector.yml` on a box whose token has a day left. The role itself: `playbooks/README.md` → Vector → datum. |
 | `failure.py` | `@reports_failure` — a long job that dies marks its doc Broken and says why. |
 | `api/` | The whitelisted surface the control clients (Central, Press) call, one module per subject: `control` (enrollment), `teams`, `keys`, `catalog` (geographies, models), `usage` (usage, figures, pulls). What is one client's alone — Press's trial policy, Central's pool of pre-minted trial keys — is what it sends per mint (title, cap, expiry and whether it counts from first use), not code here. `keys.transfer_key` hands a trial's key to the team that converted; what moves is in the `Grove API Key` row of [`grove/doctype/README.md`](grove/doctype/README.md). |
 | `net.py` / `utils.py` | Addresses, slugs, paths. |
@@ -245,6 +246,7 @@ prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south
 | hourly | `pathway.usage.pull_all` | a store is drained once, through its first writer that answers; recorded, billed, then what landed is acked. A failed pull loses nothing: the box re-sends every unacked pair. Also Gateway Server → **Pull Usage**, Stuck Usage → **Pull Now**, and `api.usage.pull_usage(team)` for one team, which answers its `figures` afresh (2 an hour per team, counted in the site cache; the rest are not limited) |
 | hourly | `grove_api_key.revoke_expired` | every live key past its `expires_at` (its rule counted from the mint, or from its first usage record when it was minted to expire from first use) is revoked; the next tick prunes it off the boxes |
 | hourly | `tls.renew_fleet_certificate`, `cloud_provider.schedule.run_due_pods` | renew runs certbot only when it says the certificate is due, and pushes only when the certificate changed |
+| hourly | `datum.refresh_tokens` | re-runs `vector.yml` on every Active Gateway Server, Store and Ingress Server with `is_vector_setup` whose `datum_token_expires_at` (Central's `expires_in` at the mint; blank is unknown) is within a day, so the datum token Vector pushes with (Central-signed, no revocation) is minted again before it runs out; one job per box |
 
 Nothing else pushes. A doctype hook, a provision and a pod lifecycle all just write state; the
 tick carries it within a minute. The only manual paths are Gateway Server → **Full Sync**, Ingress
@@ -287,8 +289,3 @@ automatically. The first gateway set up on or moved onto a store is marked for y
   attempts, last error and payload — updated each failing pull and resolved by the pull that lands
   it. **Pull Now** on the row pulls just that user. The usage itself lives only on the gateway
   until then, so a Redis flush loses it; Log Settings clears resolved rows after 90 days.
-- **Ansible swallows whatever a callback raises**, logging `Failure using method (…)` and running
-  on. So a play's own docs are written best-effort: each write carries Frappe's
-  `dangerously_reconnect_on_connection_abort` (Ansible forks a worker per task, and a child closing
-  the inherited socket takes this process's connection with it), and the rc a caller acts on is
-  Ansible's, never the doc's status.

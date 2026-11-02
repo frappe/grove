@@ -34,13 +34,15 @@ class GatewayServer(PathwayHost, Document):
 		is_in_maintenance: DF.Check
 		is_static_ip: DF.Check
 		is_store_writer: DF.Check
+		is_vector_setup: DF.Check
+		last_synced_at: DF.Datetime | None
 		machine: DF.Link
 		memory_limit_mb: DF.Int
-		monitoring_agent: DF.Link | None
 		network: DF.Link | None
 		private_ip: DF.Data | None
 		public_ip: DF.Data | None
 		region: DF.Link | None
+		ship_host_metrics: DF.Check
 		status: DF.Literal["Pending", "Installing", "Active", "Broken", "Terminated"]
 	# end: auto-generated types
 
@@ -256,7 +258,6 @@ class GatewayServer(PathwayHost, Document):
 		certificate's path, and deploy_tls owns writing the material."""
 		if not store:
 			frappe.throw(f"{self.name} is on no Gateway Store — Setup it first.")
-		settings = frappe.get_single("Grove Settings")
 		tls_variables = self.tls_variables
 		tls_variables.pop("fleet_tls_key", None)
 		return {
@@ -272,7 +273,6 @@ class GatewayServer(PathwayHost, Document):
 			"proxy_hostname": self.hostname,
 			**frappe.get_doc("Gateway Store", store).redis_variables,
 			**tls_variables,
-			**settings.scrape_auth_variables,
 			**self.config_variables,
 		}
 
@@ -318,5 +318,6 @@ class GatewayServer(PathwayHost, Document):
 		frappe.db.commit()
 
 		if rc == 0:
+			self.queue_vector()
 			self.sync_dns_records()
 		return play_name, rc
