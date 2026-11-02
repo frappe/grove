@@ -15,7 +15,8 @@ def read(path=None):
 
 
 def insert_missing(path=None):
-	"""Insert what the catalog names and the site lacks. Never updates, never deletes."""
+	"""Insert what the catalog names and the site lacks: a held group gains the rows it lacks too.
+	Never updates a field, never deletes."""
 	catalog = read(path)
 	for counter in catalog.get("counters", []):
 		if not frappe.db.exists("Usage Counter", counter["counter_name"]):
@@ -84,8 +85,16 @@ def insert_model(model, geography):
 
 def insert_model_group(group, docs):
 	"""A group the site lacks, in the geography its models landed in — `docs` is their doc per
-	key. That geography's default only when it has none."""
+	key. One the site holds gains the rows it lacks. That geography's default only when it has
+	none."""
 	if frappe.db.exists("Model Group", group["name"]):
+		doc = frappe.get_doc("Model Group", group["name"])
+		held = {row.model_key for row in doc.models}
+		for key in group["models"]:
+			if key not in held:
+				doc.append("models", {"model": docs[key]})
+		if len(doc.models) > len(held):
+			doc.save()
 		return
 	rows = [{"model": docs[key]} for key in group["models"]]
 	landed = frappe.db.get_value("Model", rows[0]["model"], "geography") if rows else None

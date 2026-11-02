@@ -22,7 +22,6 @@ def vram_gb_from_mib(mib):
 
 
 def playbooks_root():
-	"""Path to grove/playbooks — every ansible project this app ships."""
 	return os.path.join(frappe.get_app_path("grove"), "playbooks")
 
 

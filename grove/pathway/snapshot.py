@@ -15,7 +15,15 @@ import json
 
 import frappe
 
-from grove.access import effective_limits, group_rows, limit_entries, model_rows
+from grove.access import (
+	effective_limits,
+	group_geographies,
+	group_rows,
+	limit_entries,
+	model_rows,
+	reaching,
+	team_grants,
+)
 from grove.billing.pricing import nano
 from grove.pathway import routes
 
@@ -35,12 +43,14 @@ def effective_groups():
 
 def effective_keys(names=None):
 	"""Every LIVE API Key projected for the gateway, with the whole policy the gates read: its
-	groups and own allow/deny, its geography, its rate limits (its team's tier's, else the defaults,
+	team's groups of its geography and its own, and the team's allow/deny that reach it (a model of ours reaches
+	every geography), its geography, its rate limits (its team's tier's, else the defaults,
 	with its own rows replacing the tier's on the metrics they name) and `budget` — its cap, with
-	`budget_window`, what the box counts it over: the UTC month, or everything since the mint (its
-	Cap Window); the box refuses the key once that reaches the cap. What is the team's rides on
-	each key: `log_payloads` and `limited` — the team is suspended, which refuses every key
-	whatever its own cap says.
+	`budget_window`, what the box counts it over: the UTC month, or everything since the mint (the
+	team's Key Cap Window); the box refuses the key once that reaches the cap. What is the team's
+	rides on each key: `log_payloads`, `limited` — the team is suspended, which refuses every key
+	whatever its own cap says — the window, and `cap_message`, what the box's 402 says once the
+	cap is spent (blank: the box's own text).
 
 	`names` narrows it to those keys, with their teams and rows: what a tick rebuilds. Revoked
 	keys are not projected: absent from their bucket, the push prunes them off every box. The row
@@ -51,9 +61,7 @@ def effective_keys(names=None):
 	if names is not None:
 		filters["name"] = ("in", sorted(names))
 	keys = frappe.get_all(
-		"Grove API Key",
-		filters=filters,
-		fields=["name", "key_hash", "team", "status", "geography", "cap", "cap_window"],
+		"Grove API Key", filters=filters, fields=["name", "key_hash", "team", "status", "geography", "cap"]
 	)
 	if names is not None and not keys:
 		return []
@@ -63,11 +71,14 @@ def effective_keys(names=None):
 		for t in frappe.get_all(
 			"Grove Team",
 			filters=team_filter,
-			fields=["name", "log_payloads", "suspended", "tier"],
+			fields=["name", "log_payloads", "suspended", "tier", "key_cap_window", "cap_message"],
 		)
 	}
-	deltas = model_rows("Grove API Key", names)
-	memberships = group_rows(names)
+	team_names = None if names is None else sorted(teams)
+	grants = team_grants(team_names)
+	memberships = group_rows(team_names)
+	own_groups = group_rows(None if names is None else [k.name for k in keys], "Grove API Key")
+	where = group_geographies()
 	limits = effective_limits(
 		keys, limit_entries("Grove API Key", names), {name: t.tier for name, t in teams.items()}
 	)
@@ -76,20 +87,30 @@ def effective_keys(names=None):
 		team = teams.get(k.team)
 		if not k.key_hash or team is None:
 			continue
+		own = grants.get(k.team, {})
 		records.append(
 			{
 				"key_hash": k.key_hash,
 				"prefix": k.name,
 				"team": k.team,
 				"status": k.status or "active",
-				"group": ",".join(memberships.get(k.name, [])),
-				"allow": ",".join(deltas.get(k.name, {}).get("allow", [])),
-				"deny": ",".join(deltas.get(k.name, {}).get("deny", [])),
+				"group": ",".join(
+					sorted(
+						{
+							g
+							for g in memberships.get(k.team, []) + own_groups.get(k.name, [])
+							if where.get(g) == k.geography
+						}
+					)
+				),
+				"allow": ",".join(reaching(own.get("allow", []), k.geography)),
+				"deny": ",".join(reaching(own.get("deny", []), k.geography)),
 				"limited": bool(team.suspended),
 				"log_payloads": bool(team.log_payloads),
 				"geography": k.geography or "",
 				"budget": nano(k.cap or 0),
-				"budget_window": "total" if k.cap_window == "Total" else "month",
+				"budget_window": "total" if team.key_cap_window == "Total" else "month",
+				"cap_message": team.cap_message or "",
 				# Blank when none: the box merges fields, so leaving it out would keep a removed limit in force.
 				"limits": ",".join(
 					f"{r['metric']}:{r['window']}:{r['value']}" for r in limits.get(k.name, [])

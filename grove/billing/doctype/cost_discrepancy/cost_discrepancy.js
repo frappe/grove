@@ -1,7 +1,7 @@
 // Copyright (c) 2026, Frappe and contributors
 // For license information, please see license.txt
 
-frappe.ui.form.on("Credit Discrepancy", {
+frappe.ui.form.on("Cost Discrepancy", {
 	refresh(frm) {
 		if (frm.doc.resolution || !frappe.user.has_role("System Manager")) return;
 		const figures = __("Gateway charged {0}; Grove priced {1}.", [

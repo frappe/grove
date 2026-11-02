@@ -1,4 +1,4 @@
-"""A Grove correction is a Usage Correction of its own now, not a stamp on the Credit Discrepancy.
+"""A Grove correction is a Usage Correction of its own now, not a stamp on the Cost Discrepancy.
 Every row Grove corrected gets one, on the day it counted and landed when it landed: `creation`
 is the row's `resolved_on`, since Central's invoice window read the correction by that moment and
 must not bill it again. Then `resolved_day` and its two indexes go, on a site that had them."""
@@ -10,10 +10,10 @@ from frappe.utils import getdate
 def execute():
 	rows = frappe.db.sql(
 		"""select d.name, d.team, d.api_key, d.pricing, d.correction, d.resolved_on, m.model_key
-		from `tabCredit Discrepancy` d
+		from `tabCost Discrepancy` d
 		left join `tabModel Pricing` p on p.name = d.pricing left join `tabModel` m on m.name = p.model
 		where d.resolution = 'Grove corrected'
-		and d.name not in (select credit_discrepancy from `tabUsage Correction`)""",
+		and d.name not in (select cost_discrepancy from `tabUsage Correction`)""",
 		as_dict=True,
 	)
 	for row in rows:
@@ -21,7 +21,7 @@ def execute():
 		frappe.get_doc(
 			{
 				"doctype": "Usage Correction",
-				"credit_discrepancy": row.name,
+				"cost_discrepancy": row.name,
 				"team": row.team,
 				"api_key": row.api_key,
 				"model": row.model_key or "",
@@ -32,9 +32,9 @@ def execute():
 			}
 		).insert()
 
-	if not frappe.db.has_column("Credit Discrepancy", "resolved_day"):
+	if not frappe.db.has_column("Cost Discrepancy", "resolved_day"):
 		return
 	for index in ("team_resolved_day_index", "api_key_resolved_day_index"):
-		if frappe.db.has_index("tabCredit Discrepancy", index):
-			frappe.db.sql_ddl(f"alter table `tabCredit Discrepancy` drop index {index}")
-	frappe.db.sql_ddl("alter table `tabCredit Discrepancy` drop column resolved_day")
+		if frappe.db.has_index("tabCost Discrepancy", index):
+			frappe.db.sql_ddl(f"alter table `tabCost Discrepancy` drop index {index}")
+	frappe.db.sql_ddl("alter table `tabCost Discrepancy` drop column resolved_day")

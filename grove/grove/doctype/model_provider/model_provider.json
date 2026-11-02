@@ -8,6 +8,7 @@
   "provider_name",
   "geography",
   "is_self_hosted",
+  "zero_data_retention",
   "column_break_cred",
   "base_url",
   "anthropic_base_url",
@@ -34,6 +35,15 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Self Hosted"
+  },
+  {
+   "default": "0",
+   "description": "The provider keeps nothing of a request once it is answered. Always on for the Self Hosted provider: our engines store nothing. Teams see it beside each model in their dashboard.",
+   "fieldname": "zero_data_retention",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Zero Data Retention",
+   "read_only_depends_on": "eval:doc.is_self_hosted"
   },
   {
    "depends_on": "eval:!doc.is_self_hosted",
@@ -95,7 +105,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-12 21:27:58.041792",
+ "modified": "2026-10-26 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model Provider",

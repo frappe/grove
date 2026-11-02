@@ -2,13 +2,25 @@
 # For license information, please see license.txt
 
 import frappe
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 from grove.access import team_limits
 from grove.api.control import ALLOWED_ROLES
 from grove.api.teams import get_team
 
-KEY_FIELDS = ["name", "title", "status", "creation", "key_hash", "masked", "geography", "cap", "cap_window"]
+KEY_FIELDS = [
+	"name",
+	"title",
+	"status",
+	"creation",
+	"key_hash",
+	"masked",
+	"geography",
+	"cap",
+	"expiry",
+	"expiry_from_first_use",
+	"expires_at",
+]
 
 
 @frappe.whitelist()
@@ -17,21 +29,27 @@ def provision_key(
 	title: str | None = None,
 	geography: str | None = None,
 	cap: float | None = None,
-	models: list[str] | None = None,
 	limits: list[dict] | None = None,
-	cap_window: str | None = None,
+	expiry: str | None = None,
+	expiry_from_first_use: bool = False,
+	model_groups: list[str] | None = None,
 ):
 	"""Mint a key for `team` in `geography` — the default one when none is given; every other
-	geography's gateway refuses it. `cap_window` is what the cap counts, Monthly when not given or
-	Total (everything since the mint, so a spent key stays spent), fixed after."""
+	geography's gateway refuses it. `expiry` is when it retires on its own, one of the key's rules
+	(Never, 1 Day, 7 Days, 14 Days, 30 Days), Never when not given, fixed after; counted from the
+	mint, or from the key's first usage record with `expiry_from_first_use`. What it may call is
+	the team's, plus `model_groups`: groups of its geography it is in on top of the team's — a
+	product's trial catalog."""
 	frappe.only_for(ALLOWED_ROLES)
 	key = frappe.new_doc("Grove API Key")
 	key.team, key.title, key.status = get_team(team), title, "active"
 	if geography:
 		key.geography = geography
-	if cap_window:
-		key.cap_window = cap_window
-	set_key_policy(key, cap, models, limits)
+	if expiry:
+		key.expiry = expiry
+		key.expiry_from_first_use = int(bool(expiry_from_first_use))
+	key.set("model_groups", [{"model_group": group} for group in model_groups or []])
+	set_key_policy(key, cap, limits)
 	key.insert()
 	gateway_url = get_gateway_url(key.geography)
 	if not gateway_url:
@@ -49,23 +67,22 @@ def update_key(
 	team: str,
 	key: str,
 	cap: float | None = None,
-	models: list[str] | None = None,
 	limits: list[dict] | None = None,
 ):
-	"""Change what a key of `team` may spend or call: `cap`, `models` (replacing its own Allow)
-	and `limits` (replacing its own rate limits; `[]` puts it back under its team's tier alone),
-	each kept when not given. Its geography never changes — mint another key for that. → the key as
-	`keys` lists it."""
+	"""Change what a key of `team` may spend: `cap`, and `limits` (replacing its own rate limits;
+	`[]` puts it back under its team's tier alone), each kept when not given. Its geography never
+	changes — mint another key for that — and what it may call is its team's. → the key as `keys`
+	lists it."""
 	frappe.only_for(ALLOWED_ROLES)
 	doc = get_api_key(team, key)
-	set_key_policy(doc, cap, models, limits)
+	set_key_policy(doc, cap, limits)
 	doc.save()
 	return key_rows([doc.name])[0]
 
 
 @frappe.whitelist()
 def update_caps(team: str, caps: dict[str, float]):
-	"""Set several caps of `team`'s live keys at once, {key: USD}. Lowered caps are saved
+	"""Set several monthly caps of `team`'s live keys at once, {key: USD}. Lowered caps are saved
 	first, so moving a cap from one key to another fits the spend limit midway as well; any
 	refusal leaves every cap as it was. What the limit holds is this month's spend and the caps
 	together (`pricing.committed`), with what the boxes count read under the team row: a cap a key already
@@ -81,6 +98,8 @@ def update_caps(team: str, caps: dict[str, float]):
 		frappe.throw(f"{', '.join(revoked)} is revoked.")
 	raised = any(flt(caps[doc.name]) > flt(doc.cap) for doc in docs)
 	team_doc = team_limits(team, for_update=True)
+	# A Total team has no spend limit: its caps are for life, the month binds nothing.
+	raised = raised and team_doc.key_cap_window != "Total"
 	box_spent = peek_team(team) if raised else {}
 	total = committed(team, {doc.name: flt(caps[doc.name]) for doc in docs}, box_spent=box_spent)
 	if raised and total > flt(team_doc.spend_limit, 9):
@@ -108,6 +127,36 @@ def revoke_key(team: str, key: str):
 	frappe.only_for(ALLOWED_ROLES)
 	get_api_key(team, key).revoke()
 	return "Revoked. Might take some time to reflect."
+
+
+@frappe.whitelist()
+def extend_key(team: str, key: str, days: int):
+	"""`days` more on the key's `expires_at`, from now or from its moment, whichever is later; a key
+	without a moment is left as it is, a revoked one refused. → the key as `keys` lists it."""
+	frappe.only_for(ALLOWED_ROLES)
+	doc = get_api_key(team, key)
+	doc.extend_expiry(cint(days))
+	return key_rows([doc.name])[0]
+
+
+@frappe.whitelist()
+def transfer_key(team: str, key: str, to_team: str, title: str | None = None):
+	"""Hand a key of `team` to `to_team` — what Central sends when a trial converts, so the secret
+	the customer's server holds keeps working. The team and the title (`title`, when given) move,
+	the trial's rules go: its own groups and its expiry are lifted, and what it may call is `to_team`'s; cap,
+	geography and limit rows stay as minted. Counted against `to_team` like a mint: its key
+	count, and the cap within a Monthly team's spend limit. The box closes the old team's books at
+	the push. A key `to_team` already holds is answered as it is, so a lost reply is retried
+	safely; one between two teams of one cap window is refused, its spend would follow it. → the
+	key as `keys` lists it."""
+	frappe.only_for(ALLOWED_ROLES)
+	to_team = get_team(to_team)
+	# A retry after a lost reply finds the key moved already: answered as it is, nothing moves.
+	if frappe.db.get_value("Grove API Key", key or "", "team") == to_team:
+		return key_rows([key])[0]
+	doc = get_api_key(team, key)
+	doc.transfer(to_team, title)
+	return key_rows([doc.name])[0]
 
 
 @frappe.whitelist()
@@ -145,24 +194,10 @@ def get_api_key(team, key):
 	return frappe.get_doc("Grove API Key", name)
 
 
-def set_key_policy(doc, cap=None, models=None, limits=None):
-	"""Write onto `doc` what was given: `cap`; `models`, replacing its own Allow with that
-	geography's docs; `limits`, replacing its rate limits."""
+def set_key_policy(doc, cap=None, limits=None):
+	"""Write onto `doc` what was given: `cap`; `limits`, replacing its rate limits."""
 	if cap is not None:
 		doc.cap = cap
-	if models is not None:
-		from grove.access import model_doc
-
-		doc.allow = []
-		for model in models:
-			doc.append(
-				"allow",
-				{
-					"model": model_doc(
-						model, doc.geography or frappe.db.get_value("Geography", {"is_default": 1})
-					)
-				},
-			)
 	if limits is not None:
 		doc.set("limits", limits)
 
@@ -170,7 +205,7 @@ def set_key_policy(doc, cap=None, models=None, limits=None):
 def key_rows(names):
 	"""The keys named, as `keys` lists them: KEY_FIELDS (`masked` is the prefix and four characters,
 	kept on the key at mint, so nothing is decrypted here) plus the endpoint, the limits,
-	`month_spent` and `revocable_at`. Live keys first, newest first within each. A handful of
+	`month_spent`, `revocable_at`, `expires_at` (UTC) and whether the expiry counts from first use. Live keys first, newest first within each. A handful of
 	queries however many keys."""
 	from grove.billing.pricing import month_spent_by
 	from grove.grove.doctype.grove_api_key.grove_api_key import REVOKE_AFTER_HOURS
@@ -188,6 +223,8 @@ def key_rows(names):
 		row["limits"] = limits.get(row.name, [])
 		row["revocable_at"] = utc_timestamp(frappe.utils.add_to_date(row.creation, hours=REVOKE_AFTER_HOURS))
 		row["month_spent"] = flt(month.get(row.name, 0), 9)
+		row["expires_at"] = utc_timestamp(row.expires_at) if row.expires_at else None
+		row["expiry_from_first_use"] = bool(row.expiry_from_first_use)
 	rows.sort(key=lambda row: row.status == "revoked")
 	return rows
 

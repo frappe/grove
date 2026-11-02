@@ -44,7 +44,7 @@ gateways cannot jointly overrun one replica.
 |---|---|
 | `pathway/run.py` | What every run shares: `Target` (one box's admin API), `SyncRun` (lock, dial in turn, rows in the order asked). Every path that reaches a box goes through it. |
 | `pathway/projection.py` | `Projection`: every push to every box. A push that left no Pathway Sync row did not happen. |
-| `pathway/usage.py` | `Usage`: each store's drain (or one team's keys) into one Usage Record per key, then the ack of what landed. `reconcile.py` lands each touched team: records priced by Grove, the gateway's charge audited, the team's figures forgotten. |
+| `pathway/usage.py` | `Usage`: each store's drain (or one team's keys) into one Usage Record per key, then the ack of what landed; a hash the box stamped `team` (a key that changed hands has its books closed at the push, under the team charged) lands under that team, one without under the key's. `reconcile.py` lands each touched team: records priced by Grove, the gateway's charge audited, the team's figures forgotten. |
 | `billing/` | Usage counters, sell prices, monthly caps, usage records, the Revenue report and the Vendor Reconciliation report — its own Frappe module, [`billing/README.md`](billing/README.md). |
 | `catalog/` | What a site starts with: `catalog.json` (geographies, providers, vendor models and their rates, model groups; no secret, no `published`), `seed.insert_missing` (after install and after every migrate), `export.write` (by hand). |
 | `pathway/snapshot.py` | The desired state a box is pushed, and the hash gate that decides which sections travel. |
@@ -58,7 +58,7 @@ gateways cannot jointly overrun one replica.
 | `monitoring.py` / `log_relay.py` | The scrape targets a Monitoring Agent pulls, and streaming an engine's log onto an open form. |
 | `datum.py` | datum's write token for one box, minted from Central inside the job (never stored), and the daily refresh that re-runs `vector.yml` so no box pushes with a stale one. The role itself: `playbooks/README.md` → Vector → datum. |
 | `failure.py` | `@reports_failure` — a long job that dies marks its doc Broken and says why. |
-| `api/` | The whitelisted surface the control clients (Central, Press) call, one module per subject: `control` (enrollment), `teams`, `keys`, `catalog` (geographies, models), `usage` (usage, figures, pulls). What is one client's alone — Press's trial-key policy — is Server Scripts on the site (`server_script_enabled`), not code here. |
+| `api/` | The whitelisted surface the control clients (Central, Press) call, one module per subject: `control` (enrollment), `teams`, `keys`, `catalog` (geographies, models), `usage` (usage, figures, pulls). What is one client's alone — Press's trial policy, Central's pool of pre-minted trial keys — is what it sends per mint (title, cap, expiry and whether it counts from first use), not code here. `keys.transfer_key` hands a trial's key to the team that converted; what moves is in the `Grove API Key` row of [`grove/doctype/README.md`](grove/doctype/README.md). |
 | `net.py` / `utils.py` | Addresses, slugs, paths. |
 
 ## What gets pushed, and under which key
@@ -106,21 +106,25 @@ fleet gets re-pushed over row order. Order means nothing on the wire; it exists 
 
 | Redis key | Written by | Holds |
 |---|---|---|
-| `key:<sha256(secret)>` | state push (keys) + the agent | the whole policy: `team`, `group` (comma list), own `allow`/`deny`, `geography`, `limits` (its team's Tier's, else the default tier's, else the defaults, with the key's own rows replacing the tier's on the metrics they name), `budget` (its monthly cap), `limited`, `log_payloads`; the agent's own `spent:<YYYY-MM>`, this month's spend |
+| `key:<sha256(secret)>` | state push (keys) + the agent | the whole policy: `team`, `group` (comma list: its team's groups of its geography, and its own), `allow`/`deny` (its team's rows that reach its geography; a model of ours reaches every geography), `geography`, `limits` (its team's Tier's, else the default tier's, else the defaults, with the key's own rows replacing the tier's on the metrics they name), `budget` (its monthly cap), `limited`, `log_payloads`; the agent's own `spent:<YYYY-MM>`, this month's spend |
 | `model_group:<name>` | state push (groups) | the model grant for everyone in it |
 | `deploy:<model>` | state push (routes) | every placement of one model |
 | `grove:state_hash` | state push | per-section/bucket hashes of what the box holds |
 | `usage:<prefix>:<YYYY-MM-DD>` | the agent | a key's live counters for one UTC day it was served, the `day` its Usage Record carries: `m:<metric>:<model>` for reports, `p:<pricing>:<counter>` and `p:<pricing>:cost` for billing |
-| `drained:<drain>:<prefix>:<day>`, `drain:unacked` | the agent's drain | a key's day bucket set aside under a drain id, re-sent until Grove acks that pair; kept for `usage_retention` after |
+| `drained:<drain>:<prefix>:<day>`, `drain:unacked` | the agent's drain, or a key push that moves the key's team | a key's day bucket set aside under a drain id (the push stamps its set-aside `team`, the team charged, and Grove lands it there), re-sent until Grove acks that pair; kept for `usage_retention` after |
 | `sticky:<session>` | the agent | session → engine, for prefix-cache reuse |
 | `inflight:<engine>` | the agent | what is running right now |
 | `health:<target>` | the agent | consecutive failures behind passive ejection (60s TTL) |
 
 Access is pushed as **two** records: a group edit is one record however many members, and the key
 carries everything else — the agent resolves the two at request time, unioning every group the key
-names before applying its own allow/deny. The team is not a record on the box: what is the team's
-(payload logging, suspension) is stamped on each of its keys, so suspending the team is one
-field per key.
+names before applying its allow/deny. The policy is the team's (`Grove Team.model_groups`, `allow`,
+`deny`; a key is revoked and minted again at will, the team is not), and a key's record carries the
+slice that reaches its geography: a Model Group and a vendor's doc are one geography's, a model of
+ours is every key's. A key may add groups of its own on top of the team's (`Grove API Key.model_groups`,
+`provision_key(model_groups=)`): a product's trial catalog, cleared at a hand-over. The team is not a
+record on the box: what is the team's (its models, payload
+logging, suspension) is stamped on each of its keys, so a team edit is one record per key.
 
 A model id is always `<provider>/<name>` (`frappe/qwen3.5-4b`) — the Model's **key**, not its doc
 name, which is a hash. One key, one route key, one grant — the bare form was deliberately broken,
@@ -129,8 +133,8 @@ so a route key with no matching grant is a 403 before routing is ever consulted.
 docs, one per provider record: `openai/gpt-5` under the `in` record and under the `eu` record are two
 Models, each with its own upstream id and pricing, and a gateway's table carries only its own
 geography's. A Link (pricing, replica, grant row) names a doc; everything on the wire — routes,
-grants, usage buckets, `available_models` — names the key. A grant is by key, so it reaches the id
-wherever a geography serves it; availability is by geography.
+grants, usage buckets, `available_models` — names the key. A grant row names a doc: a vendor's reaches
+the id for the team's keys in that doc's geography, ours for every key; availability is by geography.
 
 What a model takes and gives is two multi-selects on the Model, **Input Modalities** and **Output
 Modalities**, each a list of `Modality` records (`Text`, `Image`, `Audio`, `Video`, `File`; `Text`,
@@ -142,8 +146,11 @@ There is no single `modality` word any more: everything that read it reads the l
 `deploy:<key>` carries both as `input_modalities` and `output_modalities`; the gateway reads which
 surfaces the model answers on off the outputs (`text` for chat, `embeddings` for `/v1/embeddings`,
 `transcription` for `/v1/audio`); the inputs it only carries. `available_models` answers
-the two lists per model. An engine we launch is `--language-model-only` when it is text in and
-text out, and a pooling model when it gives `embeddings`.
+the two lists per model, and whether its provider keeps nothing of a request (`zero_data_retention`,
+the Self Hosted one always). An engine we launch is `--language-model-only` when it is text in and
+text out, and a pooling model (`--runner pooling`) when it gives `embeddings`. A vendor's embedding
+model answers on `/openai` alone and is priced on `prompt_tokens` alone — the only counter its
+usage carries.
 
 The provider is not only a prefix. Give a `Model Provider` a Base URL and a key and its published
 models route straight to that vendor — a `kind: "provider"` row naming the provider as the placement,
@@ -162,9 +169,8 @@ vendor across all its models, so the limits the keys share are drawn on evenly �
 vendor answers 429 for the next (each tried once, then once more round), skips one answering
 401/402/403 for the rest of that request — an exhausted account reported under a 400 or 429
 (Anthropic's "credit balance", OpenAI's `insufficient_quota`) counts as the 402 it is — and answers
-such a refusal with its own 502 (`upstream credential rejected` / `upstream account
-unpaid` / `upstream credential lacks permission`), never the vendor's words, which go to its error
-log. It counts what every key answered: `requests`, `ok`, `rate_limited`, `unauthorized`, `unpaid`,
+such a refusal with its own 502 `upstream unavailable` — neither the vendor's words nor which
+refusal it was, both of which go to its error log. It counts what every key answered: `requests`, `ok`, `rate_limited`, `unauthorized`, `unpaid`,
 `forbidden` (`rejected` is those three together), `failed`, `last_used`, `last_rate_limited`. Every 6
 hours `grove.pathway.key_stats.pull_all` reads them off every store into **Provider Key Stats**, one row
 per key per store with what it answered since the pull before, in one `stats` JSON field (the
@@ -233,11 +239,12 @@ prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south
 
 | When | Job | Note |
 |---|---|---|
-| `*/1` | `pathway.projection.sync_projection` | stamp-bounded and hash-gated: rebuilds only the key buckets a save moved since the stores' `last_synced_at`, reads every box's hashes, pushes each box only what it does not already hold; a fleet in sync logs nothing and builds no key record. Every 10th minute every bucket is rebuilt. Also sends each store the spend adjustments it is owed (Pending `Gateway Spend Adjustment` rows) |
+| `*/1` | `pathway.projection.sync_projection` | stamp-bounded and hash-gated: rebuilds only the key buckets a save moved since the stores' `last_synced_at`, reads every box's hashes, pushes each box only what it does not already hold; a fleet in sync logs nothing and builds no key record. Also sends each store the spend adjustments it is owed (Pending `Gateway Spend Adjustment` rows) |
 | `*/2` | `cloud_provider.reconcile.sync_all` | the provider owns whether a pod is up; this closes the drift |
 | `0 */6` | `pathway.key_stats.pull_all` | one Provider Key Stats row per key per store: what it answered since the last pull, cleared on the gateway as it is read |
 | `*/5` | `gateway_store.backup_all` | one `redis-cli --rdb` snapshot per Active store, over SSH, into its Geography's backup bucket (Store Backups tab) under `gateway-store/<store>/<utc stamp>.rdb`, the doc's Last Backup Key pointing at it; usage leaves a store only on the hourly pull, so this is what a lost disk costs: 5 minutes. Skipped in a Geography with no backup bucket; Restore never crosses geographies; prune with a bucket lifecycle rule |
 | hourly | `pathway.usage.pull_all` | a store is drained once, through its first writer that answers; recorded, billed, then what landed is acked. A failed pull loses nothing: the box re-sends every unacked pair. Also Gateway Server → **Pull Usage**, Stuck Usage → **Pull Now**, and `api.usage.pull_usage(team)` for one team, which answers its `figures` afresh (2 an hour per team, counted in the site cache; the rest are not limited) |
+| hourly | `grove_api_key.revoke_expired` | every live key past its `expires_at` (its rule counted from the mint, or from its first usage record when it was minted to expire from first use) is revoked; the next tick prunes it off the boxes |
 | hourly | `tls.renew_fleet_certificate`, `cloud_provider.schedule.run_due_pods` | renew runs certbot only when it says the certificate is due, and pushes only when the certificate changed |
 | daily | `datum.refresh_tokens` | re-runs `vector.yml` on every Active Gateway Server and Store with `is_vector_setup`, so the datum token Vector pushes with (Central-signed, 7 days, no revocation) is never older than a day; one job per box |
 

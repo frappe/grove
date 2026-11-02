@@ -2,7 +2,7 @@
 
 Grove bills its own price: each pricing the gateway tagged a request with is priced here at that
 pricing's rates, and the team's figures are forgotten so the next read sees it. The gateway's own
-cost sits beside it; where the two differ beyond the gateway's truncation, a Credit Discrepancy
+cost sits beside it; where the two differ beyond the gateway's truncation, a Cost Discrepancy
 says so. A model the gateway served without a pricing lands in the same record at no cost. A dead
 line's is decided here: the box counted none of it, so its counter is owed the whole price."""
 
@@ -11,8 +11,9 @@ from decimal import Decimal
 import frappe
 from frappe.model.naming import make_autoname
 
-from grove.billing.doctype.credit_discrepancy.credit_discrepancy import record
+from grove.billing.doctype.cost_discrepancy.cost_discrepancy import record
 from grove.billing.pricing import NANO, forget_figures, lock_team
+from grove.grove.doctype.grove_api_key.grove_api_key import start_expiry
 from grove.utils import utc_today
 
 DEAD = "dead:"
@@ -62,6 +63,8 @@ class Reconciler:
 			if not self.has_landed(prefix)
 		]
 		frappe.db.bulk_insert("Usage Record", FIELDS, [[row[field] for field in FIELDS] for row in rows])
+		if rows:
+			start_expiry([row.api_key for row in rows])
 		for row in rows:
 			self.audit(row)
 		forget_figures(team)

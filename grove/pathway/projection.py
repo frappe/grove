@@ -11,9 +11,9 @@ it; no special path, it simply holds no key hash.
 What a tick builds is bounded by a stamp. Every Gateway Store, every gateway not yet on one and
 every Ingress Server carries `last_synced_at`: the read time of the last tick it took a push from
 or already held. A tick rebuilds only the key buckets a save moved since the oldest stamp among
-the gateway units that answered, less LOOKBACK; everything under force, every FULL_EVERY minutes,
-for a unit with no stamp or no key hashes, after a Tier or Grove Settings save, and past
-FULL_ABOVE dirty buckets.
+the gateway units that answered, less LOOKBACK; everything under force, for a unit with no stamp
+or no key hashes, after a Tier or Grove Settings save, and past FULL_ABOVE dirty buckets. A store
+restored from a backup drops its hashes (restore.yml), so it rebuilds as a unit with no key hash.
 
 What each plane is given is what keeps them apart: a GATEWAY takes the full snapshot with only its
 own Geography's routes, an INGRESS takes only the replica table for the boxes it owns.
@@ -38,7 +38,6 @@ from grove.pathway import snapshot
 from grove.pathway.run import InSync, SyncRun, Target, Unit, gateway_units, guarded, in_turn, redact
 
 LOOKBACK = 120  # seconds behind a stamp a save is still read: one stamped before the read commits after it
-FULL_EVERY = 10
 FULL_ABOVE = 32
 
 
@@ -91,10 +90,10 @@ class Projection(SyncRun):
 
 	def buckets_in_play(self, units):
 		"""The key buckets this tick rebuilds: those a save moved since the oldest stamp among the
-		gateway units that answered, less LOOKBACK. None — every bucket — under force, on a full
-		minute, for a unit with no stamp or no key hash, after a Tier or Grove Settings save, and
-		past FULL_ABOVE. Nothing when no gateway answered."""
-		if self.force or is_full_tick(self.read_at):
+		gateway units that answered, less LOOKBACK. None — every bucket — under force, for a unit
+		with no stamp or no key hash, after a Tier or Grove Settings save, and past FULL_ABOVE.
+		Nothing when no gateway answered."""
+		if self.force:
 			return None
 		stamps = []
 		for unit, remote in self.answered_units(units):
@@ -148,12 +147,6 @@ def full_sync(proxies=None, trigger="Manual", ingresses=None, wait=60):
 	"""Force-push the complete snapshot, skipping the hash gate. A button means "this box missed
 	something", so it WAITS for an in-flight run rather than skipping."""
 	return Projection(trigger, proxies, ingresses, force=True, wait=wait).run()
-
-
-def is_full_tick(at):
-	"""Every FULL_EVERY minutes every bucket is rebuilt and compared, whatever the stamps say: the
-	one path that heals a store restored from a backup, whose stamp is fresh and map is full."""
-	return at.minute % FULL_EVERY == 0
 
 
 def snapshots_for(targets, labels=None):

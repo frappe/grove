@@ -1,4 +1,4 @@
-frappe.listview_settings["Credit Discrepancy"] = {
+frappe.listview_settings["Cost Discrepancy"] = {
 	get_indicator(doc) {
 		return doc.resolution
 			? [__("Resolved"), "grey", "resolution,is,set"]

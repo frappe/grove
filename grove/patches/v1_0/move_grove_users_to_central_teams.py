@@ -12,7 +12,7 @@ SKIP = ("name", "parent", "parenttype", "creation", "modified", "owner", "modifi
 RELINK = (
 	("Usage Record", "user"),
 	("Stuck Usage", "grove_user"),
-	("Credit Discrepancy", "grove_user"),
+	("Cost Discrepancy", "grove_user"),
 )
 
 
@@ -32,7 +32,7 @@ def execute():
 			for old, new in teams.items():
 				frappe.db.sql(f"update `tab{doctype}` set team = %s where `{field}` = %s", [new, old])
 	frappe.db.sql(
-		"""update `tabCredit Discrepancy` d join `tabGrove API Key` k on k.name = d.api_key
+		"""update `tabCost Discrepancy` d join `tabGrove API Key` k on k.name = d.api_key
 		set d.team = k.team where ifnull(d.team, '') = ''"""
 	)
 	for child in CHILDREN:

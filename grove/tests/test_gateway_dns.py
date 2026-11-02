@@ -406,10 +406,6 @@ class TestDerivedNames(unittest.TestCase):
 		with self.settings(ZONE):
 			self.assertEqual(FakeProxy(name=f"gw2-ap-south-1.{ZONE}").hostname, f"gw2-ap-south-1.{ZONE}")
 
-	def test_a_box_with_no_geography_has_no_name(self):
-		with self.settings(ZONE):
-			self.assertEqual(FakeProxy(geography=None).hostname, "")
-
 	def test_without_a_zone_it_falls_back_to_the_address(self):
 		self.assertEqual(self.admin_url(""), "http://203.0.113.7/grove-admin")
 

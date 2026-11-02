@@ -98,3 +98,8 @@ class TestModelPricing(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			new_pricing(self.model, prompt_tokens=2.5, cache_write_tokens_above_272k=6.25)
 		new_pricing(self.model, prompt_tokens=2.5, prompt_tokens_above_272k=5)
+
+	def test_a_parts_variant_needs_its_containers(self):
+		with self.assertRaises(frappe.ValidationError):
+			new_pricing(self.model, prompt_tokens=2.5, cached_tokens=0.25, cached_tokens_above_272k=0.5)
+		new_pricing(self.model, prompt_tokens=2.5, cached_tokens=0.25, prompt_tokens_above_272k=5)

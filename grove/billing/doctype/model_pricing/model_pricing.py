@@ -38,12 +38,14 @@ class ModelPricing(Document):
 			self.flags.enabling = True
 
 	def validate_long_context_rates(self):
-		"""A derived counter's rate needs its base's: a request under the threshold bills at it."""
+		"""A derived counter's rate needs its base's: a request under the threshold bills at it. The
+		rows this pricing carries must hold together: a part's variant needs its container's."""
 		table, counters = CounterTable.load(), {row.counter for row in self.rates}
 		for counter in counters:
 			base = table.base(counter)
 			if base and base not in counters:
 				frappe.throw(f"{counter} needs a rate for {base}: a shorter request bills at it.")
+		table.get_priced(counters).validate()
 
 	def validate_frozen(self, before):
 		"""Once enabled, a pricing is history: the requests it charged are billed. A wrong price is

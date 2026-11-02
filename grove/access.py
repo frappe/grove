@@ -1,7 +1,9 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Who may call which Model. Every group a key belongs to grants, its own Allow adds, its Deny
-removes, and nothing else is reachable.
+"""Who may call which Model. The policy is the team's: every group it is in grants, its Allow
+adds, its Deny removes, and nothing else is reachable. What is one geography's — a Model Group, a
+vendor's model doc — reaches only the team's keys in that geography; a model of ours reaches them
+all.
 
 The precedence is NOT applied here: Grove pushes each group and each key as separate Redis
 records, and the GATEWAY resolves the two at request time. That is what stops a one-row edit on a
@@ -23,11 +25,12 @@ def default_tier():
 
 
 def team_limits(team, for_update=False):
-	"""What gates `team`'s keys: `suspended`, `log_payloads`, its `tier`, and the tier's `max_keys` /
+	"""What gates `team`'s keys: `suspended`, `log_payloads`, `key_cap_window` (what each cap
+	counts: the month, or everything since the mint), its `tier`, and the tier's `max_keys` /
 	`spend_limit` (the default tier's when it has none; without either, 0 and 0: no key limit, and
 	no cap can be set). `max_keys` is the team's own under Override Max Keys. `for_update` locks
 	the team row for a cap check. The tier comes off the doc cache: a save clears it."""
-	fields = ["suspended", "log_payloads", "tier", "override_max_keys", "max_keys"]
+	fields = ["suspended", "log_payloads", "key_cap_window", "tier", "override_max_keys", "max_keys"]
 	row = (
 		frappe.db.get_value("Grove Team", team, fields, as_dict=True, for_update=for_update) or frappe._dict()
 	)
@@ -57,9 +60,9 @@ def model_rows(parenttype, parents=None):
 	return grouped
 
 
-def group_rows(parents=None):
-	"""{Grove API Key: [group, ...]}, sorted."""
-	filters = {"parenttype": "Grove API Key"}
+def group_rows(parents=None, parenttype="Grove Team"):
+	"""{parent: [group, ...]}, sorted: the groups every Grove Team, or every Grove API Key, is in."""
+	filters = {"parenttype": parenttype}
 	if parents is not None:
 		filters["parent"] = ("in", list(parents))
 	rows = frappe.get_all("Model Group Row", filters=filters, fields=["parent", "model_group"])
@@ -67,6 +70,40 @@ def group_rows(parents=None):
 	for row in rows:
 		grouped.setdefault(row.parent, set()).add(row.model_group)
 	return {parent: sorted(names) for parent, names in grouped.items()}
+
+
+def group_geographies():
+	"""{group: its geography}: which of a team's keys the group reaches."""
+	return {g.name: g.geography for g in frappe.get_all("Model Group", fields=["name", "geography"])}
+
+
+def team_grants(teams=None):
+	"""{team: {parentfield: [(model key, geography), ...]}} off the Allow and Deny rows of every
+	Grove Team, or of `teams`. The geography is the model doc's: a vendor's record is one
+	geography's; a model of ours has none, and reaches a key in any."""
+	filters = {"parenttype": "Grove Team"}
+	if teams is not None:
+		filters["parent"] = ("in", list(teams))
+	rows = frappe.get_all(
+		"Grove Model Row", filters=filters, fields=["parent", "parentfield", "model", "model_key"]
+	)
+	geographies = {}
+	if rows:
+		docs = frappe.get_all(
+			"Model", filters={"name": ("in", [row.model for row in rows])}, fields=["name", "geography"]
+		)
+		geographies = {doc.name: doc.geography for doc in docs}
+	grouped = {}
+	for row in rows:
+		pair = (row.model_key, geographies.get(row.model) or "")
+		grouped.setdefault(row.parent, {}).setdefault(row.parentfield, []).append(pair)
+	return grouped
+
+
+def reaching(rows, geography):
+	"""The model keys among `rows` ((key, geography) pairs) a key in `geography` is granted: those
+	of its geography and ours, sorted."""
+	return sorted({key for key, where in rows if not where or where == geography})
 
 
 def limit_entries(parenttype, parents=None):
@@ -123,25 +160,18 @@ def validate_limit_rows(rows):
 		seen.add((row.metric, row.window))
 
 
-def get_reachable_models(api_key):
-	"""What one key may call, resolved the way the gateway does it: every group's grant and its
-	own Allow, less its Deny. For showing a person their models; the gateway never reads this."""
-	own = model_rows("Grove API Key", [api_key]).get(api_key, {})
-	groups = group_rows([api_key]).get(api_key, [])
-	granted = set(own.get("allow", []))
+def get_reachable_models(team, geography):
+	"""What a key of `team` in `geography` may call off the team's policy alone: every grant of the
+	team's groups there and the Allow that reaches there, less the Deny that does. A key's own
+	groups are not counted. For showing a person their models; the gateway never reads this."""
+	where = group_geographies()
+	groups = [g for g in group_rows([team]).get(team, []) if where.get(g) == geography]
+	granted = set()
 	for group in model_rows("Model Group", groups).values() if groups else ():
 		granted.update(group.get("models", []))
-	return sorted(granted - set(own.get("deny", [])))
-
-
-def model_doc(model_key, geography):
-	"""The doc under `model_key` that `geography` serves, for a grant that names an id: the
-	vendor's record there, or ours. Unknown is the caller's error."""
-	served_here = {"geography": geography, "provider_is_self_hosted": 1}
-	names = frappe.get_all("Model", filters={"model_key": model_key}, or_filters=served_here, pluck="name")
-	if not names:
-		frappe.throw(f"No model is keyed {model_key!r} in {geography}.", frappe.DoesNotExistError)
-	return names[0]
+	own = team_grants([team]).get(team, {})
+	granted.update(reaching(own.get("allow", []), geography))
+	return sorted(granted - set(reaching(own.get("deny", []), geography)))
 
 
 def validate_model_geography(rows, geography):

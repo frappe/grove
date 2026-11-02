@@ -236,6 +236,7 @@ def models_in(geography):
 				"provider.provider_name as provider_name",
 				"provider.geography as geography",
 				"provider.is_self_hosted as is_self_hosted",
+				"provider.zero_data_retention as zero_data_retention",
 			],
 		)
 		if m.is_self_hosted or m.geography == geography
@@ -246,13 +247,18 @@ def published_routes(routes, models):
 	"""The table the gateways get: only a Published model's rows, each carrying its Enabled
 	pricing. Published without one is dropped too — never served unpriced. Rates are nano-USD
 	per unit; the gateway tags each request with the pricing id, which is what the pull prices.
-	The counter table rides inside each pricing, validated first: an inconsistent table reaches no
-	gateway. A pricing names a doc, so a model in two geographies is priced in each."""
+	The counter table rides inside each pricing, validated first, as its roots and the derived rows
+	that pricing rates. A pricing names a doc, so a model in two geographies is priced in each."""
 	book = PriceBook.load()
-	counters = book.counters.validate().published
+	counters = book.counters.validate()
 	enabled = frappe.get_all("Model Pricing", filters={"status": "Enabled"}, fields=["name", "model"])
 	pricing = {
-		p.model: {"id": p.name, "rates": book.nano_rates(p.name), "counters": counters} for p in enabled
+		p.model: {
+			"id": p.name,
+			"rates": book.nano_rates(p.name),
+			"counters": counters.get_priced(book.pricing(p.name).rates).published,
+		}
+		for p in enabled
 	}
 	by_key = {m.model_key: m for m in models}
 	return {
@@ -328,7 +334,8 @@ def denied_tools():
 def get_dialects(models, geography):
 	"""{model doc name: the client surfaces that reach it in `geography`}, as the gateway routes it:
 	an engine of ours answers chat on both and the rest on OpenAI's, a vendor only on the fronts
-	it runs. `models` carry `provider_name` and `is_self_hosted` as `models_in` reads them."""
+	it runs — and, like an engine, only OpenAI's when it gives no text. `models` carry
+	`provider_name` and `is_self_hosted` as `models_in` reads them."""
 	fronts = {
 		name: [dialect for _, dialect in vendor["fronts"]]
 		for name, vendor in vendor_endpoints(geography).items()
@@ -336,9 +343,10 @@ def get_dialects(models, geography):
 	modalities = get_modalities([model.name for model in models])
 	dialects = {}
 	for model in models:
+		chats = "text" in modalities[model.name]["output_modalities"]
 		if not model.is_self_hosted:
-			dialects[model.name] = fronts.get(model.provider_name, [])
-		elif "text" in modalities[model.name]["output_modalities"]:
+			dialects[model.name] = [d for d in fronts.get(model.provider_name, []) if chats or d == "openai"]
+		elif chats:
 			dialects[model.name] = ["openai", "anthropic"]
 		else:
 			dialects[model.name] = ["openai"]

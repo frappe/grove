@@ -12,7 +12,7 @@ other one next pull. A pull that fails before the commit gets the same counters 
 landed twice records nothing twice (unique drain id + key + day).
 
 Each touched team is landed in one step: its records, priced by Grove at the pricing the gateway
-tagged each request with, a Credit Discrepancy per pricing the gateway charged differently, and
+tagged each request with, a Cost Discrepancy per pricing the gateway charged differently, and
 the verdict. A team whose step fails is rolled back alone, left unacknowledged,
 and logged as Stuck Usage until a later pull lands it. One bad team never holds anyone else's
 usage back.
@@ -218,18 +218,11 @@ def store_of(gateway):
 def record_drains(proxy_name, drains, dead=(), gateway_store=None):
 	"""Record one gateway's answer — {drain id: {key: {day: hash}}}, each hash on its day — and
 	commit. Everything lands under the store drained: the boxes on a store share one set of
-	counters. → (hashes pulled, {drain id: {key: days}} to acknowledge, dead line ids to
-	acknowledge, teams stuck)."""
+	counters; which team each hash is, `sort_drains` says. → (hashes pulled, {drain id: {key: days}}
+	to acknowledge, dead line ids to acknowledge, teams stuck)."""
 	gateway_store = gateway_store or store_of(proxy_name)
-	acks, dead_acks, by_team, pulled = {}, [], {}, 0
-	team_of = teams_of_keys(drains)
-	for drain_id, keys in drains.items():
-		for prefix, days in keys.items():
-			pulled += len(days)
-			if team := team_of.get(prefix):
-				by_team.setdefault(team, {}).setdefault(drain_id, {})[prefix] = days
-			else:
-				acks.setdefault(drain_id, {})[prefix] = list(days)
+	by_team, acks, pulled = sort_drains(drains)
+	dead_acks = []
 	for line in dead:
 		pulled += 1
 		if landing := read_dead_line(line, gateway_store):
@@ -258,7 +251,8 @@ def record_drains(proxy_name, drains, dead=(), gateway_store=None):
 			if drain_id.startswith(DEAD):
 				dead_acks.append(drain_id.removeprefix(DEAD))
 			else:
-				acks.setdefault(drain_id, {}).update({prefix: list(days) for prefix, days in keys.items()})
+				for prefix, days in keys.items():
+					acks.setdefault(drain_id, {}).setdefault(prefix, []).extend(days)
 
 	frappe.db.commit()
 	return pulled, acks, dead_acks, stuck
@@ -274,6 +268,24 @@ def teams_of_keys(drains):
 		"Grove API Key", filters={"name": ("in", sorted(prefixes))}, fields=["name", "team"]
 	)
 	return {row.name: row.team for row in rows}
+
+
+def sort_drains(drains):
+	"""Each hash to the team it lands under: the one the box stamped on it (`team`: a key that
+	changed hands has its books closed at the push, under the team charged), else the key's team
+	now; a hash of a key Grove does not hold is acknowledged unlanded. → ({team: {drain id: {key:
+	{day: hash}}}}, {drain id: {key: [days]}} to acknowledge, hashes seen)."""
+	team_of = teams_of_keys(drains)
+	by_team, acks, pulled = {}, {}, 0
+	for drain_id, keys in drains.items():
+		for prefix, days in keys.items():
+			pulled += len(days)
+			for day, h in days.items():
+				if team := h.get("team") or team_of.get(prefix):
+					by_team.setdefault(team, {}).setdefault(drain_id, {}).setdefault(prefix, {})[day] = h
+				else:
+					acks.setdefault(drain_id, {}).setdefault(prefix, []).append(day)
+	return by_team, acks, pulled
 
 
 def by_day(keys):

@@ -203,6 +203,15 @@ class TestCounterTable(unittest.TestCase):
 			table(self.BRACKET[1]).validate()
 		table(*reversed(self.BRACKET)).validate()
 
+	def test_a_pricing_carries_every_root_and_the_derived_rows_it_rates(self):
+		t = table()
+		self.assertEqual(t.get_priced({"prompt_tokens", "cached_tokens", "completion_tokens"}).names, t.roots)
+		self.assertEqual(
+			t.get_priced({"prompt_tokens", "prompt_tokens_above_272k"}).names,
+			[*t.roots, "prompt_tokens_above_272k"],
+		)
+		self.assertEqual(t.get_priced(set(t.names)).names, t.names)
+
 	def test_the_push_carries_only_what_is_set(self):
 		rows = {row["name"]: row for row in table().published}
 		self.assertEqual(rows["prompt_tokens"], {"name": "prompt_tokens", "divisor": 1_000_000})

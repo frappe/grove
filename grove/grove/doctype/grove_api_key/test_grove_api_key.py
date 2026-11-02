@@ -1,23 +1,26 @@
 # Copyright (c) 2026, developers@frappe.io and Contributors
 # See license.txt
-"""A key carries its own policy — groups, allow/deny, rate limits, geography, cap — and the wire
-record the gateway reads is built from it.
+"""A key carries its own rate limits, geography and cap; what it may call is its team's, sliced to
+the key's geography; the wire record the gateway reads is built from both.
 
 A team id per test: IntegrationTestCase rolls back once when the class is done, not between
 tests, so anything registered here is still there for the next one."""
 
 import unittest
 import unittest.mock
+from datetime import timedelta
 from types import SimpleNamespace
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
 from grove.access import limit_entries
+from grove.api import keys
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_api_key import grove_api_key
 from grove.grove.doctype.grove_api_key.grove_api_key import GroveAPIKey
 from grove.grove.doctype.model_provider.test_model_provider import our_model, provider, vendor_model
+from grove.pathway.routes import utc_timestamp
 from grove.pathway.snapshot import effective_keys
 
 
@@ -64,10 +67,8 @@ class IntegrationTestGroveAPIKey(IntegrationTestCase):
 		for name in ("key-probe-zeta", "key-probe-acme"):
 			if not frappe.db.exists("Model Group", name):
 				frappe.get_doc({"doctype": "Model Group", "__newname": name}).insert()
-		doc = key(
-			"key-probe-groups",
-			model_groups=[{"model_group": "key-probe-zeta"}, {"model_group": "key-probe-acme"}],
-		)
+		groups = [{"model_group": name} for name in ("key-probe-zeta", "key-probe-acme")]
+		doc = key(team("key-probe-groups", model_groups=groups))
 		self.assertEqual(projected(doc.name)["group"], "key-probe-acme,key-probe-zeta")
 
 	def test_the_teams_flags_ride_on_the_key(self):
@@ -82,25 +83,12 @@ class IntegrationTestGroveAPIKey(IntegrationTestCase):
 		record = projected(doc.name)
 		self.assertEqual((record["budget"], record["log_payloads"]), (1_000_000_000, False))
 
-	def test_the_cap_window_is_set_once_and_rides_on_the_key_as_the_budget_window(self):
-		"""Monthly unless the mint says Total; fixed after, since a change would restart the
-		gateway's count. Under the spend limit a Total key counts its cap like any other."""
-		name = team("key-probe-window", spend_limit=3)
-		monthly = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 1}).insert()
-		self.assertEqual((monthly.cap_window, projected(monthly.name)["budget_window"]), ("Monthly", "month"))
-		total = frappe.get_doc(
-			{"doctype": "Grove API Key", "team": name, "cap": 2, "cap_window": "Total"}
-		).insert()
-		self.assertEqual(projected(total.name)["budget_window"], "total")
-		total.cap_window = "Monthly"
-		with self.assertRaises(frappe.CannotChangeConstantError):
-			total.save()
-		with self.assertRaises(frappe.ValidationError):
-			frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap_window": "Weekly"}).insert()
-		with self.assertRaisesRegex(frappe.ValidationError, "spend limit of 3"):
-			frappe.get_doc(
-				{"doctype": "Grove API Key", "team": name, "cap": 1, "cap_window": "Total"}
-			).insert()
+	def test_the_teams_key_cap_window_rides_on_the_key_as_the_budget_window(self):
+		name = team("key-probe-window", spend_limit=1)
+		doc = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 1}).insert()
+		self.assertEqual(projected(doc.name)["budget_window"], "month")
+		frappe.db.set_value("Grove Team", name, {"key_cap_window": "Total"})
+		self.assertEqual(projected(doc.name)["budget_window"], "total")
 
 	def test_a_title_is_used_once_per_team_revoked_keys_included(self):
 		name = team("key-probe-titles")
@@ -137,71 +125,66 @@ class IntegrationTestGroveAPIKey(IntegrationTestCase):
 			sent_back.revoke()
 
 
-class IntegrationTestNewKeysStartInTheDefaultGroup(IntegrationTestCase):
-	"""What a key may call is decided here, by group, not sent by whoever provisions it."""
+class IntegrationTestNewTeamsStartInTheDefaultGroups(IntegrationTestCase):
+	"""What a key may call is decided by its team's groups, not sent by whoever provisions it: a
+	new team is put in every geography's default, and a key takes the ones of its own geography."""
 
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		make_test_geography()
+		cls.here, cls.away = make_test_geography(), make_test_geography("key-default-away")
 		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 		frappe.db.set_value("Model Group", {"is_default": 1}, "is_default", 0)
 		cls.default = cls.group("key-default-one", is_default=1)
+		cls.away_default = cls.group("key-default-away", is_default=1, geography=cls.away)
 
 	@staticmethod
-	def group(name, is_default=0):
-		return (
-			frappe.get_doc({"doctype": "Model Group", "__newname": name, "is_default": is_default})
-			.insert()
-			.name
-		)
+	def group(name, is_default=0, geography=None):
+		doc = {"doctype": "Model Group", "__newname": name, "is_default": is_default}
+		if geography:
+			doc["geography"] = geography
+		return frappe.get_doc(doc).insert().name
 
-	def groups_of(self, doc):
-		return [row.model_group for row in doc.model_groups]
+	def groups_of(self, name):
+		return [row.model_group for row in frappe.get_doc("Grove Team", name).model_groups]
 
-	def test_a_new_key_is_put_in_the_default_group(self):
-		doc = key("key-group-new")
-		self.assertEqual(self.groups_of(doc), [self.default])
-		self.assertEqual(projected(doc.name)["group"], self.default)
+	def test_a_new_team_is_put_in_every_geographys_default_and_a_key_takes_its_own(self):
+		name = team("key-group-new")
+		self.assertEqual(self.groups_of(name), [self.away_default, self.default])
+		here, away = key(name), key(name, geography=self.away)
+		self.assertEqual(projected(here.name)["group"], self.default)
+		self.assertEqual(projected(away.name)["group"], self.away_default)
 
 	def test_groups_named_on_the_insert_are_kept(self):
 		picked = self.group("key-default-picked")
-		doc = key("key-group-picked", model_groups=[{"model_group": picked}])
-		self.assertEqual(self.groups_of(doc), [picked])
+		name = team("key-group-picked", model_groups=[{"model_group": picked}])
+		self.assertEqual(self.groups_of(name), [picked])
+		self.assertEqual(projected(key(name).name)["group"], picked)
 
-	def test_a_key_taken_out_of_every_group_stays_out(self):
-		doc = key("key-group-out")
+	def test_a_team_taken_out_of_every_group_stays_out(self):
+		doc = frappe.get_doc("Grove Team", team("key-group-out"))
 		doc.model_groups = []
 		doc.save()
-		self.assertEqual(self.groups_of(doc.reload()), [])
+		self.assertEqual(self.groups_of(doc.name), [])
+		self.assertEqual(projected(key(doc.name).name)["group"], "")
 
-	def test_provisioning_a_key_puts_it_in_the_default_group(self):
-		from grove.api import keys, teams
+	def test_provisioning_a_team_puts_it_in_the_defaults(self):
+		from grove.api import teams
 
 		teams.provision_team("key-group-provisioned")
-		minted = keys.provision_key("key-group-provisioned")
-		self.assertEqual(self.groups_of(frappe.get_doc("Grove API Key", minted["name"])), [self.default])
+		self.assertEqual(self.groups_of("key-group-provisioned"), [self.away_default, self.default])
 
-	def test_a_new_key_starts_in_its_own_geographys_default(self):
-		away = make_test_geography("key-default-away")
-		theirs = (
-			frappe.get_doc(
-				{
-					"doctype": "Model Group",
-					"__newname": "key-default-away",
-					"geography": away,
-					"is_default": 1,
-				}
-			)
-			.insert()
-			.name
-		)
-		doc = key("key-group-away", geography=away)
-		self.assertEqual(self.groups_of(doc), [theirs])
+	def test_a_key_adds_groups_of_its_own_geography_on_top_of_its_teams(self):
+		own = self.group("key-default-own")
+		doc = key(team("key-group-own"), model_groups=[{"model_group": own}])
+		self.assertEqual(projected(doc.name)["group"], ",".join(sorted([self.default, own])))
+		with self.assertRaisesRegex(frappe.ValidationError, "not this key's"):
+			key("key-group-own", model_groups=[{"model_group": self.away_default}])
 
 
-class IntegrationTestOwnGrantsAreTheKeysGeographys(IntegrationTestCase):
-	"""An Allow or Deny row names the vendor doc the key's own geography serves."""
+class IntegrationTestATeamsGrantsReachTheKeysOfTheirGeography(IntegrationTestCase):
+	"""An Allow or Deny row names a Model doc: a vendor's is one geography's and reaches the team's
+	keys there; ours reaches every key."""
 
 	KEY = "allow-vendor/allow-big"
 
@@ -216,27 +199,27 @@ class IntegrationTestOwnGrantsAreTheKeysGeographys(IntegrationTestCase):
 			).insert()
 			cls.docs[geography] = vendor_model("allow-big", vendor.name).insert().name
 		cls.ours = our_model("allow-ours-7b").insert().name
+		cls.ours_key = frappe.db.get_value("Model", cls.ours, "model_key")
 
-	def key(self, name, **fields):
-		return frappe.get_doc(
-			{"doctype": "Grove API Key", "team": team(name), "geography": self.here, **fields}
+	def test_a_vendor_row_rides_on_its_geographys_keys_and_ours_on_every_key(self):
+		from grove.access import get_reachable_models
+
+		name = team(
+			"key-allow-team",
+			allow=[{"model": self.docs[self.here]}, {"model": self.ours}],
+			deny=[{"model": self.docs[self.away]}],
 		)
+		here = projected(key(name, geography=self.here).name)
+		away = projected(key(name, geography=self.away).name)
+		both = ",".join(sorted([self.KEY, self.ours_key]))
+		self.assertEqual((here["allow"], here["deny"]), (both, ""))
+		self.assertEqual((away["allow"], away["deny"]), (self.ours_key, self.KEY))
+		self.assertEqual(get_reachable_models(name, self.here), both.split(","))
+		self.assertEqual(get_reachable_models(name, self.away), [self.ours_key])
 
-	def test_a_vendor_model_of_another_geography_is_refused_and_ours_is_not(self):
-		self.key("key-allow-here", allow=[{"model": self.docs[self.here]}, {"model": self.ours}]).insert()
-		for field in ("allow", "deny"):
-			with self.assertRaises(frappe.ValidationError):
-				self.key(f"key-{field}-away", **{field: [{"model": self.docs[self.away]}]}).insert()
-
-	def test_provisioning_by_key_allows_the_keys_geographys_doc(self):
-		from grove.api import keys, teams
-
-		teams.provision_team("key-allow-keyed")
-		minted = keys.provision_key("key-allow-keyed", geography=self.away, models=[self.KEY])
-		allowed = frappe.get_all(
-			"Grove Model Row", filters={"parent": minted["name"], "parentfield": "allow"}, pluck="model"
-		)
-		self.assertEqual(allowed, [self.docs[self.away]])
+	def test_a_model_in_both_allow_and_deny_is_refused(self):
+		with self.assertRaisesRegex(frappe.ValidationError, "both Allow and Deny"):
+			team("key-allow-both", allow=[{"model": self.ours}], deny=[{"model": self.ours}])
 
 
 class IntegrationTestRateLimits(IntegrationTestCase):
@@ -475,7 +458,7 @@ class IntegrationTestCapsFitTheSpendLimit(IntegrationTestCase):
 	def test_caps_past_the_limit_are_refused_and_a_revoke_frees_its_share(self):
 		name = team("key-cap-team", spend_limit=10)
 		first = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 6}).insert()
-		with self.assertRaisesRegex(frappe.ValidationError, "Lower another key's cap"):
+		with self.assertRaisesRegex(frappe.ValidationError, "would add up to"):
 			frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 6}).insert()
 		second = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 4}).insert()
 		self.assertEqual(
@@ -544,3 +527,215 @@ class TestTwoMintsAtTheLimitSerialize(unittest.TestCase):
 			unittest.mock.patch.object(frappe, "db", SimpleNamespace()),
 		):
 			GroveAPIKey.check_key_count(SimpleNamespace(team="TEAM-00001"))
+
+
+class IntegrationTestExpiry(IntegrationTestCase):
+	"""A key retires on its own: a rule at the mint, the moment it names on the key, the hourly sweep."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		make_test_geography()
+		frappe.db.set_single_value("Grove Settings", "default_tier", "")
+
+	def test_the_rule_at_the_mint_names_the_moment_and_never_is_the_default(self):
+		doc = key("key-probe-expiry", expiry="7 Days")
+		doc.reload()
+		self.assertEqual(doc.expires_at, frappe.utils.add_days(doc.creation, 7))
+		forever = key("key-probe-expiry")
+		self.assertEqual((forever.expiry, forever.expires_at), ("Never", None))
+		row = keys.key_rows([doc.name])[0]
+		self.assertEqual((row.expiry, row.expires_at), ("7 Days", utc_timestamp(doc.expires_at)))
+		with self.assertRaises(frappe.ValidationError):
+			key("key-probe-expiry", expiry="2 Days")
+		doc.expiry = "Never"
+		with self.assertRaises(frappe.CannotChangeConstantError):
+			doc.save()
+
+	def test_the_sweep_revokes_every_key_past_its_moment_and_no_other(self):
+		due, later, forever = (key("key-probe-sweep", expiry=rule) for rule in ("1 Day", "30 Days", "Never"))
+		two_days_ago = frappe.utils.add_days(None, -2)
+		frappe.db.set_value(
+			"Grove API Key",
+			due.name,
+			{"creation": two_days_ago, "expires_at": frappe.utils.add_days(two_days_ago, 1)},
+			update_modified=False,
+		)
+		grove_api_key.revoke_expired()
+		self.assertEqual(
+			[frappe.db.get_value("Grove API Key", d.name, "status") for d in (due, later, forever)],
+			["revoked", "active", "active"],
+		)
+		self.assertEqual([k for k in effective_keys() if k["prefix"] == due.name], [])
+
+	def test_one_key_the_guard_refuses_does_not_hold_the_rest_of_the_sweep_back(self):
+		fresh, due = (key("key-probe-sweep-guard", expiry="1 Day") for _ in range(2))
+		yesterday = frappe.utils.add_days(None, -1)
+		# A moment moved by hand under the six-hour guard: minted now, past its moment already.
+		frappe.db.set_value("Grove API Key", fresh.name, "expires_at", yesterday, update_modified=False)
+		frappe.db.set_value(
+			"Grove API Key",
+			due.name,
+			{"creation": frappe.utils.add_days(None, -2), "expires_at": yesterday},
+			update_modified=False,
+		)
+		with unittest.mock.patch("frappe.log_error") as logged:
+			grove_api_key.revoke_expired()
+		self.assertEqual(
+			[frappe.db.get_value("Grove API Key", d.name, "status") for d in (fresh, due)], ["active", "revoked"]
+		)
+		logged.assert_called_once_with(title=f"Expired key {fresh.name} could not be revoked")
+
+	def test_a_key_minted_to_expire_from_first_use_gets_its_moment_at_its_first_record_once(self):
+		name = team("key-probe-first-use")
+		minted = keys.provision_key(name, expiry="7 Days", expiry_from_first_use=True)
+		first_use = frappe.get_doc("Grove API Key", minted["name"])
+		ruled = key(name, expiry="1 Day")
+		ruled.reload()
+		self.assertEqual((first_use.expiry, first_use.expiry_from_first_use, first_use.expires_at), ("7 Days", 1, None))
+		row = keys.key_rows([first_use.name])[0]
+		self.assertEqual((row.expiry_from_first_use, row.expires_at), (True, None))
+
+		grove_api_key.start_expiry([first_use.name, ruled.name])
+
+		moment = frappe.db.get_value("Grove API Key", first_use.name, "expires_at")
+		self.assertAlmostEqual(
+			moment, frappe.utils.add_days(frappe.utils.now_datetime(), 7), delta=timedelta(seconds=5)
+		)
+		# A key counting from the mint keeps its moment; a second record moves nothing.
+		self.assertEqual(frappe.db.get_value("Grove API Key", ruled.name, "expires_at"), ruled.expires_at)
+		grove_api_key.start_expiry([first_use.name])
+		self.assertEqual(frappe.db.get_value("Grove API Key", first_use.name, "expires_at"), moment)
+
+	def test_never_takes_no_moment_at_first_use_and_the_flag_is_fixed(self):
+		doc = key("key-probe-first-use-never", expiry_from_first_use=1)
+		grove_api_key.start_expiry([doc.name])
+		self.assertIsNone(frappe.db.get_value("Grove API Key", doc.name, "expires_at"))
+		doc.expiry_from_first_use = 0
+		with self.assertRaises(frappe.CannotChangeConstantError):
+			doc.save()
+
+	def test_extending_moves_the_moment_by_days_from_the_later_of_it_and_now(self):
+		ahead, lapsed = key("key-probe-extend", expiry="7 Days"), key("key-probe-extend", expiry="1 Day")
+		yesterday = frappe.utils.add_days(frappe.utils.now_datetime(), -1)
+		frappe.db.set_value("Grove API Key", lapsed.name, "expires_at", yesterday, update_modified=False)
+		ahead.reload()
+		moment, stamp = ahead.expires_at, ahead.modified
+
+		ahead.extend_expiry(3)
+		row = keys.extend_key(ahead.team, lapsed.name, 3)
+
+		self.assertEqual(
+			frappe.db.get_value("Grove API Key", ahead.name, "expires_at"), frappe.utils.add_days(moment, 3)
+		)
+		self.assertEqual(frappe.db.get_value("Grove API Key", ahead.name, "modified"), stamp)
+		fresh = frappe.db.get_value("Grove API Key", lapsed.name, "expires_at")
+		self.assertAlmostEqual(
+			fresh, frappe.utils.add_days(frappe.utils.now_datetime(), 3), delta=timedelta(seconds=5)
+		)
+		self.assertEqual(row.expires_at, utc_timestamp(fresh))
+
+	def test_a_key_without_a_moment_is_not_extended_and_a_revoked_one_refuses(self):
+		unused = key("key-probe-extend-none", expiry="7 Days", expiry_from_first_use=1)
+		forever = key("key-probe-extend-none")
+		for doc in (unused, forever):
+			doc.extend_expiry(3)
+			self.assertIsNone(frappe.db.get_value("Grove API Key", doc.name, "expires_at"))
+		gone = key("key-probe-extend-none", expiry="7 Days")
+		frappe.db.set_value("Grove API Key", gone.name, "status", "revoked")
+		gone.reload()
+		with self.assertRaisesRegex(frappe.ValidationError, "revoked"):
+			gone.extend_expiry(3)
+		with self.assertRaises(frappe.ValidationError):
+			forever.extend_expiry(0)
+
+
+class IntegrationTestTransfer(IntegrationTestCase):
+	"""A trial's key becomes the customer's at conversion: the same credential under the new team,
+	titled, calling what the customer's team may; cap, geography and limits as minted."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.enterClassContext(unittest.mock.patch("grove.pathway.usage.peek_team", return_value={}))
+		make_test_geography()
+		frappe.db.set_single_value("Grove Settings", "default_tier", "")
+		frappe.db.set_value("Model Group", {"is_default": 1}, "is_default", 0)
+		cls.default = IntegrationTestNewTeamsStartInTheDefaultGroups.group("key-handover-default", is_default=1)
+		cls.trial_group = IntegrationTestNewTeamsStartInTheDefaultGroups.group("key-handover-trial-models")
+
+	def trial_key(self, team_name, **fields):
+		"""A key of a Total team, in the trial group on top of the team's default: a product's."""
+		groups = [{"model_group": self.trial_group}]
+		return key(team(team_name, key_cap_window="Total"), model_groups=groups, **fields)
+
+	def test_team_and_title_move_and_the_trials_rules_go_in_one_save_the_version_and_the_wire_record(self):
+		customer = team("key-handover-customer", spend_limit=10)
+		doc = self.trial_key("key-handover-trial", cap=2, expiry="30 Days", expiry_from_first_use=1)
+		grove_api_key.start_expiry([doc.name])
+		doc.reload()
+		trial, stamp = doc.team, doc.modified
+		self.assertIsNotNone(doc.expires_at)
+		self.assertEqual(projected(doc.name)["group"], ",".join(sorted([self.default, self.trial_group])))
+
+		doc.transfer(customer, title="site.example.test")
+
+		doc.reload()
+		self.assertEqual((doc.team, doc.title), (customer, "site.example.test"))
+		self.assertEqual((doc.expiry, doc.expiry_from_first_use, doc.expires_at), ("Never", 0, None))
+		self.assertEqual(doc.model_groups, [])
+		self.assertGreater(doc.modified, frappe.utils.get_datetime(stamp))
+		record = projected(doc.name)
+		self.assertEqual(
+			(record["team"], record["budget_window"], record["budget"], record["group"]),
+			(customer, "month", 2_000_000_000, self.default),
+		)
+		[version] = frappe.get_all(
+			"Version", filters={"ref_doctype": "Grove API Key", "docname": doc.name}, pluck="data"
+		)
+		self.assertIn(["team", trial, customer], frappe.parse_json(version)["changed"])
+		comment = {"reference_doctype": "Grove API Key", "reference_name": doc.name}
+		self.assertTrue(frappe.db.exists("Comment", {**comment, "content": f"Handed over from {trial}."}))
+		# Already there: nothing moves, the title asked for is not taken.
+		row = keys.transfer_key(trial, doc.name, customer, title="other")
+		self.assertEqual(row.title, "site.example.test")
+		self.assertEqual(frappe.db.get_value("Grove API Key", doc.name, "modified"), doc.modified)
+
+	def test_a_full_team_a_title_twin_same_window_and_a_revoked_key_are_refused_and_nothing_moves(self):
+		full = team("key-handover-full", max_keys=1)
+		key(full)
+		doc = self.trial_key("key-handover-refused")
+		with self.assertRaisesRegex(frappe.ValidationError, "live keys"):
+			doc.transfer(full)
+		doc.reload()
+		taken = team("key-handover-taken")
+		key(taken, title="site.example.test")
+		with self.assertRaises(frappe.UniqueValidationError):
+			doc.transfer(taken, title="site.example.test")
+		doc.reload()
+		self.assertEqual((doc.team, doc.title), (team("key-handover-refused"), None))
+		same = team("key-handover-same-window", key_cap_window="Total")
+		with self.assertRaisesRegex(frappe.ValidationError, "would follow"):
+			doc.transfer(same)
+		self.assertEqual(frappe.db.get_value("Grove API Key", doc.name, "team"), team("key-handover-refused"))
+		gone = self.trial_key("key-handover-refused")
+		frappe.db.set_value("Grove API Key", gone.name, "status", "revoked")
+		gone.reload()
+		with self.assertRaisesRegex(frappe.ValidationError, "stays revoked"):
+			gone.transfer(taken)
+
+	def test_a_titled_key_meets_the_title_twin_check_though_no_new_title_is_asked(self):
+		taken = team("key-handover-taken-quiet")
+		key(taken, title="site.example.test")
+		doc = self.trial_key("key-handover-titled", title="site.example.test")
+		with self.assertRaises(frappe.UniqueValidationError):
+			doc.transfer(taken)
+		self.assertEqual(frappe.db.get_value("Grove API Key", doc.name, "team"), team("key-handover-titled"))
+
+	def test_the_cap_must_fit_a_monthly_teams_spend_limit(self):
+		tight = team("key-handover-tight", spend_limit=5)
+		frappe.get_doc({"doctype": "Grove API Key", "team": tight, "cap": 4}).insert()
+		doc = self.trial_key("key-handover-capped", cap=2)
+		with self.assertRaisesRegex(frappe.ValidationError, "spend limit"):
+			doc.transfer(tight)
+		self.assertEqual(frappe.db.get_value("Grove API Key", doc.name, "team"), team("key-handover-capped"))

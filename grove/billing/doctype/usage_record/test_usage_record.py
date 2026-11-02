@@ -48,7 +48,7 @@ class TestOldRecordsArePurged(IntegrationTestCase):
 		evidence = a_record(old, "d-evidence")
 		kept = a_record(cutoff, "d-kept")
 		late = a_record(old, "d-late", landed=utc_today())
-		frappe.get_doc({"doctype": "Credit Discrepancy", "usage_record": evidence}).insert(
+		frappe.get_doc({"doctype": "Cost Discrepancy", "usage_record": evidence}).insert(
 			ignore_permissions=True
 		)
 
