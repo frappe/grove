@@ -1,10 +1,13 @@
 {#
-  `maintenance` only while on: a binary older than the key refuses the whole file.
+  `maintenance` and `isolate_caches` only while on: a binary older than the key refuses the whole file.
   `middleware` and `transforms` stay absent: naming them freezes the order against a newer binary.
 #}
 {
 {% if gateway_maintenance | default(false) %}
   "maintenance": true,
+{% endif %}
+{% if isolate_caches | default(false) %}
+  "isolate_caches": true,
 {% endif %}
   "log_level": {{ gateway_log_level | default('info') | to_json }},
   "synthetic_session_ttl": {{ (synthetic_session_ttl | default('0') or '0') | to_json }},

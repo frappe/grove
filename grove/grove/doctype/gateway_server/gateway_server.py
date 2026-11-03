@@ -34,6 +34,7 @@ class GatewayServer(PathwayHost, Document):
 		is_in_maintenance: DF.Check
 		is_static_ip: DF.Check
 		is_store_writer: DF.Check
+		isolate_caches: DF.Check
 		machine: DF.Link
 		memory_limit_mb: DF.Int
 		monitoring_agent: DF.Link | None
@@ -74,6 +75,14 @@ class GatewayServer(PathwayHost, Document):
 
 	def on_trash(self):
 		self.remove_dns_records()
+
+	@frappe.whitelist()
+	def set_isolate_caches(self, on: int):
+		"""Button: give every team its own prompt-cache partition on this box, or share one again.
+		Applied as maintenance is: config.json rewritten and the box signalled."""
+		self.db_set("isolate_caches", on)
+		frappe.enqueue_doc(self.doctype, self.name, "apply_config", queue="short", timeout=600)
+		frappe.msgprint(f"{'Isolating' if on else 'Sharing'} caches on {self.name}.", alert=True)
 
 	@property
 	def archive_blockers(self):
