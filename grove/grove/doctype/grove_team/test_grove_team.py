@@ -52,7 +52,7 @@ class IntegrationTestGroveTeam(IntegrationTestCase):
 			frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert()
 		frappe.db.set_value("Grove API Key", keys[0].name, "status", "revoked")
 		frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert()
-		self.assertEqual(doc.reload().active_keys, 2)
+		self.assertEqual(frappe.db.count("Grove API Key", {"team": doc.name, "status": "active"}), 2)
 
 	def test_max_keys_0_is_no_limit_and_a_negative_one_is_refused(self):
 		doc = team("team-probe-unbounded", max_keys=0)

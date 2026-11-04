@@ -9,7 +9,7 @@ playbooks/
   gateway_server/     gateway.yml  deploy_agent.yml  deploy_tls.yml  retire_exporter.yml  config.yml   + config.json.j2, systemd/
   ingress_server/     ingress.yml  deploy_agent.yml  config.yml
   inference_server/   provision.yml  serve.yml  reconfigure.yml  container_state.yml  teardown.yml  deploy_tls.yml
-  machine/            ping.yml  grow_root.yml  scan_gpus.yml     — box-level, no role layered on yet
+  machine/            grow_root.yml  scan_gpus.yml     — box-level, no role layered on yet
   monitoring_agent/   agent.yml  config.yml  exporters.yml  push_targets.yml  vector.yml
   gateway_store/      store.yml  restore.yml     — Redis only, shared by a Network's gateways; restore.yml loads a backup through a side Redis + REPLICAOF
   roles/              grove_user  remove_cloud_user  auditd  dcgm_exporter  node_exporter  fleet_tls  grove_https  install_gateway_agent  openresty  redis  pathway_memory  vector

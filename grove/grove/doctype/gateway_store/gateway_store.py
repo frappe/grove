@@ -4,7 +4,7 @@
 import base64
 import binascii
 import os
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 
 import frappe
 from frappe.model.document import Document
@@ -33,11 +33,13 @@ class GatewayStore(NamedHost, Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		datum_token_expires_at: DF.Datetime | None
 		frappe_public_key: DF.Code | None
 		geography: DF.Link | None
 		is_vector_setup: DF.Check
 		last_backup_at: DF.Datetime | None
 		last_backup_key: DF.Data | None
+		last_synced_at: DF.Datetime | None
 		machine: DF.Link
 		network: DF.Link | None
 		private_ip: DF.Data | None
@@ -50,14 +52,7 @@ class GatewayStore(NamedHost, Document):
 
 	def validate(self):
 		self.validate_one_per_network()
-		self.set_redis_password()
-
-	def on_update(self):
-		if self.has_value_changed("status") and self.status == "Terminated":
-			self.remove_dns_records()
-
-	def on_trash(self):
-		self.remove_dns_records()
+		self.set_secret("redis_password")
 
 	def validate_one_per_network(self):
 		"""Two stores would split a Network's gateways onto two counters — the over-admission a
@@ -70,12 +65,6 @@ class GatewayStore(NamedHost, Document):
 		others = [name for name in stores_in(network, status=("!=", "Terminated")) if name != self.name]
 		if others:
 			frappe.throw(f"Network {network} already has Gateway Store {others[0]}.")
-
-	def set_redis_password(self):
-		"""Tested through get_password: a saved Password field reads back as asterisks even when
-		the value behind it is gone."""
-		if not self.get_password("redis_password", raise_exception=False):
-			self.redis_password = frappe.generate_hash(length=48)
 
 	@property
 	def archive_blockers(self):
@@ -105,12 +94,6 @@ class GatewayStore(NamedHost, Document):
 			"redis_addr": f"{self.listen_ip}:{REDIS_PORT}",
 			"redis_password": self.get_password("redis_password"),
 		}
-
-	@frappe.whitelist()
-	def setup(self):
-		"""Button: install Redis on this store's box."""
-		frappe.enqueue_doc(self.doctype, self.name, "provision", queue="long", timeout=1800)
-		frappe.msgprint(f"Provisioning {self.name} — watch its Ansible Plays.", alert=True)
 
 	@failure.reports_failure(mark_broken=True)
 	def provision(self):
@@ -203,16 +186,6 @@ def stores_in(network, **filters):
 	if not boxes:
 		return []
 	return frappe.get_all("Gateway Store", filters={"machine": ("in", boxes), **filters}, pluck="name")
-
-
-def store_writers(store):
-	"""The store's Active writers, in the order a sync tries them."""
-	return frappe.get_all(
-		"Gateway Server",
-		filters={"gateway_store": store, "is_store_writer": 1, "status": "Active"},
-		order_by="name asc",
-		pluck="name",
-	)
 
 
 def backup_key(store, at=None):

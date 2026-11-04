@@ -18,7 +18,7 @@ TIMEOUT = 600
 
 def issue_fleet_certificate(geography):
 	"""Obtain the geography's wildcard, or renew it early if certbot already holds one. The Geography
-	button; the daily job calls renew_fleet_certificate instead."""
+	button; the hourly job calls renew_fleet_certificate instead."""
 	settings = frappe.get_single("Grove Settings")
 	zone = require_zone(frappe.get_doc("Geography", geography))
 	# The zone itself too: a wildcard does not cover its own apex, and customers call the apex.
@@ -41,9 +41,9 @@ def is_lineage_stale(zone):
 
 
 def renew_fleet_certificate():
-	"""Daily, per geography that holds a certificate. certbot decides whether anything is due, and
+	"""Hourly, per geography that holds a certificate. certbot decides whether anything is due, and
 	Grove notices only when the files on disk stop matching what is stored — which is what keeps
-	this from reloading the fleet every night. One geography failing does not stop the rest."""
+	this from reloading the fleet every hour. One geography failing does not stop the rest."""
 	settings = frappe.get_single("Grove Settings")
 	issued = frappe.get_all(
 		"Geography",
@@ -173,11 +173,7 @@ def dns_credentials(settings=None):
 	boxes write their records with. One reader, so a certificate and its records can never end up
 	issued against two different accounts."""
 	settings = settings or frappe.get_single("Grove Settings")
-	provider = frappe.get_doc("Cloud Provider", require_dns_provider(settings))
-	secret = provider.get_password("api_key", raise_exception=False)
-	if not (provider.access_key_id and secret):
-		frappe.throw(f"Cloud Provider {provider.name} has no credentials set.")
-	return provider.access_key_id, secret
+	return frappe.get_doc("Cloud Provider", require_dns_provider(settings)).credentials
 
 
 def certbot_dir(kind):

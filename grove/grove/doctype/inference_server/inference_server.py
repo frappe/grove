@@ -8,7 +8,6 @@ from frappe.model.document import Document
 from grove import failure
 from grove.fleet import FleetHost
 from grove.grove.doctype.gpu.gpu import cards_on
-from grove.monitoring import run_exporters_play
 
 
 class InferenceServer(FleetHost, Document):
@@ -65,8 +64,8 @@ class InferenceServer(FleetHost, Document):
 			self.terminate_replicas()
 
 	def terminate_replicas(self):
-		"""The box is gone and its containers with it, so there is nothing to tear down — only
-		rows that would otherwise keep a route and their cards."""
+		"""The box is gone and its containers with it: nothing to tear down, only rows that would
+		keep a route and their cards. Terminated by `db.set_value`, so the cards are released here."""
 		from grove.grove.doctype.model.model import sync_published
 
 		replicas = frappe.get_all(
@@ -74,9 +73,18 @@ class InferenceServer(FleetHost, Document):
 			filters={"inference_server": self.name, "status": ("!=", "Terminated")},
 			fields=["name", "model"],
 		)
-		for replica in replicas:
-			frappe.db.set_value("Model Replica", replica.name, {"status": "Terminated", "engine_port": 0})
-			sync_published(replica.model)
+		if not replicas:
+			return
+		names = [replica.name for replica in replicas]
+		frappe.db.sql(
+			"update `tabGPU` set held_by = null, modified = now() where held_by in %(names)s",
+			{"names": names},
+		)
+		frappe.db.set_value(
+			"Model Replica", {"name": ("in", names)}, {"status": "Terminated", "engine_port": 0}
+		)
+		for model in sorted({replica.model for replica in replicas}):
+			sync_published(model)
 
 	def on_trash(self):
 		if self.is_standalone:
@@ -192,14 +200,6 @@ class InferenceServer(FleetHost, Document):
 			gpu.status = "Allocated" if gpu.held_by else "Free"
 		return gpus
 
-	@property
-	def free_gpus(self):
-		"""`get_gpu_allocation` read the other way round, and live for the same reason.
-
-		A replica pinning no cards claims none, so it does NOT show here: a box running one looks
-		emptier than it is, which is why the scheduler declines such a box."""
-		return [gpu for gpu in self.get_gpu_allocation() if gpu.status == "Free"]
-
 	@frappe.whitelist()
 	def update_scrape_auth(self):
 		"""Button: rewrite this box's metrics htpasswd from the current scrape hash, re-running the
@@ -212,7 +212,19 @@ class InferenceServer(FleetHost, Document):
 
 	@failure.reports_failure(mark_broken=False)
 	def provision_exporters(self):
-		return run_exporters_play(self)
+		"""Job: exporters.yml — htpasswd, node_exporter, and DCGM when the Machine has GPU rows. The
+		exporters only LISTEN; nothing installed here is told which agent scrapes them."""
+		machine = frappe.get_doc("Machine", self.machine)
+		if not machine.public_ip:
+			frappe.throw(f"Machine {machine.name} has no public IP — nothing to connect to.")
+		return self.run_playbook(
+			"exporters.yml",
+			project="Monitoring Agent",
+			extravars={
+				"monitoring_has_gpu": bool(machine.gpus),
+				**frappe.get_single("Grove Settings").scrape_auth_variables,
+			},
+		)
 
 	@frappe.whitelist()
 	def setup(self):

@@ -35,10 +35,6 @@ class GPU(Document):
 		vram_gb: DF.Int
 	# end: auto-generated types
 
-	@property
-	def is_free(self):
-		return not self.held_by
-
 
 def claim(gpu, replica):
 	"""Take this card for `replica`. True if it was free and is now ours.

@@ -2,7 +2,6 @@
 # For license information, please see license.txt
 
 import frappe
-import requests
 from frappe.model.document import Document
 
 from grove import failure
@@ -116,8 +115,10 @@ class MonitoringAgent(Server, Document):
 				"agent's host scrapes."
 			)
 
-		if not is_pushing_targets():
-			problems += self.get_target_list_problems(variables)
+		if not is_pushing_targets() and not variables["monitoring_sd_token"]:
+			problems.append(
+				"Grove Settings → Service Discovery Token is empty — vmagent could not ask what to scrape."
+			)
 
 		if problems:
 			frappe.throw("<br>".join(problems), title=f"{self.name} is not ready to install")
@@ -202,46 +203,6 @@ class MonitoringAgent(Server, Document):
 			return
 		frappe.enqueue_doc(self.doctype, self.name, "write_config", queue="short", timeout=900)
 		frappe.msgprint(f"Token rotated — writing it to {self.name}. Watch its Ansible Plays.", alert=True)
-
-	def get_target_list_problems(self, variables):
-		"""Fetch this agent's target list the way vmagent will, and report what is wrong with it.
-
-		An empty list is not a problem — an agent no box names yet still scrapes itself once it
-		is up. What matters is that the endpoint answers 200 with a JSON array: a 401 means the
-		SD token cannot read the fleet, and vmagent would then scrape nothing for as long as
-		nobody thought to look.
-
-		Fetched from here, not from the agent's box: it proves the URL and the token, not that
-		the box can route to the site. That last hop still shows up as a down http_sd job."""
-		if not variables["monitoring_sd_token"]:
-			return [
-				"Grove Settings → Service Discovery Token is empty — vmagent could not ask what to scrape."
-			]
-
-		url = variables["monitoring_sd_url"]
-		try:
-			response = requests.get(
-				url,
-				params={
-					"agent": self.name,
-					"kind": "host",
-					# In the query string: validate_auth rejects an Authorization header before the endpoint runs.
-					"token": variables["monitoring_sd_token"],
-				},
-				timeout=10,
-			)
-		except requests.RequestException as error:
-			return [f"Could not reach {url} — vmagent fetches its targets from there. {error}"]
-
-		if response.status_code != 200:
-			return [f"{url} answered {response.status_code}, not 200. {response.text[:200]}"]
-		try:
-			targets = response.json()
-		except ValueError:
-			return [f"{url} did not answer with JSON — http_sd reads a JSON array."]
-		if not isinstance(targets, list):
-			return [f"{url} answered with a {type(targets).__name__}, not the JSON array http_sd reads."]
-		return []
 
 	@failure.reports_failure(mark_broken=True)
 	def provision(self):

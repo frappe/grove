@@ -11,6 +11,9 @@ is what keeps the control plane from ever pushing keys to an ingress — the mom
 import json
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+
+from grove.grove.doctype.ingress_server.ingress_server import IngressServer
 
 DOCTYPE = Path(__file__).parent / "ingress_server.json"
 
@@ -38,14 +41,32 @@ class TestAnIngressHoldsNoTenantState(unittest.TestCase):
 		self.assertEqual(sorted(passwords), ["admin_token", "data_token"])
 
 	def test_it_knows_exactly_one_network_and_it_is_its_boxs(self):
-		from grove.grove.doctype.ingress_server.ingress_server import IngressServer
-
 		[network] = [field for field in self.fields if field["fieldname"] == "network"]
 		self.assertEqual(network["options"], "Network")
 		self.assertTrue(network["reqd"])
 		self.assertEqual(network["fetch_from"], "machine.network")
 		self.assertTrue(network["read_only"])
 		self.assertFalse(hasattr(IngressServer, "validate_machine_network"))
+
+
+class FakeIngress(SimpleNamespace):
+	set_secret = IngressServer.set_secret
+
+
+class TestTheTokensAreMintedOnSave(unittest.TestCase):
+	def test_a_save_mints_each_token_that_has_no_value_behind_it(self):
+		"""In validate, not before_insert: a saved Password reads back as asterisks, so a lost
+		secret behind the placeholder is healed on the next save too."""
+		doc = FakeIngress(
+			admin_token="*" * 48,
+			data_token=None,
+			set_admin_url=lambda: None,
+			get_password=lambda field, **kwargs: None,
+		)
+		IngressServer.validate(doc)
+		self.assertNotIn("*", doc.admin_token)
+		self.assertTrue(doc.data_token)
+		self.assertNotEqual(doc.admin_token, doc.data_token)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,9 @@ import json
 import frappe
 from frappe.model.document import Document
 
+from grove.cloud_provider.base import build_cloud_client
+from grove.cloud_provider.runpod import RunPodClient
+
 
 class CloudProvider(Document):
 	# begin: auto-generated types
@@ -22,11 +25,25 @@ class CloudProvider(Document):
 		gpu_types_updated: DF.Datetime | None
 		provider_type: DF.Literal["runpod", "aws"]
 		resource_type: DF.Literal["Machine", "Pod"]
-		status: DF.Literal["active", "inactive"]
 	# end: auto-generated types
 
 	def validate(self):
 		self.resource_type = "Pod" if self.provider_type == "runpod" else "Machine"
+
+	@property
+	def credentials(self):
+		"""(access key id, secret): both for AWS, the secret alone for RunPod. Throws when unset."""
+		secret = self.get_password("api_key", raise_exception=False)
+		if not secret or (self.provider_type == "aws" and not self.access_key_id):
+			frappe.throw(f"Cloud Provider {self.name} has no credentials set.")
+		return self.access_key_id, secret
+
+	def client(self, region=None):
+		"""This account's API client: the `CloudClient` for `region`, or RunPod, which has none."""
+		access_key_id, secret = self.credentials
+		if self.provider_type == "runpod":
+			return RunPodClient(secret)
+		return build_cloud_client(self.provider_type, access_key_id, secret, region)
 
 	@frappe.whitelist()
 	def fetch_gpu_types(self):
@@ -49,14 +66,9 @@ class CloudProvider(Document):
 
 def update_gpu_types(cloud_provider):
 	"""Job: pull the provider's GPU types and cache them as JSON. Secure-cloud-available first
-	(Grove uses Secure), then largest VRAM — the order the picker shows."""
-	from grove.cloud_provider.runpod import RunPodClient
-
+	(Grove uses Secure), then largest VRAM: the order the picker shows."""
 	cp = frappe.get_doc("Cloud Provider", cloud_provider)
-	key = cp.get_password("api_key", raise_exception=False)
-	if not key:
-		return
-	types = RunPodClient(key).list_gpu_types()
+	types = cp.client().list_gpu_types()
 	types.sort(key=lambda g: (not g.get("secureCloud"), -(g.get("memoryInGb") or 0)))
 	cp.db_set("gpu_types", json.dumps(types), update_modified=False)
 	cp.db_set("gpu_types_updated", frappe.utils.now(), update_modified=False)

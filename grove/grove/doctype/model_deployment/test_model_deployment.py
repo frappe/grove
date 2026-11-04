@@ -19,8 +19,10 @@ from grove.grove.doctype.model_deployment.model_deployment import (
 	DEPLOYMENT_ONLY,
 	OVERRIDABLE,
 	ModelDeployment,
+	_claims_by_box,
 	gpu_indexes,
 )
+from grove.grove.doctype.model_replica.model_replica import GPU_CLAIMING_STATUSES
 from grove.serving.base import DEFAULT_MAX_MODEL_LEN
 
 MODULE = "grove.grove.doctype.model_deployment.model_deployment"
@@ -55,6 +57,7 @@ class FakeDeployment(frappe._dict):
 	engine_for = ModelDeployment.engine_for
 	_rejection = ModelDeployment._rejection
 	_candidate = ModelDeployment._candidate
+	_replicas_per_region = ModelDeployment._replicas_per_region
 
 
 def deployment(**overrides):
@@ -349,3 +352,49 @@ class TestACandidateMeasuresTheBox(unittest.TestCase):
 	def test_the_region_count_comes_from_the_deployments_own_replicas(self):
 		self.assertEqual(self.build(per_region={"ap-south-1": 3}).replicas_in_region, 3)
 		self.assertEqual(self.build(per_region={"us-east-1": 3}).replicas_in_region, 0)
+
+
+class TestAStaleHolderDoesNotKeepACard(unittest.TestCase):
+	"""A Terminated box retires its replicas by `db.set_value`, and a worker can die between a
+	status flip and its release, so a card can read held by a replica that holds nothing. Such a
+	card is free to place on; the claim that follows still arbitrates."""
+
+	CARDS = (
+		{"name": "gpu-0", "machine": "M-1", "held_by": "r-gone", "vram_gb": 80, "compute_capability": 9.0},
+		{"name": "gpu-1", "machine": "M-1", "held_by": "r-live", "vram_gb": 80, "compute_capability": 9.0},
+		{"name": "gpu-2", "machine": "M-1", "held_by": None, "vram_gb": 80, "compute_capability": 9.0},
+	)
+
+	def claim(self, replicas):
+		boxes = [frappe._dict(name="inf-1", machine="M-1", region="")]
+		with (
+			patch(f"{MODULE}.cards_on", lambda machines: [frappe._dict(card) for card in self.CARDS]),
+			patch.object(frappe, "get_all", lambda *args, **kwargs: [frappe._dict(row) for row in replicas]),
+		):
+			return _claims_by_box(boxes)["inf-1"]
+
+	def test_a_card_held_by_a_retired_replica_is_free(self):
+		claim = self.claim([{"name": "r-live", "inference_server": "inf-1", "status": "Active"}])
+		self.assertEqual([card.name for card in claim.free_gpus], ["gpu-0", "gpu-2"])
+		self.assertEqual((claim.replicas, claim.unpinned), (1, 0))
+
+	def test_a_draft_replica_holds_its_card_but_is_not_yet_running(self):
+		claim = self.claim([{"name": "r-gone", "inference_server": "inf-1", "status": "Draft"}])
+		self.assertEqual([card.name for card in claim.free_gpus], ["gpu-1", "gpu-2"])
+		self.assertEqual((claim.replicas, claim.unpinned), (0, 0))
+
+
+class TestReplicasPerRegionCountsTheLiveOnes(unittest.TestCase):
+	"""SpreadRegions thins out regions this deployment is already in; a Terminated replica is in none."""
+
+	def test_only_card_holding_replicas_are_counted(self):
+		asked = {}
+
+		def get_all(doctype, filters=None, fields=None, **kwargs):
+			asked.update(filters)
+			return [frappe._dict(region=region) for region in ("ap-south-1", "ap-south-1", None)]
+
+		with patch.object(frappe, "get_all", get_all):
+			counts = FakeDeployment(name="MD-1")._replicas_per_region()
+		self.assertEqual(counts, {"ap-south-1": 2, "": 1})
+		self.assertEqual(asked["status"], ("in", GPU_CLAIMING_STATUSES))

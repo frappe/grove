@@ -8,6 +8,26 @@ from grove import failure
 
 
 class AnsiblePlay(Document):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+
+		duration: DF.Float
+		ended: DF.Datetime | None
+		output: DF.Code | None
+		playbook: DF.Data | None
+		reference_docname: DF.DynamicLink | None
+		reference_doctype: DF.Link | None
+		server: DF.DynamicLink | None
+		server_type: DF.Link | None
+		started: DF.Datetime | None
+		status: DF.Literal["Pending", "Running", "Stopping", "Stopped", "Success", "Failure"]
+	# end: auto-generated types
+
 	def on_update(self):
 		"""Announce a failed play, once, wherever it came from.
 

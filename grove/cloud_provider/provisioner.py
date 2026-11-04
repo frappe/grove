@@ -17,6 +17,7 @@ from grove import failure, log_relay
 from grove.cloud_provider.runpod import RunPodClient, RunPodError, pod_status
 from grove.grove.doctype.pod_activity.pod_activity import record
 from grove.grove.doctype.ssh_key.ssh_key import injected_public_keys
+from grove.serving.base import DEFAULT_PORT
 
 ENGINE_READY_TIMEOUT = 1500
 ENGINE_POLL_INTERVAL = 15
@@ -54,17 +55,14 @@ class PodProvisioner:
 		return self._client
 
 	def build_client(self):
-		"""Only RunPod for now — an unsupported provider fails here rather than part-way through a
+		"""Only RunPod for now: an unsupported provider fails here rather than part-way through a
 		lifecycle call."""
 		if not self.pod.cloud_provider:
 			frappe.throw(f"Pod {self.pod.name} has no Cloud Provider.")
 		provider = frappe.get_doc("Cloud Provider", self.pod.cloud_provider)
 		if provider.provider_type != "runpod":
 			frappe.throw(f"Unsupported provider: {provider.provider_type}")
-		api_key = provider.get_password("api_key", raise_exception=False)
-		if not api_key:
-			frappe.throw(f"Cloud Provider {provider.name} has no API key set.")
-		return RunPodClient(api_key)
+		return provider.client()
 
 	@property
 	def public_keys(self):
@@ -149,7 +147,7 @@ class PodProvisioner:
 		is keyed on the pod id rather than a mapping that moves every restart. A tcp row keeps its
 		direct public_ip:external_port, which is plaintext and does move."""
 		pod = self.pod
-		serve_port = int(pod.serve_port or 8080)
+		serve_port = int(pod.serve_port or DEFAULT_PORT)
 		row = next((p for p in pod.ports if int(p.internal_port) == serve_port), None)
 		if not row:
 			return ""
@@ -316,15 +314,13 @@ class PodProvisioner:
 		"""One Pod Activity row for this call, carrying who triggered it."""
 		record(self.pod.name, event, outcome, detail, attempt=attempt, started=started, trigger=self.trigger)
 
-	def sync(self, wait=False):
+	def sync(self):
 		"""Pull the pod's current provider state onto the Pod (external ports / IP / SSH /
 		status / engine_url) and recompute the Model's published flag. The route table follows
 		on the next projection tick."""
 		self.require_pod_id("spawn it first")
 		try:
-			pod_api = (
-				self.client.poll_pod_ready(self.pod.pod_id) if wait else self.client.get_pod(self.pod.pod_id)
-			)
+			pod_api = self.client.get_pod(self.pod.pod_id)
 		except RunPodError as e:
 			if "404" not in str(e):
 				raise
@@ -491,16 +487,12 @@ def spawn_pod_doc(pod_name, trigger="Manual"):
 	return _provisioner(pod_name, trigger).spawn()
 
 
-def sync_pod(pod_name, wait=False):
-	return _provisioner(pod_name).sync(wait=wait)
+def sync_pod(pod_name):
+	return _provisioner(pod_name).sync()
 
 
 def restart_pod(pod_name):
 	return _provisioner(pod_name).restart()
-
-
-def validate_restart(pod_name):
-	return _provisioner(pod_name).validate_restart()
 
 
 def stop_pod(pod_name):

@@ -36,10 +36,13 @@ class GroveSettings(Document):
 		acme_email: DF.Data | None
 		central_token: DF.Password | None
 		central_url: DF.Data | None
+		default_tier: DF.Link | None
 		dns_provider: DF.Link | None
 		monitoring_extra_labels: DF.SmallText | None
 		pathway_release: DF.Data | None
 		pathway_repo: DF.Data | None
+		pause_projection: DF.Check
+		pause_usage_pull: DF.Check
 		pod_geography: DF.Link | None
 		scrape_password: DF.Password | None
 		scrape_password_hash: DF.Data | None

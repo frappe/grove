@@ -31,7 +31,7 @@ class TestTheAdminTokenIsAlwaysThere(unittest.TestCase):
 			set_admin_url=lambda: None,
 			get_password=lambda fieldname, **kwargs: existing,
 		)
-		GatewayServer.set_admin_token(doc)
+		GatewayServer.set_secret(doc, "admin_token")
 		return doc.admin_token
 
 	def test_a_new_gateway_gets_one(self):

@@ -6,6 +6,8 @@ from pathlib import Path
 
 import frappe
 
+from grove.grove.doctype.geography.geography import default_geography
+
 CATALOG = Path(__file__).with_name("catalog.json")
 MODALITY_FIELDS = ("input_modalities", "output_modalities")
 
@@ -115,10 +117,6 @@ def provider_record(provider_name, geography):
 		f"The catalog names models under {provider_name}, which the site carries in "
 		f"{len(records)} geographies and not in {geography}."
 	)
-
-
-def default_geography():
-	return frappe.db.get_value("Geography", {"is_default": 1})
 
 
 def get_model_key(model):

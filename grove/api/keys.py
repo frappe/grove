@@ -7,6 +7,7 @@ from frappe.utils import cint, flt
 from grove.access import team_limits
 from grove.api.control import ALLOWED_ROLES
 from grove.api.teams import get_team
+from grove.utils import utc_timestamp
 
 KEY_FIELDS = [
 	"name",
@@ -209,7 +210,6 @@ def key_rows(names):
 	queries however many keys."""
 	from grove.billing.pricing import month_spent_by
 	from grove.grove.doctype.grove_api_key.grove_api_key import REVOKE_AFTER_HOURS
-	from grove.pathway.routes import utc_timestamp
 
 	if not names:
 		return []

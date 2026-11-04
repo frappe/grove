@@ -17,9 +17,9 @@ from grove.grove.doctype.gpu.gpu import (
 	release_if_stale,
 )
 from grove.naming import next_replica_name
+from grove.serving.base import DEFAULT_PORT
 from grove.utils import is_env_key, is_env_value
 
-ENGINE_PORT_BASE = 8080
 _PORT_FREE_STATUSES = ("Terminated",)
 GPU_CLAIMING_STATUSES = ("Provisioning", "Active", "Broken")
 CLAIM_HOLDING_STATUSES = ("Draft", *GPU_CLAIMING_STATUSES)
@@ -39,6 +39,7 @@ class ModelReplica(Document):
 		from grove.grove.doctype.pod_env.pod_env import PodEnv
 
 		attention_backend: DF.Literal["", "auto", "FLASH_ATTN", "XFORMERS", "FLASHINFER"]
+		dtype: DF.Literal["", "auto", "bfloat16", "float16"]
 		engine_port: DF.Int
 		engine_url: DF.Data | None
 		env: DF.Table[PodEnv]
@@ -48,17 +49,16 @@ class ModelReplica(Document):
 		gpus: DF.Table[ModelReplicaGPU]
 		inference_server: DF.Link
 		internal_api_key: DF.Password | None
-		dtype: DF.Literal["", "auto", "bfloat16", "float16"]
 		kv_cache_dtype: DF.Literal["", "auto", "fp8"]
-		kv_cache_memory: DF.Int
-		kv_cache_memory_for: DF.SmallText | None
+		kv_cache_memory: DF.LongInt
+		kv_cache_memory_for: DF.Data | None
 		log_lines: DF.Int
 		max_model_len: DF.Data | None
 		max_num_batched_tokens: DF.Int
 		max_num_seqs: DF.Int
 		model: DF.Link
-		model_key: DF.Data | None
 		model_deployment: DF.Link
+		model_key: DF.Data | None
 		region: DF.Link | None
 		serve_command: DF.Code | None
 		status: DF.Literal["Draft", "Provisioning", "Active", "Inactive", "Terminated", "Broken"]
@@ -274,7 +274,7 @@ class ModelReplica(Document):
 		return [cards[name] for name in names if name in cards]
 
 	def _assign_engine_port(self):
-		"""Lowest free port from ENGINE_PORT_BASE up, scoped to THIS Inference Server — a box is
+		"""Lowest free port from DEFAULT_PORT up, scoped to THIS Inference Server — a box is
 		multi-tenant, one port per deployment. Assigned once, then stable; teardown clears it so a
 		later redeploy reallocates.
 
@@ -301,7 +301,7 @@ class ModelReplica(Document):
 			)
 			if p
 		}
-		port = ENGINE_PORT_BASE
+		port = DEFAULT_PORT
 		while port in used:
 			port += 1
 		self.engine_port = port
@@ -547,9 +547,9 @@ def _vllm_extravars(md, m, inf, key):
 
 @failure.reports_failure(mark_broken=True, doctype="Model Replica")
 def deploy_model(model_replica):
-	"""Serve a Model Replica via the inference_server vllm role. Every arg is passed as Ansible
-	extra-vars — the doctypes are the source of truth, not a hand-written group_vars. On success
-	→ Active + push the routing table."""
+	"""Serve a Model Replica via the vllm role, every argument an Ansible extra-var off the doctypes.
+	The cards are claimed first: Deploy is offered on Inactive, which released them, so a sibling
+	may hold them now. The play's outcome lands through `_land_state`."""
 	md = frappe.get_doc("Model Replica", model_replica)
 	m = frappe.get_doc("Model", md.model)
 	inf = md.server
@@ -558,6 +558,7 @@ def deploy_model(model_replica):
 			f"Inference Server {inf.name} is not provisioned — run its Setup "
 			"(host bootstrap) before deploying a model onto it."
 		)
+	md.claim_gpus()
 
 	key = md.get_password("internal_api_key", raise_exception=False)
 	# Teardown frees the port with db.set_value, which skips validate, so a redeploy arrives holding

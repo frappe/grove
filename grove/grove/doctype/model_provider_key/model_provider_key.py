@@ -13,6 +13,7 @@ class ModelProviderKey(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		account: DF.Data | None
 		api_key: DF.Password
 		disabled: DF.Check
 		parent: DF.Data

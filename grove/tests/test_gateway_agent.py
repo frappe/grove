@@ -76,6 +76,7 @@ class FakeGateway(SimpleNamespace):
 
 
 class FakeIngress(SimpleNamespace):
+	provision_variables = IngressServer.provision_variables
 	config_variables = IngressServer.config_variables
 	memory_variables = IngressServer.memory_variables
 	short_name = IngressServer.short_name
@@ -300,17 +301,13 @@ class TestAGatewayIsToldWhichRedis(unittest.TestCase):
 		sent = gateway_extravars()
 		self.assertEqual(STORE.redis_variables, {key: sent[key] for key in STORE.redis_variables})
 
-	def recorded(self, store, rc=0, before=(None, 0), writers=()):
-		"""What record_store writes, given the gateway's store and flag before the play and the
-		store's Active writers."""
+	def recorded(self, store, rc=0, before=(None, 0), has_writer=False):
+		"""What record_store writes, given the gateway's store and flag before the play and whether
+		the store has an Active writer."""
 		db = Mock()
 		db.get_value.return_value = frappe._dict(gateway_store=before[0], is_store_writer=before[1])
-		with (
-			patch.object(frappe, "db", db),
-			patch(
-				"grove.grove.doctype.gateway_server.gateway_server.store_writers", return_value=list(writers)
-			),
-		):
+		db.exists.return_value = "gw-0" if has_writer else None
+		with patch.object(frappe, "db", db):
 			GatewayServer.record_store(SimpleNamespace(doctype="Gateway Server", name="gw-1"), rc, store)
 		return db.set_value.call_args.args[2] if db.set_value.called else None
 
@@ -321,10 +318,10 @@ class TestAGatewayIsToldWhichRedis(unittest.TestCase):
 		self.assertEqual(self.recorded("s1"), {"gateway_store": "s1", "is_store_writer": 1})
 
 	def test_a_store_that_has_a_writer_takes_this_one_as_a_reader(self):
-		self.assertEqual(self.recorded("s1", writers=["gw-0"]), {"gateway_store": "s1", "is_store_writer": 0})
+		self.assertEqual(self.recorded("s1", has_writer=True), {"gateway_store": "s1", "is_store_writer": 0})
 
 	def test_a_writer_redeployed_onto_its_store_stays_one(self):
-		recorded = self.recorded("s1", before=("s1", 1), writers=["gw-0", "gw-1"])
+		recorded = self.recorded("s1", before=("s1", 1), has_writer=True)
 		self.assertEqual(recorded["is_store_writer"], 1)
 
 	def test_only_a_gateway_on_a_store_can_be_its_writer(self):
@@ -333,7 +330,7 @@ class TestAGatewayIsToldWhichRedis(unittest.TestCase):
 			is_store_writer=1,
 			gateway_store=None,
 			set_admin_url=lambda: None,
-			set_admin_token=lambda: None,
+			set_secret=lambda field: None,
 		)
 		with (
 			patch.object(frappe, "throw", side_effect=frappe.ValidationError),

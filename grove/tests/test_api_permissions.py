@@ -17,8 +17,7 @@ from grove.api import catalog, control, keys, teams, usage
 from grove.billing.pricing import forget_figures
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_api_key.grove_api_key import KEY_PREFIX, hash_secret
-from grove.pathway.routes import utc_timestamp
-from grove.utils import utc_today
+from grove.utils import utc_timestamp, utc_today
 
 PROBE = "control-probe@example.com"
 

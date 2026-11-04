@@ -5,7 +5,7 @@ import frappe
 from frappe.model.document import Document
 
 from grove import failure
-from grove.fleet import PathwayHost, gateway_agent_release, gateway_agent_version
+from grove.fleet import PathwayHost, gateway_agent_release
 
 
 class IngressServer(PathwayHost, Document):
@@ -26,10 +26,12 @@ class IngressServer(PathwayHost, Document):
 		admin_url: DF.Data | None
 		agent_version: DF.Data | None
 		data_token: DF.Password | None
+		datum_token_expires_at: DF.Datetime | None
 		frappe_public_key: DF.Code | None
 		geography: DF.Link | None
 		is_in_maintenance: DF.Check
 		is_vector_setup: DF.Check
+		last_synced_at: DF.Datetime | None
 		machine: DF.Link
 		memory_limit_mb: DF.Int
 		network: DF.Link
@@ -40,21 +42,10 @@ class IngressServer(PathwayHost, Document):
 		status: DF.Literal["Pending", "Installing", "Active", "Broken", "Terminated"]
 	# end: auto-generated types
 
-	def before_insert(self):
-		if not self.admin_token:
-			self.admin_token = frappe.generate_hash(length=48)
-		if not self.data_token:
-			self.data_token = frappe.generate_hash(length=48)
-
 	def validate(self):
 		self.set_admin_url()
-
-	def on_update(self):
-		if self.has_value_changed("status") and self.status == "Terminated":
-			self.remove_dns_records()
-
-	def on_trash(self):
-		self.remove_dns_records()
+		self.set_secret("admin_token")
+		self.set_secret("data_token")
 
 	@property
 	def archive_blockers(self):
@@ -87,12 +78,6 @@ class IngressServer(PathwayHost, Document):
 			trigger="Manual",
 		)
 		frappe.msgprint(f"Replica table queued for {self.name} — watch its Pathway Sync.", alert=True)
-
-	@frappe.whitelist()
-	def setup(self):
-		"""Provision this ingress (OpenResty + Redis + the agent) via ingress.yml."""
-		frappe.enqueue_doc(self.doctype, self.name, "provision", queue="long", timeout=1800)
-		frappe.msgprint(f"Provisioning {self.name} — watch its Ansible Plays.", alert=True)
 
 	@failure.reports_failure(mark_broken=True)
 	def provision(self):
@@ -132,38 +117,14 @@ class IngressServer(PathwayHost, Document):
 			**self.memory_variables,
 		}
 
-	@frappe.whitelist()
-	def deploy_agent(self):
-		"""Button: install the pinned agent release and deploy just it (copy + service restart) to
-		this already-provisioned ingress."""
-		frappe.enqueue_doc(self.doctype, self.name, "_deploy_agent", queue="long", timeout=1200)
-		frappe.msgprint(
-			f"Deploying agent {gateway_agent_version()} to {self.name} — watch its Ansible Plays.",
-			alert=True,
-		)
-
 	@failure.reports_failure(mark_broken=False)
 	def _deploy_agent(self, **play):
-		"""Install the pinned agent release on the box and rewrite both halves of its configuration.
-		`play` names the doc the play is run for, e.g. a Pathway Update.
-
-		Resolved here rather than at enqueue: the certificate key would otherwise be serialised into
-		the job payload and sit in Redis. Dropped entirely — agent.env names the certificate's PATH,
-		which is a role default, and deploy_tls owns writing the material itself."""
-		tls_variables = self.tls_variables
-		tls_variables.pop("fleet_tls_key", None)
-		play_name, rc = self.run_playbook(
-			"deploy_agent.yml",
-			extravars={
-				**gateway_agent_release(),
-				"admin_token": self.get_password("admin_token"),
-				"data_token": self.get_password("data_token"),
-				"ingress_id": self.short_name,
-				"ingress_hostname": self.hostname,
-				**tls_variables,
-				**self.config_variables,
-			},
-			**play,
-		)
+		"""Install the pinned release and rewrite both halves of its configuration: the provision
+		variables less the fleet key (deploy_tls writes it; agent.env names only its path) and the
+		memory cap (memory.yml's own). `play` names the doc the play is run for, e.g. a Pathway Update."""
+		extravars = self.provision_variables
+		for key in ("fleet_tls_key", *self.memory_variables):
+			extravars.pop(key)
+		play_name, rc = self.run_playbook("deploy_agent.yml", extravars=extravars, **play)
 		self.record_agent_version(rc)
 		return play_name, rc

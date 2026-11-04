@@ -14,6 +14,15 @@ def row(model, requests=0, tokens=0, cost=0.0):
 	return {"model": model, "requests": requests, "tokens": tokens, "cost": cost}
 
 
+class TestFiguresReadsThePrimary(unittest.TestCase):
+	"""`usage` is served off a replica when one is configured. `figures` adds cap and key reads
+	that must be as fresh, so its usage half goes around that wrapper."""
+
+	def test_the_endpoint_is_read_only_and_the_shared_body_is_not(self):
+		self.assertTrue(hasattr(usage.usage, "__wrapped__"))
+		self.assertFalse(hasattr(usage.read_usage, "__wrapped__"))
+
+
 class TestTotalsByModel(unittest.TestCase):
 	def test_no_rows_is_no_summary(self):
 		self.assertEqual(totals_by_model([]), [])

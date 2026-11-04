@@ -1,17 +1,17 @@
 # `cloud_provider/` — talking to the outside
 
 Thin clients over provider APIs, plus the two things built on top: provisioning and reconciliation.
-Nothing here reads or writes a doctype except `reconcile.py`.
+Only `provisioner.py`, `schedule.py` and `reconcile.py` read or write a doctype.
 
 | File | What it is |
 |---|---|
-| `base.py` | `CloudClient` — the contract, and `CloudClientError`. |
+| `base.py` | `CloudClient` — the contract, and `CloudClientError`. A `Cloud Provider` doc builds its own client (`client(region)`). |
 | `aws.py` | `EC2Client`. |
 | `runpod.py` | `RunPodClient`. |
 | `dns.py` | `Route53Client`, and the two-tier record design. **Deliberately not a `CloudClient`** — see below. |
 | `provisioner.py` | Turning a doc's wishes into a running instance. A spawn retries only the provider's create call, up to the Pod's `provision_retries`, `SPAWN_RETRY_DELAY` apart; every lifecycle call leaves a `Pod Activity` row, and `fail()` writes the terminal one. A pod whose engine answers its health path but fails the warmup request is left `Loading` with a blank `engine_url` — a Pod's Broken, since the route table needs both — and a Failure doc says why. That is for the bring-up only: `reconcile.sync_all` re-decides on the health path alone, so the pod flips back to Running; the Failure doc is what survives. |
-| `schedule.py` | The `*/1` job: keeps each Pod inside its daily Up From / Down From window — one scheduled spawn per window (`scheduled_for` marks the day, so a spawn that gave up or a Stop pressed by hand holds), a terminate whenever a live pod is outside it. Jobs are de-duplicated per pod. |
-| `reconcile.py` | The `*/2` job: the provider owns whether an instance is up, so this closes the drift lifecycle jobs leave behind. |
+| `schedule.py` | The hourly job: keeps each Pod inside its daily Up From / Down From window — one scheduled spawn per window (`scheduled_for` marks the day, so a spawn that gave up or a Stop pressed by hand holds), a terminate whenever a live pod is outside it. Jobs are de-duplicated per pod. |
+| `reconcile.py` | The `*/5` job: the provider owns whether an instance is up, so this closes the drift lifecycle jobs leave behind. |
 
 ## Why Route53 is not a CloudClient
 

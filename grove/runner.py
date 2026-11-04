@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING, Literal
 
 import frappe
@@ -10,15 +10,12 @@ if TYPE_CHECKING:
 	from grove.ansible import AnsibleHost
 
 
-class Status(str, Enum):
+class Status(StrEnum):
 	Pending = "Pending"
 	Running = "Running"
 	Success = "Success"
 	Skipped = "Skipped"
 	Failure = "Failure"
-
-	def __str__(self):
-		return self.value
 
 
 class GenericStep(Document):

@@ -16,10 +16,10 @@ class ModelGroupRow(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		model_group: DF.Link
 		parent: DF.Data
 		parentfield: DF.Data
 		parenttype: DF.Data
-		model_group: DF.Link
 	# end: auto-generated types
 
 	pass

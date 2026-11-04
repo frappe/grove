@@ -8,7 +8,7 @@ from grove.access import team_limits
 from grove.api.control import ALLOWED_ROLES
 from grove.api.keys import key_rows
 from grove.api.teams import get_team
-from grove.utils import site_datetime, utc_today
+from grove.utils import site_datetime, utc_timestamp, utc_today
 
 USAGE_FIELDS = ("requests", "tokens", "cost")
 PULLS_PER_HOUR = 5
@@ -27,8 +27,22 @@ def usage(
 	pulled_until: str | None = None,
 ):
 	frappe.only_for(ALLOWED_ROLES)
+	return read_usage(teams, from_date, to_date, period, month, key_hash, pulled_after, pulled_until)
+
+
+def read_usage(
+	teams,
+	from_date=None,
+	to_date=None,
+	period=None,
+	month=None,
+	key_hash=None,
+	pulled_after=None,
+	pulled_until=None,
+):
+	"""What `usage` answers, read off the primary: `figures` mixes it with cap and key reads that
+	must be as fresh, while `usage` alone may be served off a replica."""
 	from grove.billing.doctype.usage_record.usage_record import money_rows
-	from grove.pathway.routes import utc_timestamp
 
 	if isinstance(teams, str):
 		teams = [teams]
@@ -86,7 +100,7 @@ def figures(team: str):
 					"Grove API Key", filters={"team": team}, order_by="creation desc", pluck="name"
 				)
 			),
-			"usage": usage([team], period="This Month"),
+			"usage": read_usage([team], period="This Month"),
 		},
 	)
 

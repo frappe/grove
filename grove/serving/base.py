@@ -51,8 +51,8 @@ class Engine(ABC):
 	A Pod and a Model Replica carry the same knobs, so the constructor takes them all and an engine
 	ignores the ones it has no use for."""
 
-	# A class attribute, not a property: the projection reads it off the class.
-	default_concurrency: int
+	# Read off the class by the projection: what routing assumes when max_num_seqs is blank.
+	default_concurrency = 1024
 
 	def __init__(
 		self,
@@ -76,7 +76,6 @@ class Engine(ABC):
 		startup_command=None,
 		warmup_path=None,
 		warmup_body=None,
-		host="0.0.0.0",
 	):
 		self.model_name = model_name
 		self.model = model or {}
@@ -98,7 +97,6 @@ class Engine(ABC):
 		self.startup_command = shlex.split(startup_command or "")
 		self.warmup_path = warmup_path or ""
 		self.warmup_body = json.loads(warmup_body) if warmup_body else {}
-		self.host = host
 
 	@property
 	def tensor_parallel_size(self):

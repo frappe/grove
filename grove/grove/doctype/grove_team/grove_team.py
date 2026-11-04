@@ -69,7 +69,3 @@ class GroveTeam(Document):
 		sync if the invoice is still unpaid."""
 		self.suspended_at_grove = self.suspended = suspended
 		self.save()
-
-	@property
-	def active_keys(self):
-		return frappe.db.count("Grove API Key", {"team": self.name, "status": "active"})

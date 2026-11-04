@@ -1,17 +1,15 @@
 # `placement/` — which box a replica goes on
 
-One class per preference, composed in order by a named policy. `Model Deployment` never names a
-concrete Scorer or branches on the policy string — `placement_policy` is the one place that
-dispatch happens, the same way `engine_class` is for engines.
+A policy is a sort key over `Candidate`s: one tuple per policy in `POLICIES` (`base.py`), lower
+wins, and `ModelDeployment.ranked_placements` is the one place that dispatch happens.
 
 **Ranking imports no frappe.** A `Candidate` arrives already measured against one deployment's
-shape, so `base.py` and `scorers.py` test pure: no site, no mocking, no fixtures. `lease.py` is the
-exception and says why below.
+shape, so `base.py` tests pure: no site, no mocking, no fixtures. `lease.py` is the exception and
+says why below.
 
 | File | What it is |
 |---|---|
-| `base.py` | `Candidate`, the `Scorer` contract, `sort_key`, and the `placement_policy` registry. |
-| `scorers.py` | Every preference. One class, one `score`, a few lines each. |
+| `base.py` | `Candidate`, `fitting_gpus`, and `POLICIES`: the three sort keys. |
 | `lease.py` | The Redis hint that keeps two placements off one card. Advisory; owns nothing. |
 
 Cards are addressed by **GPU docname** throughout — `fitting_gpus` returns them, a `Candidate`
@@ -21,15 +19,16 @@ a rented box identifies its cards by slot: `grove/grove/doctype/gpu/README.md`.
 
 ## Adding a preference
 
-One class in `scorers.py`, and name it in whichever policies want it. Lower wins. It may read
-nothing but the `Candidate` — a Scorer that needed a query is reading something the caller should
-have measured and put on the Candidate instead, where it is measured once for the whole fleet
-rather than once per box.
+One more element in a policy's tuple, at the position its priority deserves. Lower wins. It may
+read nothing but the `Candidate` — a preference that needed a query is reading something the caller
+should have measured and put on the Candidate instead, where it is measured once for the whole
+fleet rather than once per box.
 
 ## Adding a policy
 
-One entry in `placement_policy`'s dict. The policy string is the `Model Deployment.placement_policy`
-Select option, verbatim and lowercase. `find_placement` does not change.
+One entry in `POLICIES`. The policy string is the `Model Deployment.placement_policy` Select option,
+verbatim and lowercase; an unknown one raises rather than defaulting. `find_placement` does not
+change.
 
 ## Scoring orders; it does not admit
 
@@ -51,25 +50,25 @@ policy can only ever choose badly among boxes that would all have worked.
 | `pack` | warm box → tightest fit → fewest replicas | batch work; region is not weighed at all, so replicas gather |
 | `spread` | thinnest region → emptiest box → warm box → fewest replicas | maximum separation |
 
-`BestFit` and `WorstFit` are the standard bin-packing names and mean the standard things, which is
-easy to get backwards: **best fit consolidates, worst fit distributes.** Taking the tightest box
-means the partly-used one keeps winning until it is full; taking the emptiest means the next
-replica finds a different box emptiest and lands there instead. `pack` is built on `BestFit` for
-exactly that reason.
+Tightest fit (`surplus`) and emptiest box (`-surplus`) are bin-packing's best fit and worst fit,
+which is easy to get backwards: **best fit consolidates, worst fit distributes.** Taking the
+tightest box means the partly-used one keeps winning until it is full; taking the emptiest means
+the next replica finds a different box emptiest and lands there instead. `pack` is built on the
+tightest fit for exactly that reason.
 
-Every policy ends in a scorer that breaks a remaining tie, so two boxes alike in everything a
-policy reads still order deterministically — otherwise placement wanders between them run to run.
-`test_every_policy_ends_in_a_total_order` pins it.
+Every policy ends in `active_replicas`, which breaks a remaining tie, so two boxes alike in
+everything a policy reads still order deterministically — otherwise placement wanders between them
+run to run. `test_every_policy_ends_in_a_total_order` pins it.
 
 ## The tuple is the tiebreak
 
-`sort_key` returns one number per scorer, in the policy's order, and the winner is the `min`. So a
-later scorer only speaks where every earlier one ties — `balanced` puts `WarmCache` first, which
-means an emptier box never wins over a warm one, it only breaks a tie between two warm ones.
+A policy's key is one number per preference, in the policy's order, and the winner is the `min`.
+So a later element only speaks where every earlier one ties — `balanced` puts the warm box first,
+which means an emptier box never wins over a warm one, it only breaks a tie between two warm ones.
 
 Ordering is therefore expressed by the tuple's order and nothing else. There is no weighting, no
-normalisation and no arithmetic between scorers, because a weighted sum makes "why did it pick that
-box" unanswerable at 3am, and every one of these preferences is a strict tiebreak in practice
+normalisation and no arithmetic between elements, because a weighted sum makes "why did it pick
+that box" unanswerable at 3am, and every one of these preferences is a strict tiebreak in practice
 rather than a quantity to trade off.
 
 ## What a Candidate carries, and why it is precomputed
@@ -83,7 +82,7 @@ keyed on image digest, GPU and TP; a hit says any box with that image can pull t
 this box holds anything. Using it would score every box identically and mean nothing.
 
 It is also false for a Model with `weights_s3_uri` set. Those weights stream from S3 the same way
-everywhere, so no box is warmer than another, and letting `WarmCache` speak would pile every
+everywhere, so no box is warmer than another, and letting the warm-box element speak would pile every
 replica onto one box for no gain.
 
 
@@ -178,7 +177,7 @@ Status moves by `db.set_value`, which never runs `validate`, so claims are settl
 |---|---|
 | Redis flushed or evicted | leases vanish; rivals block on the insert again; correctness unaffected |
 | Worker dies mid-placement | lease expires by TTL; the savepoint rolled the replica back |
-| Worker dies after the claim, before releasing | card stranded — `release_if_stale` frees it when someone next wants it |
+| Worker dies after the claim, before releasing | card reads held by a replica that holds nothing — the scheduler counts it free, and the next claim clears it (`release_if_stale`) |
 | Draft replica abandoned | cards held until it is deleted; the allocation panel names the holder |
 | Two placements, same card | one wins the compare-and-swap; the other takes the next ranked box |
 

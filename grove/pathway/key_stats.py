@@ -7,12 +7,12 @@ each store — through its first writer that answers — for every key Grove hol
 per key the store dialled since the last pull. Nothing is acknowledged: a pull that does not land
 is lost, which stats can afford."""
 
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from datetime import UTC, datetime
 
 import frappe
 
 from grove.pathway.run import SyncRun, gateway_units, in_turn
+from grove.utils import site_datetime
 
 COUNTS = ("requests", "ok", "rate_limited", "unauthorized", "unpaid", "forbidden", "rejected", "failed")
 LAST = ("last_used", "last_rate_limited")
@@ -98,13 +98,6 @@ def readable(counts):
 	site time."""
 	stats = {field: int(counts.get(field) or 0) for field in COUNTS}
 	for field in LAST:
-		at = from_unix(int(counts.get(field) or 0))
-		stats[field] = str(at) if at else None
+		seconds = int(counts.get(field) or 0)
+		stats[field] = str(site_datetime(datetime.fromtimestamp(seconds, UTC))) if seconds else None
 	return stats
-
-
-def from_unix(seconds):
-	"""A gateway's unix second as the site's naive datetime; 0 is never."""
-	if not seconds:
-		return None
-	return datetime.fromtimestamp(seconds, ZoneInfo(frappe.utils.get_system_timezone())).replace(tzinfo=None)

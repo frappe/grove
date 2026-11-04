@@ -117,3 +117,8 @@ class Geography(Document):
 	@failure.reports_failure()
 	def _issue_fleet_certificate(self):
 		tls.issue_fleet_certificate(self.name)
+
+
+def default_geography():
+	"""The one Geography marked default, or None."""
+	return frappe.db.get_value("Geography", {"is_default": 1})

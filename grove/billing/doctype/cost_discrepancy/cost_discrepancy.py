@@ -97,8 +97,7 @@ def model_key_of(pricing):
 	that names none: a discrepancy from before pricings were tagged."""
 	if not pricing:
 		return ""
-	model = frappe.db.get_value("Model Pricing", pricing, "model")
-	return frappe.db.get_value("Model", model, "model_key") or ""
+	return frappe.db.get_value("Model Pricing", pricing, "model.model_key") or ""
 
 
 def record(**facts):

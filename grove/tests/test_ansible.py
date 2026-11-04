@@ -125,6 +125,24 @@ class TestEveryRoleAPlaybookNamesResolves(unittest.TestCase):
 					self.assertNotIn(role.name, shared)
 
 
+class TestTheSshKeepaliveReachesTheBox(unittest.TestCase):
+	"""A long silent task (an image pull) used to be dropped by a NAT idle timeout. The keepalive
+	lives in the CLI args; a host var of the same name wins over them and would silently undo it."""
+
+	def test_no_host_var_shadows_the_keepalive(self):
+		from ansible import context
+
+		from grove import ansible_runner
+
+		with (
+			unittest.mock.patch.object(ansible_runner.Ansible, "_create_play", lambda self: "PLAY-1"),
+			unittest.mock.patch.object(ansible_runner, "AnsibleCallback", lambda runner: None),
+		):
+			run = ansible_runner.Ansible("/nowhere/serve.yml", "10.0.0.9", "Machine", "M-1")
+		self.assertNotIn("ansible_ssh_common_args", run.inventory.get_host("10.0.0.9").vars)
+		self.assertIn("ServerAliveInterval", context.CLIARGS["ssh_common_args"])
+
+
 class FakeRunner:
 	"""Records what the callback would have written, instead of inserting docs."""
 

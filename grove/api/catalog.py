@@ -4,6 +4,7 @@
 import frappe
 
 from grove.api.control import ALLOWED_ROLES
+from grove.grove.doctype.geography.geography import default_geography
 
 
 @frappe.whitelist()
@@ -33,7 +34,7 @@ def available_models(team: str, geography: str | None = None):
 	from grove.grove.doctype.model.model import get_modalities
 	from grove.pathway.routes import get_dialects, models_in
 
-	geography = geography or frappe.db.get_value("Geography", {"is_default": 1})
+	geography = geography or default_geography()
 	reachable = set(get_reachable_models(team, geography))
 	if not reachable:
 		return []

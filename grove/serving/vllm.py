@@ -17,10 +17,6 @@ BF16 = ("bfloat16", "torch.bfloat16", "bf16")
 class VllmEngine(Engine):
 	"""An image whose entrypoint takes `vllm serve` arguments."""
 
-	# Never handed to vLLM: what routing assumes when max_num_seqs is blank, so the two can drift as
-	# the image tag moves; set max_num_seqs to pin both sides.
-	default_concurrency = 1024
-
 	@property
 	def repo(self):
 		"""The positional argument to `vllm serve` — the S3 mirror when one is set (weights
@@ -129,7 +125,7 @@ class VllmEngine(Engine):
 			"--served-model-name",
 			self.model_name,
 			"--host",
-			self.host,
+			"0.0.0.0",
 			"--port",
 			str(self.port),
 			"--tensor-parallel-size",

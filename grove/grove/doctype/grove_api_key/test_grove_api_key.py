@@ -20,8 +20,8 @@ from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_api_key import grove_api_key
 from grove.grove.doctype.grove_api_key.grove_api_key import GroveAPIKey
 from grove.grove.doctype.model_provider.test_model_provider import our_model, provider, vendor_model
-from grove.pathway.routes import utc_timestamp
 from grove.pathway.snapshot import effective_keys
+from grove.utils import utc_timestamp
 
 
 def team(name, **fields):

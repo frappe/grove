@@ -42,7 +42,8 @@ def update_team(
 	from grove.grove.doctype.tier.tier import ensure
 
 	doc = frappe.get_doc("Grove Team", get_team(team))
-	if is_not_newer(observed_at, doc.last_reported_at):
+	reported = doc.last_reported_at
+	if observed_at and reported and get_datetime(observed_at) <= get_datetime(reported):
 		return {"team": doc.name, "ignored": "not newer", **team_limits(doc.name)}
 	if tier:
 		ensure(tier)
@@ -57,12 +58,6 @@ def update_team(
 			doc.set(field, value)
 	doc.save()
 	return {"team": doc.name, **team_limits(doc.name)}
-
-
-def is_not_newer(observed_at, last_reported_at) -> bool:
-	return bool(observed_at and last_reported_at) and get_datetime(observed_at) <= get_datetime(
-		last_reported_at
-	)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

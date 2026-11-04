@@ -37,10 +37,6 @@ FIELDS = (
 )
 
 
-def usd(nano_usd):
-	return Decimal(nano_usd) / NANO
-
-
 class Reconciler:
 	"""One per drain and day: the price book, the day the gateway served the buckets, which store,
 	under which drain id, and `landed`, the (drain id, key, day) triples a record already holds."""
@@ -105,7 +101,7 @@ class Reconciler:
 				self.book.pricing(pricing).model_key,
 				pricing,
 				counts,
-				usd(counts.get("cost", 0)),
+				Decimal(counts.get("cost", 0)) / NANO,
 				self.book.pricing_cost(pricing, counts),
 			)
 			for pricing, counts in pricings.items()

@@ -223,15 +223,9 @@ class TestADrainIsOneRecordPerKey(PullCase):
 			sorted(r.gateway_store for r in self.records(key)), sorted([self.store, other_store])
 		)
 
-	def test_a_named_gateways_drain_lands_under_its_store_and_one_without_fails(self):
+	def test_a_gateway_on_no_store_has_nothing_to_land_under(self):
 		key = self.key()
-		with unittest.mock.patch.object(frappe.db, "commit"):
-			usage.record_drains(self.gateway, {"d-named": {key: {self.today: {"request_count": "1"}}}})
-		self.assertEqual(self.records(key)[0].gateway_store, self.store)
-		with (
-			unittest.mock.patch.object(usage.snapshot, "gateway_store", return_value=None),
-			self.assertRaises(frappe.ValidationError),
-		):
+		with self.assertRaises(frappe.ValidationError):
 			usage.record_drains(self.gateway, {"d-none": {key: {self.today: {"request_count": "1"}}}})
 
 	def test_each_touched_team_is_landed_once_per_drain_not_per_key(self):
@@ -477,7 +471,7 @@ class TestTheCheckReadsTheBoxesForRealKeys(PullCase):
 
 
 class TestADrainIsAcknowledgedOnceRecorded(unittest.TestCase):
-	"""Pure: the pull and the box are fakes."""
+	"""Pure: the pull and the box are fakes. A drain lands under the store its unit was dialled for."""
 
 	def land(self, drains, record=(1, {"d1": ["k"]}, [], 0), ack=None):
 		row = {"server": "gw1", "success": 1, "duration_ms": 0, "drains": drains, "dead": []}
@@ -492,12 +486,14 @@ class TestADrainIsAcknowledgedOnceRecorded(unittest.TestCase):
 				frappe, "db", frappe._dict(commit=lambda: None, rollback=lambda: None)
 			),
 		):
-			outcome, [row] = usage.record_drain(True, [row])
+			outcome, [row] = usage.Usage().settle(run.Unit("store1", ()), (True, [row]))
 		self.recorded = recorded
 		return outcome, row, target.post
 
 	def test_what_landed_is_acknowledged_by_drain_and_key(self):
-		outcome, row, post = self.land({"d1": {"k": {"request_count": "1"}}})
+		drains = {"d1": {"k": {"request_count": "1"}}}
+		outcome, row, post = self.land(drains)
+		self.recorded.assert_called_once_with("gw1", drains, [], gateway_store="store1")
 		post.assert_called_once_with(
 			"usage/ack", {"acks": {"d1": ["k"]}, "dead": []}, timeout=usage.DRAIN_TIMEOUT
 		)
@@ -711,47 +707,49 @@ class TestACapCheckReadsEachKeysOwnCounter(unittest.TestCase):
 	own counter, and refuses rather than answer stale: pushes paused, a store it could not read.
 	No lock and no run doc: it reads beside a pull. Pure."""
 
-	def peek(self, answer=None, paused=False):
-		fake = unittest.mock.MagicMock()
-		fake.run.return_value = answer
+	def peek(self, answers=(), paused=False):
+		"""`answers`: what each store's writers said in turn, as (outcome, rows)."""
+		pull = unittest.mock.Mock(hashes={"h1": "k1", "h2": "k2"})
+		pull.units.return_value = [f"store{i}" for i in range(len(answers))]
 		db = frappe._dict(get_single_value=lambda _doctype, field: paused and field == "pause_projection")
 		with (
-			unittest.mock.patch.object(usage, "Peek", return_value=fake) as cls,
+			unittest.mock.patch.object(usage, "Usage", return_value=pull) as cls,
+			unittest.mock.patch.object(usage, "in_turn", side_effect=list(answers)),
 			unittest.mock.patch.object(frappe, "db", db),
 		):
 			result = usage.peek_team("T-1")
-		cls.assert_called_once_with(trigger="Manual", team="T-1")
+		cls.assert_called_once_with(team="T-1")
 		return result
 
 	def test_what_the_boxes_count_comes_back_in_dollars_per_key(self):
-		self.assertEqual(self.peek({"ok": True, "spent": {"k1": 15_500}}), {"k1": Decimal("0.0000155")})
-		self.assertEqual(self.peek({"ok": True, "spent": {}}), {})
+		answered = {"success": 1, "spent": {"h1": 15_500}}
+		self.assertEqual(self.peek([(True, [answered])]), {"k1": Decimal("0.0000155")})
+		self.assertEqual(self.peek([]), {})
 
 	def test_it_refuses_rather_than_answer_stale(self):
-		for case in ({"paused": True}, {"answer": {"ok": False, "spent": {}}}):
+		down = {"success": 0, "error": "down", "spent": {}}
+		for case in ({"paused": True}, {"answers": [(False, [down])]}):
 			with self.subTest(**case), self.assertRaises(frappe.ValidationError):
 				self.peek(**case)
 
 	def test_a_store_answers_through_whichever_writer_got_through(self):
 		"""Answers come back by key name, summed over the stores that hold the key; a key no store
 		holds is left out, and so is a hash that was never asked for."""
-		failed = {"success": 0, "error": "down"}
+		failed = {"success": 0, "error": "down", "spent": {}}
 		answered = {"success": 1, "spent": {"h1": 9, "h9": 1}}
 		elsewhere = {"success": 1, "spent": {"h1": 2}}
-		peek = usage.Peek.__new__(usage.Peek)
-		peek.hashes = {"h1": "k1", "h2": "k2"}
 		self.assertEqual(
-			peek.record([(True, [failed, answered]), (True, [elsewhere])]), {"ok": True, "spent": {"k1": 11}}
+			self.peek([(True, [failed, answered]), (True, [elsewhere])]), {"k1": Decimal("0.000000011")}
 		)
-		self.assertEqual(peek.record([(False, [failed])]), {"ok": False, "spent": {}})
 
 	def test_it_takes_no_lock_and_logs_no_run(self):
-		peek = usage.Peek(trigger="Manual", team="T-1")
+		db = frappe._dict(get_single_value=lambda *_args: False)
 		with (
-			unittest.mock.patch.object(peek, "units", return_value=[]),
+			unittest.mock.patch.object(usage.Usage, "units", return_value=[]),
 			unittest.mock.patch.object(run, "new_run", side_effect=AssertionError("a run doc was built")),
+			unittest.mock.patch.object(frappe, "db", db),
 		):
-			self.assertEqual(peek.run(), {"ok": True, "spent": {}})
+			self.assertEqual(usage.peek_team("T-1"), {})
 
 	def test_a_read_asks_for_every_hash_in_one_call(self):
 		asked = []

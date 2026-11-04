@@ -4,11 +4,7 @@
 behind it. Capacity IS the gateway's admission cap, so it resolves through the deployment in one
 place — `active_replicas` — for both planes."""
 
-from datetime import UTC, timezone
-from zoneinfo import ZoneInfo
-
 import frappe
-from frappe.utils import get_system_timezone
 
 from grove.billing.pricing import PriceBook
 from grove.grove.doctype.model.model import get_modalities
@@ -75,23 +71,6 @@ def ingress_targets(geography):
 	return targets
 
 
-def engine_kinds():
-	"""Resolved once per snapshot, not per route row: a handful of images against every placement
-	in the fleet."""
-	return {
-		image["name"]: image["engine_kind"]
-		for image in frappe.get_all("Engine Image", fields=["name", "engine_kind"])
-	}
-
-
-def deployments():
-	"""Resolved once per snapshot, for the same reason as `engine_kinds`."""
-	return {
-		deployment["name"]: deployment
-		for deployment in frappe.get_all("Model Deployment", fields=["name", "engine_image", "max_num_seqs"])
-	}
-
-
 def resolve_deployment(replica, by_name):
 	"""A replica's effective image and admission cap. The image lives on its deployment; the cap may
 	be overridden per replica, where blank means inherit.
@@ -117,9 +96,16 @@ def capacity(row, kinds):
 def active_replicas(**filters):
 	"""Every Active Model Replica matching `filters`, its cap resolved through its deployment, and
 	the engine kinds to read that cap by. → (replicas, kinds). Both planes build from this, so they
-	can never disagree about one engine's cap: the gateway's is advisory, the ingress's is the gate."""
-	kinds = engine_kinds()
-	by_name = deployments()
+	can never disagree about one engine's cap: the gateway's is advisory, the ingress's is the gate.
+	Images and deployments are read once per snapshot, not per route row."""
+	kinds = {
+		image["name"]: image["engine_kind"]
+		for image in frappe.get_all("Engine Image", fields=["name", "engine_kind"])
+	}
+	by_name = {
+		deployment["name"]: deployment
+		for deployment in frappe.get_all("Model Deployment", fields=["name", "engine_image", "max_num_seqs"])
+	}
 	replicas = [
 		resolve_deployment(replica, by_name)
 		for replica in frappe.get_all(
@@ -266,12 +252,6 @@ def published_routes(routes, models):
 		for key, rows in routes.items()
 		if by_key[key].published and by_key[key].name in pricing
 	}
-
-
-def utc_timestamp(value):
-	"""A site-time-zone Datetime as an RFC 3339 UTC string."""
-	local = frappe.utils.get_datetime(value).replace(tzinfo=ZoneInfo(get_system_timezone()))
-	return local.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def upstream_model(model, is_vendor):

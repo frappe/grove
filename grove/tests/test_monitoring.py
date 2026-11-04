@@ -23,6 +23,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from grove import monitoring
 from grove.grove.doctype.grove_settings.grove_settings import SD_TOKEN_PATTERN
+from grove.grove.doctype.inference_server.inference_server import InferenceServer
 from grove.grove.doctype.monitoring_agent.monitoring_agent import MonitoringAgent
 from grove.monitoring import (
 	BOX_HTTPS_PORT,
@@ -361,7 +362,7 @@ class TestTheRotationButtonCarriesTheHash(unittest.TestCase):
 			unittest.mock.patch.object(frappe, "get_doc", return_value=machine),
 			unittest.mock.patch.object(frappe, "get_single", return_value=settings),
 		):
-			monitoring.run_exporters_play(server)
+			InferenceServer.provision_exporters(server)
 		extravars = server.run_playbook.call_args.kwargs["extravars"]
 		self.assertEqual(extravars["scrape_password_hash"], "$2b$12$hash")
 		tasks = yaml.safe_load((SHARED_ROLES / "grove_https/tasks/main.yml").read_text())

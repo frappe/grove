@@ -68,11 +68,11 @@ def on_doctype_update():
 	frappe.db.add_index("Usage Record", ["api_key", "day"])
 
 
-def tokens_expression(alias="u"):
+def tokens_expression():
 	"""The SQL for one model entry's whole tokens, `CounterTable.whole` summed."""
 	from grove.billing.pricing import CounterTable
 
-	return " + ".join(f"{alias}.{counter}" for counter in CounterTable.load().whole) or "0"
+	return " + ".join(f"u.{counter}" for counter in CounterTable.load().whole) or "0"
 
 
 def money_rows(filters, from_date=None, to_date=None, since=None, until=None):
@@ -110,10 +110,10 @@ def money_rows(filters, from_date=None, to_date=None, since=None, until=None):
 	)
 
 
-def usage_table(record="r"):
-	"""The JSON_TABLE that unnests a record's per-model `usage` into rows, one column per counter —
-	read off the Usage Counter table, so a new counter needs no SQL edit; an entry from before a
-	counter existed reads 0 under it, not NULL. Alias the result `u`."""
+def usage_table():
+	"""The JSON_TABLE that unnests record `r`'s per-model `usage` into rows `u`, one column per
+	counter — read off the Usage Counter table, so a new counter needs no SQL edit; an entry from
+	before a counter existed reads 0 under it, not NULL."""
 	from grove.billing.pricing import CounterTable
 
 	counters = ", ".join(
@@ -122,7 +122,7 @@ def usage_table(record="r"):
 		if counter != "request_count"
 	)
 	return (
-		f"json_table({record}.`usage`, '$[*]' columns (model varchar(140) path '$.model', "
+		f"json_table(r.`usage`, '$[*]' columns (model varchar(140) path '$.model', "
 		f"pricing varchar(140) path '$.pricing', requests bigint path '$.requests', {counters}, "
 		f"grove_cost decimal(21,9) path '$.grove_cost')) u"
 	)

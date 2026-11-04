@@ -203,7 +203,6 @@ class TestOneSnapshotPerGeography(unittest.TestCase):
 			patch.object(projection, "active_ingresses", return_value=[]),
 			patch.object(projection, "read_hashes", side_effect=lambda targets: {t: {} for t in targets}),
 			patch.object(frappe.utils, "now_datetime", lambda: datetime(2026, 8, 16, 0, 1)),
-			patch.object(snapshot, "gateway_geography", side_effect=geographies.get),
 			patch.object(snapshot, "keys_section", return_value={"buckets": {}}),
 			patch.object(snapshot, "gateway_snapshot", side_effect=build),
 			patch.object(Target, "resolve", side_effect=lambda kind, name: Target(kind, name, "u", "t")),
@@ -215,7 +214,9 @@ class TestOneSnapshotPerGeography(unittest.TestCase):
 				frappe._dict(
 					commit=lambda: None,
 					get_single_value=lambda *a: 0,
-					get_value=lambda *a, **k: None,
+					get_value=lambda _doctype, name, field, *a, **k: (
+						geographies.get(name) if field == "geography" else None
+					),
 					set_value=lambda *a, **k: None,
 				),
 			),

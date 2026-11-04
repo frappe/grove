@@ -10,6 +10,7 @@ from frappe.utils import add_days, flt, get_datetime, now_datetime
 
 from grove.access import team_limits, validate_limit_rows
 from grove.billing.pricing import committed, forget_figures, lock_team, usd
+from grove.grove.doctype.geography.geography import default_geography
 
 KEY_PREFIX = "gr_"
 REVOKE_AFTER_HOURS = 6
@@ -79,7 +80,7 @@ class GroveAPIKey(Document):
 	def set_geography(self):
 		"""One geography per key: blank is the default one."""
 		if not self.geography:
-			self.geography = frappe.db.get_value("Geography", {"is_default": 1})
+			self.geography = default_geography()
 		if not self.geography:
 			frappe.throw("Mark one Geography as default, or pick a geography for this key.")
 
@@ -224,12 +225,11 @@ class GroveAPIKey(Document):
 		forget_figures(self.team)
 
 
-def capped(team, except_key=None):
+def capped(team):
 	"""Σ the monthly caps of the team's live keys: how much of its spend limit is spoken for."""
 	rows = frappe.db.sql(
-		"""select coalesce(sum(cap), 0) from `tabGrove API Key`
-		where team = %s and status = 'active' and name != %s""",
-		[team, except_key or ""],
+		"select coalesce(sum(cap), 0) from `tabGrove API Key` where team = %s and status = 'active'",
+		[team],
 	)
 	return flt(rows[0][0], 9)
 

@@ -83,7 +83,7 @@ def grove_rows(model_keys, from_date, to_date):
 	counters = CounterTable.load()
 	sums = ", ".join(
 		"sum("
-		+ " + ".join(f"u.{name}" for name in [root, *derived_of(counters, root)])
+		+ " + ".join(f"u.{row.name}" for row in counters.rows if root in (row.name, row.base_counter))
 		+ f") as {figure}_tokens"
 		for figure, root in TOKENS.items()
 	)
@@ -97,10 +97,6 @@ def grove_rows(model_keys, from_date, to_date):
 		as_dict=True,
 	)
 	return {(row.day, row.model): row for row in rows}
-
-
-def derived_of(counters, root):
-	return [row.name for row in counters.rows if row.base_counter == root]
 
 
 def joined(keys, grove, vendor, by_day):

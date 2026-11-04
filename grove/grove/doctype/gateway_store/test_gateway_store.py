@@ -7,7 +7,7 @@ import base64
 import os
 import tempfile
 import unittest
-from datetime import UTC, date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch

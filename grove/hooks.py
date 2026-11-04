@@ -26,7 +26,7 @@ scheduler_events = {
 		],
 		"*/5 * * * *": [
 			"grove.grove.doctype.gateway_store.gateway_store.backup_all",
-            "grove.cloud_provider.reconcile.sync_all",
+			"grove.cloud_provider.reconcile.sync_all",
 		],
 	},
 	"hourly": [

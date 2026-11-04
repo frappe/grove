@@ -1,7 +1,7 @@
 """The daily window tick: a Pod names the time of day it should be up from and down from, and
 this keeps it that way. Inside the window a pod with no provider pod is spawned — once per day,
-marked on `scheduled_for`, so a spawn that gave up or a Stop pressed by hand is not undone a
-minute later; outside it, a live pod is terminated. Nothing is consumed: the desired state is a
+marked on `scheduled_for`, so a spawn that gave up or a Stop pressed by hand is not undone an
+hour later; outside it, a live pod is terminated. Nothing is consumed: the desired state is a
 function of the clock, and what happened is on the Pod Activity rows the jobs write."""
 
 import datetime

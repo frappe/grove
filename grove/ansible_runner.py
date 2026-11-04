@@ -33,9 +33,8 @@ TASK_STATUS = {
 }
 
 
-def _set_global_cli_args(remote_user, tags=None, skip_tags=None):
-	# PlaybookExecutor/TaskQueueManager read CLI args from this process-global, so it has to be
-	# complete enough to avoid KeyErrors. tags=["all"] runs every task.
+def _set_global_cli_args(remote_user):
+	"""PlaybookExecutor reads its CLI args off this process-global, so it has to be complete."""
 	context.CLIARGS = ImmutableDict(
 		connection="smart",
 		module_path=[],
@@ -64,8 +63,8 @@ def _set_global_cli_args(remote_user, tags=None, skip_tags=None):
 		listhosts=None,
 		listtasks=None,
 		listtags=None,
-		tags=tags or ["all"],
-		skip_tags=skip_tags or [],
+		tags=["all"],
+		skip_tags=[],
 		step=None,
 		timeout=30,
 	)
@@ -194,8 +193,6 @@ class Ansible:
 		user="root",
 		port=22,
 		variables=None,
-		tags=None,
-		skip_tags=None,
 		reference_doctype=None,
 		reference_docname=None,
 	):
@@ -210,13 +207,12 @@ class Ansible:
 		self.reference_doctype = reference_doctype
 		self.reference_docname = reference_docname
 
-		_set_global_cli_args(self.user, tags=tags, skip_tags=skip_tags)
+		_set_global_cli_args(self.user)
 		self.loader = DataLoader()
 		self.inventory = InventoryManager(loader=self.loader, sources=f"{self.host},")
 		h = self.inventory.get_host(self.host)
 		h.set_variable("ansible_port", self.port)
 		h.set_variable("ansible_user", self.user)
-		h.set_variable("ansible_ssh_common_args", "-o StrictHostKeyChecking=accept-new -o ConnectTimeout=20")
 		self.variable_manager = VariableManager(loader=self.loader, inventory=self.inventory)
 		self.variable_manager._extra_vars = self.variables
 
@@ -317,14 +313,12 @@ def run_play(
 	machine_name,
 	project_dir,
 	extravars=None,
-	tags=None,
-	skip_tags=None,
 	reference_doctype=None,
 	reference_docname=None,
 ):
 	"""Build a single-host inventory from the Machine and run <project_dir>/<playbook>. Returns
-	(ansible_play_name, rc), rc 0 = success. tags restricts the run, skip_tags excludes.
-	reference_doctype/docname link the Play to the triggering doc."""
+	(ansible_play_name, rc), rc 0 = success. reference_doctype/docname link the Play to the
+	triggering doc."""
 	m = frappe.get_doc("Machine", machine_name)
 	if not m.public_ip:
 		frappe.throw(f"Machine {machine_name} has no public_ip")
@@ -343,8 +337,6 @@ def run_play(
 		user=m.ssh_user or "root",
 		port=m.ssh_port or 22,
 		variables=extravars,
-		tags=tags,
-		skip_tags=skip_tags,
 		reference_doctype=reference_doctype,
 		reference_docname=reference_docname,
 	)

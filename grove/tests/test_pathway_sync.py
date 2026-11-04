@@ -745,7 +745,7 @@ class TestCheckState(unittest.TestCase):
 		with (
 			unittest.mock.patch.object(snapshot, "keys_section", return_value={}),
 			unittest.mock.patch.object(snapshot, "gateway_snapshot", return_value=self.SNAPSHOT),
-			unittest.mock.patch.object(snapshot, "gateway_geography", return_value="in"),
+			unittest.mock.patch.object(frappe, "db", frappe._dict(get_value=lambda *_args, **_kwargs: "in")),
 			unittest.mock.patch.object(frappe, "get_doc", return_value=None),
 			unittest.mock.patch.object(
 				Target, "of", return_value=Target("Gateway Server", "gw1", "http://x", "t")
@@ -842,7 +842,6 @@ class TestSyncProjection(unittest.TestCase):
 			),
 			unittest.mock.patch.object(snapshot, "keys_section", return_value={"buckets": {}}),
 			unittest.mock.patch.object(snapshot, "gateway_snapshot", return_value=self.SNAPSHOT),
-			unittest.mock.patch.object(snapshot, "gateway_geography", return_value="in"),
 			unittest.mock.patch.object(Target, "resolve", side_effect=resolved),
 			unittest.mock.patch.object(projection, "push_target", side_effect=push_target),
 			unittest.mock.patch.object(projection, "pending_adjustments", return_value=owed or {}),
@@ -890,7 +889,7 @@ class TestSyncProjection(unittest.TestCase):
 		self.run_projection(
 			{"gw1": {**self.row(), "adjusted": {"CD-1": 40}}},
 			owed=owed,
-			entry=lambda **kwargs: projection.sync_projection(proxies=["gw1"], **kwargs),
+			entry=lambda **kwargs: projection.Projection(proxies=["gw1"], **kwargs).run(),
 		)
 		self.assertEqual(self.handed, {"gw1": owed["store1"]})
 		self.mark_corrected.assert_called_once_with({"CD-1": 40})
@@ -1034,7 +1033,7 @@ class TestSyncProjection(unittest.TestCase):
 			),
 			unittest.mock.patch.object(frappe.utils, "now_datetime", lambda: datetime(2026, 8, 16, 0, 1)),
 		):
-			projection.sync_projection(proxies=[], ingresses=["ing1"])
+			projection.Projection(proxies=[], ingresses=["ing1"]).run()
 		self.assertEqual(seen, [("Ingress Server", "ing1")])
 
 

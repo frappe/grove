@@ -61,7 +61,7 @@ def effective_keys(names=None):
 	if names is not None:
 		filters["name"] = ("in", sorted(names))
 	keys = frappe.get_all(
-		"Grove API Key", filters=filters, fields=["name", "key_hash", "team", "status", "geography", "cap"]
+		"Grove API Key", filters=filters, fields=["name", "key_hash", "team", "geography", "cap"]
 	)
 	if names is not None and not keys:
 		return []
@@ -93,7 +93,7 @@ def effective_keys(names=None):
 				"key_hash": k.key_hash,
 				"prefix": k.name,
 				"team": k.team,
-				"status": k.status or "active",
+				"status": "active",
 				"group": ",".join(
 					sorted(
 						{
@@ -194,16 +194,6 @@ def gateway_snapshot(geography, keys):
 		"keys": keys,
 		"routes": flat_section({"table": routes.gateway_routes(geography)}),
 	}
-
-
-def gateway_geography(gateway):
-	"""Blank for a gateway with none, which is then given no routes at all."""
-	return frappe.db.get_value("Gateway Server", gateway, "geography") or ""
-
-
-def gateway_store(gateway):
-	"""The Gateway Store a gateway counts on; blank before its first Setup."""
-	return frappe.db.get_value("Gateway Server", gateway, "gateway_store")
 
 
 def ingress_snapshot(ingress):

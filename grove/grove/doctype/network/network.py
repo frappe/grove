@@ -6,7 +6,6 @@ import ipaddress
 import frappe
 from frappe.model.document import Document
 
-from grove.cloud_provider.base import build_cloud_client
 from grove.grove.doctype.gateway_store.gateway_store import REDIS_PORT
 from grove.monitoring import BOX_HTTP_PORT, BOX_HTTPS_PORT
 
@@ -104,15 +103,9 @@ class Network(Document):
 	def cloud_client(self):
 		if not self.cloud_provider:
 			frappe.throw(f"Network {self.name} has no Cloud Provider set.")
-
-		provider = frappe.get_doc("Cloud Provider", self.cloud_provider)
-		secret = provider.get_password("api_key", raise_exception=False)
-		if not (provider.access_key_id and secret):
-			frappe.throw(f"Cloud Provider {provider.name} has no credentials set.")
 		if not self.region:
 			frappe.throw(f"Network {self.name} has no Region set.")
-
-		return build_cloud_client(provider.provider_type, provider.access_key_id, secret, self.region)
+		return frappe.get_doc("Cloud Provider", self.cloud_provider).client(self.region)
 
 	@frappe.whitelist()
 	def create_network(self):

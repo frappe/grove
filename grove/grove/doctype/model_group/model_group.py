@@ -5,6 +5,7 @@ import frappe
 from frappe.model.document import Document
 
 from grove.access import validate_model_geography
+from grove.grove.doctype.geography.geography import default_geography
 
 
 class ModelGroup(Document):
@@ -33,7 +34,7 @@ class ModelGroup(Document):
 	def before_validate(self):
 		"""One geography per group: blank is the default one."""
 		if not self.geography:
-			self.geography = frappe.db.get_value("Geography", {"is_default": 1})
+			self.geography = default_geography()
 
 	def validate(self):
 		# The name travels inside a comma-joined membership list.

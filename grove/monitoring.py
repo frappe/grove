@@ -24,24 +24,6 @@ NODE_METRICS_PATH = "/metrics/node"
 GPU_METRICS_PATH = "/metrics/gpu"
 
 
-def run_exporters_play(server):
-	"""The exporters play — htpasswd, node, and DCGM when the Machine has GPU rows — as an Inference
-	Server's Update Scrape Auth button re-runs it. Gateway and Ingress Servers ship with Vector instead.
-
-	The exporters only LISTEN; nothing installed here is told which agent scrapes them."""
-	machine = frappe.get_doc("Machine", server.machine)
-	if not machine.public_ip:
-		frappe.throw(f"Machine {machine.name} has no public IP — nothing to connect to.")
-	return server.run_playbook(
-		"exporters.yml",
-		project="Monitoring Agent",
-		extravars={
-			"monitoring_has_gpu": bool(machine.gpus),
-			**frappe.get_single("Grove Settings").scrape_auth_variables,
-		},
-	)
-
-
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def targets(agent: str, kind: str = "engine", token: str = ""):
 	"""Prometheus http_sd list for one Monitoring Agent.

@@ -18,6 +18,7 @@ class ProviderKeyStats(Document):
 		from frappe.types import DF
 
 		gateway_store: DF.Link | None
+		key_id: DF.Data | None
 		key_title: DF.Data | None
 		model_provider: DF.Link | None
 		stats: DF.Code | None

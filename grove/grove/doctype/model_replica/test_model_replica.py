@@ -16,18 +16,18 @@ import frappe
 from grove.grove.doctype.gpu.gpu import GPUUnavailable
 from grove.grove.doctype.model_replica.model_replica import (
 	CLAIM_HOLDING_STATUSES,
-	ENGINE_PORT_BASE,
 	GPU_CLAIMING_STATUSES,
 	ModelReplica,
 	_engine_env,
 	_post_play_state,
 	_vllm_extravars,
+	deploy_model,
 	parse_kv_cache_memory,
 	reconfigure_deployment,
 	set_container_state,
 	teardown_deployment,
 )
-from grove.serving.base import DEFAULT_MAX_MODEL_LEN, parse_context_length
+from grove.serving.base import DEFAULT_MAX_MODEL_LEN, DEFAULT_PORT, parse_context_length
 from grove.serving.custom import CustomEngine
 from grove.serving.vllm import VllmEngine
 
@@ -138,29 +138,29 @@ class TestEnginePortAllocation(unittest.TestCase):
 		self.assertEqual(self.locked, [("Inference Server", True), ("Model Replica", True)])
 
 	def test_the_first_deployment_on_a_box_takes_the_base_port(self):
-		self.assertEqual(self.allocate([]), ENGINE_PORT_BASE)
+		self.assertEqual(self.allocate([]), DEFAULT_PORT)
 
 	def test_a_port_a_running_engine_holds_is_skipped(self):
 		siblings = [
-			{"status": "Active", "engine_port": ENGINE_PORT_BASE},
-			{"status": "Broken", "engine_port": ENGINE_PORT_BASE + 1},
+			{"status": "Active", "engine_port": DEFAULT_PORT},
+			{"status": "Broken", "engine_port": DEFAULT_PORT + 1},
 		]
-		self.assertEqual(self.allocate(siblings), ENGINE_PORT_BASE + 2)
+		self.assertEqual(self.allocate(siblings), DEFAULT_PORT + 2)
 
 	def test_a_stopped_deployment_keeps_its_port(self):
 		siblings = [
-			{"status": "Active", "engine_port": ENGINE_PORT_BASE},
-			{"status": "Inactive", "engine_port": ENGINE_PORT_BASE + 1},
+			{"status": "Active", "engine_port": DEFAULT_PORT},
+			{"status": "Inactive", "engine_port": DEFAULT_PORT + 1},
 		]
-		self.assertEqual(self.allocate(siblings), ENGINE_PORT_BASE + 2)
+		self.assertEqual(self.allocate(siblings), DEFAULT_PORT + 2)
 
 	def test_a_torn_down_deployments_port_is_reused(self):
 		siblings = [
-			{"status": "Active", "engine_port": ENGINE_PORT_BASE},
+			{"status": "Active", "engine_port": DEFAULT_PORT},
 			{"status": "Terminated", "engine_port": 0},
-			{"status": "Active", "engine_port": ENGINE_PORT_BASE + 2},
+			{"status": "Active", "engine_port": DEFAULT_PORT + 2},
 		]
-		self.assertEqual(self.allocate(siblings), ENGINE_PORT_BASE + 1)
+		self.assertEqual(self.allocate(siblings), DEFAULT_PORT + 1)
 
 
 class TestGpuClaims(unittest.TestCase):
@@ -687,3 +687,56 @@ class TestAReplicaMustBeTheShapeItsDeploymentDeclares(unittest.TestCase):
 	def test_naming_no_cards_is_still_the_unpinned_single_gpu_case(self):
 		self.check(cards=0, declared=1)
 		self.check(cards=0, declared=4)
+
+
+class TestDeployTakesTheCardsFirst(unittest.TestCase):
+	"""Deploy is offered on Inactive, which released its cards, so a sibling may hold them by now.
+	The claim comes before the status flip and the play, where a lost card is a readable refusal."""
+
+	def deploy(self, claimed=True):
+		events = []
+
+		def claim_gpus():
+			events.append("claim")
+			if not claimed:
+				raise GPUUnavailable("GPU 0 on INF-1 was taken by md-a first.")
+
+		def run_playbook(playbook, **kwargs):
+			events.append(playbook)
+			return ("PLAY-1", 0)
+
+		md = SimpleNamespace(
+			name="MD-00007",
+			model="qwen3.5-4b",
+			engine_port=8081,
+			get_password=lambda *args, **kwargs: "internal-key",
+			claim_gpus=claim_gpus,
+			engine=SimpleNamespace(kv_cache_memory=0),
+			derived_engine_url="https://10.0.0.9/e/md-00007",
+			learned_kv_cache_memory=lambda: {},
+			sync_gpu_claims=lambda: None,
+			server=SimpleNamespace(name="INF-1", is_provisioned=1, run_playbook=run_playbook),
+		)
+
+		def set_value(doctype, name, values, value=None):
+			events.append({values: value} if isinstance(values, str) else values)
+
+		db = SimpleNamespace(set_value=set_value, commit=lambda: None)
+		with (
+			patch.object(frappe, "get_doc", lambda doctype, name=None: md),
+			patch.object(frappe, "db", db),
+			patch(f"{MODULE}._vllm_extravars", return_value={}),
+			patch("grove.grove.doctype.model.model.sync_published"),
+			patch("grove.failure.report"),
+		):
+			try:
+				deploy_model("MD-00007")
+			except GPUUnavailable:
+				pass
+		return events
+
+	def test_the_claim_comes_before_the_status_flip_and_the_play(self):
+		self.assertEqual(self.deploy()[:3], ["claim", {"status": "Provisioning"}, "serve.yml"])
+
+	def test_a_lost_card_is_refused_before_the_box_is_touched(self):
+		self.assertEqual(self.deploy(claimed=False), ["claim"])

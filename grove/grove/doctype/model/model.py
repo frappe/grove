@@ -58,7 +58,7 @@ class Model(Document):
 		self.set_model_key()
 		self.set_modalities()
 		self.provider_is_self_hosted = self.is_self_hosted
-		if self.is_self_hosted and not self.hf_repo:
+		if self.provider_is_self_hosted and not self.hf_repo:
 			frappe.throw(
 				f"{self.model_id} needs an HF Repo: nothing else says where its weights come from, "
 				"and its provider serves nothing of its own.",
@@ -169,7 +169,7 @@ class Model(Document):
 	@property
 	def provider_name(self):
 		"""The provider's name, read off the linked record: it prefixes this model's key."""
-		return frappe.db.get_value("Model Provider", self.provider, "provider_name")
+		return frappe.get_cached_value("Model Provider", self.provider, "provider_name")
 
 	@property
 	def repo_id(self):
@@ -186,7 +186,9 @@ class Model(Document):
 	def is_self_hosted(self):
 		"""Our own engines serve it — the provider is the flagged one. Read off the provider rather
 		than the mirror, so the two cannot disagree."""
-		return bool(self.provider and frappe.db.get_value("Model Provider", self.provider, "is_self_hosted"))
+		return bool(
+			self.provider and frappe.get_cached_value("Model Provider", self.provider, "is_self_hosted")
+		)
 
 	def reject_if_vendor_served(self, what):
 		"""Refuse a self-hosting operation on a model we do not host. The form hides these, but a

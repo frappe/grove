@@ -6,12 +6,8 @@ from frappe.model.document import Document
 
 from grove import failure
 from grove.cloud_provider.dns import Route53Error
-from grove.fleet import (
-	PathwayHost,
-	gateway_agent_release,
-	gateway_agent_version,
-)
-from grove.grove.doctype.gateway_store.gateway_store import store_writers, stores_in
+from grove.fleet import PathwayHost, gateway_agent_release
+from grove.grove.doctype.gateway_store.gateway_store import stores_in
 from grove.pathway import projection
 
 
@@ -27,6 +23,7 @@ class GatewayServer(PathwayHost, Document):
 		admin_token: DF.Password | None
 		admin_url: DF.Data | None
 		agent_version: DF.Data | None
+		datum_token_expires_at: DF.Datetime | None
 		frappe_public_key: DF.Code | None
 		gateway_store: DF.Link | None
 		geography: DF.Link | None
@@ -50,32 +47,11 @@ class GatewayServer(PathwayHost, Document):
 
 	def validate(self):
 		self.set_admin_url()
-		self.set_admin_token()
+		self.set_secret("admin_token")
 		if self.is_store_writer and not self.gateway_store:
 			frappe.throw(
 				f"{self.name} is not on a Gateway Store yet — only a gateway deployed onto one can be its writer."
 			)
-
-	def set_admin_token(self):
-		"""The credential the control plane authenticates every push with. Generated rather than
-		typed: the field is read-only, so there is no way to enter one.
-
-		In validate rather than before_insert, so it also heals docs that exist without one.
-		Clearing the field and saving is how it is rotated, which then needs a Deploy Agent —
-		the box holds the old value until agent.env is rewritten.
-
-		Tested through get_password, NOT `if not self.admin_token`: a saved Password field reads
-		back as asterisks and stays truthy even when the __Auth row holding the real value is
-		gone, which is exactly the state this heals."""
-		if not self.get_password("admin_token", raise_exception=False):
-			self.admin_token = frappe.generate_hash(length=48)
-
-	def on_update(self):
-		if self.has_value_changed("status") and self.status == "Terminated":
-			self.remove_dns_records()
-
-	def on_trash(self):
-		self.remove_dns_records()
 
 	@property
 	def archive_blockers(self):
@@ -113,7 +89,10 @@ class GatewayServer(PathwayHost, Document):
 			self.doctype, self.name, ["gateway_store", "is_store_writer"], as_dict=True
 		)
 		stays_writer = before.gateway_store == store and before.is_store_writer
-		is_writer = bool(stays_writer or not store_writers(store))
+		has_writer = frappe.db.exists(
+			self.doctype, {"gateway_store": store, "is_store_writer": 1, "status": "Active"}
+		)
+		is_writer = bool(stays_writer or not has_writer)
 		frappe.db.set_value(
 			self.doctype, self.name, {"gateway_store": store, "is_store_writer": int(is_writer)}
 		)
@@ -217,21 +196,6 @@ class GatewayServer(PathwayHost, Document):
 		self.delete_health_check(client)
 		return change
 
-	@frappe.whitelist()
-	def deploy_agent(self):
-		"""Button: install the pinned release on an already-provisioned proxy."""
-		frappe.enqueue_doc(
-			self.doctype,
-			self.name,
-			"_deploy_agent",
-			queue="long",
-			timeout=1200,
-		)
-		frappe.msgprint(
-			f"Deploying agent {gateway_agent_version()} to {self.name} — watch its Ansible Plays.",
-			alert=True,
-		)
-
 	@failure.reports_failure(mark_broken=False)
 	def _deploy_agent(self, agent_binary="", **play):
 		"""Install the pinned agent release — or, for a dev deploy, the build `agent_binary` names
@@ -275,18 +239,6 @@ class GatewayServer(PathwayHost, Document):
 			**tls_variables,
 			**self.config_variables,
 		}
-
-	@frappe.whitelist()
-	def setup(self):
-		"""Provision this proxy (OpenResty + Redis + Go agent) via gateway.yml."""
-		frappe.enqueue_doc(
-			self.doctype,
-			self.name,
-			"provision",
-			queue="long",
-			timeout=1800,
-		)
-		frappe.msgprint(f"Provisioning {self.name} — watch its Ansible Plays.", alert=True)
 
 	@failure.reports_failure(mark_broken=True)
 	def provision(self, agent_binary=""):

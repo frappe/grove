@@ -57,6 +57,13 @@ class NamedHost(Server):
 
 	dns_fields = ("public_ip",)
 
+	def set_secret(self, field):
+		"""Generate the Password `field` unless one stands behind it, asked through get_password: a
+		saved Password reads back as asterisks. Clearing the field and saving rotates it; the box
+		holds the old value until its next deploy."""
+		if not self.get_password(field, raise_exception=False):
+			setattr(self, field, frappe.generate_hash(length=48))
+
 	@property
 	def hostname(self):
 		"""The name that reaches THIS box: <short name>.<its geography's zone>, covered by that
@@ -120,6 +127,19 @@ class NamedHost(Server):
 			if e.code != "InvalidChangeBatch":
 				raise
 			return None
+
+	def on_update(self):
+		if self.has_value_changed("status") and self.status == "Terminated":
+			self.remove_dns_records()
+
+	def on_trash(self):
+		self.remove_dns_records()
+
+	@frappe.whitelist()
+	def setup(self):
+		"""Button: run this doctype's provision play on the box."""
+		frappe.enqueue_doc(self.doctype, self.name, "provision", queue="long", timeout=1800)
+		frappe.msgprint(f"Provisioning {self.name} — watch its Ansible Plays.", alert=True)
 
 	@frappe.whitelist()
 	def install_vector(self):
@@ -238,6 +258,15 @@ class PathwayHost(FleetHost):
 			**frappe.get_single("Grove Settings").gateway_variables,
 			"gateway_maintenance": bool(self.is_in_maintenance),
 		}
+
+	@frappe.whitelist()
+	def deploy_agent(self):
+		"""Button: the pinned release and both halves of its configuration onto a set-up box."""
+		frappe.enqueue_doc(self.doctype, self.name, "_deploy_agent", queue="long", timeout=1200)
+		frappe.msgprint(
+			f"Deploying agent {gateway_agent_version()} to {self.name} — watch its Ansible Plays.",
+			alert=True,
+		)
 
 	@frappe.whitelist()
 	def migrate_to_vector(self):

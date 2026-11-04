@@ -78,25 +78,20 @@ class Projection(SyncRun):
 		self.adjustments = pending_adjustments()
 		return units
 
-	def answered_units(self, units):
-		"""(unit, its hashes) for each gateway unit some writer answered: a store's writers share
-		one Redis, so any one's map is the store's."""
-		for unit in units:
-			for target in unit.targets:
-				remote = self.remote.get(target)
-				if target.server_type == "Gateway Server" and isinstance(remote, dict):
-					yield unit, remote
-					break
-
 	def buckets_in_play(self, units):
 		"""The key buckets this tick rebuilds: those a save moved since the oldest stamp among the
-		gateway units that answered, less LOOKBACK. None — every bucket — under force, for a unit
-		with no stamp or no key hash, after a Tier or Grove Settings save, and past FULL_ABOVE.
-		Nothing when no gateway answered."""
+		gateway units that answered — a store's writers share one Redis, so any one's map is the
+		store's — less LOOKBACK. None — every bucket — under force, for a unit with no stamp or no
+		key hash, after a Tier or Grove Settings save, and past FULL_ABOVE. Nothing when no gateway
+		answered."""
 		if self.force:
 			return None
 		stamps = []
-		for unit, remote in self.answered_units(units):
+		for unit in units:
+			answers = [self.remote.get(t) for t in unit.targets if t.server_type == "Gateway Server"]
+			remote = next((answer for answer in answers if isinstance(answer, dict)), None)
+			if remote is None:
+				continue
 			stamp = frappe.db.get_value(*stamp_doc(unit), "last_synced_at")
 			if not stamp or not any(label.startswith("keys:") for label in remote):
 				return None
@@ -133,11 +128,11 @@ class Projection(SyncRun):
 		return outcome, rows
 
 
-def sync_projection(trigger="Scheduled", proxies=None, ingresses=None, force=False, wait=0):
+def sync_projection():
 	"""The cron tick: bring every target box to the current desired state. The scheduler swallows
 	a job's exception and keeps no log of this one, so a failure lands in the Error Log here."""
 	try:
-		return Projection(trigger, proxies, ingresses, force, wait).run()
+		return Projection().run()
 	except Exception:
 		frappe.log_error(title="Pathway projection failed")
 		raise
@@ -159,7 +154,7 @@ def snapshots_for(targets, labels=None):
 			continue
 		if keys is None:
 			keys = snapshot.keys_section(labels)
-		geography = snapshot.gateway_geography(target.name)
+		geography = frappe.db.get_value("Gateway Server", target.name, "geography") or ""
 		if geography not in per_geography:
 			per_geography[geography] = snapshot.gateway_snapshot(geography, keys)
 		snapshots[target] = per_geography[geography]
@@ -188,7 +183,7 @@ def push_target(target, delta, adjustments=()):
 			row["payload"].append({"push": "state", "body": redact(delta)})
 			row["detail"] = snapshot.describe(delta, target.post("state", delta))
 		for body in adjustments:
-			row["payload"].append({"push": "spend-adjust", "body": body})
+			row["payload"].append({"push": "spend-adjust", "body": redact(body)})
 			row["adjusted"][body["id"]] = adjust(target, body)
 		if adjustments:
 			row["detail"] = f"{row['detail']} spend-adjust:{len(adjustments)}".strip()
