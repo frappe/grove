@@ -21,14 +21,12 @@ scheduler_events = {
 		"*/1 * * * *": [
 			"grove.pathway.projection.sync_projection",
 		],
-		"*/2 * * * *": [
-			"grove.cloud_provider.reconcile.sync_all",
-		],
 		"0 */6 * * *": [
 			"grove.pathway.key_stats.pull_all",
 		],
 		"*/5 * * * *": [
 			"grove.grove.doctype.gateway_store.gateway_store.backup_all",
+            "grove.cloud_provider.reconcile.sync_all",
 		],
 	},
 	"hourly": [
