@@ -75,17 +75,22 @@ def insert_geography(geography):
 def insert_model(model, geography):
 	"""Under one record of the provider: the one in `geography` — what the catalog's own entry for
 	the provider says — else the only one the site holds. Several and none there is a question
-	for the operator. A model in a second geography is a second doc added by hand. Returns the
-	doc's name, held or inserted."""
+	for the operator. A model in a second geography is a second doc added by hand. The entry's
+	`display_name` is its Model ID's, filled when blank. Returns the doc's name, held or inserted."""
 	provider = provider_record(model["provider"], geography)
-	fields = {key: value for key, value in model.items() if key != "rates"}
-	for fieldname in MODALITY_FIELDS:
-		fields[fieldname] = [{"modality": word} for word in model.get(fieldname, [])]
-	held = frappe.db.exists("Model", {"provider": provider, "model_id": model["model_id"]})
+	# Before the held check: a held model's Model ID still takes a display name it lacks.
+	model_id = ensure_model_id(model["model_id"], model.get("display_name"))
+	held = frappe.db.exists("Model", {"provider": provider, "model_id": model_id})
 	if held:
 		return held
-	fields["model_id"] = ensure_model_id(model["model_id"])
-	return frappe.get_doc({"doctype": "Model", **fields, "provider": provider}).insert().name
+	fields = {key: value for key, value in model.items() if key not in ("rates", "display_name")}
+	for fieldname in MODALITY_FIELDS:
+		fields[fieldname] = [{"modality": word} for word in model.get(fieldname, [])]
+	return (
+		frappe.get_doc({"doctype": "Model", **fields, "model_id": model_id, "provider": provider})
+		.insert()
+		.name
+	)
 
 
 def insert_model_group(group, docs):

@@ -14,6 +14,7 @@ from grove.grove.doctype.model.model import get_modality_names
 MAIN = "Main"
 PROVIDER_FIELDS = (
 	"provider_name",
+	"display_name",
 	"is_self_hosted",
 	"zero_data_retention",
 	"base_url",
@@ -85,14 +86,26 @@ def get_regions():
 
 
 def get_providers():
-	"""One entry per provider name, a vendor's moved to Main. No key."""
+	"""One entry per provider name, a vendor's moved to Main, with its Extra Headers rows. No key."""
 	providers = {}
-	for row in frappe.get_all("Model Provider", fields=PROVIDER_FIELDS, order_by="creation"):
+	for row in frappe.get_all("Model Provider", fields=["name", *PROVIDER_FIELDS], order_by="creation"):
 		entry = {field: row[field] for field in PROVIDER_FIELDS if row[field]}
 		if not row.is_self_hosted:
 			entry["geography"] = MAIN
+		if headers := get_extra_headers(row.name):
+			entry["extra_headers"] = headers
 		providers.setdefault(row.provider_name, entry)
 	return [providers[name] for name in sorted(providers)]
+
+
+def get_extra_headers(provider):
+	return frappe.get_all(
+		"Model Provider Header",
+		filters={"parent": provider},
+		fields=["header", "value"],
+		order_by="idx",
+		parent_doctype="Model Provider",
+	)
 
 
 def get_denied_tools():
@@ -101,14 +114,20 @@ def get_denied_tools():
 
 
 def get_models():
-	"""Vendor models only, one entry per key, each with what it takes and gives and the rows of its
-	Enabled pricing. Never
-	`published`. A key held in several geographies exports once: the default geography's doc,
+	"""Vendor models only, one entry per key, each with what it takes and gives, its Model ID's
+	display name and the rows of its Enabled pricing. Never `published`. A key held in several geographies exports once: the default geography's doc,
 	else whichever sorts first."""
 	rows = frappe.get_all(
 		"Model",
 		filters={"provider_is_self_hosted": 0},
-		fields=["name", "model_key", "provider.provider_name as provider_name", "geography", *MODEL_FIELDS],
+		fields=[
+			"name",
+			"model_key",
+			"provider.provider_name as provider_name",
+			"model_id.display_name as display_name",
+			"geography",
+			*MODEL_FIELDS,
+		],
 		order_by="model_key, geography",
 	)
 	default = frappe.db.get_value("Geography", {"is_default": 1})
@@ -119,7 +138,7 @@ def get_models():
 			row.model_key,
 			{"provider": row.provider_name, "rates": get_rates(row.name)}
 			| modalities[row.name]
-			| {field: row[field] for field in MODEL_FIELDS if row[field]},
+			| {field: row[field] for field in (*MODEL_FIELDS, "display_name") if row[field]},
 		)
 	return list(entries.values())
 

@@ -34,9 +34,13 @@ class ModelID(Document):
 			frappe.throw("Model ID cannot contain '/'")
 
 
-def ensure_model_id(model_id):
-	"""The record's name for an id, inserted when the site lacks it."""
+def ensure_model_id(model_id, display_name=None):
+	"""The record's name for an id, inserted when the site lacks it. A display name given fills a
+	blank one and never replaces what an operator set."""
 	name = slugify(model_id)
 	if not frappe.db.exists("Model ID", name):
-		name = frappe.get_doc({"doctype": "Model ID", "model_id": model_id}).insert().name
+		record = {"doctype": "Model ID", "model_id": model_id, "display_name": display_name}
+		return frappe.get_doc(record).insert().name
+	if display_name and not frappe.db.get_value("Model ID", name, "display_name"):
+		frappe.db.set_value("Model ID", name, "display_name", display_name)
 	return name

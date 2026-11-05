@@ -209,8 +209,11 @@ Providers, vendor models and their prices ship in `catalog/catalog.json`, not in
 migrate deletes and re-inserts every fixture doc, which wipes its API key and resets what the
 operator set. The file is authored, not dumped from a site: the counter table, `Main`, and the
 vendors we sell — openai (`gpt-6-luna`, `gpt-6-sol`), anthropic (`claude-sonnet-5-5`), baseten
-(`deepseek-v4.1-flash`; DeepSeek is bought through Baseten, not direct) — at the vendors' list
-prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south-1`.
+(`deepseek-v4.1-flash`), morph (`glm-5.3-flash`, `deepseek-v4.1-flash-1017`) and deepseek's own front
+(no model of its own yet) — at the vendors' list prices (2026-10-03, Morph's 2026-11-05) — and the
+fleet skeleton: the `aws` account and `ap-south-1`. A provider entry carries its `display_name` and
+its `extra_headers` rows; a model entry its Model ID's `display_name`, which fills a blank one and
+never overwrites what an operator set.
 
 - `seed.insert_missing()` runs after install and after every migrate. It inserts a geography,
   cloud account (keyless, for the operator to fill), region or model the site has no doc

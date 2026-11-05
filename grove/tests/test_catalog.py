@@ -58,8 +58,10 @@ class TestInsertMissing(CatalogCase):
 		"providers": [
 			{
 				"provider_name": "_T-catalog-vendor",
+				"display_name": "Catalog Vendor",
 				"geography": "Catalog",
 				"base_url": "https://api.vendor.test/v1",
+				"extra_headers": [{"header": "x-catalog", "value": "1"}],
 			}
 		],
 		"denied_tools": [{"provider_name": "_T-catalog-vendor", "tool": "web_search_20250305"}],
@@ -67,6 +69,7 @@ class TestInsertMissing(CatalogCase):
 			{
 				"provider": "_T-catalog-vendor",
 				"model_id": "big-1",
+				"display_name": "Big One",
 				"upstream_model_id": "big-1-2026",
 				"rates": [{"counter": "prompt_tokens", "rate": 2.5}],
 			}
@@ -75,6 +78,22 @@ class TestInsertMissing(CatalogCase):
 			{"name": "catalog-group", "description": "Catalog", "models": ["_T-catalog-vendor/big-1"]}
 		],
 	}
+
+	def test_a_providers_display_name_and_headers_and_a_models_display_name_land(self):
+		self.load(**self.CATALOG)
+		[name] = frappe.get_all(
+			"Model Provider", filters={"provider_name": "_T-catalog-vendor"}, pluck="name"
+		)
+		vendor = frappe.get_doc("Model Provider", name)
+		self.assertEqual(("Catalog Vendor", {"x-catalog": "1"}), (vendor.display_name, vendor.headers))
+		self.assertEqual("Big One", frappe.db.get_value("Model ID", "big-1", "display_name"))
+		# A held model's Model ID takes the name it lacks; a name the operator set stays.
+		frappe.db.set_value("Model ID", "big-1", "display_name", "")
+		self.load(**self.CATALOG)
+		self.assertEqual("Big One", frappe.db.get_value("Model ID", "big-1", "display_name"))
+		frappe.db.set_value("Model ID", "big-1", "display_name", "Big One, Renamed")
+		self.load(**self.CATALOG)
+		self.assertEqual("Big One, Renamed", frappe.db.get_value("Model ID", "big-1", "display_name"))
 
 	def test_what_is_absent_is_inserted_once_and_never_its_pricing(self):
 		make_test_geography()
@@ -163,10 +182,15 @@ class TestExport(CatalogCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		vendor = provider(
-			"_T-catalog-export", base_url="https://export.test/v1", api_key="export-secret"
+			"_T-catalog-export",
+			base_url="https://export.test/v1",
+			api_key="export-secret",
+			display_name="Catalog Export",
+			extra_headers=[{"header": "x-export", "value": "1"}],
 		).insert()
 		cls.provider = vendor.name
 		cls.model = vendor_model("big-2", vendor.name).insert().name
+		frappe.db.set_value("Model ID", "big-2", "display_name", "Big Two")
 		cls.pricing = enabled_pricing(cls.model, **cls.RATES).name
 		cls.ours = our_model("catalog-ours-7b").insert().name
 		rows = [{"model": cls.model}, {"model": cls.ours}]
@@ -194,6 +218,10 @@ class TestExport(CatalogCase):
 		)
 		[model] = [m for m in catalog["models"] if seed.get_model_key(m) == self.key(self.model)]
 		self.assertEqual(model["rates"], [{"counter": c, "rate": r} for c, r in self.RATES.items()])
+		self.assertEqual(model["display_name"], "Big Two")
+		[vendor] = [p for p in catalog["providers"] if p["provider_name"] == "_T-catalog-export"]
+		self.assertEqual(vendor["display_name"], "Catalog Export")
+		self.assertEqual(vendor["extra_headers"], [{"header": "x-export", "value": "1"}])
 		self.assertNotIn(self.key(self.ours), [seed.get_model_key(m) for m in catalog["models"]])
 		[group] = [g for g in catalog["model_groups"] if g["name"] == "catalog-export-group"]
 		self.assertEqual(group["models"], [self.key(self.model)])
