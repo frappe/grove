@@ -43,30 +43,27 @@ MODELS = [
 PROVIDERS = {
 	# `keys` becomes the Keys table: (row id, secret[, disabled]) rows, a blank secret standing for
 	# a row whose password was never set.
-	"frappe": {"base_url": None, "api_version": None, "keys": []},
+	"frappe": {"base_url": None, "keys": []},
 	"anthropic": {
 		"anthropic_base_url": "https://api.anthropic.com",
-		"api_version": "2023-06-01",
 		"keys": [("k-anthropic-1", "vendor-key")],
+		"headers": {"anthropic-beta": "beta-1"},
 	},
 	"deepseek": {
 		"base_url": "https://api.deepseek.com",
-		"api_version": "",
 		"keys": [("k-deepseek-1", "ds-key"), ("k-deepseek-2", "ds-key-2"), ("k-deepseek-3", "ds-key-3", 1)],
 	},
 	"dual": {
 		"base_url": "https://api.dual.test",
 		"anthropic_base_url": "https://api.dual.test",
-		"api_version": "",
 		"keys": [("k-dual-1", "dual-key")],
 	},
 	"kimi": {
 		"base_url": "https://api.kimi.test",
-		"api_version": "",
 		"keys": [("k-kimi-1", "kimi-key")],
 		"anthropic_base_url": "https://api.kimi.test/anthropic",
 	},
-	"halfway": {"base_url": "https://api.halfway.test", "api_version": "", "keys": [("k-halfway-1", "")]},
+	"halfway": {"base_url": "https://api.halfway.test", "keys": [("k-halfway-1", "")]},
 }
 DEPLOYMENTS = [
 	placement(
@@ -110,7 +107,7 @@ def fake_key_row(row_id, secret, disabled=0):
 
 
 def fake_cached_doc(doctype, name):
-	provider = frappe._dict(PROVIDERS[name], provider_name=name)
+	provider = frappe._dict(PROVIDERS[name], provider_name=name, headers=PROVIDERS[name].get("headers", {}))
 	provider.api_keys = [fake_key_row(*pair) for pair in PROVIDERS[name]["keys"]]
 	return provider
 
@@ -142,8 +139,14 @@ class TestAVendorModelIsRoutable(unittest.TestCase):
 		self.assertEqual(row["internal_key"], "")
 		self.assertEqual(row["credentials"], [{"id": "k-anthropic-1", "secret": "vendor-key"}])
 		self.assertEqual(row["key_selection"], "round_robin")
-		self.assertEqual(row["api_version"], "2023-06-01")
 		self.assertEqual(row["dialect"], "anthropic")
+
+	def test_it_carries_the_records_extra_headers_and_a_blank_object_when_none(self):
+		table = routes()
+		[row] = table["anthropic/claude-4-5"]
+		self.assertEqual(row["headers"], {"anthropic-beta": "beta-1"})
+		[row] = table["deepseek/deepseek-chat"]
+		self.assertEqual(row["headers"], {})
 
 	def test_it_carries_the_vendors_denied_tools_sorted_and_a_blank_list_when_none(self):
 		table = routes()

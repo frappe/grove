@@ -113,6 +113,35 @@ class TestOneProviderIsSelfHosted(IntegrationTestCase):
 		self.assertTrue(provider("_T-probe-forgetter", zero_data_retention=1).insert().zero_data_retention)
 
 
+class TestExtraHeaders(IntegrationTestCase):
+	"""One name per test: the class rolls back once at the end, and a sibling refusal would stand
+	in for the header one."""
+
+	def headed(self, name, *rows):
+		extra_headers = [{"header": header, "value": value} for header, value in rows]
+		return provider(name, base_url="https://api.probe.test", extra_headers=extra_headers)
+
+	def test_the_rows_are_read_as_the_dict_the_gateway_gets(self):
+		doc = self.headed("_T-probe-headed", ("anthropic-beta", "beta-1"), ("X-Probe", "1")).insert()
+		self.assertEqual({"anthropic-beta": "beta-1", "X-Probe": "1"}, doc.headers)
+		self.assertEqual({}, provider("_T-probe-bare", base_url="https://api.probe.test").headers)
+
+	def test_anything_but_a_header_a_vendor_could_read_is_refused(self):
+		for header, value in (("bad name", "x"), ("X-Probe", "two\nlines")):
+			with self.subTest(header), self.assertRaises(frappe.ValidationError) as caught:
+				self.headed("_T-probe-misheaded", (header, value)).insert()
+			self.assertIn("Extra Headers", str(caught.exception))
+		with self.assertRaises(frappe.ValidationError) as caught:
+			self.headed("_T-probe-twice-headed", ("X-Probe", "1"), ("x-probe", "2")).insert()
+		self.assertIn("listed twice", str(caught.exception))
+
+	def test_the_credential_is_the_gateways(self):
+		for name in ("Authorization", "x-api-key", "X-API-KEY"):
+			with self.subTest(name), self.assertRaises(frappe.ValidationError) as caught:
+				self.headed("_T-probe-keyed", (name, "k")).insert()
+			self.assertIn("gateway's to set", str(caught.exception))
+
+
 class TestAKeyIsKnownByItsTitle(IntegrationTestCase):
 	def test_two_keys_of_one_provider_cannot_share_a_title(self):
 		vendor = provider("_T-probe-twice-titled", base_url="https://api.probe.test", api_key="k")

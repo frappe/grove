@@ -1,6 +1,8 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+import re
+
 import frappe
 import requests
 from frappe.model.document import Document
@@ -8,6 +10,10 @@ from frappe.model.document import Document
 from grove.grove.doctype.model_id.model_id import ensure_model_id
 
 ANTHROPIC_VERSION = "2023-06-01"
+
+# An RFC 7230 token: what may name a header.
+HEADER_NAME = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
+CREDENTIAL_HEADERS = ("authorization", "x-api-key")
 
 
 class ModelProvider(Document):
@@ -34,13 +40,14 @@ class ModelProvider(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		from grove.grove.doctype.model_provider_header.model_provider_header import ModelProviderHeader
 		from grove.grove.doctype.model_provider_key.model_provider_key import ModelProviderKey
 
 		anthropic_base_url: DF.Data | None
 		api_keys: DF.Table[ModelProviderKey]
-		api_version: DF.Data | None
 		base_url: DF.Data | None
 		display_name: DF.Data | None
+		extra_headers: DF.Table[ModelProviderHeader]
 		geography: DF.Link | None
 		is_self_hosted: DF.Check
 		key_selection: DF.Literal["Round Robin"]
@@ -59,6 +66,7 @@ class ModelProvider(Document):
 			self.validate_self_hosted()
 		self.validate_siblings()
 		self.validate_key_titles()
+		self.validate_extra_headers()
 
 	def validate_self_hosted(self):
 		"""One provider is ours, and it dials nothing — a URL is what makes a vendor. It keeps
@@ -97,6 +105,23 @@ class ModelProvider(Document):
 		repeated = sorted(title for title in set(titles) if titles.count(title) > 1)
 		if repeated:
 			frappe.throw(f"{self.provider_name} has two keys titled {repeated[0]!r}.")
+
+	def validate_extra_headers(self):
+		"""Header names with one-line values, each name once. The credential is the gateway's: it
+		rotates keys per request, so a fixed one here would be overwritten, or worse, win."""
+		names = [row.header.lower() for row in self.extra_headers]
+		for row in self.extra_headers:
+			if not HEADER_NAME.fullmatch(row.header) or "\n" in row.value or "\r" in row.value:
+				frappe.throw(f"Extra Headers: {row.header!r} must be a header name with a one-line value.")
+			if row.header.lower() in CREDENTIAL_HEADERS:
+				frappe.throw(f"Extra Headers: {row.header} is the gateway's to set, from Keys.")
+			if names.count(row.header.lower()) > 1:
+				frappe.throw(f"Extra Headers: {row.header} is listed twice.")
+
+	@property
+	def headers(self):
+		"""Extra Headers as the gateway reads them: {name: value}, {} when there are none."""
+		return {row.header: row.value for row in self.extra_headers}
 
 	def on_update(self):
 		if self.has_value_changed("is_self_hosted"):
@@ -137,7 +162,7 @@ class ModelProvider(Document):
 			params = {}
 		else:
 			url = f"{self.anthropic_base_url.rstrip('/')}/v1/models"
-			headers = {"x-api-key": secret, "anthropic-version": self.api_version or ANTHROPIC_VERSION}
+			headers = {"x-api-key": secret, "anthropic-version": ANTHROPIC_VERSION}
 			params = {"limit": 1000}
 		ids = []
 		while True:

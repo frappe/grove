@@ -7,13 +7,13 @@
  "field_order": [
   "provider_name",
   "display_name",
-  "geography",
   "is_self_hosted",
   "zero_data_retention",
   "column_break_cred",
+  "geography",
   "base_url",
   "anthropic_base_url",
-  "api_version",
+  "extra_headers",
   "section_keys",
   "key_selection",
   "api_keys"
@@ -39,7 +39,7 @@
   },
   {
    "default": "0",
-   "description": "The provider our own engines serve under: a Model with no provider is named here, and only its models can be deployed. Exactly one, and it dials nothing — a URL is what makes a vendor.",
+   "description": "The provider our own engines serve under: a Model with no provider is named here, and only its models can be deployed. Exactly one, and it dials nothing \u2014 a URL is what makes a vendor.",
    "fieldname": "is_self_hosted",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -83,10 +83,11 @@
   },
   {
    "depends_on": "eval:doc.base_url || doc.anthropic_base_url",
-   "description": "Sent as the vendor's version header on every request. Anthropic's is 2023-06-01.",
-   "fieldname": "api_version",
-   "fieldtype": "Data",
-   "label": "API Version"
+   "description": "Headers the gateway adds to every request it makes to this record's fronts (anthropic-beta). The credential and the version header are the gateway's own and win over these.",
+   "fieldname": "extra_headers",
+   "fieldtype": "Table",
+   "label": "Extra Headers",
+   "options": "Model Provider Header"
   },
   {
    "fieldname": "column_break_cred",
@@ -114,7 +115,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-06 11:00:00.000000",
+ "modified": "2026-11-06 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model Provider",

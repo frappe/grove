@@ -18,7 +18,6 @@ PROVIDER_FIELDS = (
 	"zero_data_retention",
 	"base_url",
 	"anthropic_base_url",
-	"api_version",
 )
 MODEL_FIELDS = ("model_id", "upstream_model_id")
 
