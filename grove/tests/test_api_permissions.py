@@ -17,6 +17,7 @@ from grove.api import catalog, control, keys, teams, usage
 from grove.billing.pricing import forget_figures
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_api_key.grove_api_key import KEY_PREFIX, hash_secret
+from grove.grove.doctype.model_provider.model_provider import self_hosted_provider
 from grove.pathway.routes import utc_timestamp
 from grove.utils import utc_today
 
@@ -135,14 +136,16 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		model_key = lambda doc: frappe.db.get_value("Model", doc, "model_key")  # noqa: E731
 		reach = sorted([model_key(grouped), model_key(allowed)])
 		frappe.db.set_value("Model ID", "probe-reach-a", "display_name", "Probe Reach A")
+		frappe.db.set_value("Model Provider", self_hosted_provider(), "display_name", "Our Engines")
 		rows = catalog.available_models(team)
 		# The team's own reach, never the default group's or another team's.
 		self.assertEqual(sorted(row["name"] for row in rows), reach)
 		self.assertEqual(
 			{row["name"] for row in rows}, {f"{row['provider']}/{row['model_id']}" for row in rows}
 		)
-		# The Model ID's display name, else the id.
+		# The Model ID's display name, else the id; the provider's, else its name.
 		self.assertEqual({row["display_name"] for row in rows}, {"Probe Reach A", "probe-reach-c"})
+		self.assertEqual({row["provider_display_name"] for row in rows}, {"Our Engines"})
 		# A key's own group (a trial's) is that key's alone: the team's catalog does not show it.
 		frappe.get_doc(
 			{"doctype": "Model Group", "__newname": "probe-reach-own", "models": [{"model": other}]}
@@ -151,7 +154,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertEqual(sorted(row["name"] for row in catalog.available_models(team)), reach)
 		here = make_test_geography()
 		keeper = frappe.get_doc(
-			{"doctype": "Model Provider", "provider_name": "probe-keeper", "geography": here}
+			{"doctype": "Model Provider", "provider_name": "_T-probe-keeper", "geography": here}
 		).insert(ignore_permissions=True)
 		kept = (
 			frappe.get_doc(

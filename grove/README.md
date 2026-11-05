@@ -147,7 +147,8 @@ There is no single `modality` word any more: everything that read it reads the l
 `deploy:<key>` carries both as `input_modalities` and `output_modalities`; the gateway reads which
 surfaces the model answers on off the outputs (`text` for chat, `embeddings` for `/v1/embeddings`,
 `transcription` for `/v1/audio`); the inputs it only carries. `available_models` answers
-the two lists per model, the Model ID's `display_name` (the id when blank) for a dashboard to show,
+the two lists per model, the Model ID's `display_name` and the provider's `provider_display_name`
+(the id and the name when blank) for a dashboard to show,
 and whether its provider keeps nothing of a request (`zero_data_retention`, the Self Hosted one
 always). An engine we launch is `--language-model-only` when it is text in and
 text out, and a pooling model (`--runner pooling`) when it gives `embeddings`. A vendor's embedding

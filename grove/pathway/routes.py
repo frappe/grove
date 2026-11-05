@@ -235,6 +235,7 @@ def models_in(geography):
 				"published",
 				"provider",
 				"provider.provider_name as provider_name",
+				"provider.display_name as provider_display_name",
 				"provider.geography as geography",
 				"provider.is_self_hosted as is_self_hosted",
 				"provider.zero_data_retention as zero_data_retention",

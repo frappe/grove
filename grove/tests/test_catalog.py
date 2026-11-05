@@ -57,22 +57,22 @@ class TestInsertMissing(CatalogCase):
 		],
 		"providers": [
 			{
-				"provider_name": "catalog-vendor",
+				"provider_name": "_T-catalog-vendor",
 				"geography": "Catalog",
 				"base_url": "https://api.vendor.test/v1",
 			}
 		],
-		"denied_tools": [{"provider_name": "catalog-vendor", "tool": "web_search_20250305"}],
+		"denied_tools": [{"provider_name": "_T-catalog-vendor", "tool": "web_search_20250305"}],
 		"models": [
 			{
-				"provider": "catalog-vendor",
+				"provider": "_T-catalog-vendor",
 				"model_id": "big-1",
 				"upstream_model_id": "big-1-2026",
 				"rates": [{"counter": "prompt_tokens", "rate": 2.5}],
 			}
 		],
 		"model_groups": [
-			{"name": "catalog-group", "description": "Catalog", "models": ["catalog-vendor/big-1"]}
+			{"name": "catalog-group", "description": "Catalog", "models": ["_T-catalog-vendor/big-1"]}
 		],
 	}
 
@@ -83,13 +83,13 @@ class TestInsertMissing(CatalogCase):
 		geography = frappe.get_doc("Geography", "Catalog")
 		self.assertFalse(geography.endpoint or geography.fleet_zone or geography.is_default)
 		self.assertEqual(frappe.db.get_value("Geography", {"is_default": 1}), default)
-		model = frappe.get_doc("Model", {"model_key": "catalog-vendor/big-1"})
+		model = frappe.get_doc("Model", {"model_key": "_T-catalog-vendor/big-1"})
 		self.assertEqual(
 			(model.upstream_model_id, model.published, model.provider_is_self_hosted), ("big-1-2026", 0, 0)
 		)
 		self.assertFalse(frappe.db.exists("Model Pricing", {"model": model.name}))
 		self.assertEqual(frappe.db.get_value("Usage Counter", "web_search_requests", "unit"), "request")
-		self.assertTrue(frappe.db.exists("Denied Tool", "catalog-vendor:web_search_20250305"))
+		self.assertTrue(frappe.db.exists("Denied Tool", "_T-catalog-vendor:web_search_20250305"))
 		cloud = frappe.get_doc("Cloud Provider", "catalog-cloud")
 		self.assertEqual(
 			(cloud.resource_type, cloud.get_password("api_key", raise_exception=False)), ("Machine", None)
@@ -98,7 +98,7 @@ class TestInsertMissing(CatalogCase):
 		group = frappe.get_doc("Model Group", "catalog-group")
 		self.assertEqual(
 			([row.model_key for row in group.models], group.geography, group.is_default),
-			(["catalog-vendor/big-1"], "Catalog", 1),
+			(["_T-catalog-vendor/big-1"], "Catalog", 1),
 		)
 		counts = [frappe.db.count(doctype) for doctype in COUNTED]
 		self.load(**self.CATALOG)
@@ -108,28 +108,32 @@ class TestInsertMissing(CatalogCase):
 		# Named to run after the test above: the class rolls back once, and that one asserts the
 		# first group in the geography is the default and counts rows.
 		make_test_geography()
-		group = {"name": "catalog-grown", "description": "Grown", "models": ["catalog-vendor/big-1"]}
+		group = {"name": "catalog-grown", "description": "Grown", "models": ["_T-catalog-vendor/big-1"]}
 		self.load(**{**self.CATALOG, "model_groups": [group]})
-		grown_2 = {"provider": "catalog-vendor", "model_id": "grown-2", "rates": []}
+		grown_2 = {"provider": "_T-catalog-vendor", "model_id": "grown-2", "rates": []}
 		grown = {
 			**self.CATALOG,
 			"models": [*self.CATALOG["models"], grown_2],
-			"model_groups": [{**group, "models": ["catalog-vendor/big-1", "catalog-vendor/grown-2"]}],
+			"model_groups": [{**group, "models": ["_T-catalog-vendor/big-1", "_T-catalog-vendor/grown-2"]}],
 		}
 		self.load(**grown)
 		rows = [row.model_key for row in frappe.get_doc("Model Group", "catalog-grown").models]
-		self.assertEqual(rows, ["catalog-vendor/big-1", "catalog-vendor/grown-2"])
+		self.assertEqual(rows, ["_T-catalog-vendor/big-1", "_T-catalog-vendor/grown-2"])
 		self.load(**grown)
 		self.assertEqual(len(frappe.get_doc("Model Group", "catalog-grown").models), 2)
 
 	def test_a_provider_the_site_holds_is_left_as_it_is(self):
-		held = provider("catalog-held", base_url="https://held.test/v1", api_key="held-secret").insert()
+		held = provider("_T-catalog-held", base_url="https://held.test/v1", api_key="held-secret").insert()
 		self.load(
 			providers=[
-				{"provider_name": "catalog-held", "geography": "Catalog", "base_url": "https://new.test/v1"}
+				{
+					"provider_name": "_T-catalog-held",
+					"geography": "Catalog",
+					"base_url": "https://new.test/v1",
+				}
 			]
 		)
-		[name] = frappe.get_all("Model Provider", filters={"provider_name": "catalog-held"}, pluck="name")
+		[name] = frappe.get_all("Model Provider", filters={"provider_name": "_T-catalog-held"}, pluck="name")
 		doc = frappe.get_doc("Model Provider", name)
 		self.assertEqual(
 			(doc.name, doc.base_url, doc.geography, doc.api_keys[0].get_password("api_key")),
@@ -138,7 +142,7 @@ class TestInsertMissing(CatalogCase):
 
 	def test_a_model_under_a_provider_nobody_carries_throws(self):
 		with self.assertRaises(frappe.ValidationError):
-			self.load(models=[{"provider": "catalog-nobody", "model_id": "big-1"}])
+			self.load(models=[{"provider": "_T-catalog-nobody", "model_id": "big-1"}])
 
 
 class TestASiteWithNoDefaultGeography(CatalogCase):
@@ -159,7 +163,7 @@ class TestExport(CatalogCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		vendor = provider(
-			"catalog-export", base_url="https://export.test/v1", api_key="export-secret"
+			"_T-catalog-export", base_url="https://export.test/v1", api_key="export-secret"
 		).insert()
 		cls.provider = vendor.name
 		cls.model = vendor_model("big-2", vendor.name).insert().name

@@ -4,8 +4,6 @@
 import frappe
 from frappe.model.document import Document
 
-from grove.grove.doctype.model_provider.model_provider import PROVIDER_NAME
-
 
 class DeniedTool(Document):
 	"""A tool a vendor would run on its own side, which the gateway refuses to send it.
@@ -26,7 +24,7 @@ class DeniedTool(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		provider_name: DF.Data
+		provider_name: DF.Literal["anthropic", "baseten", "deepseek", "frappe", "morph", "openai"]
 		tool: DF.Data
 	# end: auto-generated types
 
@@ -36,10 +34,5 @@ class DeniedTool(Document):
 		self.tool = (self.tool or "").strip()
 
 	def validate(self):
-		if not PROVIDER_NAME.fullmatch(self.provider_name or ""):
-			frappe.throw(
-				f"Provider name {self.provider_name!r} must be lowercase letters, digits and single "
-				"hyphens — the Provider Name of the vendor's records."
-			)
 		if not self.tool:
 			frappe.throw("Tool names the tool type or request field the vendor would run.")

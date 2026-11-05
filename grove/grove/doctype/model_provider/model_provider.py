@@ -1,8 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
-import re
-
 import frappe
 import requests
 from frappe.model.document import Document
@@ -11,16 +9,17 @@ from grove.grove.doctype.model_id.model_id import ensure_model_id
 
 ANTHROPIC_VERSION = "2023-06-01"
 
-PROVIDER_NAME = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
-
 
 class ModelProvider(Document):
 	"""Who serves a model: the one flagged Self Hosted for our own engines, a vendor for a
 	third-party API.
 
 	Provider Name is the namespace every Model under it is named in, set once: it is already inside
-	every route key and every usage bucket a customer was billed against. A vendor has one record
-	per Geography under the same name, so the model id is the same everywhere.
+	every route key and every usage bucket a customer was billed against. A Select of the vendors
+	pathway knows (its `vendor.known`) and `frappe` for ours: a push naming any other is refused
+	there, so a new vendor ships in pathway first. A vendor has one record per Geography under the
+	same name, so the model id is the same everywhere; Display Name (`OpenAI`) is the name's too,
+	kept the same on every record, and what a customer's dashboard shows.
 
 	Self Hosted names ours: a Model with no provider is named under it, and only its models can be
 	deployed. Every other provider is a vendor: a published Model there routes straight to it and no
@@ -41,20 +40,15 @@ class ModelProvider(Document):
 		api_keys: DF.Table[ModelProviderKey]
 		api_version: DF.Data | None
 		base_url: DF.Data | None
+		display_name: DF.Data | None
 		geography: DF.Link | None
 		is_self_hosted: DF.Check
 		key_selection: DF.Literal["Round Robin"]
-		provider_name: DF.Data
+		provider_name: DF.Literal["anthropic", "baseten", "deepseek", "frappe", "morph", "openai"]
 		zero_data_retention: DF.Check
 	# end: auto-generated types
 
 	def validate(self):
-		if not PROVIDER_NAME.fullmatch(self.provider_name or ""):
-			frappe.throw(
-				f"Provider name {self.provider_name!r} must be lowercase letters, digits and single "
-				"hyphens — it is the prefix of every model id this provider serves."
-			)
-
 		# mandatory_depends_on is client-side only; this is the gate an API insert hits.
 		if not self.is_self_hosted and not self.geography:
 			frappe.throw(
@@ -79,12 +73,13 @@ class ModelProvider(Document):
 			frappe.throw(f"{other} is already the Self Hosted provider — there is one.")
 
 	def validate_siblings(self):
-		"""Records sharing a name are one provider: one per Geography, all ours or all a vendor's.
-		The unique index backs the first rule; this is the message an operator can act on."""
+		"""Records sharing a name are one provider: one per Geography, all ours or all a vendor's,
+		one Display Name. The unique index backs the first rule; this is the message an operator can
+		act on. A new record takes the name's display name when it brings none."""
 		siblings = frappe.get_all(
 			"Model Provider",
 			filters={"provider_name": self.provider_name, "name": ("!=", self.name)},
-			fields=["geography", "is_self_hosted"],
+			fields=["geography", "is_self_hosted", "display_name"],
 		)
 		for sibling in siblings:
 			if bool(sibling.is_self_hosted) != bool(self.is_self_hosted):
@@ -93,6 +88,7 @@ class ModelProvider(Document):
 				)
 			if sibling.geography == self.geography:
 				frappe.throw(f"{self.provider_name} already has a record in {self.geography}.")
+			self.display_name = self.display_name or sibling.display_name
 
 	def validate_key_titles(self):
 		"""A key is known by its title — Provider Key Stats names it so — and a blank one is the
@@ -106,6 +102,14 @@ class ModelProvider(Document):
 		if self.has_value_changed("is_self_hosted"):
 			frappe.db.set_value(
 				"Model", {"provider": self.name}, "provider_is_self_hosted", self.is_self_hosted
+			)
+		if self.has_value_changed("display_name"):
+			# The display name is the provider's, so every record of the name shows the same one.
+			frappe.db.set_value(
+				"Model Provider",
+				{"provider_name": self.provider_name, "name": ("!=", self.name)},
+				"display_name",
+				self.display_name,
 			)
 
 	@frappe.whitelist()

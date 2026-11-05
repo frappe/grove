@@ -200,10 +200,10 @@ class TestVendorReconciliation(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError) as today:
 			self.report(to_date=utc_today())
 		self.assertIn("yesterday", str(today.exception))
-		provider("probe-unbilled", base_url="https://api.unbilled.test", api_key="k").insert()
+		provider("_T-probe-unbilled", base_url="https://api.unbilled.test", api_key="k").insert()
 		with self.assertRaises(frappe.ValidationError) as unread:
-			self.report(provider="probe-unbilled")
-		self.assertIn("probe-unbilled", str(unread.exception))
+			self.report(provider="_T-probe-unbilled")
+		self.assertIn("_T-probe-unbilled", str(unread.exception))
 		with self.assertRaises(frappe.ValidationError) as unknown:
 			self.report(provider="probe-nobody")
 		self.assertIn("probe-nobody", str(unknown.exception))

@@ -376,22 +376,26 @@
  "providers": [
   {
    "anthropic_base_url": "https://api.anthropic.com",
+   "display_name": "Anthropic",
    "geography": "Main",
    "provider_name": "anthropic"
   },
   {
    "anthropic_base_url": "https://inference.baseten.co",
    "base_url": "https://inference.baseten.co",
+   "display_name": "Baseten",
    "geography": "Main",
    "provider_name": "baseten",
    "zero_data_retention": 1
   },
   {
+   "display_name": "Frappe",
    "is_self_hosted": 1,
    "provider_name": "frappe"
   },
   {
    "base_url": "https://api.openai.com",
+   "display_name": "OpenAI",
    "geography": "Main",
    "provider_name": "openai"
   }

@@ -43,7 +43,7 @@ class TestWhatAVendorModelNeeds(IntegrationTestCase):
 	def setUpClass(cls):
 		"""One provider for the class: the rollback is once at the end, not between tests."""
 		super().setUpClass()
-		cls.vendor = provider("probe-vendor", base_url="https://api.probe.test", api_key="k").insert()
+		cls.vendor = provider("_T-probe-vendor", base_url="https://api.probe.test", api_key="k").insert()
 
 	def test_it_needs_no_hf_repo(self):
 		doc = vendor_model("probe-sonnet", self.vendor.name).insert()
@@ -80,7 +80,7 @@ class TestWhatAVendorModelNeeds(IntegrationTestCase):
 
 class TestTheFlagSaysWhoIsOurs(IntegrationTestCase):
 	def test_a_model_under_an_unflagged_provider_is_a_vendors(self):
-		theirs = provider("probe-unflagged").insert()
+		theirs = provider("_T-probe-unflagged").insert()
 		doc = vendor_model("probe-unflagged-model", theirs.name).insert()
 		self.assertFalse(doc.published)
 		self.assertFalse(doc.provider_is_self_hosted)
@@ -94,7 +94,7 @@ class TestTheFlagSaysWhoIsOurs(IntegrationTestCase):
 class TestOneProviderIsSelfHosted(IntegrationTestCase):
 	def test_a_second_one_is_refused(self):
 		with self.assertRaises(frappe.ValidationError) as caught:
-			provider("probe-second-ours", is_self_hosted=1).insert()
+			provider("_T-probe-second-ours", is_self_hosted=1).insert()
 		self.assertIn(self_hosted_provider(), str(caught.exception))
 
 	def test_it_dials_nothing(self):
@@ -109,13 +109,13 @@ class TestOneProviderIsSelfHosted(IntegrationTestCase):
 		ours.zero_data_retention = 0
 		ours.save()
 		self.assertTrue(ours.zero_data_retention)
-		self.assertFalse(provider("probe-keeper").insert().zero_data_retention)
-		self.assertTrue(provider("probe-forgetter", zero_data_retention=1).insert().zero_data_retention)
+		self.assertFalse(provider("_T-probe-keeper").insert().zero_data_retention)
+		self.assertTrue(provider("_T-probe-forgetter", zero_data_retention=1).insert().zero_data_retention)
 
 
 class TestAKeyIsKnownByItsTitle(IntegrationTestCase):
 	def test_two_keys_of_one_provider_cannot_share_a_title(self):
-		vendor = provider("probe-twice-titled", base_url="https://api.probe.test", api_key="k")
+		vendor = provider("_T-probe-twice-titled", base_url="https://api.probe.test", api_key="k")
 		vendor.append("api_keys", {"title": "key", "api_key": "k2"})
 		with self.assertRaises(frappe.ValidationError) as caught:
 			vendor.insert()
@@ -126,21 +126,31 @@ class TestOneNameAcrossGeographies(IntegrationTestCase):
 	"""A vendor is one record per geography under one name, so the model id is the same everywhere."""
 
 	def test_a_second_geography_shares_the_name(self):
-		first = provider("probe-shared").insert()
-		second = provider("probe-shared", geography=make_test_geography("test-2")).insert()
+		first = provider("_T-probe-shared").insert()
+		second = provider("_T-probe-shared", geography=make_test_geography("test-2")).insert()
 		self.assertEqual(first.provider_name, second.provider_name)
-		self.assertNotIn("probe-shared", (first.name, second.name))
+		self.assertNotIn("_T-probe-shared", (first.name, second.name))
+
+	def test_the_display_name_is_the_names_not_the_records(self):
+		first = provider("_T-probe-labelled", display_name="Probe Labelled").insert()
+		second = provider("_T-probe-labelled", geography=make_test_geography("test-2")).insert()
+		self.assertEqual("Probe Labelled", second.display_name)
+		second.display_name = "Probe Relabelled"
+		second.save()
+		self.assertEqual(
+			"Probe Relabelled", frappe.db.get_value("Model Provider", first.name, "display_name")
+		)
 
 	def test_a_geography_holds_one_record_per_name(self):
-		provider("probe-twice").insert()
+		provider("_T-probe-twice").insert()
 		with self.assertRaises(frappe.ValidationError) as caught:
-			provider("probe-twice").insert()
-		self.assertIn("probe-twice", str(caught.exception))
+			provider("_T-probe-twice").insert()
+		self.assertIn("_T-probe-twice", str(caught.exception))
 
 	def test_the_database_refuses_the_pair_too(self):
 		"""validate reads before it writes, so two inserts at once both pass it."""
-		provider("probe-raced").insert()
-		twin = provider("probe-raced")
+		provider("_T-probe-raced").insert()
+		twin = provider("_T-probe-raced")
 		twin.flags.ignore_validate = True
 		with self.assertRaises(frappe.UniqueValidationError):
 			twin.insert()
@@ -151,11 +161,11 @@ class TestOneNameAcrossGeographies(IntegrationTestCase):
 			provider(ours).insert()
 
 	def test_a_model_moves_only_between_records_of_its_own_name(self):
-		first = provider("probe-moves").insert()
-		sibling = provider("probe-moves", geography=make_test_geography("test-2")).insert()
-		stranger = provider("probe-stranger").insert()
+		first = provider("_T-probe-moves").insert()
+		sibling = provider("_T-probe-moves", geography=make_test_geography("test-2")).insert()
+		stranger = provider("_T-probe-stranger").insert()
 		doc = vendor_model("probe-moved", first.name).insert()
-		self.assertEqual("probe-moves/probe-moved", doc.model_key)
+		self.assertEqual("_T-probe-moves/probe-moved", doc.model_key)
 		doc.provider = sibling.name
 		doc.save()
 		doc.provider = stranger.name
@@ -176,7 +186,7 @@ class TestWithNoSelfHostedProvider(IntegrationTestCase):
 			our_model("probe-orphan").insert()
 
 	def test_flagging_a_provider_reaches_the_models_under_it(self):
-		ours = provider("probe-newly-ours").insert()
+		ours = provider("_T-probe-newly-ours").insert()
 		doc = vendor_model("probe-follows-flag", ours.name).insert()
 		self.assertFalse(doc.provider_is_self_hosted)
 		ours.is_self_hosted = 1
@@ -202,14 +212,14 @@ class TestFetchModels(IntegrationTestCase):
 			return vendor.fetch_models(), calls
 
 	def test_an_openai_front_is_asked_with_a_bearer(self):
-		vendor = provider("probe-lister", base_url="https://api.lister.test/", api_key="k").insert()
+		vendor = provider("_T-probe-lister", base_url="https://api.lister.test/", api_key="k").insert()
 		url = "https://api.lister.test/v1/models"
 		result, calls = self.fetch(vendor, {url: {"object": "list", "data": [{"id": "b"}, {"id": "a"}]}})
 		self.assertEqual(calls, [(url, {"Authorization": "Bearer k"}, {})])
 		self.assertEqual(result, {"new": ["a", "b"], "held": []})
 
 	def test_an_anthropic_front_is_asked_with_its_headers_and_paged(self):
-		vendor = provider("probe-pager", anthropic_base_url="https://api.pager.test", api_key="k").insert()
+		vendor = provider("_T-probe-pager", anthropic_base_url="https://api.pager.test", api_key="k").insert()
 		url = "https://api.pager.test/v1/models"
 		result, calls = self.fetch(
 			vendor,
@@ -230,7 +240,7 @@ class TestFetchModels(IntegrationTestCase):
 	def test_a_dual_front_is_asked_on_its_openai_side_and_held_ids_are_set_apart(self):
 		# DeepSeek's Anthropic shim has no /v1/models; the OpenAI front lists the same vendor.
 		vendor = provider(
-			"probe-dual-list",
+			"_T-probe-dual-list",
 			base_url="https://api.dual.test",
 			anthropic_base_url="https://api.dual.test/anthropic",
 			api_key="k",
@@ -250,25 +260,31 @@ class TestFetchModels(IntegrationTestCase):
 		self.assertEqual(result, {"new": ["fresh"], "held": ["Held-Dated-20250101", "held-plain"]})
 
 	def test_a_refusal_names_the_provider(self):
-		vendor = provider("probe-refused", base_url="https://api.refused.test", api_key="k").insert()
+		vendor = provider("_T-probe-refused", base_url="https://api.refused.test", api_key="k").insert()
 		answer = Mock(ok=False, status_code=401, text="invalid key")
 		with patch.object(model_provider.requests, "get", return_value=answer):
 			with self.assertRaises(frappe.ValidationError) as caught:
 				vendor.fetch_models()
-		self.assertIn("probe-refused answered 401", str(caught.exception))
+		self.assertIn("_T-probe-refused answered 401", str(caught.exception))
 
 	def test_a_record_with_nothing_to_dial_is_refused(self):
-		vendor = provider("probe-mute").insert()
+		vendor = provider("_T-probe-mute").insert()
 		with self.assertRaises(frappe.ValidationError):
 			vendor.fetch_models()
 
 	def test_picked_ids_become_unpublished_models_under_the_record(self):
-		vendor = provider("probe-adder", base_url="https://api.adder.test", api_key="k").insert()
+		vendor = provider("_T-probe-adder", base_url="https://api.adder.test", api_key="k").insert()
 		picked = {"gpt-4o": "gpt-4o", "GPT 4o Mini": "GPT 4o Mini", "org/Model": "org/Model", "x-2025": "x"}
 		keys = vendor.add_models(picked)
 		self.assertTrue(frappe.db.exists("Model ID", "gpt-4o-mini"))
 		self.assertEqual(
-			keys, ["probe-adder/gpt-4o", "probe-adder/gpt-4o-mini", "probe-adder/org-model", "probe-adder/x"]
+			keys,
+			[
+				"_T-probe-adder/gpt-4o",
+				"_T-probe-adder/gpt-4o-mini",
+				"_T-probe-adder/org-model",
+				"_T-probe-adder/x",
+			],
 		)
 		rows = frappe.get_all(
 			"Model",
@@ -279,9 +295,9 @@ class TestFetchModels(IntegrationTestCase):
 		self.assertEqual(
 			[(row.model_key, row.upstream_model_id or None, row.published) for row in rows],
 			[
-				("probe-adder/gpt-4o", None, 0),
-				("probe-adder/gpt-4o-mini", "GPT 4o Mini", 0),
-				("probe-adder/org-model", "org/Model", 0),
-				("probe-adder/x", "x-2025", 0),
+				("_T-probe-adder/gpt-4o", None, 0),
+				("_T-probe-adder/gpt-4o-mini", "GPT 4o Mini", 0),
+				("_T-probe-adder/org-model", "org/Model", 0),
+				("_T-probe-adder/x", "x-2025", 0),
 			],
 		)
