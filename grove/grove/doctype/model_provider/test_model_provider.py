@@ -12,6 +12,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from grove.grove.doctype.geography.test_geography import make_test_geography
+from grove.grove.doctype.model_id.model_id import ensure_model_id
 from grove.grove.doctype.model_provider import model_provider
 from grove.grove.doctype.model_provider.model_provider import self_hosted_provider
 
@@ -27,12 +28,14 @@ def provider(provider_name, api_key=None, **fields):
 
 def vendor_model(model_id, provider):
 	"""A model nobody hosts: no HF Repo anywhere, which is the point."""
-	return frappe.get_doc({"doctype": "Model", "model_id": model_id, "provider": provider})
+	return frappe.get_doc({"doctype": "Model", "model_id": ensure_model_id(model_id), "provider": provider})
 
 
 def our_model(model_id):
 	"""A model under the Self Hosted provider, named there by leaving the provider blank."""
-	return frappe.get_doc({"doctype": "Model", "model_id": model_id, "hf_repo": "probe/Repo"})
+	return frappe.get_doc(
+		{"doctype": "Model", "model_id": ensure_model_id(model_id), "hf_repo": "probe/Repo"}
+	)
 
 
 class TestWhatAVendorModelNeeds(IntegrationTestCase):
@@ -237,7 +240,7 @@ class TestFetchModels(IntegrationTestCase):
 			{
 				"doctype": "Model",
 				"provider": vendor.name,
-				"model_id": "held-dated",
+				"model_id": ensure_model_id("held-dated"),
 				"upstream_model_id": "Held-Dated-20250101",
 			}
 		).insert()
@@ -263,6 +266,7 @@ class TestFetchModels(IntegrationTestCase):
 		vendor = provider("probe-adder", base_url="https://api.adder.test", api_key="k").insert()
 		picked = {"gpt-4o": "gpt-4o", "GPT 4o Mini": "GPT 4o Mini", "org/Model": "org/Model", "x-2025": "x"}
 		keys = vendor.add_models(picked)
+		self.assertTrue(frappe.db.exists("Model ID", "gpt-4o-mini"))
 		self.assertEqual(
 			keys, ["probe-adder/gpt-4o", "probe-adder/gpt-4o-mini", "probe-adder/org-model", "probe-adder/x"]
 		)

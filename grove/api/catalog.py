@@ -44,6 +44,7 @@ def available_models(team: str, geography: str | None = None):
 		{
 			"name": m.model_key,
 			"model_id": m.model_id,
+			"display_name": m.display_name or m.model_id,
 			**modalities[m.name],
 			"provider": m.provider_name,
 			"zero_data_retention": bool(m.zero_data_retention),

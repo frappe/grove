@@ -27,6 +27,11 @@ def tier(name, **fields):
 	return frappe.get_doc({"doctype": "Tier", "__newname": name, **fields}).insert().name
 
 
+def probe_model_id(model_id):
+	"""A Model ID the probe user could not make itself: the fixture is the test's, not the probe's."""
+	return frappe.get_doc({"doctype": "Model ID", "model_id": model_id}).insert(ignore_permissions=True).name
+
+
 def billed_record(key, team, day, cost, drain=""):
 	"""A pulled Usage Record of `cost` served on `day`, the figures forgotten as the pull does:
 	what month_spent reads."""
@@ -95,7 +100,9 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 	def test_a_key_is_shown_only_the_models_it_may_call(self):
 		def published_model(model_id):
 			model = (
-				frappe.get_doc({"doctype": "Model", "model_id": model_id, "hf_repo": f"org/{model_id}"})
+				frappe.get_doc(
+					{"doctype": "Model", "model_id": probe_model_id(model_id), "hf_repo": f"org/{model_id}"}
+				)
 				.insert(ignore_permissions=True)
 				.name
 			)
@@ -127,12 +134,15 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		policy.save()
 		model_key = lambda doc: frappe.db.get_value("Model", doc, "model_key")  # noqa: E731
 		reach = sorted([model_key(grouped), model_key(allowed)])
+		frappe.db.set_value("Model ID", "probe-reach-a", "display_name", "Probe Reach A")
 		rows = catalog.available_models(team)
 		# The team's own reach, never the default group's or another team's.
 		self.assertEqual(sorted(row["name"] for row in rows), reach)
 		self.assertEqual(
 			{row["name"] for row in rows}, {f"{row['provider']}/{row['model_id']}" for row in rows}
 		)
+		# The Model ID's display name, else the id.
+		self.assertEqual({row["display_name"] for row in rows}, {"Probe Reach A", "probe-reach-c"})
 		# A key's own group (a trial's) is that key's alone: the team's catalog does not show it.
 		frappe.get_doc(
 			{"doctype": "Model Group", "__newname": "probe-reach-own", "models": [{"model": other}]}
@@ -144,7 +154,9 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			{"doctype": "Model Provider", "provider_name": "probe-keeper", "geography": here}
 		).insert(ignore_permissions=True)
 		kept = (
-			frappe.get_doc({"doctype": "Model", "model_id": "probe-reach-kept", "provider": keeper.name})
+			frappe.get_doc(
+				{"doctype": "Model", "model_id": probe_model_id("probe-reach-kept"), "provider": keeper.name}
+			)
 			.insert(ignore_permissions=True)
 			.name
 		)

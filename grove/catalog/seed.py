@@ -6,6 +6,8 @@ from pathlib import Path
 
 import frappe
 
+from grove.grove.doctype.model_id.model_id import ensure_model_id
+
 CATALOG = Path(__file__).with_name("catalog.json")
 MODALITY_FIELDS = ("input_modalities", "output_modalities")
 
@@ -80,7 +82,10 @@ def insert_model(model, geography):
 	for fieldname in MODALITY_FIELDS:
 		fields[fieldname] = [{"modality": word} for word in model.get(fieldname, [])]
 	held = frappe.db.exists("Model", {"provider": provider, "model_id": model["model_id"]})
-	return held or frappe.get_doc({"doctype": "Model", **fields, "provider": provider}).insert().name
+	if held:
+		return held
+	fields["model_id"] = ensure_model_id(model["model_id"])
+	return frappe.get_doc({"doctype": "Model", **fields, "provider": provider}).insert().name
 
 
 def insert_model_group(group, docs):

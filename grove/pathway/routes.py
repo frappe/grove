@@ -230,6 +230,7 @@ def models_in(geography):
 				"name",
 				"model_key",
 				"model_id",
+				"model_id.display_name as display_name",
 				"upstream_model_id",
 				"published",
 				"provider",

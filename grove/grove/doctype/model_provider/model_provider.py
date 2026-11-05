@@ -7,7 +7,7 @@ import frappe
 import requests
 from frappe.model.document import Document
 
-from grove.utils import slugify
+from grove.grove.doctype.model_id.model_id import ensure_model_id
 
 ANTHROPIC_VERSION = "2023-06-01"
 
@@ -150,12 +150,13 @@ class ModelProvider(Document):
 
 	@frappe.whitelist()
 	def add_models(self, model_ids: dict[str, str]):
-		"""Button: {upstream id: our id} as unpublished Models under this record. Our id is
-		slugified; the vendor's own spelling rides `upstream_model_id` when it differs."""
+		"""Button: {upstream id: our id} as unpublished Models under this record. Our id names a
+		Model ID, made when the site lacks it; the vendor's own spelling rides `upstream_model_id`
+		when it differs."""
 		frappe.only_for("System Manager")
 		keys = []
 		for upstream_id, model_id in model_ids.items():
-			model_id = slugify(model_id.replace("/", "-"))
+			model_id = ensure_model_id(model_id.replace("/", "-"))
 			model = {
 				"doctype": "Model",
 				"provider": self.name,

@@ -8,7 +8,6 @@ from frappe.model.document import Document
 from grove import failure
 from grove.catalog import seed
 from grove.grove.doctype.model_provider.model_provider import self_hosted_provider
-from grove.utils import slugify
 
 HF_CONFIG_URL = "https://huggingface.co/{repo}/resolve/main/config.json"
 HF_TREE_URL = "https://huggingface.co/api/models/{repo}/tree/main?limit=1000"
@@ -39,7 +38,7 @@ class Model(Document):
 		hf_repo: DF.Data | None
 		hidden_layers: DF.Int
 		input_modalities: DF.TableMultiSelect[ModelModalityRow]
-		model_id: DF.Data
+		model_id: DF.Link
 		model_key: DF.Data | None
 		output_modalities: DF.TableMultiSelect[ModelModalityRow]
 		provider: DF.Link | None
@@ -115,15 +114,12 @@ class Model(Document):
 			)
 
 	def set_model_key(self):
-		"""`<provider name>/<model id>`, normalised once and then frozen — the key is inside every
-		route, grant and usage bucket, so an edit would rename a live model out from under its
-		callers. The provider link may still move between records of the same name."""
-		self.model_id = slugify(self.model_id)
+		"""`<provider name>/<model id>`, set once and then frozen — the key is inside every route,
+		grant and usage bucket, so an edit would rename a live model out from under its callers.
+		The id is a Model ID record's name; the provider link may still move between records of
+		the same name."""
 		if not self.model_id:
 			frappe.throw("No Model ID set")
-		# slugify keeps a slash, and the slash separates provider from id.
-		if "/" in self.model_id:
-			frappe.throw("Model ID cannot contain '/'")
 		self.provider = self.provider or self_hosted_provider()
 		if not self.provider:
 			frappe.throw(

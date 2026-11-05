@@ -127,7 +127,8 @@ record on the box: what is the team's (its models, payload
 logging, suspension) is stamped on each of its keys, so a team edit is one record per key.
 
 A model id is always `<provider>/<name>` (`frappe/qwen3.5-4b`) — the Model's **key**, not its doc
-name, which is a hash. One key, one route key, one grant — the bare form was deliberately broken,
+name, which is a hash; `<name>` is a Model ID record, one per id whoever serves it. One key, one
+route key, one grant — the bare form was deliberately broken,
 because routing keys on `deploy:<key>` while access is matched against the string the caller *sent*,
 so a route key with no matching grant is a 403 before routing is ever consulted. A key may be several
 docs, one per provider record: `openai/gpt-5` under the `in` record and under the `eu` record are two
@@ -146,8 +147,9 @@ There is no single `modality` word any more: everything that read it reads the l
 `deploy:<key>` carries both as `input_modalities` and `output_modalities`; the gateway reads which
 surfaces the model answers on off the outputs (`text` for chat, `embeddings` for `/v1/embeddings`,
 `transcription` for `/v1/audio`); the inputs it only carries. `available_models` answers
-the two lists per model, and whether its provider keeps nothing of a request (`zero_data_retention`,
-the Self Hosted one always). An engine we launch is `--language-model-only` when it is text in and
+the two lists per model, the Model ID's `display_name` (the id when blank) for a dashboard to show,
+and whether its provider keeps nothing of a request (`zero_data_retention`, the Self Hosted one
+always). An engine we launch is `--language-model-only` when it is text in and
 text out, and a pooling model (`--runner pooling`) when it gives `embeddings`. A vendor's embedding
 model answers on `/openai` alone and is priced on `prompt_tokens` alone — the only counter its
 usage carries.
@@ -179,8 +181,9 @@ counters as it answers, so a pull that does not land loses those 6 hours. Kept 9
 **Fetch Models** asks the vendor's `/v1/models` on one front — the OpenAI one with a Bearer when set
 (a dual vendor's Anthropic shim, DeepSeek's, has no list), else Anthropic's with `x-api-key` and the
 version header, paged with `after_id` — hides what the record already holds, then asks for our id
-for each ticked one (prefilled with the vendor's) and adds them as unpublished Models, the vendor's
-spelling kept as `Upstream Model ID` where ours differs (`org/Model` → `org-model`).
+for each ticked one — a Model ID, prefilled with the vendor's slug, picked from the site's or typed
+new and made — and adds them as unpublished Models, the vendor's spelling kept as `Upstream Model ID`
+where ours differs (`org/Model` → `org-model`).
 What the vendor is *asked* for is the route's `upstream_model`, which the control plane computes in
 one place (`_upstream_model`):
 

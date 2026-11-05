@@ -12,6 +12,7 @@ from frappe.tests import IntegrationTestCase
 
 from grove.billing import vendor
 from grove.billing.report.vendor_reconciliation.vendor_reconciliation import execute
+from grove.grove.doctype.model_id.model_id import ensure_model_id
 from grove.grove.doctype.model_provider.test_model_provider import provider
 from grove.utils import utc_today
 
@@ -33,7 +34,7 @@ class TestVendorReconciliation(IntegrationTestCase):
 			{
 				"doctype": "Model",
 				"provider": cls.vendor.name,
-				"model_id": "probe-flash",
+				"model_id": ensure_model_id("probe-flash"),
 				"upstream_model_id": UPSTREAM,
 			}
 		).insert()

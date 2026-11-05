@@ -16,6 +16,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from grove.grove.doctype.geography.test_geography import make_test_geography
+from grove.grove.doctype.model_id.model_id import ensure_model_id
 from grove.grove.doctype.model_provider.model_provider import self_hosted_provider
 from grove.grove.doctype.model_provider.test_model_provider import provider
 
@@ -29,7 +30,7 @@ class TestTheIdIsAlwaysPrefixed(IntegrationTestCase):
 		doc = frappe.get_doc(
 			{
 				"doctype": "Model",
-				"model_id": model_id,
+				"model_id": ensure_model_id(model_id),
 				"hf_repo": "probe/Repo",
 				"provider": provider,
 			}
@@ -63,7 +64,7 @@ class TestTheIdIsAlwaysPrefixed(IntegrationTestCase):
 
 	def test_the_id_cannot_be_edited_afterwards(self):
 		doc = self.model("Before Rename 7B")
-		doc.model_id = "after-rename-7b"
+		doc.model_id = ensure_model_id("after-rename-7b")
 		with self.assertRaises(frappe.CannotChangeConstantError):
 			doc.save()
 
@@ -91,18 +92,10 @@ class TestTheIdIsAlwaysPrefixed(IntegrationTestCase):
 		with self.assertRaises(frappe.UniqueValidationError):
 			frappe.get_doc({"doctype": "Model", "model_id": "twice-7b", "provider": second.name}).insert()
 
-	def test_a_name_with_nothing_sluggable_is_refused(self):
-		with self.assertRaises(frappe.ValidationError):
-			self.model("   ")
-
-	def test_a_slash_in_the_id_is_refused(self):
-		with self.assertRaises(frappe.ValidationError):
-			self.model("Meta/Llama 3")
-
 
 class TestAModelSaysWhereItsWeightsCome(IntegrationTestCase):
 	def test_a_model_with_no_repo_is_refused(self):
-		doc = frappe.get_doc({"doctype": "Model", "model_id": "no-repo-7b"})
+		doc = frappe.get_doc({"doctype": "Model", "model_id": ensure_model_id("no-repo-7b")})
 		with self.assertRaises(frappe.MandatoryError):
 			doc.insert()
 
