@@ -330,6 +330,7 @@ class TestEffectiveKeys(unittest.TestCase):
 				"budget_window": "month",
 				"cap_message": "trial over",
 				"limits": "requests:1m:20,total_tokens:1m:100000",
+				"key_limits": "",
 			},
 		)
 
@@ -429,16 +430,18 @@ class TestEffectiveKeys(unittest.TestCase):
 			[("acme", "frappe/qwen3-4b,openai/gpt-5", ""), ("europa", "frappe/qwen3-4b", "openai/gpt-5-eu")],
 		)
 
-	def test_limits_are_one_sorted_comma_list(self):
-		"""pathway, internal/domain/limit.go `ParseLimits`: metric:window:value, comma-joined."""
+	def test_limits_are_one_sorted_comma_list_with_the_model_last(self):
+		"""pathway, internal/domain/limit.go `ParseLimits`: metric:window:value[:model], comma-joined;
+		the model last so a key holding a colon still splits there."""
 		[key] = self.keys(
 			[self.key()],
 			limits=[
 				frappe._dict(parent="KEY-1", metric="total_tokens", window="1h", value=50000),
+				frappe._dict(parent="KEY-1", model_key="openai/gpt-6-luna", metric="requests", window="1m", value=10),
 				frappe._dict(parent="KEY-1", metric="requests", window="1m", value=200),
 			],
 		)
-		self.assertEqual(key["limits"], "requests:1m:200,total_tokens:1h:50000")
+		self.assertEqual(key["key_limits"], "requests:1m:200,total_tokens:1h:50000,requests:1m:10:openai/gpt-6-luna")
 
 	def test_a_limit_edit_rehashes_only_that_keys_bucket(self):
 		keys = [self.key("KEY-1", "abc"), self.key("KEY-2", "abd")]
@@ -452,7 +455,7 @@ class TestEffectiveKeys(unittest.TestCase):
 		[key] = self.keys([self.key(cap=Decimal("7.5"))])
 		self.assertEqual(key["budget"], 7_500_000_000)
 
-	def test_limits_are_the_keys_own_else_its_tiers_else_the_defaults(self):
+	def test_limits_are_the_tiers_on_every_key_of_the_team_and_a_keys_own_ride_beside(self):
 		tiered = frappe._dict(name="T-2", log_payloads=0, suspended=0, tier="Growth")
 		keys = self.keys(
 			[
@@ -469,8 +472,12 @@ class TestEffectiveKeys(unittest.TestCase):
 			teams=[frappe._dict(name="T-1", log_payloads=0, suspended=0), tiered],
 		)
 		self.assertEqual(
-			[k["limits"] for k in keys],
-			["requests:1m:20,total_tokens:1m:100000", "requests:1m:60", "requests:1m:5"],
+			[(k["limits"], k["key_limits"]) for k in keys],
+			[
+				("requests:1m:20,total_tokens:1m:100000", ""),
+				("requests:1m:60", ""),
+				("requests:1m:60", "requests:1m:5"),
+			],
 		)
 
 	def test_a_team_with_no_tier_runs_under_the_default_tier(self):

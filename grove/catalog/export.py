@@ -45,9 +45,9 @@ def write(path=None):
 def get_tiers():
 	"""Every tier, its caps and its rows, so a site's ladder ships with the catalog."""
 	rows = limit_entries("Tier")
-	tiers = frappe.get_all("Tier", fields=["name", "max_keys", "spend_limit"], order_by="name")
+	tiers = frappe.get_all("Tier", fields=["name", "spend_limit"], order_by="name")
 	return [
-		{"name": t.name, "max_keys": t.max_keys, "spend_limit": t.spend_limit, "limits": rows.get(t.name, [])}
+		{"name": t.name, "spend_limit": t.spend_limit, "limits": rows.get(t.name, [])}
 		for t in tiers
 	]
 

@@ -105,7 +105,7 @@ fleet gets re-pushed over row order. Order means nothing on the wire; it exists 
 
 | Redis key | Written by | Holds |
 |---|---|---|
-| `key:<sha256(secret)>` | state push (keys) + the agent | the whole policy: `team`, `group` (comma list: its team's groups of its geography, and its own), `allow`/`deny` (its team's rows that reach its geography; a model of ours reaches every geography), `geography`, `limits` (its team's Tier's, else the default tier's, else the defaults, with the key's own rows replacing the tier's on the metrics they name), `budget` (its monthly cap), `limited`, `log_payloads`; the agent's own `spent:<YYYY-MM>`, this month's spend |
+| `key:<sha256(secret)>` | state push (keys) + the agent | the whole policy: `team`, `group` (comma list: its team's groups of its geography, and its own), `allow`/`deny` (its team's rows that reach its geography; a model of ours reaches every geography), `geography`, `limits` (its team's Tier's rows, else the default tier's, else the defaults, counted per model for the team as a whole), `key_limits` (its own, a second gate beneath), `budget` (its monthly cap), `limited`, `log_payloads`; the agent's own `spent:<YYYY-MM>`, this month's spend |
 | `model_group:<name>` | state push (groups) | the model grant for everyone in it |
 | `deploy:<model>` | state push (routes) | every placement of one model |
 | `grove:state_hash` | state push | per-section/bucket hashes of what the box holds |
@@ -200,7 +200,7 @@ charged beside what the vendor billed.
 
 ## The catalog (`catalog/`)
 
-Providers, vendor models and their prices ship in `catalog/catalog.json`, not in `fixtures/`: a
+Providers, vendor models and their prices, and the tier ladder with its rate limits, ship in `catalog/catalog.json`, not in `fixtures/`: a
 migrate deletes and re-inserts every fixture doc, which wipes its API key and resets what the
 operator set. The file is authored, not dumped from a site: the counter table, `Main`, and the
 vendors we sell — openai (`gpt-6-luna`, `gpt-6-sol`), anthropic (`claude-sonnet-5-5`), baseten
@@ -210,7 +210,9 @@ prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south
 - `seed.insert_missing()` runs after install and after every migrate. It inserts a geography,
   cloud account (keyless, for the operator to fill), region or model the site has no doc
   named for, a provider the site has no record named for in any geography, and a `Denied Tool`
-  pair the site lacks. It never updates and never deletes.
+  pair the site lacks. It never deletes, and updates one thing: a catalog tier's limit rows
+  (`sync_tier`, after the models so a row's model key can be checked) are the file's, rewritten
+  when they differ; a tier's `spend_limit` stays the operator's once the tier exists.
 - `denied_tools` is what a vendor bills outside the token counts, and only that: Anthropic's web
   search ($10 per 1,000 searches) and code execution (container hours), OpenAI's `web_search_options`
   and the Responses API's priced hosted tools (web search, file search, code interpreter, image
@@ -232,7 +234,7 @@ prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south
 - `bench --site <site> execute grove.catalog.export.write` rewrites the file from the site: every
   provider once (no API key, a vendor's geography set to `Main`), every denied tool, vendor models only,
   each with the rows of its Enabled pricing, the one geography `Main`, every cloud account's type
-  (no key), every region, and every model group with the exported models it grants (no `is_default`, no geography).
+  (no key), every region, every tier with its spend limit and rows, and every model group with the exported models it grants (no `is_default`, no geography).
 
 ## Scheduled jobs (`hooks.py`)
 

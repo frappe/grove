@@ -1,7 +1,7 @@
 # Copyright (c) 2026, developers@frappe.io and Contributors
 # See license.txt
-"""Published is the operator's tick: it needs a pricing and something serving the model, and
-only ever comes off on its own."""
+"""Published is the operator's tick: it needs a pricing, something serving the model and a rate
+limit row on every tier, and only ever comes off on its own."""
 
 from typing import ClassVar
 from unittest.mock import patch
@@ -27,6 +27,13 @@ class TestPublishing(IntegrationTestCase):
 	def served(self, is_served=True):
 		return patch.object(model_module, "has_vendor_front", return_value=is_served)
 
+	def limited(self, doc):
+		"""A rate limit row for the model on every Tier: the third publish gate."""
+		for name in frappe.get_all("Tier", pluck="name"):
+			tier = frappe.get_doc("Tier", name)
+			tier.append("limits", {"model_key": doc.model_key, "metric": "requests", "window": "1m", "value": 10})
+			tier.save()
+
 	def test_a_model_is_born_unpublished(self):
 		self.assertEqual(self.model().published, 0)
 
@@ -43,9 +50,18 @@ class TestPublishing(IntegrationTestCase):
 		with self.served(False), self.assertRaisesRegex(frappe.ValidationError, "nothing serving it"):
 			doc.save()
 
-	def test_a_priced_served_model_publishes_by_hand_only(self):
+	def test_publishing_refuses_a_model_a_tier_does_not_rate_limit(self):
 		doc = self.model()
 		enabled_pricing(doc.name, completion_tokens=0)
+		frappe.get_doc({"doctype": "Tier", "__newname": "publish-probe-tier"}).insert()
+		doc.published = 1
+		with self.served(), self.assertRaisesRegex(frappe.ValidationError, "no rate limit row on .*publish-probe-tier"):
+			doc.save()
+
+	def test_a_priced_served_rate_limited_model_publishes_by_hand_only(self):
+		doc = self.model()
+		enabled_pricing(doc.name, completion_tokens=0)
+		self.limited(doc)
 		with self.served():
 			model_module.sync_published(doc.name)
 			self.assertEqual(frappe.db.get_value("Model", doc.name, "published"), 0)

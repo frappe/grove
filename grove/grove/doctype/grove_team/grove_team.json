@@ -8,8 +8,6 @@
  "field_order": [
   "log_payloads",
   "tier",
-  "override_max_keys",
-  "max_keys",
   "key_cap_window",
   "cap_message",
   "column_break_head",
@@ -31,7 +29,7 @@
    "label": "Log Prompts & Outputs"
   },
   {
-   "description": "The Tier the team runs under: its key count, monthly spend limit and, for keys with no limits of their own, rate limits. Picked when the team is made in Desk; after that the control client names it (Central from the team's trust tier). Blank is the default tier in Grove Settings.",
+   "description": "The Tier the team runs under: its monthly spend limit and the rate limits its keys run under, per model, counted for the team as a whole. Picked when the team is made in Desk; after that the control client names it (Central from the team's trust tier). Blank is the default tier in Grove Settings.",
    "fieldname": "tier",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -39,21 +37,6 @@
    "label": "Tier",
    "options": "Tier",
    "read_only_depends_on": "eval:!doc.__islocal"
-  },
-  {
-   "default": "0",
-   "description": "Pin this team's own Max Keys below; unticked, its tier's applies.",
-   "fieldname": "override_max_keys",
-   "fieldtype": "Check",
-   "label": "Override Max Keys"
-  },
-  {
-   "default": "0",
-   "depends_on": "override_max_keys",
-   "description": "How many live keys the team may hold; 0 is no limit.",
-   "fieldname": "max_keys",
-   "fieldtype": "Int",
-   "label": "Max Keys"
   },
   {
    "fieldname": "column_break_head",
@@ -77,7 +60,7 @@
   },
   {
    "default": "Monthly",
-   "description": "What each key's cap counts: this UTC month's spend, reset on the 1st, or everything since the key was minted. Stamped on every key of the team. Set when the team is made and fixed after: the gateway keeps a different counter per window, so a change would restart every key's count. A Total team has no spend limit: its caps are for life, so the month binds nothing; Max Keys and the revokes bound it.",
+   "description": "What each key's cap counts: this UTC month's spend, reset on the 1st, or everything since the key was minted. Stamped on every key of the team. Set when the team is made and fixed after: the gateway keeps a different counter per window, so a change would restart every key's count. A Total team has no spend limit: its caps are for life, so the month binds nothing; the revokes bound it.",
    "fieldname": "key_cap_window",
    "fieldtype": "Select",
    "label": "Key Cap Window",
@@ -153,7 +136,7 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-10-27 00:00:00.000000",
+ "modified": "2026-11-07 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove Team",

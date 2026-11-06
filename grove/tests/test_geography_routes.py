@@ -149,7 +149,7 @@ class TestEveryKeyCarriesItsPin(unittest.TestCase):
 		with (
 			patch.object(snapshot, "model_rows", return_value={}),
 			patch.object(snapshot, "group_rows", return_value={}),
-			patch.object(snapshot, "effective_limits", return_value={}),
+			patch.object(snapshot, "tier_limits", return_value={}),
 			patch.object(frappe, "get_all", side_effect=get_all),
 		):
 			return {key["prefix"]: key for key in snapshot.effective_keys()}

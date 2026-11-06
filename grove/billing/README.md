@@ -134,14 +134,15 @@ it holds no money that must not run out. What gates is:
   with `budget_window: total`: the box counts their spend in one field (`spent:total`) that never
   turns over, so a key spent is spent for good — a trial team's budget. Such a team has no
   spend limit: its caps are for life, so the month binds nothing, the checks below skip it and
-  `figures` reports `spend_limit` null; `max_keys` and the revokes bound it instead. Every key is pinned to one geography, so all its spend lands
+  `figures` reports `spend_limit` null; the revokes bound it instead. Every key is pinned to one geography, so all its spend lands
   on one store and that store gates it exactly. A key is minted at 0 and refused until
   `api.keys.update_key(cap=)` gives it one.
 - **The team's `Tier`**, named by Central from the team's trust tier (`api.teams.update_team`, by
   Central's Webhook at `api.teams.team_webhook`, and `api.teams.rename_tier` when a label changes; `Beginner`
-  … `Elite`, the catalog seeds a starter ladder once and the operator edits the values in Desk):
-  its `spend_limit` (USD a month), `max_keys` (0: no limit) and the rate limits a key with no
-  limit rows of its own runs under. What the month has spoken for stays within the spend limit:
+  … `Elite`, the catalog seeds the ladder and owns its rate limit rows; the operator edits
+  `spend_limit` in Desk): its `spend_limit` (USD a month) and the rate limits the team runs under
+  per model, counted for the team as a whole however many keys it holds (a key's own rows are a
+  second gate beneath; see `grove/doctype/README.md`). What the month has spoken for stays within the spend limit:
   each live key's cap or what it spent this month, whichever is more, plus what revoked keys spent
   (`pricing.committed`), so the keys together never outspend the tier on any mix of stores, and
   moving a spent cap to another key or revoking and minting afresh frees nothing. Only a raise, a
@@ -151,8 +152,7 @@ it holds no money that must not run out. What gates is:
   paused). A lowered limit stops no key, it
   refuses a new cap or a raise until the caps fit; a revoke frees the key's cap, never its spend.
   A team with no tier runs under the default tier (Grove Settings), and a tier Central names
-  before Grove has one is created as a copy of it. **Override Max Keys** on the team pins its own
-  key count instead (`access.team_limits` resolves which apply).
+  before Grove has one is created as a copy of it.
   Central also sets **`suspended`**.
 - **`suspended`**, set by Central when an invoice goes unpaid or by Desk's Suspend Keys on the team
   (then marked `suspended_at_grove`, which Central's sync cannot lift), pushed as `limited` on every key
@@ -161,8 +161,8 @@ it holds no money that must not run out. What gates is:
 **What Central reads.** `api.usage.figures(team)`: `spend` (`month_spent`, this UTC month's
 records of every key the team held, revoked ones too, plus what Grove corrected, nothing
 stored; `capped`, Σ live caps; `committed`, what the month has spoken for, the figure a raise is
-checked against; `spend_limit`, `max_keys`, `suspended`), `keys` (live first, newest first within each, with its cap, `month_spent`
-and effective limits) and `usage` (this month, every key), read together and kept in the site
+checked against; `spend_limit`; `limits`, the tier's rows, the ceiling a key's own sit under; `suspended`), `keys` (live first, newest first within each, with its cap, `month_spent`
+and its own limit rows) and `usage` (this month, every key), read together and kept in the site
 cache until something moves them — a drain lands, a key or the team saved — and 30 minutes at most,
 so every console page shows one moment; a correction or a tier edit waits those minutes out.
 `api.usage.pull_usage(team)` drains the team now and answers its figures afresh (2 an hour per team,

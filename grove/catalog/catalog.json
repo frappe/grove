@@ -418,7 +418,6 @@
      "window": "1m"
     }
    ],
-   "max_keys": 2,
    "name": "Beginner",
    "spend_limit": 20
   },
@@ -435,7 +434,6 @@
      "window": "1m"
     }
    ],
-   "max_keys": 5,
    "name": "Growth",
    "spend_limit": 100
   },
@@ -452,7 +450,6 @@
      "window": "1m"
     }
    ],
-   "max_keys": 10,
    "name": "Intermediate",
    "spend_limit": 300
   },
@@ -469,7 +466,6 @@
      "window": "1m"
     }
    ],
-   "max_keys": 20,
    "name": "Advance",
    "spend_limit": 1000
   },
@@ -486,7 +482,6 @@
      "window": "1m"
     }
    ],
-   "max_keys": 50,
    "name": "Power",
    "spend_limit": 3000
   },
@@ -503,7 +498,6 @@
      "window": "1m"
     }
    ],
-   "max_keys": 0,
    "name": "Elite",
    "spend_limit": 10000
   }

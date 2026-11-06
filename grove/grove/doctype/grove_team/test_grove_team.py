@@ -1,6 +1,6 @@
 # Copyright (c) 2026, developers@frappe.io and Contributors
 # See license.txt
-"""One team per Central id, and a cap on how many keys it holds.
+"""One team per Central id, under a tier.
 
 An id per test: IntegrationTestCase rolls back once when the class is done, not between tests, so
 anything registered here is still there for the next one."""
@@ -15,11 +15,12 @@ from grove.grove.doctype.geography.test_geography import make_test_geography
 
 
 def team(name, **fields):
-	"""`max_keys` / `spend_limit` given here go on a Tier of the team's own."""
-	if "max_keys" in fields or "spend_limit" in fields:
-		numbers = {k: fields.pop(k) for k in ("max_keys", "spend_limit") if k in fields}
+	"""A `spend_limit` given here goes on a Tier of the team's own."""
+	if "spend_limit" in fields:
 		fields["tier"] = (
-			frappe.get_doc({"doctype": "Tier", "__newname": f"{name}-tier", **numbers}).insert().name
+			frappe.get_doc({"doctype": "Tier", "__newname": f"{name}-tier", "spend_limit": fields.pop("spend_limit")})
+			.insert()
+			.name
 		)
 	return frappe.get_doc(
 		{
@@ -45,43 +46,22 @@ class IntegrationTestGroveTeam(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			frappe.get_doc({"doctype": "Grove Team"}).insert()
 
-	def test_a_team_holds_at_most_max_keys_live_keys(self):
-		doc = team("team-probe-count", max_keys=2)
-		keys = [frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert() for _ in range(2)]
-		with self.assertRaisesRegex(frappe.ValidationError, "already holds 2 live keys"):
+	def test_a_team_holds_as_many_keys_as_it_likes(self):
+		doc = team("team-probe-count", spend_limit=5)
+		for _ in range(3):
 			frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert()
-		frappe.db.set_value("Grove API Key", keys[0].name, "status", "revoked")
-		frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert()
-		self.assertEqual(doc.reload().active_keys, 2)
+		self.assertEqual(doc.reload().active_keys, 3)
 
-	def test_max_keys_0_is_no_limit_and_a_negative_one_is_refused(self):
-		doc = team("team-probe-unbounded", max_keys=0)
-		for _ in range(2):
-			frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert()
-		with self.assertRaises(frappe.ValidationError):
-			team("team-probe-negative-keys", max_keys=-1)
-
-	def test_a_team_takes_its_tiers_caps_and_blank_takes_the_default(self):
-		tier = frappe.get_doc(
-			{"doctype": "Tier", "__newname": "team-probe-tier", "max_keys": 1, "spend_limit": 5}
-		).insert()
+	def test_a_team_takes_its_tiers_spend_limit_and_blank_takes_the_default(self):
+		tier = frappe.get_doc({"doctype": "Tier", "__newname": "team-probe-tier", "spend_limit": 5}).insert()
 		doc = team("team-probe-tiered", tier=tier.name)
-		self.assertEqual((team_limits(doc.name).max_keys, team_limits(doc.name).spend_limit), (1, 5))
+		self.assertEqual(team_limits(doc.name).spend_limit, 5)
 		frappe.get_doc({"doctype": "Grove API Key", "team": doc.name, "cap": 5}).insert()
-		with self.assertRaisesRegex(frappe.ValidationError, "already holds 1 live keys"):
-			frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert()
 		untiered = team("team-probe-untiered")
-		self.assertEqual(
-			(team_limits(untiered.name).max_keys, team_limits(untiered.name).spend_limit), (0, 0)
-		)
+		self.assertEqual(team_limits(untiered.name).spend_limit, 0)
 		frappe.db.set_single_value("Grove Settings", "default_tier", tier.name)
 		self.addCleanup(frappe.db.set_single_value, "Grove Settings", "default_tier", "")
-		self.assertEqual(
-			(team_limits(untiered.name).max_keys, team_limits(untiered.name).spend_limit), (1, 5)
-		)
-		frappe.db.set_value("Grove Team", doc.name, {"override_max_keys": 1, "max_keys": 0})
-		self.assertEqual((team_limits(doc.name).max_keys, team_limits(doc.name).spend_limit), (0, 5))
-		frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert()
+		self.assertEqual(team_limits(untiered.name).spend_limit, 5)
 
 	def test_suspend_keys_pushes_every_key_limited_until_resumed(self):
 		from grove.api import usage

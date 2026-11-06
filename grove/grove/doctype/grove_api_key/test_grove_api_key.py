@@ -9,7 +9,6 @@ tests, so anything registered here is still there for the next one."""
 import unittest
 import unittest.mock
 from datetime import timedelta
-from types import SimpleNamespace
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -18,21 +17,21 @@ from grove.access import limit_entries
 from grove.api import keys
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_api_key import grove_api_key
-from grove.grove.doctype.grove_api_key.grove_api_key import GroveAPIKey
 from grove.grove.doctype.model_provider.test_model_provider import our_model, provider, vendor_model
 from grove.pathway.routes import utc_timestamp
 from grove.pathway.snapshot import effective_keys
 
 
 def team(name, **fields):
-	"""`max_keys` / `spend_limit` given here go on a Tier of the team's own; without one, no cap
-	fits, and the keys stay at 0."""
+	"""A `spend_limit` given here goes on a Tier of the team's own; without one, no cap fits, and
+	the keys stay at 0."""
 	if frappe.db.exists("Grove Team", name):
 		return name
-	if "max_keys" in fields or "spend_limit" in fields:
-		numbers = {k: fields.pop(k) for k in ("max_keys", "spend_limit") if k in fields}
+	if "spend_limit" in fields:
 		fields["tier"] = (
-			frappe.get_doc({"doctype": "Tier", "__newname": f"{name}-tier", **numbers}).insert().name
+			frappe.get_doc({"doctype": "Tier", "__newname": f"{name}-tier", "spend_limit": fields.pop("spend_limit")})
+			.insert()
+			.name
 		)
 	return (
 		frappe.get_doc(
@@ -222,8 +221,13 @@ class IntegrationTestATeamsGrantsReachTheKeysOfTheirGeography(IntegrationTestCas
 			team("key-allow-both", allow=[{"model": self.ours}], deny=[{"model": self.ours}])
 
 
+def own(*rows):
+	"""Limit rows as `limit_entries` answers them."""
+	return [{"model_key": "", **row} for row in rows]
+
+
 class IntegrationTestRateLimits(IntegrationTestCase):
-	"""A key's limits are rows here and one sorted list on the wire."""
+	"""Two lists ride the key record: `limits`, its team's tier rows, and `key_limits`, its own."""
 
 	@classmethod
 	def setUpClass(cls):
@@ -231,19 +235,29 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 		make_test_geography()
 		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 
-	def test_a_new_key_starts_under_the_default_limits(self):
+	def test_a_new_key_starts_under_the_default_limits_with_none_of_its_own(self):
 		doc = key("key-limit-default")
-		self.assertEqual(projected(doc.name)["limits"], "requests:1m:20,total_tokens:1m:100000")
+		record = projected(doc.name)
+		self.assertEqual((record["limits"], record["key_limits"]), ("requests:1m:20,total_tokens:1m:100000", ""))
 
-	def test_limits_reach_the_wire_sorted(self):
+	def test_own_limits_reach_the_wire_sorted_with_the_model_last(self):
+		served = our_model("key-limit-dear").insert()
 		doc = key(
 			"key-limit-wire",
 			limits=[
 				{"metric": "total_tokens", "window": "1M", "value": 50_000_000},
+				{"model_key": served.model_key, "metric": "requests", "window": "1m", "value": 5},
 				{"metric": "requests", "window": "1m", "value": 200},
 			],
 		)
-		self.assertEqual(projected(doc.name)["limits"], "requests:1m:200,total_tokens:1M:50000000")
+		self.assertEqual(
+			projected(doc.name)["key_limits"],
+			f"requests:1m:200,total_tokens:1M:50000000,requests:1m:5:{served.model_key}",
+		)
+
+	def test_a_row_naming_a_model_nobody_serves_is_refused(self):
+		with self.assertRaisesRegex(frappe.ValidationError, "no model has the key"):
+			key("key-limit-ghost", limits=[{"model_key": "nobody/ghost", "metric": "requests", "window": "1m", "value": 5}])
 
 	def test_two_limits_on_one_metric_and_window_are_refused(self):
 		with self.assertRaises(frappe.ValidationError):
@@ -272,23 +286,22 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 			"name"
 		]
 		keys.update_key(team_id, name)
-		self.assertEqual(
-			limit_entries("Grove API Key")[name], [{"metric": "requests", "window": "1m", "value": 5}]
-		)
+		self.assertEqual(limit_entries("Grove API Key")[name], own({"metric": "requests", "window": "1m", "value": 5}))
 		keys.update_key(team_id, name, limits=[{"metric": "requests", "window": "1h", "value": 9}])
-		self.assertEqual(
-			limit_entries("Grove API Key")[name], [{"metric": "requests", "window": "1h", "value": 9}]
-		)
+		self.assertEqual(limit_entries("Grove API Key")[name], own({"metric": "requests", "window": "1h", "value": 9}))
 		keys.update_key(team_id, name, limits=[])
 		self.assertNotIn(name, limit_entries("Grove API Key"))
-		self.assertEqual(projected(name)["limits"], "requests:1m:20,total_tokens:1m:100000")
+		self.assertEqual(projected(name)["key_limits"], "")
 
-	def test_a_key_with_no_rows_runs_under_its_teams_tier(self):
+	def test_every_key_of_a_team_carries_its_tiers_rows_and_its_own_beside(self):
 		tier = frappe.get_doc(
 			{
 				"doctype": "Tier",
 				"__newname": "key-tier-growth",
-				"limits": [{"metric": "requests", "window": "1m", "value": 60}],
+				"limits": [
+					{"metric": "requests", "window": "1m", "value": 60},
+					{"metric": "requests", "window": "1h", "value": 600},
+				],
 			}
 		).insert()
 		name = team("key-limit-tiered", tier=tier.name)
@@ -297,59 +310,35 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 			{
 				"doctype": "Grove API Key",
 				"team": name,
-				"limits": [{"metric": "requests", "window": "1h", "value": 9}],
+				"limits": [{"metric": "requests", "window": "1m", "value": 5}],
 			}
 		).insert()
 		self.assertEqual(
-			(projected(inherits.name)["limits"], projected(pinned.name)["limits"]),
-			("requests:1m:60", "requests:1h:9"),
+			[(projected(k.name)["limits"], projected(k.name)["key_limits"]) for k in (inherits, pinned)],
+			[("requests:1h:600,requests:1m:60", ""), ("requests:1h:600,requests:1m:60", "requests:1m:5")],
 		)
 		tier.limits = []
 		tier.save()
 		self.assertEqual(
-			(projected(inherits.name)["limits"], projected(pinned.name)["limits"]), ("", "requests:1h:9")
+			[(projected(k.name)["limits"], projected(k.name)["key_limits"]) for k in (inherits, pinned)],
+			[("", ""), ("", "requests:1m:5")],
 		)
 		with self.assertRaises(frappe.LinkExistsError):
 			tier.delete()
-
-	def test_a_keys_own_rows_replace_the_tiers_on_the_metrics_they_name(self):
-		tier = frappe.get_doc(
-			{
-				"doctype": "Tier",
-				"__newname": "key-tier-merge",
-				"limits": [
-					{"metric": "requests", "window": "1m", "value": 60},
-					{"metric": "requests", "window": "1h", "value": 600},
-					{"metric": "total_tokens", "window": "1m", "value": 100_000},
-				],
-			}
-		).insert()
-		name = team("key-limit-merged", tier=tier.name)
-		pinned = frappe.get_doc(
+		frappe.db.set_single_value("Grove Settings", "default_tier", "")
+		untiered = frappe.get_doc(
 			{
 				"doctype": "Grove API Key",
-				"team": name,
-				"limits": [{"metric": "requests", "window": "1m", "value": 5}],
+				"team": team("key-limit-untiered"),
+				"limits": [{"metric": "total_tokens", "window": "1d", "value": 7}],
 			}
 		).insert()
-		self.assertEqual(projected(pinned.name)["limits"], "requests:1m:5,total_tokens:1m:100000")
-		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 		self.assertEqual(
-			projected(
-				frappe.get_doc(
-					{
-						"doctype": "Grove API Key",
-						"team": team("key-limit-untiered"),
-						"limits": [{"metric": "total_tokens", "window": "1d", "value": 7}],
-					}
-				)
-				.insert()
-				.name
-			)["limits"],
-			"requests:1m:20,total_tokens:1d:7",
+			(projected(untiered.name)["limits"], projected(untiered.name)["key_limits"]),
+			("requests:1m:20,total_tokens:1m:100000", "total_tokens:1d:7"),
 		)
 
-	def test_a_tier_refuses_two_limits_on_one_metric_and_window(self):
+	def test_a_tier_refuses_two_limits_on_one_model_metric_and_window(self):
 		with self.assertRaises(frappe.ValidationError):
 			frappe.get_doc(
 				{
@@ -361,6 +350,22 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 					],
 				}
 			).insert()
+		served = our_model("key-tier-dear").insert()
+		tier = frappe.get_doc(
+			{
+				"doctype": "Tier",
+				"__newname": "key-tier-per-model",
+				"limits": [
+					{"metric": "requests", "window": "1m", "value": 60},
+					{"model_key": served.model_key, "metric": "requests", "window": "1m", "value": 6},
+				],
+			}
+		).insert()
+		dear = frappe.get_doc({"doctype": "Grove API Key", "team": team("key-limit-per-model", tier=tier.name)}).insert()
+		self.assertEqual(projected(dear.name)["limits"], f"requests:1m:60,requests:1m:6:{served.model_key}")
+		tier.append("limits", {"model_key": served.model_key, "metric": "requests", "window": "1m", "value": 7})
+		with self.assertRaisesRegex(frappe.ValidationError, f"for {served.model_key}"):
+			tier.save()
 
 
 class IntegrationTestOneGeographyPerKey(IntegrationTestCase):
@@ -497,36 +502,6 @@ class IntegrationTestCapsFitTheSpendLimit(IntegrationTestCase):
 		doc.cap = 6
 		doc.save()
 		frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 0}).insert()
-
-
-class TestTwoMintsAtTheLimitSerialize(unittest.TestCase):
-	def test_the_team_row_is_locked_and_the_count_is_a_locking_read(self):
-		"""A plain count answers from the transaction's snapshot, so two mints at max_keys - 1 both
-		passed; the lock on the team row holds the second until the first commits, and FOR UPDATE
-		makes its count see that commit."""
-		queries = []
-		doc = SimpleNamespace(team="TEAM-00001")
-		with (
-			unittest.mock.patch.object(
-				grove_api_key, "team_limits", return_value=frappe._dict(max_keys=2)
-			) as limits,
-			unittest.mock.patch.object(
-				frappe, "db", SimpleNamespace(sql=lambda query, values: queries.append(query) or [[2]])
-			),
-			unittest.mock.patch("frappe.throw", side_effect=frappe.ValidationError),
-			self.assertRaises(frappe.ValidationError),
-		):
-			GroveAPIKey.check_key_count(doc)
-		self.assertEqual(limits.call_args, unittest.mock.call("TEAM-00001", for_update=True))
-		self.assertEqual(len(queries), 1)
-		self.assertIn("for update", queries[0].lower())
-
-	def test_no_limit_takes_no_count(self):
-		with (
-			unittest.mock.patch.object(grove_api_key, "team_limits", return_value=frappe._dict(max_keys=0)),
-			unittest.mock.patch.object(frappe, "db", SimpleNamespace()),
-		):
-			GroveAPIKey.check_key_count(SimpleNamespace(team="TEAM-00001"))
 
 
 class IntegrationTestExpiry(IntegrationTestCase):
@@ -701,13 +676,8 @@ class IntegrationTestTransfer(IntegrationTestCase):
 		self.assertEqual(row.title, "site.example.test")
 		self.assertEqual(frappe.db.get_value("Grove API Key", doc.name, "modified"), doc.modified)
 
-	def test_a_full_team_a_title_twin_same_window_and_a_revoked_key_are_refused_and_nothing_moves(self):
-		full = team("key-handover-full", max_keys=1)
-		key(full)
+	def test_a_title_twin_same_window_and_a_revoked_key_are_refused_and_nothing_moves(self):
 		doc = self.trial_key("key-handover-refused")
-		with self.assertRaisesRegex(frappe.ValidationError, "live keys"):
-			doc.transfer(full)
-		doc.reload()
 		taken = team("key-handover-taken")
 		key(taken, title="site.example.test")
 		with self.assertRaises(frappe.UniqueValidationError):
