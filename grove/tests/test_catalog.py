@@ -254,3 +254,28 @@ class TestTheShippedFile(unittest.TestCase):
 		text = seed.CATALOG.read_text()
 		for key in ("api_key", "access_key_id", "published", "endpoint", "fleet_zone", "vpc_id"):
 			self.assertNotIn(f'"{key}"', text)
+
+
+class TestTheCatalogOwnsTierRows(CatalogCase):
+	"""A tier the file names is inserted once; its limit rows follow the file on every load, its
+	spend limit never does once the tier exists."""
+
+	def test_rows_follow_the_file_and_the_spend_limit_stays(self):
+		make_test_geography()
+		rows = [{"metric": "requests", "window": "1m", "value": 60}]
+		self.load(tiers=[{"name": "catalog-tier", "spend_limit": 10, "limits": rows}])
+		doc = frappe.get_doc("Tier", "catalog-tier")
+		self.assertEqual(
+			(doc.spend_limit, [(r.model_key, r.metric, r.window, r.value) for r in doc.limits]),
+			(10, [("", "requests", "1m", 60)]),
+		)
+		doc.spend_limit = 25
+		doc.save()
+		dear = our_model("catalog-dear").insert()
+		named = [*rows, {"model_key": dear.model_key, "metric": "requests", "window": "1m", "value": 6}]
+		self.load(tiers=[{"name": "catalog-tier", "spend_limit": 10, "limits": named}])
+		doc.reload()
+		self.assertEqual(doc.spend_limit, 25)
+		self.assertEqual([(r.model_key, r.value) for r in doc.limits], [("", 60), (dear.model_key, 6)])
+		self.load(tiers=[{"name": "catalog-tier", "spend_limit": 10, "limits": named}])
+		self.assertEqual(frappe.db.get_value("Tier", "catalog-tier", "modified"), doc.modified)

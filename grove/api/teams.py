@@ -27,7 +27,7 @@ def provision_team(team: str):
 	else:
 		doc = frappe.get_doc({"doctype": "Grove Team", "__newname": team})
 	doc.save()
-	return {"team": doc.name, "max_keys": team_limits(doc.name).max_keys}
+	return {"team": doc.name}
 
 
 @frappe.whitelist()

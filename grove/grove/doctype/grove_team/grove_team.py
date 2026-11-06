@@ -30,9 +30,7 @@ class GroveTeam(Document):
 		key_cap_window: DF.Literal["Monthly", "Total"]
 		last_reported_at: DF.Datetime | None
 		log_payloads: DF.Check
-		max_keys: DF.Int
 		model_groups: DF.TableMultiSelect[ModelGroupRow]
-		override_max_keys: DF.Check
 		suspended: DF.Check
 		suspended_at_grove: DF.Check
 		tier: DF.Link | None
@@ -47,8 +45,6 @@ class GroveTeam(Document):
 				self.append("model_groups", {"model_group": group})
 
 	def validate(self):
-		if (self.max_keys or 0) < 0:
-			frappe.throw("Max Keys cannot be negative; 0 is no limit.")
 		# By doc, not key: one vendor key is a doc per geography, allowed in one and denied in another.
 		denied = {row.model for row in self.deny}
 		both = sorted(row.model_key for row in self.allow if row.model in denied)

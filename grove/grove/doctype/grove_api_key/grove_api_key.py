@@ -50,7 +50,6 @@ class GroveAPIKey(Document):
 	# end: auto-generated types
 
 	def before_insert(self):
-		self.check_key_count()
 		# Blank is no title: NULL, which the (team, title) unique index never counts as a twin.
 		self.title = self.title or None
 		full_key = KEY_PREFIX + secrets.token_hex(24)
@@ -60,21 +59,6 @@ class GroveAPIKey(Document):
 		days = EXPIRY_DAYS.get(self.expiry)
 		self.expires_at = add_days(self.creation, days) if days and not self.expiry_from_first_use else None
 		self.set_geography()
-
-	def check_key_count(self):
-		"""Rate limits are per key, so the team's key count is what bounds its throughput. A team with
-		`max_keys` 0 holds as many as it likes. The team row is locked first and the count reads
-		FOR UPDATE, so two mints at the limit serialize and the second sees the first's key rather
-		than the snapshot it started on."""
-		max_keys = team_limits(self.team, for_update=True).max_keys
-		if not max_keys:
-			return
-		active = frappe.db.sql(
-			"select count(*) from `tabGrove API Key` where team = %s and status = 'active' for update",
-			[self.team],
-		)[0][0]
-		if active >= max_keys:
-			frappe.throw(f"This team already holds {active} live keys, its limit. Revoke one first.")
 
 	def set_geography(self):
 		"""One geography per key: blank is the default one."""
@@ -132,8 +116,8 @@ class GroveAPIKey(Document):
 		at 0, refused until capped. `flags.cap_checked` says the caller checked the whole batch
 		(`api.update_caps`, lowers first, so no step passes what the end does not). A team whose
 		Key Cap Window is Total has no spend limit: its caps are for life, so the month binds
-		nothing, and `max_keys` and the revokes bound it instead. The cap before is read without a
-		lock: this decides whether to lock."""
+		nothing, and the revokes bound it instead. The cap before is read without a lock: this
+		decides whether to lock."""
 		if self.status != "active" or self.flags.cap_checked:
 			return False
 		if team_limits(self.team).key_cap_window == "Total":
@@ -147,8 +131,7 @@ class GroveAPIKey(Document):
 		(`pricing.committed`), a key's month being the records or what its box counts, whichever is
 		more (`usage.peek_team`): the hourly pull is up to an hour behind, and a revoked key's
 		counter leaves the box with it. So moving a spent cap to another key, or revoking and
-		minting afresh, frees nothing. The boxes are read here, under the team row and after
-		the key count: a mint refused for its count never dials."""
+		minting afresh, frees nothing. The boxes are read here, under the team row."""
 		from grove.pathway.usage import peek_team
 
 		team = team_limits(self.team, for_update=True)
@@ -179,9 +162,9 @@ class GroveAPIKey(Document):
 	def transfer(self, to_team: str, title: str | None = None):
 		"""Hand this key to `to_team`, titled `title` when given. The trial's rules go with the
 		trial: its own groups are cleared and its expiry lifted (the key is the customer's now, for as
-		long as they keep it), so what it may call is the new team's; cap, geography and limit rows stay. Counted
-		against the new team like a mint: its key count, and the cap within the spend limit of a
-		Monthly team (that check reads the team's boxes, as a mint does; nothing is drained). One
+		long as they keep it), so what it may call is the new team's; cap, geography and its own
+		limit rows stay. Counted against the new team like a mint: the cap within the spend limit of
+		a Monthly team (that check reads the team's boxes, as a mint does; nothing is drained). One
 		save, versioned even under test, so the Version holds the move and the next tick re-pushes
 		team, window and limits — the push at which the box closes the old team's books. A key
 		already here is left as it is. Refused between two teams of one cap window: the box keeps a key's
@@ -198,7 +181,6 @@ class GroveAPIKey(Document):
 			)
 		title = title or self.title
 		old_team, self.team = self.team, to_team
-		self.check_key_count()
 		if window != "Total":
 			self.validate_cap()
 		self.title = title

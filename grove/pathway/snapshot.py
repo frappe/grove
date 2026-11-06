@@ -16,13 +16,13 @@ import json
 import frappe
 
 from grove.access import (
-	effective_limits,
 	group_geographies,
 	group_rows,
 	limit_entries,
 	model_rows,
 	reaching,
 	team_grants,
+	tier_limits,
 )
 from grove.billing.pricing import nano
 from grove.pathway import routes
@@ -44,8 +44,9 @@ def effective_groups():
 def effective_keys(names=None):
 	"""Every LIVE API Key projected for the gateway, with the whole policy the gates read: its
 	team's groups of its geography and its own, and the team's allow/deny that reach it (a model of ours reaches
-	every geography), its geography, its rate limits (its team's tier's, else the defaults,
-	with its own rows replacing the tier's on the metrics they name) and `budget` — its cap, with
+	every geography), its geography, the rate limits it counts under (`limits`, its team's tier's,
+	counted per model for the team as a whole, and `key_limits`, its own, a second gate beneath) and
+	`budget` — its cap, with
 	`budget_window`, what the box counts it over: the UTC month, or everything since the mint (the
 	team's Key Cap Window); the box refuses the key once that reaches the cap. What is the team's
 	rides on each key: `log_payloads`, `limited` — the team is suspended, which refuses every key
@@ -79,9 +80,8 @@ def effective_keys(names=None):
 	memberships = group_rows(team_names)
 	own_groups = group_rows(None if names is None else [k.name for k in keys], "Grove API Key")
 	where = group_geographies()
-	limits = effective_limits(
-		keys, limit_entries("Grove API Key", names), {name: t.tier for name, t in teams.items()}
-	)
+	limits = tier_limits({name: t.tier for name, t in teams.items()})
+	own_limits = limit_entries("Grove API Key", None if names is None else [k.name for k in keys])
 	records = []
 	for k in sorted(keys, key=lambda k: k.key_hash or ""):
 		team = teams.get(k.team)
@@ -111,13 +111,21 @@ def effective_keys(names=None):
 				"budget": nano(k.cap or 0),
 				"budget_window": "total" if team.key_cap_window == "Total" else "month",
 				"cap_message": team.cap_message or "",
-				# Blank when none: the box merges fields, so leaving it out would keep a removed limit in force.
-				"limits": ",".join(
-					f"{r['metric']}:{r['window']}:{r['value']}" for r in limits.get(k.name, [])
-				),
+				# Blank when none: the box merges fields, so leaving one out would keep a removed limit in force.
+				"limits": wire_limits(limits.get(k.team, [])),
+				"key_limits": wire_limits(own_limits.get(k.name, [])),
 			}
 		)
 	return records
+
+
+def wire_limits(rows):
+	"""The comma list the gateway reads: `metric:window:value`, the model key last when the row
+	names one, so a key holding a colon still splits on the box."""
+	return ",".join(
+		f"{r['metric']}:{r['window']}:{r['value']}" + (f":{r['model_key']}" if r["model_key"] else "")
+		for r in rows
+	)
 
 
 def dirty_buckets(since):
