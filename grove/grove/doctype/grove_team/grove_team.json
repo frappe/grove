@@ -85,7 +85,7 @@
    "set_only_once": 1
   },
   {
-   "description": "What the gateway answers (402) once a key's cap is spent, in place of its own 'credit balance exhausted'. Blank keeps the default. Pushed on every key of the team; a suspended team's keys keep the default.",
+   "description": "What the gateway answers (402) once a key's cap is spent, in place of its own 'key credits exhausted'. Blank keeps the default. Pushed on every key of the team; a suspended team's keys keep the default.",
    "fieldname": "cap_message",
    "fieldtype": "Small Text",
    "label": "Cap Reached Message"
