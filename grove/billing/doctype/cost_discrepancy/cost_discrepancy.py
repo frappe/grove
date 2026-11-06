@@ -23,10 +23,10 @@ class CostDiscrepancy(Document):
 		from frappe.types import DF
 
 		api_key: DF.Link | None
-		delta: DF.Currency
+		delta: DF.Float
 		gateway_store: DF.Link | None
-		gateway_value: DF.Currency
-		grove_value: DF.Currency
+		gateway_value: DF.Float
+		grove_value: DF.Float
 		note: DF.SmallText | None
 		pricing: DF.Link | None
 		resolution: DF.Literal["", "Grove corrected", "Gateway corrected"]

@@ -75,7 +75,7 @@
   {
    "description": "USD the key's charge moved by: positive where Grove had undercharged, negative where it had overcharged.",
    "fieldname": "cost",
-   "fieldtype": "Currency",
+   "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Cost",
    "precision": "9",

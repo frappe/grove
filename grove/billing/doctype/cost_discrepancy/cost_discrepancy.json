@@ -89,7 +89,7 @@
   {
    "description": "What the gateway charged at this pricing.",
    "fieldname": "gateway_value",
-   "fieldtype": "Currency",
+   "fieldtype": "Float",
    "label": "Gateway Cost",
    "precision": "9",
    "read_only": 1
@@ -97,7 +97,7 @@
   {
    "description": "Grove's price of the same counters at the same pricing.",
    "fieldname": "grove_value",
-   "fieldtype": "Currency",
+   "fieldtype": "Float",
    "label": "Grove Cost",
    "precision": "9",
    "read_only": 1
@@ -105,7 +105,7 @@
   {
    "description": "Gateway minus Grove.",
    "fieldname": "delta",
-   "fieldtype": "Currency",
+   "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Delta",
    "precision": "9",
