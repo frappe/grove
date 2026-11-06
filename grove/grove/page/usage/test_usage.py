@@ -38,7 +38,6 @@ class TestUsagePage(IntegrationTestCase):
 				{
 					"doctype": "Tier",
 					"__newname": "_T-usage-tier",
-					"max_keys": 5,
 					"spend_limit": 100,
 					"limits": [{"metric": "requests", "window": "1m", "value": 60}],
 				}
@@ -165,12 +164,11 @@ class TestUsagePage(IntegrationTestCase):
 			(
 				row["tier"],
 				row["keys_live"],
-				row["max_keys"],
 				row["spend_limit"],
 				row["last_used"],
 				row["cost"],
 			),
-			(self.tier, 1, 5, 100.0, str(self.today), 3.5),
+			(self.tier, 1, 100.0, str(self.today), 3.5),
 		)
 		self.assertEqual(row["month_spent"], expected)
 		self.assertGreaterEqual(row["committed"], 10.0)
@@ -182,7 +180,7 @@ class TestUsagePage(IntegrationTestCase):
 			(live["status"], live["last_used"], live["team"]), ("active", str(self.today), self.team)
 		)
 		self.assertEqual(live["cap_pct"], round(live["month_spent"] / 10 * 100, 1))
-		self.assertEqual(live["limits"], [{"metric": "requests", "window": "1m", "value": 60}])
+		self.assertEqual(live["limits"], [], "the key's own rows, not its tier's")
 		self.assertEqual((revoked["status"], revoked["cap_pct"]), ("revoked", None))
 		self.assertEqual([row["status"] for row in usage.keys(self.filters())], ["active", "revoked"])
 		self.assertEqual(usage.keys(self.filters(geography=self.other_geography)), [])

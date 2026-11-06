@@ -103,13 +103,16 @@ const COLUMNS = [
 ];
 const METRIC = { requests: "R", total_tokens: "T" };
 const WINDOW = { "1m": "PM", "1h": "PH", "1d": "PD", "1M": "PMo" };
+// The key's own rows; a row naming a model shows the model's id.
 const chips = (limits) =>
 	(limits || []).map((limit) => ({
-		key: `${limit.metric}:${limit.window}`,
+		key: `${limit.model_key}:${limit.metric}:${limit.window}`,
 		label: `${compact(limit.value)} ${METRIC[limit.metric] || limit.metric}${
 			WINDOW[limit.window] || ""
+		}${limit.model_key ? ` ${limit.model_key.split("/").pop()}` : ""}`,
+		text: `${count(limit.value)} ${limit.metric} per ${limit.window} on ${
+			limit.model_key || "every model"
 		}`,
-		text: `${count(limit.value)} ${limit.metric} per ${limit.window}`,
 	}));
 
 const hops = (transfers) =>

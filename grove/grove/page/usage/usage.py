@@ -251,7 +251,6 @@ def teams(filters: dict | str | None = None) -> list[dict]:
 				"suspended": bool(team.suspended),
 				"key_cap_window": team.key_cap_window or "Monthly",
 				"keys_live": live.get(team.name, 0),
-				"max_keys": limits.max_keys,
 				"month_spent": flt(spent.get(team.name, 0), 9),
 				"spend_limit": None if team.key_cap_window == "Total" else flt(limits.spend_limit, 9),
 				# ponytail: two queries a team; one grouped read past ~200 teams.

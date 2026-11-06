@@ -49,7 +49,6 @@ class GroveAPIKey(Document):
 	# end: auto-generated types
 
 	def before_insert(self):
-		self.check_key_count()
 		# Blank is no title: NULL, which the (title, team) unique index never counts as a twin.
 		self.title = self.title or None
 		full_key = KEY_PREFIX + secrets.token_hex(24)
@@ -59,20 +58,6 @@ class GroveAPIKey(Document):
 		days = EXPIRY_DAYS.get(self.expiry)
 		self.expires_at = add_days(self.creation, days) if days and not self.expiry_from_first_use else None
 		self.set_geography()
-
-	def check_key_count(self):
-		"""Rate limits are per key, so the team's key count is what bounds its throughput. The team row
-		is locked first and the count reads FOR UPDATE, so two mints at the limit serialize and the
-		second sees the first's key rather than the snapshot it started on."""
-		max_keys = team_limits(self.team, for_update=True).max_keys
-		if not max_keys:
-			return
-		active = frappe.db.sql(
-			"select count(*) from `tabGrove API Key` where team = %s and status = 'active' for update",
-			[self.team],
-		)[0][0]
-		if active >= max_keys:
-			frappe.throw(f"This team already holds {active} live keys, its limit. Revoke one first.")
 
 	def set_geography(self):
 		"""One geography per key: blank is the default one."""
@@ -142,8 +127,7 @@ class GroveAPIKey(Document):
 		"""A raise or a mint keeps what the month binds of the team's spend limit within it: each
 		live key's cap or what it spent this month, whichever is more, plus what revoked keys spent
 		(`pricing.committed`). So moving a spent cap to another key, or revoking and minting afresh,
-		frees nothing. The boxes are read here, under the team row and after the key count: a mint
-		refused for its count never dials."""
+		frees nothing. The boxes are read here, under the team row."""
 		from grove.pathway.usage import peek_team
 
 		team = team_limits(self.team, for_update=True)
@@ -181,7 +165,6 @@ class GroveAPIKey(Document):
 		title = title or self.title
 		old_team, old_title = self.team, self.title
 		self.team = to_team
-		self.check_key_count()
 		if window != "Total":
 			self.validate_cap()
 		self.title = title

@@ -189,10 +189,6 @@ def key_rows(names):
 
 
 def limit_rows_of(names):
-	from grove.access import effective_limits, limit_entries
+	from grove.access import limit_entries
 
-	keys = frappe.get_list("Grove API Key", filters={"name": ("in", names)}, fields=["name", "team"])
-	tiers = frappe.get_list(
-		"Grove Team", filters={"name": ("in", [k.team for k in keys] or [""])}, fields=["name", "tier"]
-	)
-	return effective_limits(keys, limit_entries("Grove API Key", names), {t.name: t.tier for t in tiers})
+	return limit_entries("Grove API Key", names)

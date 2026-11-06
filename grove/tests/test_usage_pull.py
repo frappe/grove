@@ -83,8 +83,6 @@ class PullCase(IntegrationTestCase):
 				{
 					"doctype": "Grove Team",
 					"__newname": email,
-					"override_max_keys": 1,
-					"max_keys": 0,
 				}
 			)
 			.insert(ignore_permissions=True)

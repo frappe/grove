@@ -44,11 +44,8 @@ def write(path=None):
 
 def get_tiers():
 	rows = limit_entries("Tier")
-	tiers = frappe.get_all("Tier", fields=["name", "max_keys", "spend_limit"], order_by="name")
-	return [
-		{"name": t.name, "max_keys": t.max_keys, "spend_limit": t.spend_limit, "limits": rows.get(t.name, [])}
-		for t in tiers
-	]
+	tiers = frappe.get_all("Tier", fields=["name", "spend_limit"], order_by="name")
+	return [{"name": t.name, "spend_limit": t.spend_limit, "limits": rows.get(t.name, [])} for t in tiers]
 
 
 def get_counters():

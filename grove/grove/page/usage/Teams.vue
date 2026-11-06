@@ -82,8 +82,7 @@ const open = (row) => host.navigate?.(["Form", "Grove Team", row.team]);
 						</ListCell>
 						<ListCell :class="CELL">{{ item.tier || "(default)" }}</ListCell>
 						<ListCell :class="NUM">
-							{{ item.keys_live
-							}}<span class="text-ink-gray-5">/{{ item.max_keys || "∞" }}</span>
+							{{ item.keys_live }}
 						</ListCell>
 						<ListCell class="flex-col !items-start justify-center gap-1">
 							<span class="text-sm tabular-nums text-ink-gray-5">
