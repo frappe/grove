@@ -285,11 +285,14 @@ class PathwayHost(FleetHost):
 
 	@property
 	def config_variables(self):
-		"""What config.json renders: the fleet's tuning, and whether this box is in maintenance. Every
-		play that writes the file passes it, so a deploy never flips maintenance."""
+		"""What config.json renders: the fleet's tuning, whether this box is in maintenance, and on a
+		gateway whether its caches are isolated. Every play that writes the file passes both, so a
+		deploy never flips either."""
 		return {
 			**frappe.get_single("Grove Settings").gateway_variables,
 			"gateway_maintenance": bool(self.is_in_maintenance),
+			# A Gateway Server field; an ingress runs no transform and has none.
+			"isolate_caches": bool(self.get("isolate_caches")),
 		}
 
 	@frappe.whitelist()

@@ -170,6 +170,26 @@ frappe.ui.form.on("Gateway Server", {
 				},
 				__("Gateway")
 			);
+
+			const isolate = !frm.doc.isolate_caches;
+			frm.add_custom_button(
+				isolate ? __("Isolate Caches") : __("Share Caches"),
+				() => {
+					frappe.confirm(
+						isolate
+							? __(
+									"Every team gets its own prompt-cache partition on {0}: cache_salt on an engine, prompt_cache_key at OpenAI, user_id at DeepSeek. No cache hits across teams.",
+									[frm.doc.name]
+							  )
+							: __("Teams share one prompt cache on {0} again.", [frm.doc.name]),
+						() =>
+							frm
+								.call("set_isolate_caches", { on: isolate ? 1 : 0 })
+								.then(() => frm.reload_doc())
+					);
+				},
+				__("Gateway")
+			);
 		}
 		if (frm.doc.is_in_maintenance) {
 			frm.set_intro(__("In maintenance — new requests get 503."), "orange");

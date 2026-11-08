@@ -16,6 +16,7 @@
   "is_static_ip",
   "column_break_admin",
   "is_in_maintenance",
+  "isolate_caches",
   "admin_url",
   "admin_token",
   "agent_version",
@@ -142,6 +143,15 @@
    "read_only": 1
   },
   {
+   "default": "0",
+   "description": "Every team gets its own prompt-cache partition on this box: cache_salt on an engine, prompt_cache_key at OpenAI, user_id at DeepSeek. No cache hits across teams. Written to config.json and applied with SIGUSR1, so it survives a restart. Isolate/Share Caches under Gateway.",
+   "fieldname": "isolate_caches",
+   "fieldtype": "Check",
+   "in_standard_filter": 1,
+   "label": "Isolate Caches",
+   "read_only": 1
+  },
+  {
    "description": "pathway's memory cap in MB, as the box last took it. 0: the box's RAM less 512 MB. Update Memory Limit under Gateway.",
    "fieldname": "memory_limit_mb",
    "fieldtype": "Int",
@@ -203,7 +213,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-27 02:30:45.766290",
+ "modified": "2026-11-04 01:33:12.711621",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Gateway Server",

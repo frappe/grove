@@ -55,6 +55,7 @@ KNOWN_TUNABLES = {
 	"lame_duck",
 	"upgrade_timeout",
 	"maintenance",
+	"isolate_caches",
 	"usage_retention",
 }
 
