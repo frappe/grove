@@ -21,13 +21,12 @@ sources:
   vector_self:
     type: internal_metrics
     scrape_interval_secs: {{ vector_metrics_interval_seconds }}
-  journal:
-    type: journald
-    current_boot_only: true
   files:
     type: file
     include: {{ vector_log_files | tojson }}
     ignore_older_secs: 86400
+    # A payload line tops Vector's 100 KiB default and would be dropped whole; the remap cuts it to 8 KiB after.
+    max_line_bytes: {{ vector_log_max_line_bytes }}
 
 transforms:
   labelled_metrics:
@@ -40,25 +39,18 @@ transforms:
   # datum's line: ts, product, service, level, source, message (8 KiB at most), attributes. Nothing else.
   datum_lines:
     type: remap
-    inputs: [journal, files]
+    inputs: [files]
     source: |
-      if .source_type == "journald" {
-        service = string(._SYSTEMD_UNIT) ?? "journal"
-        source = "journald"
-        level = to_syslog_level(to_int(.PRIORITY) ?? 6) ?? "info"
-      } else {
-        parts = split(string!(.file), "/")
-        service = parts[-2]
-        source = parts[-1]
-        level = if source == "error.log" { "error" } else { "info" }
-      }
+      parts = split(string!(.file), "/")
+      source = parts[-1]
+      level = if source == "error.log" { "error" } else { "info" }
       message = string(.message) ?? ""
       message = truncate(message, 8000)
       if length(message) > 8192 { message = truncate(message, 2048) }
       . = {
         "ts": format_timestamp!(.timestamp, "%+"),
         "product": "grove",
-        "service": service,
+        "service": parts[-2],
         "level": level,
         "source": source,
         "message": message,

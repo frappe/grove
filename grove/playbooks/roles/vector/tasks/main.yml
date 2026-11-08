@@ -11,11 +11,11 @@
     deb: "https://github.com/vectordotdev/vector/releases/download/v{{ vector_version }}/vector_{{ vector_version }}-1_{{ monitoring_arch }}.deb"
   notify: restart vector
 
-# The deb's unit runs Vector as `vector`; the logs are 0640 to the grove user's group, the journal to systemd-journal.
-- name: Let vector read the logs and the journal
+# The deb's unit runs Vector as `vector`; pathway's logs are 0640 to the grove user's group, redis's to adm.
+- name: Let vector read the logs
   ansible.builtin.user:
     name: vector
-    groups: ["{{ grove_user }}", systemd-journal]
+    groups: ["{{ grove_user }}", adm]
     append: true
   notify: restart vector
 

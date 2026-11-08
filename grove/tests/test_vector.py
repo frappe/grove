@@ -79,6 +79,8 @@ class TestTheConfig(unittest.TestCase):
 		include = config()["sources"]["files"]["include"]
 		self.assertEqual(DEFAULTS["vector_log_files"], include)
 		self.assertIn("/var/log/pathway/*.log", include)
+		# A payload line runs past Vector's 100 KiB default, which drops the line whole.
+		self.assertGreater(config()["sources"]["files"]["max_line_bytes"], 102400)
 
 	def test_host_metrics_are_a_switch_and_vectors_own_health_is_not(self):
 		on = config(vector_ship_host_metrics=True)
@@ -147,9 +149,9 @@ class TestThePlayAndRole(unittest.TestCase):
 		self.assertTrue(task["no_log"])
 		self.assertEqual({"owner": "root", "group": "vector", "mode": "0640"}, {k: task["ansible.builtin.template"][k] for k in ("owner", "group", "mode")})
 
-	def test_vector_is_let_into_the_log_and_journal_groups(self):
-		groups = role_task("Let vector read the logs and the journal")["ansible.builtin.user"]["groups"]
-		self.assertEqual(["{{ grove_user }}", "systemd-journal"], groups)
+	def test_vector_is_let_into_the_log_groups(self):
+		groups = role_task("Let vector read the logs")["ansible.builtin.user"]["groups"]
+		self.assertEqual(["{{ grove_user }}", "adm"], groups)
 
 
 class FakeHost(SimpleNamespace):

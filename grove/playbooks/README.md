@@ -147,10 +147,10 @@ auth middleware covers `/v1`, not `/metrics`.
 Every Gateway Server, Gateway Store and Ingress Server runs Vector (`monitoring_agent/vector.yml`, shared role
 `roles/vector`, pinned deb, the package's own unit). It pushes to **datum**, the write door in front of
 ClickHouse, at the two routes its Region's Monitoring tab names: `host_metrics` plus Vector's own
-`internal_metrics` by Prometheus remote write (`Metrics Endpoint`), and journald plus every
+`internal_metrics` by Prometheus remote write (`Metrics Endpoint`), and every
 `/var/log/pathway/*.log` (`payload.log` included — the box's 7-day rotation is not the retention
-story any more, datum's is) and `/var/log/redis/*.log` as datum log lines (`Logs Endpoint`: `ts`,
-`product: grove`, `service` = unit or log directory, `level`, `source` = file or `journald`, `message`
+story any more, datum's is; its lines run past Vector's 100 KiB default, so the file source reads up to 4 MiB a line) and `/var/log/redis/*.log` (Vector sits in `adm` for them) as datum log lines (`Logs Endpoint`: `ts`,
+`product: grove`, `service` = log directory, `level`, `source` = file name, `message`
 cut at 8 KiB, `attributes` = `host`, `server`, `machine`, `region`). Batches stay under datum's 10,000
 cap, sink healthchecks are off (datum answers 405 to a GET), and each sink keeps a disk buffer because
 datum buffers nothing. Host metrics arrive as `host_*` series, not node_exporter's `node_*`. On a Gateway
