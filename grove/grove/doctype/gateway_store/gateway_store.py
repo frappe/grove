@@ -79,11 +79,7 @@ class GatewayStore(NamedHost, Document):
 
 	@property
 	def archive_blockers(self):
-		gateways = frappe.get_all(
-			"Gateway Server",
-			filters={"gateway_store": self.name, "status": ("!=", "Terminated")},
-			pluck="name",
-		)
+		gateways = gateways_on(self.name, status=("!=", "Terminated"))
 		if not gateways:
 			return []
 		return [f"Gateways still run on this store: {', '.join(gateways)}."]
@@ -208,6 +204,16 @@ def stores_in(network, **filters):
 	if not boxes:
 		return []
 	return frappe.get_all("Gateway Store", filters={"machine": ("in", boxes), **filters}, pluck="name")
+
+
+def gateways_on(store, **filters):
+	"""The gateways running on `store` — Active ones unless `filters` says otherwise."""
+	return frappe.get_all(
+		"Gateway Server",
+		filters={"gateway_store": store, "status": "Active", **filters},
+		order_by="name asc",
+		pluck="name",
+	)
 
 
 def store_writers(store):

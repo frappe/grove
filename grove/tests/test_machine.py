@@ -24,12 +24,17 @@ class FakeEC2:
 	"""Stands in for the boto3 client. Each describe_* answers from a queue, so a test can say
 	"initializing, then initializing, then ok" and assert what the poll did in between."""
 
-	def __init__(self, instances=None, statuses=None, types=None, images=None):
+	def __init__(
+		self, instances=None, statuses=None, types=None, images=None, type_pages=None, offerings=None
+	):
 		self.instances = list(instances or [])
 		self.statuses = list(statuses or [])
 		self.types = types or {}
 		self.images = images or {}
+		self.type_pages = list(type_pages or [])
+		self.offerings = list(offerings or [])
 		self.status_calls = 0
+		self.type_calls = []
 
 	def _next(self, queue):
 		return queue.pop(0) if len(queue) > 1 else queue[0]
@@ -43,7 +48,14 @@ class FakeEC2:
 		return {"InstanceStatuses": self._next(self.statuses)}
 
 	def describe_instance_types(self, **kwargs):
+		self.type_calls.append(kwargs)
+		if self.type_pages:
+			return self.type_pages.pop(0)
 		return {"InstanceTypes": [self.types]} if self.types else {"InstanceTypes": []}
+
+	def describe_instance_type_offerings(self, **kwargs):
+		self.offering_kwargs = kwargs
+		return {"InstanceTypeOfferings": [{"InstanceType": t} for t in self.offerings]}
 
 	def describe_images(self, **kwargs):
 		return {"Images": [self.images]} if self.images else {"Images": []}
@@ -77,6 +89,49 @@ def status(system="ok", box="ok"):
 	return [{"SystemStatus": {"Status": system}, "InstanceStatus": {"Status": box}}]
 
 
+def size(instance_type, vcpus, memory_mib):
+	return {
+		"InstanceType": instance_type,
+		"VCpuInfo": {"DefaultVCpus": vcpus},
+		"MemoryInfo": {"SizeInMiB": memory_mib},
+	}
+
+
+class TestListInstanceTypes(unittest.TestCase):
+	def test_asks_in_aws_words_walks_every_page_and_sorts_smallest_first(self):
+		ec2 = client(
+			type_pages=[
+				{"InstanceTypes": [size("m6i.xlarge", 4, 16384)], "NextToken": "page-2"},
+				{"InstanceTypes": [size("t3.medium", 2, 4096)]},
+			]
+		)
+		types = ec2.list_instance_types("amd64")
+		self.assertEqual([t["instance_type"] for t in types], ["t3.medium", "m6i.xlarge"])
+		first, second = ec2.ec2.type_calls
+		self.assertIn(
+			{"Name": "processor-info.supported-architecture", "Values": ["x86_64"]}, first["Filters"]
+		)
+		self.assertIn({"Name": "bare-metal", "Values": ["false"]}, first["Filters"])
+		self.assertNotIn("NextToken", first)
+		self.assertEqual(second["NextToken"], "page-2")
+
+	def test_a_zone_keeps_only_the_types_offered_there(self):
+		ec2 = client(
+			type_pages=[{"InstanceTypes": [size("t4g.medium", 2, 4096), size("m7g.xlarge", 4, 16384)]}],
+			offerings=["t4g.medium"],
+		)
+		types = ec2.list_instance_types("arm64", "ap-south-1a")
+		self.assertEqual([t["instance_type"] for t in types], ["t4g.medium"])
+		self.assertEqual(ec2.ec2.offering_kwargs["LocationType"], "availability-zone")
+		self.assertEqual(
+			ec2.ec2.offering_kwargs["Filters"], [{"Name": "location", "Values": ["ap-south-1a"]}]
+		)
+		self.assertIn(
+			{"Name": "processor-info.supported-architecture", "Values": ["arm64"]},
+			ec2.ec2.type_calls[0]["Filters"],
+		)
+
+
 class TestInstanceTypeFacts(unittest.TestCase):
 	def test_bare_metal_and_architecture_come_off_the_type(self):
 		info = client(
@@ -84,6 +139,20 @@ class TestInstanceTypeFacts(unittest.TestCase):
 		).get_instance_type_info("g4dn.metal")
 		self.assertTrue(info["is_bare_metal"])
 		self.assertEqual(info["cpu_architecture"], "amd64")
+
+	def test_ram_comes_off_the_type_and_a_type_without_it_reads_zero(self):
+		self.assertEqual(
+			client(types={"MemoryInfo": {"SizeInMiB": 16384}}).get_instance_type_info("m7g.xlarge")[
+				"memory_mb"
+			],
+			16384,
+		)
+		self.assertEqual(client(types={"BareMetal": False}).get_instance_type_info("x")["memory_mb"], 0)
+
+	def test_vcpus_come_off_the_type(self):
+		self.assertEqual(
+			client(types=size("m6i.xlarge", 4, 16384)).get_instance_type_info("m6i.xlarge")["vcpus"], 4
+		)
 
 	def test_a_virtualized_arm_type_reads_as_neither_metal_nor_amd64(self):
 		info = client(types={"ProcessorInfo": {"SupportedArchitectures": ["arm64"]}}).get_instance_type_info(

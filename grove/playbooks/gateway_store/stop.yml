@@ -1,0 +1,12 @@
+---
+# Stop redis before its box is stopped: SIGTERM saves the RDB and fsyncs the AOF, and the unit is
+# enabled, so it comes back on boot. Not `redis-cli SHUTDOWN`: the packaged unit has Restart=always.
+- hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: redis stopped
+      ansible.builtin.systemd:
+        name: redis-server
+        state: stopped

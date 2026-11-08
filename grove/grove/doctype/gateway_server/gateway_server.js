@@ -102,6 +102,7 @@ frappe.ui.form.on("Gateway Server", {
 		}
 
 		if (frm.doc.status !== "Terminated") {
+			frm.add_custom_button(__("Resize Server"), () => grove.prompt_resize(frm), __("Danger"));
 			frm.add_custom_button(
 				__("Archive"),
 				() => {

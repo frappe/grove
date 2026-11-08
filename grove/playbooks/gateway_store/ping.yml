@@ -1,0 +1,16 @@
+---
+# Wait for the store's redis to answer PONG after a start. extra-vars: redis_password.
+- hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: redis answers
+      ansible.builtin.command: redis-cli ping
+      # redis-cli sends AUTH whenever REDISCLI_AUTH exists, so a blank password must set nothing.
+      environment: "{{ {'REDISCLI_AUTH': redis_password} if redis_password | default('') else {} }}"
+      register: redis_ping
+      until: redis_ping.stdout | trim == "PONG"
+      retries: 30
+      delay: 2
+      changed_when: false

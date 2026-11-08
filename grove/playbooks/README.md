@@ -6,12 +6,12 @@ against. `grove.utils.ansible_project_dir("Gateway Server")` is literally
 
 ```
 playbooks/
-  gateway_server/     gateway.yml  deploy_agent.yml  deploy_tls.yml  retire_exporter.yml  config.yml   + config.json.j2, systemd/
+  gateway_server/     gateway.yml  deploy_agent.yml  deploy_tls.yml  retire_exporter.yml  config.yml  memory.yml  stop.yml   + config.json.j2, systemd/
   ingress_server/     ingress.yml  deploy_agent.yml  config.yml
   inference_server/   provision.yml  serve.yml  reconfigure.yml  container_state.yml  teardown.yml  deploy_tls.yml
   machine/            ping.yml  grow_root.yml  scan_gpus.yml     — box-level, no role layered on yet
   monitoring_agent/   agent.yml  config.yml  exporters.yml  push_targets.yml  vector.yml
-  gateway_store/      store.yml  restore.yml     — Redis only, shared by a Network's gateways; restore.yml loads a backup through a side Redis + REPLICAOF
+  gateway_store/      store.yml  restore.yml  stop.yml  ping.yml     — Redis only, shared by a Network's gateways; restore.yml loads a backup through a side Redis + REPLICAOF
   roles/              grove_user  remove_cloud_user  auditd  dcgm_exporter  node_exporter  fleet_tls  grove_https  install_gateway_agent  openresty  redis  redis_exporter  pathway_memory  vector
 ```
 
@@ -88,7 +88,9 @@ not what buttons call — it has no Frappe tracking.)
   too; on a live box the button runs `gateway_server/memory.yml` (Ingress Servers too), and the doc
   records the limit only once the play succeeds. The same file sets `GOMEMLIMIT` to 90% of the cap.
   `MemoryMax` lands on the running process at the `daemon-reload`; `GOMEMLIMIT` is environment, so
-  it is read at pathway's next restart, which the role never causes.
+  it is read at pathway's next restart, which the role causes only when passed
+  `pathway_memory_restart: true` — Resize Server does, on a box in maintenance with nothing in
+  flight, because its RAM just changed.
 - **Non-fatal cleanup is guarded, not assumed.** Stopping OpenResty on a box that never had it uses
   `failed_when: false`.
 - **The binary is downloaded, never compiled.** The agent lives in its own repo; `install_gateway_agent`
@@ -97,6 +99,16 @@ not what buttons call — it has no Frappe tracking.)
   `scripts/dev_deploy_pathway.py` builds a pathway working tree into `<bench>/builds/` and ships it to
   one Gateway Server through the same play. `agent_version` still records the pinned release, and the
   next Deploy Agent or Setup puts that release back.
+
+## Resizing a box
+
+`Server Resize` (see `doctype/README.md`) runs the plays around a Machine stop/start. The two
+`stop.yml`s stop the service through systemd — pathway's SIGTERM drains, redis's saves the RDB and
+fsyncs the AOF — so the box is stopped idle and AWS's graceful-stop timer never races a drain. Neither
+is `redis-cli SHUTDOWN`: the packaged unit has `Restart=always`. Both units are enabled and come back
+on boot; `gateway_store/ping.yml` is the wait for redis to answer, `redis-cli ping` until `PONG`.
+Pathway holds no usage to flush: each request lands in the store as it ends, or on the box's disk
+spool when the store refuses.
 
 ## Restoring a Gateway Store
 

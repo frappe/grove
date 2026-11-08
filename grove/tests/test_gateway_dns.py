@@ -48,6 +48,7 @@ class FakeRoute53:
 		self.batches = []
 		self.health_checks = []
 		self.deleted_health_checks = []
+		self.updated_health_checks = []
 		self.calls = []
 		self.errors = {}
 
@@ -75,6 +76,11 @@ class FakeRoute53:
 	def delete_health_check(self, **kwargs):
 		self._maybe_fail("delete_health_check")
 		self.deleted_health_checks.append(kwargs["HealthCheckId"])
+		return {}
+
+	def update_health_check(self, **kwargs):
+		self._maybe_fail("update_health_check")
+		self.updated_health_checks.append(kwargs)
 		return {}
 
 	def get_paginator(self, _operation):
@@ -340,9 +346,13 @@ class TestSyncingABox(unittest.TestCase):
 			rows(fake.batches[0])[(GATEWAY_HOST, "gw1-ap-south-1")]["ResourceRecordSet"]["HealthCheckId"],
 		)
 
-	def test_a_check_it_already_has_is_reused(self):
-		fake, _ = self.sync(health_check_id="hc-7")
-		self.assertEqual(["change_resource_record_sets"], fake.calls)
+	def test_a_check_it_already_has_is_moved_to_its_address_not_recreated(self):
+		"""A box back from a stop on a new IP keeps its check; left alone, the check would go on
+		probing the old address and the row would never drop out when the box dies."""
+		fake, doc = self.sync(health_check_id="hc-7")
+		self.assertEqual(["update_health_check", "change_resource_record_sets"], fake.calls)
+		self.assertEqual([{"HealthCheckId": "hc-7", "IPAddress": "203.0.113.7"}], fake.updated_health_checks)
+		self.assertEqual("hc-7", doc.health_check_id)
 
 	def test_the_box_joins_its_geographys_endpoint(self):
 		fake, _ = self.sync()

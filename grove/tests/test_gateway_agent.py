@@ -504,6 +504,38 @@ class TestMaintenanceIsHeldInConfigJson(unittest.TestCase):
 		with self.assertRaises(frappe.ValidationError):
 			self.applied(box_says=False)
 
+	def test_a_read_that_does_not_connect_is_asked_again(self):
+		import requests
+
+		answers = Mock(
+			side_effect=[requests.ConnectTimeout("dropped"), {"maintenance": True, "in_flight": 0}]
+		)
+		doc = fake_gateway(is_in_maintenance=1, get_in_flight=answers)
+		doc.run_playbook = Mock(return_value=("play-1", 0))
+		with (
+			patch("frappe.get_single", return_value=SETTINGS),
+			patch("grove.fleet.time.sleep"),
+		):
+			self.assertEqual(("play-1", 0), GatewayServer.apply_config(doc))
+		self.assertEqual(2, answers.call_count)
+
+	def test_a_box_that_never_answers_is_an_error_naming_that(self):
+		import requests
+
+		doc = fake_gateway(
+			is_in_maintenance=1, get_in_flight=Mock(side_effect=requests.ConnectTimeout("dropped"))
+		)
+		doc.run_playbook = Mock(return_value=("play-1", 0))
+		with (
+			patch("frappe.get_single", return_value=SETTINGS),
+			patch("frappe.throw", side_effect=frappe.ValidationError) as throw,
+			patch("grove.fleet.time.sleep"),
+			patch("grove.failure.report"),
+			self.assertRaises(frappe.ValidationError),
+		):
+			GatewayServer.apply_config(doc)
+		self.assertIn("did not answer", throw.call_args.args[0])
+
 	def test_a_failed_play_is_an_error(self):
 		with self.assertRaises(frappe.ValidationError):
 			self.applied(box_says=True, rc=2)

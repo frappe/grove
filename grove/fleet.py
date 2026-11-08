@@ -22,6 +22,13 @@ from grove.pathway.run import Target
 from grove.server import Server
 from grove.tls import dns_credentials
 
+INSTANCE_TYPES_TTL_SEC = 6 * 3600
+
+
+def instance_size(info):
+	"""'2 vCPU · 8 GiB' off a type's facts, as a form shows it."""
+	return f"{info['vcpus']} vCPU · {info['memory_mb'] / 1024:g} GiB"
+
 
 def gateway_agent_version():
 	"""The pathway release every box runs. A setting rather than a constant: the agent lives in its
@@ -120,6 +127,46 @@ class NamedHost(Server):
 			if e.code != "InvalidChangeBatch":
 				raise
 			return None
+
+	@frappe.whitelist()
+	def resize_options(self):
+		"""What a Server Resize form shows: this box's type with its size, and the types it can
+		move to — same architecture, virtualised, current generation, offered in its zone, no GPUs
+		(a gateway or store has no use for one). The list is cached six hours per provider, region,
+		architecture and zone: 400-odd types over several pages, changing slower than a form opens.
+		The current type is read live. The insert check still has the last word."""
+		machine = frappe.get_doc("Machine", self.machine)
+		machine.require_instance()
+		client = machine.cloud_client
+		network = machine.network_doc
+		zone = network.availability_zone if network else ""
+		key = (
+			f"instance_types:{machine.cloud_provider}:{machine.region_code}:{machine.cpu_architecture}:{zone}"
+		)
+		options = frappe.cache.get_value(key, expires=True)
+		if options is None:
+			options = client.list_instance_types(machine.cpu_architecture, zone)
+			frappe.cache.set_value(key, options, expires_in_sec=INSTANCE_TYPES_TTL_SEC)
+		current = client.get_instance_type_info(machine.instance_type)
+		return {
+			"current": {**current, "size": instance_size(current)},
+			"options": [
+				{**t, "size": instance_size(t)}
+				for t in options
+				if not t["gpus"] and t["instance_type"] != machine.instance_type
+			],
+		}
+
+	@frappe.whitelist()
+	def resize(self, instance_type: str):
+		"""Button: a Server Resize that moves this box onto another instance type — drained,
+		stopped, retyped, started and checked, one step per job — ready to Start from its form.
+		Gateway Server and Gateway Store."""
+		from grove.grove.doctype.server_resize.server_resize import ServerResize
+
+		name = ServerResize.create(self, instance_type)
+		frappe.msgprint(f"Server Resize {name} is ready — Start it there.", alert=True)
+		return name
 
 	@frappe.whitelist()
 	def install_vector(self):
@@ -274,17 +321,25 @@ class PathwayHost(FleetHost):
 		frappe.msgprint(f"{'Starting' if on else 'Ending'} maintenance on {self.name}.", alert=True)
 
 	@failure.reports_failure(mark_broken=False)
-	def apply_config(self):
+	def apply_config(self, **play):
 		"""Write config.json and SIGUSR1, then read the box back: a rejected reload keeps the old
-		config and says so only in the journal."""
-		play_name, rc = self.run_playbook("config.yml", extravars=self.config_variables)
+		config and says so only in the journal. A read that does not connect is asked again — one
+		dropped SYN must not fail the change the play already made. `play` names the doc the play
+		is run for."""
+		play_name, rc = self.run_playbook("config.yml", extravars=self.config_variables, **play)
 		if rc != 0:
 			frappe.throw(f"config.yml failed on {self.name} (Ansible Play {play_name}).")
-		want = bool(self.is_in_maintenance)
+		want, answered = bool(self.is_in_maintenance), None
 		for _ in range(10):
-			if self.get_in_flight()["maintenance"] == want:
+			try:
+				answered = self.get_in_flight()["maintenance"]
+			except requests.RequestException:
+				answered = None
+			if answered == want:
 				return play_name, rc
 			time.sleep(1)
+		if answered is None:
+			frappe.throw(f"{self.name} did not answer after config.yml (Ansible Play {play_name}).")
 		frappe.throw(
 			f"{self.name} kept maintenance={not want}: pathway rejected config.json, see its journal."
 		)

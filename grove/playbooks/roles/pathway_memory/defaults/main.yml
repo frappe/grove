@@ -3,4 +3,7 @@ pathway_memory_reserve_mb: 512
 
 pathway_memory_limit_mb: 0
 
+# Restart pathway when the cap moved, so GOMEMLIMIT is read: only a drained box passes it.
+pathway_memory_restart: false
+
 pathway_memory_cap_mb: "{{ pathway_memory_limit_mb | int or (ansible_memtotal_mb | int - pathway_memory_reserve_mb | int) }}"

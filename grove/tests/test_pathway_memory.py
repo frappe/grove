@@ -62,6 +62,8 @@ class TestWhichPlaysWriteIt(unittest.TestCase):
 		self.assertNotIn("tasks", memory)
 
 	def test_changing_the_cap_is_not_a_traffic_event(self):
+		"""The button never restarts pathway: the restart that reads GOMEMLIMIT is behind a switch
+		only Server Resize passes, on a box in maintenance with nothing in flight."""
 		tasks = yaml.safe_load((ROLE / "tasks" / "main.yml").read_text())
 		modules = [key for task in tasks for key in task if key.startswith("ansible.builtin.")]
 		self.assertEqual(
@@ -70,10 +72,15 @@ class TestWhichPlaysWriteIt(unittest.TestCase):
 				"ansible.builtin.file",
 				"ansible.builtin.template",
 				"ansible.builtin.systemd",
+				"ansible.builtin.systemd",
 			],
 			modules,
 		)
-		self.assertEqual({"daemon_reload": True}, tasks[-1]["ansible.builtin.systemd"])
+		self.assertEqual({"daemon_reload": True}, tasks[-2]["ansible.builtin.systemd"])
+		self.assertEqual({"name": "pathway", "state": "restarted"}, tasks[-1]["ansible.builtin.systemd"])
+		self.assertIn("pathway_memory_restart | bool", tasks[-1]["when"])
+		defaults = yaml.safe_load((ROLE / "defaults" / "main.yml").read_text())
+		self.assertIs(False, defaults["pathway_memory_restart"])
 
 
 class TestTheButton(unittest.TestCase):

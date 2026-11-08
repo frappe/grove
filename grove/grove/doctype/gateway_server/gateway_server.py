@@ -160,13 +160,15 @@ class GatewayServer(PathwayHost, Document):
 		return f"grove-{self.short_name}-{frappe.utils.get_datetime(self.creation):%Y%m%d%H%M%S}"
 
 	def ensure_health_check(self, client):
-		"""Created once. It is what drops this box alone out of the multivalue answer when its /healthz
-		stops answering 200."""
-		if not self.health_check_id:
-			self.db_set(
-				"health_check_id",
-				client.create_endpoint_health_check(self.public_ip, self.hostname, self.caller_reference),
-			)
+		"""Created once, then kept on this box's address. It is what drops this box alone out of the
+		multivalue answer when its /healthz stops answering 200."""
+		if self.health_check_id:
+			client.update_health_check_ip(self.health_check_id, self.public_ip)
+			return self.health_check_id
+		self.db_set(
+			"health_check_id",
+			client.create_endpoint_health_check(self.public_ip, self.hostname, self.caller_reference),
+		)
 		return self.health_check_id
 
 	@frappe.whitelist()
