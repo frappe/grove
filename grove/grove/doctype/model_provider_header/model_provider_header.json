@@ -25,7 +25,7 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Value",
-   "length": 1024,
+   "length": 1000,
    "reqd": 1
   }
  ],
