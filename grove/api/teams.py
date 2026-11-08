@@ -6,6 +6,7 @@ import hashlib
 import hmac
 
 import frappe
+from frappe.auth import LoginAttemptTracker
 from frappe.integrations.doctype.webhook.webhook import WEBHOOK_SECRET_HEADER
 from frappe.model.rename_doc import rename_doc
 from frappe.utils import get_datetime
@@ -84,17 +85,26 @@ def team_webhook(
 
 def _webhook_user() -> str:
 	"""The control user whose `api_secret` signed this request, or refused. `X-Grove-Control-Key`
-	names it by its `api_key`; Frappe's Webhook header carries the HMAC-SHA256 of the raw body."""
+	names it by its `api_key`; Frappe's Webhook header carries the HMAC-SHA256 of the raw body.
+	Three bad signatures in a row from one address lock it out for five minutes (429), before any lookup."""
+	attempts = LoginAttemptTracker(f"webhook:{frappe.local.request_ip}", max_consecutive_login_attempts=2)
+	if not attempts.is_user_allowed():
+		frappe.throw("Too many bad webhook signatures from this address.", frappe.TooManyRequestsError)
 	key = frappe.get_request_header(CONTROL_KEY_HEADER)
 	user = key and frappe.db.get_value("User", {"api_key": key, "enabled": 1}, "name")
 	secret = user and get_decrypted_password("User", user, "api_secret", raise_exception=False)
-	if not secret or CONTROL_ROLE not in frappe.get_roles(user):
+	if not secret or CONTROL_ROLE not in frappe.get_roles(user) or not is_signed_with(secret):
+		attempts.add_failure_attempt()
 		frappe.throw("Invalid webhook signature.", frappe.AuthenticationError)
+	attempts.add_success_attempt()
+	return user
+
+
+def is_signed_with(secret: str) -> bool:
+	"""Whether the Webhook header is the base64 HMAC-SHA256 of the raw body under `secret`."""
 	digest = hmac.new(secret.encode(), frappe.request.get_data(), hashlib.sha256).digest()
 	signature = base64.b64encode(digest).decode()
-	if not hmac.compare_digest(signature, str(frappe.get_request_header(WEBHOOK_SECRET_HEADER))):
-		frappe.throw("Invalid webhook signature.", frappe.AuthenticationError)
-	return user
+	return hmac.compare_digest(signature, str(frappe.get_request_header(WEBHOOK_SECRET_HEADER)))
 
 
 @frappe.whitelist()

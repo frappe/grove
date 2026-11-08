@@ -138,7 +138,8 @@ it holds no money that must not run out. What gates is:
   on one store and that store gates it exactly. A key is minted at 0 and refused until
   `api.keys.update_key(cap=)` gives it one.
 - **The team's `Tier`**, named by Central from the team's trust tier (`api.teams.update_team`, by
-  Central's Webhook at `api.teams.team_webhook`, and `api.teams.rename_tier` when a label changes; `Beginner`
+  Central's Webhook at `api.teams.team_webhook`, signed with the control credential and locking an
+  address out for five minutes after three bad signatures, and `api.teams.rename_tier` when a label changes; `Beginner`
   … `Elite`, the catalog seeds a starter ladder once and the operator edits the values in Desk):
   its `spend_limit` (USD a month), `max_keys` (0: no limit) and the rate limits a key with no
   limit rows of its own runs under. What the month has spoken for stays within the spend limit:

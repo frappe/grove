@@ -11,6 +11,7 @@ import hmac
 import unittest.mock
 
 import frappe
+from frappe.auth import LoginAttemptTracker
 from frappe.tests import IntegrationTestCase
 
 from grove.api import catalog, control, keys, teams, usage
@@ -597,6 +598,9 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		tier("probe-hook-b")
 		original = getattr(frappe.local, "request", None)
 		self.addCleanup(setattr, frappe.local, "request", original)
+		self.addCleanup(setattr, frappe.local, "request_ip", frappe.local.request_ip)
+		frappe.local.request_ip = "203.0.113.9"
+		self.addCleanup(LoginAttemptTracker("webhook:203.0.113.9").add_success_attempt)
 		frappe.set_user("Guest")
 
 		def deliver(headers=None, **body):
@@ -638,6 +642,13 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			with self.assertRaises(frappe.AuthenticationError):
 				deliver(forged, team=team, tier="probe-hook-a")
 		self.assertEqual(frappe.db.get_value("Grove Team", team, "tier"), "probe-hook-b")
+		# Three bad signatures lock the address, a good one included; another address is untouched.
+		with self.assertRaises(frappe.TooManyRequestsError):
+			deliver(team=team, tier="probe-hook-a", observed_at="2026-10-15 10:00:02")
+		frappe.local.request_ip = "203.0.113.10"
+		self.assertEqual(
+			deliver(team=team, tier="probe-hook-a", observed_at="2026-10-15 10:00:02")["tier"], "probe-hook-a"
+		)
 
 	def test_a_renamed_tier_label_follows_at_grove(self):
 		team = "probe-rename"
