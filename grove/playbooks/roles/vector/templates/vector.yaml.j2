@@ -9,6 +9,7 @@ sources:
   host:
     type: host_metrics
     scrape_interval_secs: {{ vector_metrics_interval_seconds }}
+    collectors: {{ vector_host_collectors | tojson }}
 {% endif %}
 {% if vector_redis_password %}
   # The redis exporter beside Vector on a store: memory, clients, evictions, persistence, as redis_* series.

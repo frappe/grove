@@ -153,7 +153,8 @@ story any more, datum's is; its lines run past Vector's 100 KiB default, so the 
 `product: grove`, `service` = log directory, `level`, `source` = file name, `message`
 cut at 8 KiB, `attributes` = `host`, `server`, `machine`, `region`). Batches stay under datum's 10,000
 cap, sink healthchecks are off (datum answers 405 to a GET), and each sink keeps a disk buffer because
-datum buffers nothing. Host metrics arrive as `host_*` series, not node_exporter's `node_*`. On a Gateway
+datum buffers nothing. Host metrics arrive as `host_*` series, not node_exporter's `node_*` (cpu, disk, filesystem, load, host, memory,
+network, tcp; not the per-process and per-cgroup collectors, which were four fifths of the volume). On a Gateway
 Store the same play lays oliver006's `redis_exporter` (`roles/redis_exporter`, localhost 9121, the store's
 password from `vector_redis_password`, root-only env file, `DynamicUser` unit) and Vector scrapes it
 (`prometheus_scrape`) into the same remote write as `redis_*` series: memory against maxmemory, clients,

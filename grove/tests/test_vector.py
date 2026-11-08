@@ -75,6 +75,13 @@ class TestTheConfig(unittest.TestCase):
 		self.assertIn('"product": "grove"', built)
 		self.assertIn("truncate(message, 8000)", source)
 
+	def test_host_metrics_skip_the_per_process_and_cgroup_collectors(self):
+		collectors = config()["sources"]["host"]["collectors"]
+		self.assertEqual(DEFAULTS["vector_host_collectors"], collectors)
+		self.assertIn("cpu", collectors)
+		self.assertNotIn("process", collectors)
+		self.assertNotIn("cgroups", collectors)
+
 	def test_every_pathway_log_and_the_redis_log_are_read(self):
 		include = config()["sources"]["files"]["include"]
 		self.assertEqual(DEFAULTS["vector_log_files"], include)

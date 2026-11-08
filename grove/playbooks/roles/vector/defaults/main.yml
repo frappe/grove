@@ -4,6 +4,8 @@ vector_api_address: 127.0.0.1:8686
 vector_metrics_interval_seconds: 15
 # Off where the provider's own agent already ships them (an Atlas machine runs Pilot). Logs always go.
 vector_ship_host_metrics: true
+# Not cgroups or process: one series per PID or cgroup, four fifths of the volume on a one-service box.
+vector_host_collectors: [cpu, disk, filesystem, load, host, memory, network, tcp]
 
 # datum buffers nothing, so the box must: one disk buffer per sink.
 vector_buffer_max_bytes: 536870912
