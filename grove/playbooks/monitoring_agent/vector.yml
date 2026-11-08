@@ -2,7 +2,8 @@
 # Install Vector on one box: host metrics to the Region's datum remote write, journald and every
 # pathway and redis log to its log route (Setup chains it, Install Vector re-runs it, the hourly token
 # refresh re-runs it with a day left). extra-vars: vector_metrics_url, vector_logs_url, vector_token,
-# vector_ship_host_metrics, vector_server, vector_machine, vector_region.
+# vector_ship_host_metrics, vector_server, vector_machine, vector_region; vector_redis_password (a store's)
+# brings the redis exporter and its scrape.
 - name: Install Vector
   hosts: all
   become: true
@@ -21,4 +22,8 @@
           Vector button, which reads the endpoints off the box's Region and mints the token.
   roles:
     - grove_user
+    - role: redis_exporter
+      when: vector_redis_password | default('') | length > 0
+      vars:
+        redis_exporter_password: "{{ vector_redis_password }}"
     - vector

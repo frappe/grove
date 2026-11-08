@@ -1,0 +1,14 @@
+[Unit]
+Description=Prometheus redis exporter (scraped by Vector on this box)
+After=network-online.target redis-server.service
+Wants=network-online.target
+
+[Service]
+DynamicUser=yes
+EnvironmentFile=/etc/redis_exporter.env
+ExecStart=/usr/local/bin/redis_exporter --web.listen-address=127.0.0.1:{{ redis_exporter_port }} --redis.addr=redis://127.0.0.1:6379
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

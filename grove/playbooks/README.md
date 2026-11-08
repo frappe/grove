@@ -12,7 +12,7 @@ playbooks/
   machine/            ping.yml  grow_root.yml  scan_gpus.yml     — box-level, no role layered on yet
   monitoring_agent/   agent.yml  config.yml  exporters.yml  push_targets.yml  vector.yml
   gateway_store/      store.yml  restore.yml     — Redis only, shared by a Network's gateways; restore.yml loads a backup through a side Redis + REPLICAOF
-  roles/              grove_user  remove_cloud_user  auditd  dcgm_exporter  node_exporter  fleet_tls  grove_https  install_gateway_agent  openresty  redis  pathway_memory  vector
+  roles/              grove_user  remove_cloud_user  auditd  dcgm_exporter  node_exporter  fleet_tls  grove_https  install_gateway_agent  openresty  redis  redis_exporter  pathway_memory  vector
 ```
 
 A project's own `roles/` is searched first, then `playbooks/roles/`. So a shared role is written once
@@ -119,7 +119,8 @@ that goes stale until Push Targets is pressed again. The agent box installs its 
 to localhost, since no Setup play would, and scrapes itself.
 
 Only inference boxes are scraped; a Gateway Server, Gateway Store or Ingress Server ships its host
-metrics with Vector instead (below) and carries no exporter. An inference box answers on one port and
+metrics with Vector instead (below) and carries no exporter the fleet scrapes (a store's redis exporter
+is bound to localhost and read by its own Vector). An inference box answers on one port and
 its exporters are re-published as paths behind it (`/metrics/node`, `/metrics/gpu`), so it needs nothing
 open but 22 and that port; the exporters still listen on 9100/9400, just not from outside. Every target
 is https on the box's TLS front with a self-signed certificate, so both scrape jobs skip verification:
@@ -140,7 +141,11 @@ story any more, datum's is) and `/var/log/redis/*.log` as datum log lines (`Logs
 `product: grove`, `service` = unit or log directory, `level`, `source` = file or `journald`, `message`
 cut at 8 KiB, `attributes` = `host`, `server`, `machine`, `region`). Batches stay under datum's 10,000
 cap, sink healthchecks are off (datum answers 405 to a GET), and each sink keeps a disk buffer because
-datum buffers nothing. Host metrics arrive as `host_*` series, not node_exporter's `node_*`.
+datum buffers nothing. Host metrics arrive as `host_*` series, not node_exporter's `node_*`. On a Gateway
+Store the same play lays oliver006's `redis_exporter` (`roles/redis_exporter`, localhost 9121, the store's
+password from `vector_redis_password`, root-only env file, `DynamicUser` unit) and Vector scrapes it
+(`prometheus_scrape`) into the same remote write as `redis_*` series: memory against maxmemory, clients,
+evictions, ops, hit ratio, bgsave and AOF status. No password passed, no exporter and no scrape.
 
 The token is datum's: a JWT Central signs for one `resource_id` (`grove:<machine>`), good for as long
 as Central says (`expires_in`, 7 days today) with no revocation, addressed to the Region's `central_region`

@@ -144,6 +144,11 @@ class NamedHost(Server):
 		box Broken."""
 		frappe.enqueue_doc(self.doctype, self.name, "provision_vector", queue="long", timeout=1200)
 
+	@property
+	def vector_exporter_variables(self):
+		"""Extra-vars for an exporter Vector scrapes beside its own sources: none on most boxes."""
+		return {}
+
 	@failure.reports_failure(mark_broken=False)
 	def provision_vector(self):
 		"""Job: vector.yml with the Region's endpoints, a token minted now for the Central Region
@@ -161,6 +166,7 @@ class NamedHost(Server):
 			"vector_server": self.name,
 			"vector_machine": self.machine,
 			"vector_region": self.region,
+			**self.vector_exporter_variables,
 		}
 		play_name, rc = self.run_playbook("vector.yml", project="Monitoring Agent", extravars=extravars)
 		if rc != 0:

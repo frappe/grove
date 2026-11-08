@@ -106,6 +106,11 @@ class GatewayStore(NamedHost, Document):
 			"redis_password": self.get_password("redis_password"),
 		}
 
+	@property
+	def vector_exporter_variables(self):
+		"""The redis exporter rides along on the store's own password; vector.yml lays it on seeing one."""
+		return {"vector_redis_password": self.get_password("redis_password")}
+
 	@frappe.whitelist()
 	def setup(self):
 		"""Button: install Redis on this store's box."""

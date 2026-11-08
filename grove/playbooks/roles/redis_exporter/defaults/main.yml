@@ -1,0 +1,7 @@
+---
+redis_exporter_version: "1.97.0"
+
+# What the unit listens on, localhost only; roles/vector scrapes it (tests/test_vector.py holds the two together).
+redis_exporter_port: 9121
+
+redis_exporter_password: ""

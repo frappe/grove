@@ -16,6 +16,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from grove import datum
 from grove.fleet import NamedHost, PathwayHost
+from grove.grove.doctype.gateway_store.gateway_store import GatewayStore
 from grove.grove.doctype.region.region import Region
 
 PLAYBOOKS = Path(__file__).parent.parent / "playbooks"
@@ -23,6 +24,8 @@ NOW = datetime(2026, 11, 2, 9, 30)
 EXPIRY = NOW + timedelta(days=7)
 ROLE = PLAYBOOKS / "roles" / "vector"
 DEFAULTS = yaml.safe_load((ROLE / "defaults" / "main.yml").read_text())
+EXPORTER = PLAYBOOKS / "roles" / "redis_exporter"
+EXPORTER_DEFAULTS = yaml.safe_load((EXPORTER / "defaults" / "main.yml").read_text())
 DATUM_LINE = ("ts", "product", "service", "level", "source", "message", "attributes")
 DATUM_BATCH_CAP = 10_000
 
@@ -52,8 +55,8 @@ def play():
 	return yaml.safe_load((PLAYBOOKS / "monitoring_agent" / "vector.yml").read_text())[0]
 
 
-def role_task(name):
-	tasks = yaml.safe_load((ROLE / "tasks" / "main.yml").read_text())
+def role_task(name, role=ROLE):
+	tasks = yaml.safe_load((role / "tasks" / "main.yml").read_text())
 	return next(task for task in tasks if task["name"] == name)
 
 
@@ -86,6 +89,15 @@ class TestTheConfig(unittest.TestCase):
 		self.assertEqual(["vector_self"], off["transforms"]["labelled_metrics"]["inputs"])
 		self.assertIn("metrics", off["sinks"])
 
+	def test_a_stores_password_adds_the_redis_scrape_and_nothing_else(self):
+		store = config(vector_redis_password="pw")
+		self.assertEqual("prometheus_scrape", store["sources"]["redis"]["type"])
+		self.assertEqual([DEFAULTS["vector_redis_exporter_url"]], store["sources"]["redis"]["endpoints"])
+		self.assertEqual(["host", "redis", "vector_self"], store["transforms"]["labelled_metrics"]["inputs"])
+		self.assertNotIn("pw", render(vector_redis_password="pw"))
+		self.assertNotIn("redis", config()["sources"])
+		self.assertIn(f":{EXPORTER_DEFAULTS['redis_exporter_port']}/", DEFAULTS["vector_redis_exporter_url"])
+
 	def test_the_three_box_labels_ride_on_metrics_and_logs(self):
 		transforms = config()["transforms"]
 		for label, value in (("server", "gw-1"), ("machine", "mc-1"), ("region", "ap-south-1")):
@@ -110,8 +122,20 @@ class TestTheConfig(unittest.TestCase):
 
 
 class TestThePlayAndRole(unittest.TestCase):
-	def test_the_play_lays_the_grove_user_before_the_role(self):
-		self.assertEqual(["grove_user", "vector"], play()["roles"])
+	def test_the_play_lays_the_grove_user_then_a_stores_exporter_before_the_role(self):
+		roles = play()["roles"]
+		self.assertEqual(["grove_user", "redis_exporter", "vector"], [r if isinstance(r, str) else r["role"] for r in roles])
+		self.assertIn("vector_redis_password", roles[1]["when"])
+		self.assertEqual({"redis_exporter_password": "{{ vector_redis_password }}"}, roles[1]["vars"])
+
+	def test_the_exporters_password_is_a_root_only_secret_and_its_health_is_reaching_redis(self):
+		password = role_task("Write the exporter's password", EXPORTER)
+		self.assertTrue(password["no_log"])
+		self.assertEqual("0600", password["ansible.builtin.copy"]["mode"])
+		health = role_task("Check redis_exporter reaches redis", EXPORTER)
+		self.assertIn("redis_up 1", health["until"])
+		unit = (EXPORTER / "templates" / "redis_exporter.service.j2").read_text()
+		self.assertIn("--web.listen-address=127.0.0.1:{{ redis_exporter_port }}", unit)
 
 	def test_the_play_refuses_to_run_without_the_routes_and_the_token(self):
 		checks = play()["pre_tasks"][0]["ansible.builtin.assert"]["that"]
@@ -133,6 +157,11 @@ class FakeHost(SimpleNamespace):
 	check_vector_ready = NamedHost.check_vector_ready
 	queue_vector = NamedHost.queue_vector
 	provision_vector = NamedHost.provision_vector
+	vector_exporter_variables = NamedHost.vector_exporter_variables
+
+
+class FakeStore(FakeHost):
+	vector_exporter_variables = GatewayStore.vector_exporter_variables
 
 
 def fake_host(rc=0, **fields):
@@ -208,6 +237,11 @@ class TestTheButton(unittest.TestCase):
 			call.kwargs["extravars"],
 		)
 		doc.db_set.assert_called_once_with({"is_vector_setup": 1, "datum_token_expires_at": EXPIRY})
+
+	def test_a_store_passes_its_redis_password_so_the_play_lays_the_exporter(self):
+		doc = FakeStore(**vars(fake_host()), get_password=lambda field: "pw")
+		doc.provision_vector()
+		self.assertEqual("pw", doc.run_playbook.call_args.kwargs["extravars"]["vector_redis_password"])
 
 	def test_a_failed_play_is_an_error_and_records_nothing(self):
 		doc = fake_host(rc=2)

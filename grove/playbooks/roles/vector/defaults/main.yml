@@ -11,6 +11,10 @@ vector_buffer_max_bytes: 268435456
 vector_batch_max_events: 1000
 vector_batch_max_bytes: 4000000
 
+# A store's redis password: set, the play lays redis_exporter beside Vector and this scrapes it.
+vector_redis_password: ""
+vector_redis_exporter_url: "http://127.0.0.1:9121/metrics"
+
 vector_log_files:
   - /var/log/pathway/*.log
   - /var/log/redis/*.log

@@ -10,6 +10,13 @@ sources:
     type: host_metrics
     scrape_interval_secs: {{ vector_metrics_interval_seconds }}
 {% endif %}
+{% if vector_redis_password %}
+  # The redis exporter beside Vector on a store: memory, clients, evictions, persistence, as redis_* series.
+  redis:
+    type: prometheus_scrape
+    endpoints: ["{{ vector_redis_exporter_url }}"]
+    scrape_interval_secs: {{ vector_metrics_interval_seconds }}
+{% endif %}
   # Queue depth and errors: how a broken pipeline announces itself. Ships whatever the switch says.
   vector_self:
     type: internal_metrics
@@ -25,7 +32,7 @@ sources:
 transforms:
   labelled_metrics:
     type: remap
-    inputs: [{% if vector_ship_host_metrics %}host, {% endif %}vector_self]
+    inputs: [{% if vector_ship_host_metrics %}host, {% endif %}{% if vector_redis_password %}redis, {% endif %}vector_self]
     source: |
       .tags.server = "{{ vector_server }}"
       .tags.machine = "{{ vector_machine }}"
