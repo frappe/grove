@@ -49,7 +49,6 @@ class GatewayStore(NamedHost, Document):
 	# end: auto-generated types
 
 	def validate(self):
-		self.validate_one_per_network()
 		self.set_redis_password()
 
 	def on_update(self):
@@ -58,18 +57,6 @@ class GatewayStore(NamedHost, Document):
 
 	def on_trash(self):
 		self.remove_dns_records()
-
-	def validate_one_per_network(self):
-		"""Two stores would split a Network's gateways onto two counters — the over-admission a
-		store exists to remove."""
-		network = frappe.db.get_value("Machine", self.machine, "network")
-		if not network:
-			frappe.throw(f"Machine {self.machine} is in no Network — a store serves one Network's gateways.")
-		if self.status == "Terminated":
-			return
-		others = [name for name in stores_in(network, status=("!=", "Terminated")) if name != self.name]
-		if others:
-			frappe.throw(f"Network {network} already has Gateway Store {others[0]}.")
 
 	def set_redis_password(self):
 		"""Tested through get_password: a saved Password field reads back as asterisks even when
