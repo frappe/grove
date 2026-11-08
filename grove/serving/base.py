@@ -66,7 +66,6 @@ class Engine(ABC):
 		dtype=None,
 		kv_cache_dtype=None,
 		gpu_memory_utilization=None,
-		kv_cache_memory=0,
 		max_model_len=None,
 		max_num_batched_tokens=None,
 		max_num_seqs=None,
@@ -88,7 +87,6 @@ class Engine(ABC):
 		self.dtype = dtype or "auto"
 		self.kv_cache_dtype = kv_cache_dtype or "auto"
 		self.gpu_memory_utilization = gpu_memory_utilization or DEFAULT_GPU_MEMORY_UTILIZATION
-		self.kv_cache_memory = int(kv_cache_memory or 0)
 		self.max_model_len = parse_context_length(max_model_len) or DEFAULT_MAX_MODEL_LEN
 		self.max_num_batched_tokens = int(max_num_batched_tokens or 0)
 		self.max_num_seqs = int(max_num_seqs or 0)

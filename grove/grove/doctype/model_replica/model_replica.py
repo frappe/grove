@@ -1,7 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
-import hashlib
 import re
 import secrets
 
@@ -23,7 +22,6 @@ ENGINE_PORT_BASE = 8080
 _PORT_FREE_STATUSES = ("Terminated",)
 GPU_CLAIMING_STATUSES = ("Provisioning", "Active", "Broken")
 CLAIM_HOLDING_STATUSES = ("Draft", *GPU_CLAIMING_STATUSES)
-KV_CACHE_MEMORY_LINE = re.compile(r"Replace gpu_memory_utilization config with `--kv-cache-memory=(\d+)`")
 
 
 class ModelReplica(Document):
@@ -50,8 +48,6 @@ class ModelReplica(Document):
 		internal_api_key: DF.Password | None
 		dtype: DF.Literal["", "auto", "bfloat16", "float16"]
 		kv_cache_dtype: DF.Literal["", "auto", "fp8"]
-		kv_cache_memory: DF.Int
-		kv_cache_memory_for: DF.SmallText | None
 		log_lines: DF.Int
 		max_model_len: DF.Data | None
 		max_num_batched_tokens: DF.Int
@@ -75,35 +71,8 @@ class ModelReplica(Document):
 	@property
 	def engine(self):
 		"""The deployment's shape and tuning with this replica's overrides applied. Built BY the
-		deployment, so the preview there and the command that runs here cannot differ.
-
-		The learned KV cache figure is bolted on here, the one judge of whether it still applies:
-		validity is keyed on the command WITHOUT it, which is what the deployment just built."""
-		engine = self.deployment.engine_for(self)
-		if self.kv_cache_memory and self.kv_cache_memory_for == self.kv_cache_memory_key(engine):
-			engine.kv_cache_memory = self.kv_cache_memory
-		return engine
-
-	def kv_cache_memory_key(self, engine):
-		"""Everything the learned figure is only valid for, hashed: image, card VRAM, and the
-		command. `engine` is built without the hint, so the flag itself never moves the key."""
-		measured_under = f"{self.deployment.engine_image}\n{self.gpu_vram_gb}\n{engine.command}"
-		return hashlib.sha256(measured_under.encode()).hexdigest()
-
-	def learned_kv_cache_memory(self):
-		"""What a profiled boot just taught us, as columns to write. Best-effort: the replica is
-		healthy, and a log read failing is not a reason to call it Broken."""
-		engine = self.engine
-		if engine.kv_cache_memory:
-			return {}
-		try:
-			figure = parse_kv_cache_memory(self.get_engine_logs(lines=5000))
-		except Exception:
-			frappe.log_error(title=f"KV cache figure not read: {self.name}")
-			return {}
-		if not figure:
-			return {}
-		return {"kv_cache_memory": figure, "kv_cache_memory_for": self.kv_cache_memory_key(engine)}
+		deployment, so the preview there and the command that runs here cannot differ."""
+		return self.deployment.engine_for(self)
 
 	def autoname(self):
 		"""`<model id>-<region>-<server>-<n>`, e.g. `qwen3-8b-ap-south-1-inf3-00007`.
@@ -121,15 +90,7 @@ class ModelReplica(Document):
 		self._assign_engine_port()
 		self._derive_engine_url()
 		self._validate_gpus()
-		self._validate_kv_cache_memory()
 		self._validate_engine()
-
-	def _validate_kv_cache_memory(self):
-		"""An operator clearing the figure forgets its key; typing one keys it to today's argv."""
-		if not self.kv_cache_memory:
-			self.kv_cache_memory_for = ""
-		elif self.has_value_changed("kv_cache_memory"):
-			self.kv_cache_memory_for = self.kv_cache_memory_key(self.deployment.engine_for(self))
 
 	def _validate_engine(self):
 		"""Env rows are rendered into a docker --env-file, which is a trust boundary: a newline in
@@ -473,13 +434,6 @@ def stream_engine_logs(model_replica):
 	log_relay.relay(md.server.stream_command(command), md.doctype, md.name)
 
 
-def parse_kv_cache_memory(log):
-	"""The figure vLLM says reproduces this boot's allocation, smallest across ranks — vLLM sizes
-	the cache off the tightest worker. The first of the two it prints: the second takes every
-	free byte. 0 when no worker printed one (the hint was passed, or an older image)."""
-	return min((int(figure) for figure in KV_CACHE_MEMORY_LINE.findall(log or "")), default=0)
-
-
 def _log_lines(lines):
 	"""Backfill size, clamped — `docker logs --tail` will happily read a whole disk."""
 	return max(1, min(int(lines or 200), 5000))
@@ -643,12 +597,8 @@ def _post_play_state(md, rc):
 	it names. Not md.save(): a full validate can throw on drift unrelated to this deploy, after
 	the play already succeeded."""
 	if rc != 0:
-		state = {"status": "Broken"}
-		if md.engine.kv_cache_memory:
-			# vLLM's remedy for a boot that OOMs under the hint: drop it and profile again.
-			state.update(kv_cache_memory=0, kv_cache_memory_for="")
-		return state
-	return {"status": "Active", "engine_url": md.derived_engine_url, **md.learned_kv_cache_memory()}
+		return {"status": "Broken"}
+	return {"status": "Active", "engine_url": md.derived_engine_url}
 
 
 @failure.reports_failure(mark_broken=False, doctype="Model Replica")
