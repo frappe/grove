@@ -59,8 +59,7 @@ class Model(Document):
 		self.provider_is_self_hosted = self.is_self_hosted
 		if self.is_self_hosted and not self.hf_repo:
 			frappe.throw(
-				f"{self.model_id} needs an HF Repo: nothing else says where its weights come from, "
-				"and its provider serves nothing of its own.",
+				f"{self.model_id} needs an HF Repo for weights",
 				frappe.MandatoryError,
 			)
 
