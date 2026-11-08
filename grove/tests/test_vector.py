@@ -389,3 +389,68 @@ class TestTheMigration(unittest.TestCase):
 			{"/etc/systemd/system/node_exporter.service", "/usr/local/bin/node_exporter", https_defaults["grove_metrics_htpasswd"]},
 			set(removed),
 		)
+
+
+def fake_rows(regions, machines, vector_hosts=()):
+	"""frappe.get_all by doctype: Regions with a datum, the Machines of one, the Vector hosts' machines."""
+	rows = {"Region": regions, "Machine": machines, **{doctype: [] for doctype in datum.VECTOR_HOSTS}}
+	for doctype, machine in vector_hosts:
+		rows[doctype].append(machine)
+	return lambda doctype, **kwargs: rows[doctype]
+
+
+REGION = frappe._dict(name="ap-south-1", central_region="blr-1", metrics_url="http://datum.test/v1/ingest/remote")
+MACHINES = [frappe._dict(name="mc-1", status="Active"), frappe._dict(name="mc-2", status="Terminated")]
+
+
+class TestRoster(unittest.TestCase):
+	"""Every minute each Region's datum gets every Machine's status under the Region's own id, so a
+	reader knows which quiet boxes are expected to be quiet — Atlas's shape, not a tombstone."""
+
+	def test_it_posts_every_machine_of_a_region_under_the_regions_own_id_to_the_json_route(self):
+		with (
+			patch("frappe.get_all", side_effect=fake_rows([REGION], MACHINES, [("Gateway Store", "mc-1")])),
+			patch("grove.datum.mint_token", return_value=("jwt-1", EXPIRY)) as mint,
+			patch("grove.datum.requests.post", return_value=Mock(status_code=200)) as post,
+		):
+			datum.push_roster()
+		mint.assert_called_once_with("blr-1", "grove-ap-south-1")
+		call = post.call_args
+		self.assertEqual("http://datum.test/v1/ingest", call.args[0])
+		self.assertEqual({"Authorization": "Bearer jwt-1"}, call.kwargs["headers"])
+		samples = call.kwargs["json"]["samples"]
+		self.assertTrue(all(sample.pop("ts").endswith("+00:00") for sample in samples))
+		self.assertEqual(
+			[
+				{"metric": "grove_machine_info", "value": 1, "labels": {"machine": "mc-1", "status": "Active", "vector": "1"}},
+				{"metric": "grove_machine_info", "value": 1, "labels": {"machine": "mc-2", "status": "Terminated", "vector": "0"}},
+			],
+			samples,
+		)
+
+	def test_a_region_without_machines_posts_nothing(self):
+		with (
+			patch("frappe.get_all", side_effect=fake_rows([REGION], [])),
+			patch("grove.datum.mint_token") as mint,
+			patch("grove.datum.requests.post") as post,
+		):
+			datum.push_roster()
+		mint.assert_not_called()
+		post.assert_not_called()
+
+	def test_a_refusal_is_logged_naming_datums_answer_and_the_next_region_still_gets_its_roster(self):
+		other = frappe._dict(REGION, name="us-east-1")
+		with (
+			patch("frappe.get_all", side_effect=fake_rows([REGION, other], MACHINES)),
+			patch("grove.datum.mint_token", return_value=("jwt-1", EXPIRY)),
+			patch("grove.datum.requests.post", side_effect=[Mock(status_code=401, text="expired"), Mock(status_code=200)]) as post,
+			patch("frappe.throw", side_effect=frappe.ValidationError) as throw,
+			patch("frappe.log_error") as log_error,
+		):
+			datum.push_roster()
+		self.assertIn("ap-south-1's roster: 401 expired", throw.call_args.args[0])
+		log_error.assert_called_once_with("datum roster failed: ap-south-1")
+		self.assertEqual(2, post.call_count)
+
+	def test_the_json_route_sits_beside_the_remote_write_one(self):
+		self.assertEqual("http://datum.test/v1/ingest", datum.ingest_url("http://datum.test/v1/ingest/remote"))

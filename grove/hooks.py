@@ -20,6 +20,7 @@ scheduler_events = {
 	"cron": {
 		"*/1 * * * *": [
 			"grove.pathway.projection.sync_projection",
+			"grove.datum.push_roster",
 		],
 		"0 */6 * * *": [
 			"grove.pathway.key_stats.pull_all",

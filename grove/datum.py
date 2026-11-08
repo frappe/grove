@@ -2,9 +2,11 @@
 # For license information, please see license.txt
 """datum's write token for one box, minted by Central. Short-lived (Central says how long, no
 revocation) and never stored: minted inside the job that writes it to the box, which keeps only when it
-runs out, and minted again by the hourly tick with a day left."""
+runs out, and minted again by the hourly tick with a day left. Also the roster: every minute, each
+Machine's status as one sample under its Region's own resource_id, so a reader knows which quiet boxes
+are expected to be quiet (Atlas's shape: `atlas_metal_server_info`)."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 import frappe
 import requests
@@ -15,6 +17,7 @@ TOKEN_HEADER = "X-Grove-Token"
 CREDENTIAL_FIELDS = ("central_url", "central_token")
 VECTOR_HOSTS = ("Gateway Server", "Gateway Store", "Ingress Server")
 RENEW_AHEAD_DAYS = 1
+ROSTER_METRIC = "grove_machine_info"
 
 
 def mint_token(region: str, resource_id: str) -> tuple[str, datetime]:
@@ -61,3 +64,61 @@ def refresh_tokens():
 		)
 		for name in names:
 			frappe.enqueue_doc(doctype, name, "provision_vector", queue="long", timeout=1200)
+
+
+def ingest_url(metrics_url: str) -> str:
+	"""datum's JSON route, beside the remote-write one the Region names."""
+	return metrics_url.removesuffix("/remote")
+
+
+def vector_machines() -> set[str]:
+	"""The Machines a Vector box pushes under, as grove:<machine>. A plain inference box's series sit
+	under its Monitoring Agent, so it is never expected to push as itself."""
+	return {
+		machine
+		for doctype in VECTOR_HOSTS
+		for machine in frappe.get_all(doctype, filters={"is_vector_setup": 1}, pluck="machine")
+	}
+
+
+def push_roster():
+	"""Tick, every minute: each Region with a datum gets its Machines. One Region's refusal is
+	logged and the next still gets its roster."""
+	regions = frappe.get_all(
+		"Region", filters={"metrics_url": ("is", "set")}, fields=["name", "central_region", "metrics_url"]
+	)
+	for region in regions:
+		try:
+			post_roster(region)
+		except Exception:
+			frappe.log_error(f"datum roster failed: {region.name}")
+
+
+def post_roster(region):
+	"""Every Machine of `region` as `grove_machine_info{machine, status, vector} 1` under
+	`grove-<region>`. Reader rule: a Machine whose latest row reads Active with vector 1 must have
+	rows of its own (grove:<machine>) within a few minutes, or it is dead; any other latest row
+	means its silence is expected. Thrown on refusal, naming datum's answer."""
+	machines = frappe.get_all("Machine", filters={"region": region.name}, fields=["name", "status"])
+	if not machines:
+		return
+	pushing = vector_machines()
+	ts = datetime.now(UTC).isoformat()
+	samples = [
+		{
+			"metric": ROSTER_METRIC,
+			"value": 1,
+			"ts": ts,
+			"labels": {"machine": m.name, "status": m.status, "vector": str(int(m.name in pushing))},
+		}
+		for m in machines
+	]
+	token, _ = mint_token(region.central_region, f"grove-{region.name}")
+	response = requests.post(
+		ingest_url(region.metrics_url),
+		json={"samples": samples},
+		headers={"Authorization": f"Bearer {token}"},
+		timeout=15,
+	)
+	if response.status_code != 200:
+		frappe.throw(f"datum refused {region.name}'s roster: {response.status_code} {response.text[:200]}")
