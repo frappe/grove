@@ -477,6 +477,55 @@ class TestStaticIp(unittest.TestCase):
 		self.assertEqual([name for name, _ in client.calls], ["release_address"])
 
 
+class TestSetInstanceType(unittest.TestCase):
+	"""AWS changes a type only on a stopped instance, and the Machine's own facts about the type
+	(architecture, bare metal, local disks) are read off the new one afterwards."""
+
+	def client(self):
+		client = EC2Client.__new__(EC2Client)
+		client.region = "ap-south-1"
+		client.calls = []
+		client.ec2 = SimpleNamespace(
+			modify_instance_attribute=lambda **kw: client.calls.append(("modify_instance_attribute", kw)),
+		)
+		return client
+
+	def machine(self, status, client=None):
+		doc = SimpleNamespace(
+			name="gw1-ap-south-1",
+			instance_id="i-1",
+			status=status,
+			cloud_client=client or self.client(),
+			written={},
+		)
+		doc.require_instance = lambda: Machine.require_instance(doc)
+		doc.db_set = lambda field, value, **kw: doc.written.update({field: value})
+		doc.sync_instance_type = lambda c: doc.written.update({"synced_with": c})
+		return doc
+
+	def test_it_is_one_modify_call_on_the_instance(self):
+		client = self.client()
+		client.set_instance_type("i-1", "m7g.large")
+		self.assertEqual(
+			client.calls,
+			[("modify_instance_attribute", {"InstanceId": "i-1", "InstanceType": {"Value": "m7g.large"}})],
+		)
+
+	def test_the_type_is_recorded_and_its_facts_re_read(self):
+		doc = self.machine("Stopped")
+		Machine.set_instance_type(doc, "m7g.large")
+		self.assertEqual(doc.written, {"instance_type": "m7g.large", "synced_with": doc.cloud_client})
+		self.assertEqual([name for name, _ in doc.cloud_client.calls], ["modify_instance_attribute"])
+
+	def test_a_running_box_is_refused_before_aws_is_asked(self):
+		doc = self.machine("Active")
+		with patch.object(frappe, "throw", side_effect=frappe.ValidationError), self.assertRaises(
+			frappe.ValidationError
+		):
+			Machine.set_instance_type(doc, "m7g.large")
+		self.assertEqual(doc.cloud_client.calls, [])
+
+
 class TestTerminationProtection(unittest.TestCase):
 	"""AWS refuses to terminate a protected instance, but Grove releases the Elastic IP first, so
 	the refusal has to come from Grove before anything is handed back."""

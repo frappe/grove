@@ -1,10 +1,5 @@
-import re
-
 import frappe
 from frappe.model.document import Document
-
-NAME = re.compile(r"^[a-z][a-z0-9_]*$")
-FIXED = ("unit", "part_of", "base_counter", "min_prompt_tokens")
 
 
 class UsageCounter(Document):
@@ -32,15 +27,10 @@ class UsageCounter(Document):
 	# end: auto-generated types
 
 	def validate(self):
-		if not NAME.match(self.counter_name or ""):
-			frappe.throw("A counter is lowercase letters, digits and underscores, starting with a letter.")
 		if self.base_counter:
 			self.validate_derived()
 		else:
 			self.validate_root()
-		before = self.get_doc_before_save()
-		if before and any((before.get(field) or None) != (self.get(field) or None) for field in FIXED):
-			frappe.throw("A counter does not change once it exists. Delete it and make it again.")
 
 	def validate_derived(self):
 		base = frappe.get_doc("Usage Counter", self.base_counter)
@@ -61,8 +51,3 @@ class UsageCounter(Document):
 			frappe.throw("A counter cannot be a part of itself.")
 		if self.part_of and frappe.db.get_value("Usage Counter", self.part_of, "base_counter"):
 			frappe.throw(f"{self.part_of} is derived; a part belongs to a root.")
-
-	def on_trash(self):
-		"""Records are evidence and their columns come from this table."""
-		if frappe.db.exists("Usage Record", {"usage": ("like", f'%"{self.name}"%')}):
-			frappe.throw(f"Usage Records carry {self.name}; it stays.")

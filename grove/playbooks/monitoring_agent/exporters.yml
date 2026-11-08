@@ -1,6 +1,7 @@
 ---
-# Exporters for one box behind the scrape htpasswd: the re-run for a rotated Scrape Password or
-# cards that appeared after Setup (Update Scrape Auth). extra-vars: monitoring_has_gpu, scrape_password_hash.
+# Exporters for one Inference Server behind the scrape htpasswd: the re-run for a rotated Scrape
+# Password or cards that appeared after Setup (Update Scrape Auth). extra-vars: monitoring_has_gpu,
+# scrape_password_hash. Gateway and Ingress Servers are never scraped — they ship with Vector.
 - name: Install the metrics exporters
   hosts: all
   become: true

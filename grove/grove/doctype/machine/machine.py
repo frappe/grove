@@ -434,6 +434,17 @@ class Machine(GeneratedName, AnsibleHost, Document):
 			commit=True,
 		)
 
+	def set_instance_type(self, instance_type):
+		"""Change the instance's type at the provider — Stopped only, AWS refuses it on a running
+		box. The type's facts (architecture, bare metal, local disks) are re-read after."""
+		self.require_instance()
+		if self.status != "Stopped":
+			frappe.throw(f"{self.name} is {self.status} — an instance type changes only while Stopped.")
+		client = self.cloud_client
+		client.set_instance_type(self.instance_id, instance_type)
+		self.db_set("instance_type", instance_type)
+		self.sync_instance_type(client)
+
 	@frappe.whitelist()
 	def resize_root_volume(self, size_gb: int):
 		"""Button: grow the only disk this box has. The root volume holds the OS, the images and

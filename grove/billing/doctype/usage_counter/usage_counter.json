@@ -66,7 +66,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-12 20:00:16.612308",
+ "modified": "2026-11-04 12:04:16.610306",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Usage Counter",
@@ -75,7 +75,6 @@
  "permissions": [
   {
    "create": 1,
-   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,

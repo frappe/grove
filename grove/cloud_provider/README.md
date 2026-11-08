@@ -36,8 +36,9 @@ unhealthy it still answers with up to eight of them, so the last gateway is neve
 a gateway in maintenance still receives clients, and they get its 503 with Retry-After.
 
 **Ownership.** A Gateway Server owns its own name record, its multivalue row and its endpoint health
-check, which is always created (`GatewayServer.ensure_health_check`) and probes pathway's `/healthz`
-on :80. An ingress gets only its own name record.
+check, which is created once and kept on the box's current address (`GatewayServer.ensure_health_check`:
+**Sync DNS Records** after a stop/start moves it, else it would probe the old IP for good) and probes
+pathway's `/healthz` on :80. An ingress gets only its own name record.
 
 ## Rules Route53 enforces that the code is shaped around
 

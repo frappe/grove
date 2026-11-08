@@ -12,6 +12,7 @@ from frappe.tests import IntegrationTestCase
 from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing
 from grove.catalog import seed
 from grove.grove.doctype.model import model as model_module
+from grove.grove.doctype.model_id.model_id import ensure_model_id
 
 
 class TestPublishing(IntegrationTestCase):
@@ -21,7 +22,7 @@ class TestPublishing(IntegrationTestCase):
 		TestPublishing.counter += 1
 		model_id = f"publish-{TestPublishing.counter}"
 		return frappe.get_doc(
-			{"doctype": "Model", "model_id": model_id, "hf_repo": f"org/{model_id}"}
+			{"doctype": "Model", "model_id": ensure_model_id(model_id), "hf_repo": f"org/{model_id}"}
 		).insert(ignore_permissions=True)
 
 	def served(self, is_served=True):
@@ -68,7 +69,13 @@ class TestGranted(IntegrationTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		cls.model = (
-			frappe.get_doc({"doctype": "Model", "model_id": "probe-granted", "hf_repo": "org/probe-granted"})
+			frappe.get_doc(
+				{
+					"doctype": "Model",
+					"model_id": ensure_model_id("probe-granted"),
+					"hf_repo": "org/probe-granted",
+				}
+			)
 			.insert(ignore_permissions=True)
 			.name
 		)
@@ -114,7 +121,7 @@ class TestLoadPricing(IntegrationTestCase):
 
 	def model(self, model_id):
 		return frappe.get_doc(
-			{"doctype": "Model", "model_id": model_id, "hf_repo": f"org/{model_id}"}
+			{"doctype": "Model", "model_id": ensure_model_id(model_id), "hf_repo": f"org/{model_id}"}
 		).insert(ignore_permissions=True)
 
 	def test_the_catalogs_rates_land_as_one_disabled_draft(self):
@@ -149,7 +156,7 @@ class TestModalities(IntegrationTestCase):
 		model_id = f"modalities-{TestModalities.counter}"
 		rows = {fieldname: [{"modality": word} for word in words] for fieldname, words in lists.items()}
 		return frappe.get_doc(
-			{"doctype": "Model", "model_id": model_id, "hf_repo": f"org/{model_id}", **rows}
+			{"doctype": "Model", "model_id": ensure_model_id(model_id), "hf_repo": f"org/{model_id}", **rows}
 		).insert(ignore_permissions=True)
 
 	def lists(self, doc):

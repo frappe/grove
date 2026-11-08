@@ -65,11 +65,12 @@
    "read_only": 1
   },
   {
-   "description": "The client-facing id, without its provider prefix \u2014 what a client sends as `model`. Lowercased on save, with spaces and underscores as dashes ('Qwen3.5 Coder' \u2192 qwen3.5-coder). Makes the Model Key, so it is set once at creation; one per provider record.",
+   "description": "The client-facing id, without its provider prefix \u2014 what a client sends as `model`: a Model ID record, one per id whoever serves it. Makes the Model Key, so it is set once at creation; one per provider record.",
    "fieldname": "model_id",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Model ID",
+   "options": "Model ID",
    "read_only_depends_on": "eval: doc.published",
    "reqd": 1
   },

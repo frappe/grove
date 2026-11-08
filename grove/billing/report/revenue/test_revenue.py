@@ -8,6 +8,7 @@ from frappe.tests import IntegrationTestCase
 
 from grove.billing.report.revenue.revenue import execute
 from grove.grove.doctype.geography.test_geography import make_test_geography
+from grove.grove.doctype.model_id.model_id import ensure_model_id
 from grove.utils import utc_today
 
 
@@ -20,7 +21,9 @@ class TestRevenue(IntegrationTestCase):
 		make_test_geography()
 		cls.today = utc_today()
 		cls.model = (
-			frappe.get_doc({"doctype": "Model", "model_id": "revenue-7b", "hf_repo": "org/revenue-7b"})
+			frappe.get_doc(
+				{"doctype": "Model", "model_id": ensure_model_id("revenue-7b"), "hf_repo": "org/revenue-7b"}
+			)
 			.insert(ignore_permissions=True)
 			.name
 		)

@@ -34,14 +34,16 @@ class GatewayServer(PathwayHost, Document):
 		is_in_maintenance: DF.Check
 		is_static_ip: DF.Check
 		is_store_writer: DF.Check
+		is_vector_setup: DF.Check
 		isolate_caches: DF.Check
+		last_synced_at: DF.Datetime | None
 		machine: DF.Link
 		memory_limit_mb: DF.Int
-		monitoring_agent: DF.Link | None
 		network: DF.Link | None
 		private_ip: DF.Data | None
 		public_ip: DF.Data | None
 		region: DF.Link | None
+		ship_host_metrics: DF.Check
 		status: DF.Literal["Pending", "Installing", "Active", "Broken", "Terminated"]
 	# end: auto-generated types
 
@@ -167,13 +169,15 @@ class GatewayServer(PathwayHost, Document):
 		return f"grove-{self.short_name}-{frappe.utils.get_datetime(self.creation):%Y%m%d%H%M%S}"
 
 	def ensure_health_check(self, client):
-		"""Created once. It is what drops this box alone out of the multivalue answer when its /healthz
-		stops answering 200."""
-		if not self.health_check_id:
-			self.db_set(
-				"health_check_id",
-				client.create_endpoint_health_check(self.public_ip, self.hostname, self.caller_reference),
-			)
+		"""Created once, then kept on this box's address. It is what drops this box alone out of the
+		multivalue answer when its /healthz stops answering 200."""
+		if self.health_check_id:
+			client.update_health_check_ip(self.health_check_id, self.public_ip)
+			return self.health_check_id
+		self.db_set(
+			"health_check_id",
+			client.create_endpoint_health_check(self.public_ip, self.hostname, self.caller_reference),
+		)
 		return self.health_check_id
 
 	@frappe.whitelist()
@@ -265,7 +269,6 @@ class GatewayServer(PathwayHost, Document):
 		certificate's path, and deploy_tls owns writing the material."""
 		if not store:
 			frappe.throw(f"{self.name} is on no Gateway Store — Setup it first.")
-		settings = frappe.get_single("Grove Settings")
 		tls_variables = self.tls_variables
 		tls_variables.pop("fleet_tls_key", None)
 		return {
@@ -281,7 +284,6 @@ class GatewayServer(PathwayHost, Document):
 			"proxy_hostname": self.hostname,
 			**frappe.get_doc("Gateway Store", store).redis_variables,
 			**tls_variables,
-			**settings.scrape_auth_variables,
 			**self.config_variables,
 		}
 
@@ -327,5 +329,6 @@ class GatewayServer(PathwayHost, Document):
 		frappe.db.commit()
 
 		if rc == 0:
+			self.queue_vector()
 			self.sync_dns_records()
 		return play_name, rc

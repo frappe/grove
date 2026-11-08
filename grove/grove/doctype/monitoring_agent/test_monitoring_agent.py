@@ -1,8 +1,8 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""Where an agent pushes. Its Region's own endpoint when that Region has one — sending a
-region's samples across the world to a single ingestion URL is what regional endpoints exist
-to avoid — and the fleet-wide URL when it does not."""
+"""Where an agent pushes: its Region's Metrics Endpoint, and nothing else — sending a region's
+samples across the world to a single ingestion URL is what regional endpoints exist to avoid, so
+there is no fleet-wide fallback to drift onto."""
 
 import unittest
 
@@ -11,16 +11,10 @@ from frappe.tests import IntegrationTestCase
 
 from grove.grove.doctype.geography.test_geography import make_test_geography
 
-FALLBACK_URL = "http://fleet-wide.example.com/v1/write"
 REGIONAL_URL = "http://ap-south-1.example.com/v1/write"
 
 
 class TestRemoteWriteUrl(IntegrationTestCase):
-	def setUp(self):
-		settings = frappe.get_single("Grove Settings")
-		settings.metrics_remote_write_url = FALLBACK_URL
-		settings.save(ignore_permissions=True)
-
 	def agent(self, name, remote_write_url):
 		"""An agent on a box in its own Region, which may or may not name an endpoint."""
 		region = frappe.get_doc(
@@ -28,7 +22,7 @@ class TestRemoteWriteUrl(IntegrationTestCase):
 				"doctype": "Region",
 				"name": f"test-agent-region-{name}",
 				"label": name,
-				"remote_write_url": remote_write_url,
+				"metrics_url": remote_write_url,
 				"geography": make_test_geography(),
 			}
 		).insert(ignore_permissions=True)
@@ -57,8 +51,12 @@ class TestRemoteWriteUrl(IntegrationTestCase):
 	def test_a_regions_own_endpoint_wins(self):
 		self.assertEqual(self.agent("regional", REGIONAL_URL).remote_write_url, REGIONAL_URL)
 
-	def test_a_region_without_one_falls_back_to_the_fleet_wide_url(self):
-		self.assertEqual(self.agent("fallback", "").remote_write_url, FALLBACK_URL)
+	def test_a_region_without_one_leaves_the_agent_nowhere_to_push(self):
+		agent = self.agent("blank", "")
+		self.assertEqual(agent.remote_write_url, "")
+		with self.assertRaises(frappe.ValidationError) as caught:
+			agent.preflight()
+		self.assertIn("Metrics Endpoint on Region test-agent-region-blank", str(caught.exception))
 
 	def test_the_resolved_url_is_what_ansible_is_given(self):
 		agent = self.agent("vars", REGIONAL_URL)

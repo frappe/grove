@@ -16,12 +16,18 @@ import frappe
 import requests
 from frappe.utils import escape_html
 
-from grove import failure
+from grove import datum, failure
 from grove.cloud_provider.dns import Route53Client, Route53Error
-from grove.monitoring import run_exporters_play
 from grove.pathway.run import Target
 from grove.server import Server
 from grove.tls import dns_credentials
+
+INSTANCE_TYPES_TTL_SEC = 6 * 3600
+
+
+def instance_size(info):
+	"""'2 vCPU · 8 GiB' off a type's facts, as a form shows it."""
+	return f"{info['vcpus']} vCPU · {info['memory_mb'] / 1024:g} GiB"
 
 
 def gateway_agent_version():
@@ -53,7 +59,8 @@ def gateway_agent_release():
 
 class NamedHost(Server):
 	"""A box with its own A record at <short name>.<fleet zone>, and nothing else from the fleet.
-	A Gateway Store stops here: operators SSH to it by name, but nothing dials it over HTTP."""
+	A Gateway Store stops here: operators SSH to it by name, but nothing dials it over HTTP.
+	Every named box ships its logs and host metrics with Vector, so that lives here too."""
 
 	dns_fields = ("public_ip",)
 
@@ -121,10 +128,102 @@ class NamedHost(Server):
 				raise
 			return None
 
+	@frappe.whitelist()
+	def resize_options(self):
+		"""What a Server Resize form shows: this box's type with its size, and the types it can
+		move to — same architecture, virtualised, current generation, offered in its zone, no GPUs
+		(a gateway or store has no use for one). The list is cached six hours per provider, region,
+		architecture and zone: 400-odd types over several pages, changing slower than a form opens.
+		The current type is read live. The insert check still has the last word."""
+		machine = frappe.get_doc("Machine", self.machine)
+		machine.require_instance()
+		client = machine.cloud_client
+		network = machine.network_doc
+		zone = network.availability_zone if network else ""
+		key = (
+			f"instance_types:{machine.cloud_provider}:{machine.region_code}:{machine.cpu_architecture}:{zone}"
+		)
+		options = frappe.cache.get_value(key, expires=True)
+		if options is None:
+			options = client.list_instance_types(machine.cpu_architecture, zone)
+			frappe.cache.set_value(key, options, expires_in_sec=INSTANCE_TYPES_TTL_SEC)
+		current = client.get_instance_type_info(machine.instance_type)
+		return {
+			"current": {**current, "size": instance_size(current)},
+			"options": [
+				{**t, "size": instance_size(t)}
+				for t in options
+				if not t["gpus"] and t["instance_type"] != machine.instance_type
+			],
+		}
+
+	@frappe.whitelist()
+	def resize(self, instance_type: str):
+		"""Button: a Server Resize that moves this box onto another instance type — drained,
+		stopped, retyped, started and checked, one step per job — ready to Start from its form.
+		Gateway Server and Gateway Store."""
+		from grove.grove.doctype.server_resize.server_resize import ServerResize
+
+		name = ServerResize.create(self, instance_type)
+		frappe.msgprint(f"Server Resize {name} is ready — Start it there.", alert=True)
+		return name
+
+	@frappe.whitelist()
+	def install_vector(self):
+		"""Button: put Vector on this box, pushing its logs — and host metrics when ticked — to its
+		Region's datum. Run again to re-render the config; the hourly tick does the same for a
+		token about to run out."""
+		if self.status != "Active":
+			frappe.throw(f"{self.name} is {self.status} — set it up before installing Vector.")
+		self.check_vector_ready()
+		self.queue_vector()
+		frappe.msgprint(f"Installing Vector on {self.name} — watch its Ansible Plays.", alert=True)
+
+	def check_vector_ready(self):
+		"""Everything Vector needs before a play is queued, thrown together: the Region's endpoints
+		and Grove's Central credential."""
+		problems = frappe.get_doc("Region", self.region).vector_problems + datum.credential_problems()
+		if problems:
+			frappe.throw("<br>".join(problems), title=f"{self.name} is not ready for Vector")
+
+	def queue_vector(self):
+		"""Vector as its own job — after Setup too, so a datum problem never marks a freshly set-up
+		box Broken."""
+		frappe.enqueue_doc(self.doctype, self.name, "provision_vector", queue="long", timeout=1200)
+
+	@property
+	def vector_exporter_variables(self):
+		"""Extra-vars for an exporter Vector scrapes beside its own sources: none on most boxes."""
+		return {}
+
+	@failure.reports_failure(mark_broken=False)
+	def provision_vector(self):
+		"""Job: vector.yml with the Region's endpoints, a token minted now for the Central Region
+		that datum belongs to, and this box's labels — minted inside the job only, so the token
+		never sits in a Redis payload. Status is left alone: a box that cannot ship its logs still
+		serves. Readiness is checked here too: queued after Setup, this is the first thing that looks."""
+		self.check_vector_ready()
+		region = frappe.get_doc("Region", self.region)
+		token, expires_at = datum.mint_token(region.central_region, f"grove:{self.machine}")
+		extravars = {
+			"vector_metrics_url": region.metrics_url or "",
+			"vector_logs_url": region.logs_url or "",
+			"vector_token": token,
+			"vector_ship_host_metrics": bool(self.ship_host_metrics),
+			"vector_server": self.name,
+			"vector_machine": self.machine,
+			"vector_region": self.region,
+			**self.vector_exporter_variables,
+		}
+		play_name, rc = self.run_playbook("vector.yml", project="Monitoring Agent", extravars=extravars)
+		if rc != 0:
+			frappe.throw(f"vector.yml failed on {self.name} (Ansible Play {play_name}).")
+		self.db_set({"is_vector_setup": 1, "datum_token_expires_at": expires_at})
+		return play_name, rc
+
 
 class FleetHost(NamedHost):
-	"""Everything a named fleet box does the same way past its name: admin URL, certificate and
-	exporters."""
+	"""Everything a named fleet box does the same way past its name: admin URL and certificate."""
 
 	@property
 	def tls_variables(self):
@@ -179,19 +278,6 @@ class FleetHost(NamedHost):
 			extravars=self.tls_variables,
 		)
 
-	@frappe.whitelist()
-	def update_scrape_auth(self):
-		"""Button: rewrite this box's metrics htpasswd from the current scrape hash, re-running the
-		exporters with it (and DCGM if cards have appeared since Setup). Setup installs all of that
-		already; this is the path after a Scrape Password rotation, which no box learns of by itself."""
-		if not self.machine:
-			frappe.throw("Set a Machine before updating its scrape auth.")
-		frappe.enqueue_doc(self.doctype, self.name, "provision_exporters", queue="long", timeout=1800)
-		frappe.msgprint(f"Updating scrape auth on {self.name} — watch its Ansible Plays.", alert=True)
-
-	def provision_exporters(self):
-		return run_exporters_play(self)
-
 
 class PathwayHost(FleetHost):
 	"""A fleet box that runs pathway — a Gateway or an Ingress Server. Its maintenance is a
@@ -210,6 +296,25 @@ class PathwayHost(FleetHost):
 		}
 
 	@frappe.whitelist()
+	def migrate_to_vector(self):
+		"""Button: move a box set up before Vector onto it — vector.yml, then retire the node_exporter
+		and scrape htpasswd its old play installed. A box set up since has neither."""
+		if self.status != "Active":
+			frappe.throw(f"{self.name} is {self.status} — set it up before migrating to Vector.")
+		self.check_vector_ready()
+		frappe.enqueue_doc(self.doctype, self.name, "migrate_vector", queue="long", timeout=1800)
+		frappe.msgprint(f"Migrating {self.name} to Vector — watch its Ansible Plays.", alert=True)
+
+	@failure.reports_failure(mark_broken=False)
+	def migrate_vector(self):
+		"""Job: Vector first, so the box is never unwatched; the exporter goes only once it has landed."""
+		self.provision_vector()
+		play_name, rc = self.run_playbook("retire_exporter.yml", project="Gateway Server")
+		if rc != 0:
+			frappe.throw(f"retire_exporter.yml failed on {self.name} (Ansible Play {play_name}).")
+		return play_name, rc
+
+	@frappe.whitelist()
 	def set_maintenance(self, on: int):
 		"""Button: refuse new requests while running ones finish, or serve again. The box is asked
 		first — a pathway that predates the key refuses the whole file, even at its next start."""
@@ -219,17 +324,25 @@ class PathwayHost(FleetHost):
 		frappe.msgprint(f"{'Starting' if on else 'Ending'} maintenance on {self.name}.", alert=True)
 
 	@failure.reports_failure(mark_broken=False)
-	def apply_config(self):
+	def apply_config(self, **play):
 		"""Write config.json and SIGUSR1, then read the box back: a rejected reload keeps the old
-		config and says so only in the journal."""
-		play_name, rc = self.run_playbook("config.yml", extravars=self.config_variables)
+		config and says so only in the journal. A read that does not connect is asked again — one
+		dropped SYN must not fail the change the play already made. `play` names the doc the play
+		is run for."""
+		play_name, rc = self.run_playbook("config.yml", extravars=self.config_variables, **play)
 		if rc != 0:
 			frappe.throw(f"config.yml failed on {self.name} (Ansible Play {play_name}).")
-		want = bool(self.is_in_maintenance)
+		want, answered = bool(self.is_in_maintenance), None
 		for _ in range(10):
-			if self.get_in_flight()["maintenance"] == want:
+			try:
+				answered = self.get_in_flight()["maintenance"]
+			except requests.RequestException:
+				answered = None
+			if answered == want:
 				return play_name, rc
 			time.sleep(1)
+		if answered is None:
+			frappe.throw(f"{self.name} did not answer after config.yml (Ansible Play {play_name}).")
 		frappe.throw(
 			f"{self.name} kept maintenance={not want}: pathway rejected config.json, see its journal."
 		)

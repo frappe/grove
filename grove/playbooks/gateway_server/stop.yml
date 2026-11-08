@@ -1,0 +1,12 @@
+---
+# Stop pathway before its box is stopped: SIGTERM drains (instant once in-flight is 0) and the unit
+# is enabled, so it comes back on boot. Resize Server runs it after the box has drained.
+- hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: pathway stopped
+      ansible.builtin.systemd:
+        name: pathway
+        state: stopped

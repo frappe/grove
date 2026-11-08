@@ -29,13 +29,14 @@ class IngressServer(PathwayHost, Document):
 		frappe_public_key: DF.Code | None
 		geography: DF.Link | None
 		is_in_maintenance: DF.Check
+		is_vector_setup: DF.Check
 		machine: DF.Link
 		memory_limit_mb: DF.Int
-		monitoring_agent: DF.Link | None
 		network: DF.Link
 		private_ip: DF.Data | None
 		public_ip: DF.Data | None
 		region: DF.Link | None
+		ship_host_metrics: DF.Check
 		status: DF.Literal["Pending", "Installing", "Active", "Broken", "Terminated"]
 	# end: auto-generated types
 
@@ -100,8 +101,7 @@ class IngressServer(PathwayHost, Document):
 		frappe.db.set_value("Ingress Server", self.name, "status", "Installing")
 		frappe.db.commit()
 
-		settings = frappe.get_single("Grove Settings")
-		play_name, rc = self.run_playbook("ingress.yml", extravars=self.provision_variables(settings))
+		play_name, rc = self.run_playbook("ingress.yml", extravars=self.provision_variables)
 
 		self.set_admin_url()
 		frappe.db.set_value(
@@ -113,10 +113,12 @@ class IngressServer(PathwayHost, Document):
 		frappe.db.commit()
 
 		if rc == 0:
+			self.queue_vector()
 			self.sync_dns_records()
 		return play_name, rc
 
-	def provision_variables(self, settings):
+	@property
+	def provision_variables(self):
 		"""Everything ingress.yml needs. No tenant variables of any kind pass through here, and
 		that absence is the point — see test_ingress_server."""
 		return {
@@ -125,7 +127,6 @@ class IngressServer(PathwayHost, Document):
 			**gateway_agent_release(),
 			"ingress_id": self.short_name,
 			"ingress_hostname": self.hostname,
-			**settings.scrape_auth_variables,
 			**self.tls_variables,
 			**self.config_variables,
 			**self.memory_variables,
@@ -149,7 +150,6 @@ class IngressServer(PathwayHost, Document):
 		Resolved here rather than at enqueue: the certificate key would otherwise be serialised into
 		the job payload and sit in Redis. Dropped entirely — agent.env names the certificate's PATH,
 		which is a role default, and deploy_tls owns writing the material itself."""
-		settings = frappe.get_single("Grove Settings")
 		tls_variables = self.tls_variables
 		tls_variables.pop("fleet_tls_key", None)
 		play_name, rc = self.run_playbook(
@@ -161,7 +161,6 @@ class IngressServer(PathwayHost, Document):
 				"ingress_id": self.short_name,
 				"ingress_hostname": self.hostname,
 				**tls_variables,
-				**settings.scrape_auth_variables,
 				**self.config_variables,
 			},
 			**play,

@@ -26,10 +26,10 @@ class UsageRecord(Document):
 		from frappe.types import DF
 
 		api_key: DF.Link
-		cost: DF.Currency
+		cost: DF.Float
 		day: DF.Date
 		drain_id: DF.Data | None
-		gateway_cost: DF.Currency
+		gateway_cost: DF.Float
 		gateway_store: DF.Link | None
 		request_count: DF.Int
 		team: DF.Link | None

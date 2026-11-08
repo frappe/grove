@@ -32,7 +32,6 @@ PINNED = "v9.9.9"
 
 SETTINGS = SimpleNamespace(
 	gateway_variables={"synthetic_session_ttl": TTL, "usage_retention": "168h"},
-	scrape_auth_variables={"scrape_password_hash": "$2b$12$hash"},
 )
 STORE = SimpleNamespace(redis_variables={"redis_addr": "10.0.61.9:6379", "redis_password": "pw"})
 TLS = {
@@ -148,14 +147,11 @@ def config_json_variables(plane):
 	return set(re.findall(r"{{\s*(\w+)", template))
 
 
-# Variables the ROLES supply, not the button. agent.env names the certificate and htpasswd paths,
-# which are role defaults — deploy_agent includes grove_https and fleet_tls for exactly that.
+# Variables the ROLES supply, not the button. agent.env names the certificate paths, which are
+# fleet_tls defaults — deploy_agent includes the role for exactly that.
 FROM_ROLES = {
 	"fleet_tls_cert_path",
 	"fleet_tls_key_path",
-	"grove_tls_cert",
-	"grove_tls_key",
-	"grove_metrics_htpasswd",
 }
 
 
@@ -480,7 +476,7 @@ class TestMaintenanceIsHeldInConfigJson(unittest.TestCase):
 			patch("frappe.get_single", return_value=SETTINGS),
 			patch.object(frappe, "db", SimpleNamespace(get_single_value=lambda *args: PINNED)),
 		):
-			variables = IngressServer.provision_variables(doc, SETTINGS)
+			variables = IngressServer.provision_variables.fget(doc)
 		self.assertIs(True, variables["gateway_maintenance"])
 
 	def applied(self, box_says, rc=0):
@@ -507,6 +503,38 @@ class TestMaintenanceIsHeldInConfigJson(unittest.TestCase):
 	def test_a_box_that_did_not_take_it_is_an_error(self):
 		with self.assertRaises(frappe.ValidationError):
 			self.applied(box_says=False)
+
+	def test_a_read_that_does_not_connect_is_asked_again(self):
+		import requests
+
+		answers = Mock(
+			side_effect=[requests.ConnectTimeout("dropped"), {"maintenance": True, "in_flight": 0}]
+		)
+		doc = fake_gateway(is_in_maintenance=1, get_in_flight=answers)
+		doc.run_playbook = Mock(return_value=("play-1", 0))
+		with (
+			patch("frappe.get_single", return_value=SETTINGS),
+			patch("grove.fleet.time.sleep"),
+		):
+			self.assertEqual(("play-1", 0), GatewayServer.apply_config(doc))
+		self.assertEqual(2, answers.call_count)
+
+	def test_a_box_that_never_answers_is_an_error_naming_that(self):
+		import requests
+
+		doc = fake_gateway(
+			is_in_maintenance=1, get_in_flight=Mock(side_effect=requests.ConnectTimeout("dropped"))
+		)
+		doc.run_playbook = Mock(return_value=("play-1", 0))
+		with (
+			patch("frappe.get_single", return_value=SETTINGS),
+			patch("frappe.throw", side_effect=frappe.ValidationError) as throw,
+			patch("grove.fleet.time.sleep"),
+			patch("grove.failure.report"),
+			self.assertRaises(frappe.ValidationError),
+		):
+			GatewayServer.apply_config(doc)
+		self.assertIn("did not answer", throw.call_args.args[0])
 
 	def test_a_failed_play_is_an_error(self):
 		with self.assertRaises(frappe.ValidationError):
@@ -545,5 +573,5 @@ class TestSetupCapsMemoryAtTheDocsLimit(unittest.TestCase):
 			patch("frappe.get_single", return_value=SETTINGS),
 			patch.object(frappe, "db", SimpleNamespace(get_single_value=lambda *args: PINNED)),
 		):
-			variables = IngressServer.provision_variables(doc, SETTINGS)
+			variables = IngressServer.provision_variables.fget(doc)
 		self.assertEqual(600, variables["pathway_memory_limit_mb"])

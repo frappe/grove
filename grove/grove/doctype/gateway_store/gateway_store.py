@@ -35,6 +35,7 @@ class GatewayStore(NamedHost, Document):
 
 		frappe_public_key: DF.Code | None
 		geography: DF.Link | None
+		is_vector_setup: DF.Check
 		last_backup_at: DF.Datetime | None
 		last_backup_key: DF.Data | None
 		machine: DF.Link
@@ -43,6 +44,7 @@ class GatewayStore(NamedHost, Document):
 		public_ip: DF.Data | None
 		redis_password: DF.Password | None
 		region: DF.Link | None
+		ship_host_metrics: DF.Check
 		status: DF.Literal["Pending", "Installing", "Active", "Broken", "Terminated"]
 	# end: auto-generated types
 
@@ -77,11 +79,7 @@ class GatewayStore(NamedHost, Document):
 
 	@property
 	def archive_blockers(self):
-		gateways = frappe.get_all(
-			"Gateway Server",
-			filters={"gateway_store": self.name, "status": ("!=", "Terminated")},
-			pluck="name",
-		)
+		gateways = gateways_on(self.name, status=("!=", "Terminated"))
 		if not gateways:
 			return []
 		return [f"Gateways still run on this store: {', '.join(gateways)}."]
@@ -104,6 +102,11 @@ class GatewayStore(NamedHost, Document):
 			"redis_password": self.get_password("redis_password"),
 		}
 
+	@property
+	def vector_exporter_variables(self):
+		"""The redis exporter rides along on the store's own password; vector.yml lays it on seeing one."""
+		return {"vector_redis_password": self.get_password("redis_password")}
+
 	@frappe.whitelist()
 	def setup(self):
 		"""Button: install Redis on this store's box."""
@@ -125,6 +128,7 @@ class GatewayStore(NamedHost, Document):
 		if rc == 0:
 			# Redis is up whatever Route53 says next: a DNS failure must not roll that back.
 			frappe.db.commit()
+			self.queue_vector()
 			self.sync_dns_records()
 		return play_name, rc
 
@@ -200,6 +204,16 @@ def stores_in(network, **filters):
 	if not boxes:
 		return []
 	return frappe.get_all("Gateway Store", filters={"machine": ("in", boxes), **filters}, pluck="name")
+
+
+def gateways_on(store, **filters):
+	"""The gateways running on `store` — Active ones unless `filters` says otherwise."""
+	return frappe.get_all(
+		"Gateway Server",
+		filters={"gateway_store": store, "status": "Active", **filters},
+		order_by="name asc",
+		pluck="name",
+	)
 
 
 def store_writers(store):

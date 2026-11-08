@@ -18,7 +18,7 @@ class UsageCorrection(Document):
 		from frappe.types import DF
 
 		api_key: DF.Link
-		cost: DF.Currency
+		cost: DF.Float
 		cost_discrepancy: DF.Link
 		day: DF.Date
 		model: DF.Data | None

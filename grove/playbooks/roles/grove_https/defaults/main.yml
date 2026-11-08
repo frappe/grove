@@ -7,7 +7,8 @@ grove_tls_subject: /CN=grove-box
 # Nothing renews or verifies it; delete the file and re-run to reissue.
 grove_tls_days: 90
 
-# Only the inference box's nginx needs one on disk to start `listen 443 ssl`; front boxes set false.
+# The inference box's nginx needs one on disk to start `listen 443 ssl`; exporters.yml sets false
+# because provision already made it.
 grove_tls_selfsigned: true
 
 # The hash comes from Grove Settings: htpasswd here would put the password in argv, which the

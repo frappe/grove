@@ -12,6 +12,7 @@ from frappe.tests import IntegrationTestCase
 
 from grove.billing import vendor
 from grove.billing.report.vendor_reconciliation.vendor_reconciliation import execute
+from grove.grove.doctype.model_id.model_id import ensure_model_id
 from grove.grove.doctype.model_provider.test_model_provider import provider
 from grove.utils import utc_today
 
@@ -33,7 +34,7 @@ class TestVendorReconciliation(IntegrationTestCase):
 			{
 				"doctype": "Model",
 				"provider": cls.vendor.name,
-				"model_id": "probe-flash",
+				"model_id": ensure_model_id("probe-flash"),
 				"upstream_model_id": UPSTREAM,
 			}
 		).insert()
@@ -199,10 +200,10 @@ class TestVendorReconciliation(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError) as today:
 			self.report(to_date=utc_today())
 		self.assertIn("yesterday", str(today.exception))
-		provider("probe-unbilled", base_url="https://api.unbilled.test", api_key="k").insert()
+		provider("_T-probe-unbilled", base_url="https://api.unbilled.test", api_key="k").insert()
 		with self.assertRaises(frappe.ValidationError) as unread:
-			self.report(provider="probe-unbilled")
-		self.assertIn("probe-unbilled", str(unread.exception))
+			self.report(provider="_T-probe-unbilled")
+		self.assertIn("_T-probe-unbilled", str(unread.exception))
 		with self.assertRaises(frappe.ValidationError) as unknown:
 			self.report(provider="probe-nobody")
 		self.assertIn("probe-nobody", str(unknown.exception))

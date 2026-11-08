@@ -5,7 +5,11 @@ app_description = "An Inference Platform"
 app_email = "developers@frappe.io"
 app_license = "mit"
 
-app_include_js = ["/assets/grove/js/gpu_table.js", "/assets/grove/js/confirm_call.js"]
+app_include_js = [
+	"/assets/grove/js/gpu_table.js",
+	"/assets/grove/js/confirm_call.js",
+	"/assets/grove/js/resize_server.js",
+]
 
 notification_config = "grove.notifications.get_notification_config"
 
@@ -20,19 +24,19 @@ scheduler_events = {
 	"cron": {
 		"*/1 * * * *": [
 			"grove.pathway.projection.sync_projection",
-		],
-		"*/2 * * * *": [
-			"grove.cloud_provider.reconcile.sync_all",
+			"grove.datum.push_roster",
 		],
 		"0 */6 * * *": [
 			"grove.pathway.key_stats.pull_all",
 		],
 		"*/5 * * * *": [
 			"grove.grove.doctype.gateway_store.gateway_store.backup_all",
+            "grove.cloud_provider.reconcile.sync_all",
 		],
 	},
 	"hourly": [
 		"grove.grove.doctype.grove_api_key.grove_api_key.revoke_expired",
+		"grove.datum.refresh_tokens",
 	],
 	"hourly_long": [
 		"grove.pathway.usage.pull_all",

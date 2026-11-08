@@ -159,6 +159,11 @@ class Route53Client:
 			config["FullyQualifiedDomainName"] = hostname
 		return self._create_health_check(caller_reference, config)
 
+	def update_health_check_ip(self, health_check_id, public_ip):
+		"""Point an existing check at the box's current address. A box back from a stop on a new IP
+		keeps its check, which would otherwise go on probing the old one."""
+		self._call(self.route53.update_health_check, HealthCheckId=health_check_id, IPAddress=public_ip)
+
 	def delete_health_check(self, health_check_id):
 		"""One already gone is not worth blocking a teardown over. A check a record still names is
 		REFUSED, which is why the rows come off first."""

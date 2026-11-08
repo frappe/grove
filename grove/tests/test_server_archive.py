@@ -65,7 +65,7 @@ class TestWhatBlocksAnArchive(unittest.TestCase):
 		with patch.object(frappe, "get_all", side_effect=get_all):
 			blockers = MonitoringAgent.archive_blockers.fget(SimpleNamespace(name="ma-1"))
 		self.assertEqual(len(blockers), 2)
-		self.assertEqual(set(get_all.asked), {"Inference Server", "Ingress Server", "Gateway Server", "Pod"})
+		self.assertEqual(set(get_all.asked), {"Inference Server", "Pod"})
 		for filters in get_all.asked.values():
 			self.assertEqual(filters, {"monitoring_agent": "ma-1", "status": LIVE})
 

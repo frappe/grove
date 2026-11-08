@@ -7,11 +7,13 @@ import frappe
 import requests
 from frappe.model.document import Document
 
-from grove.utils import slugify
+from grove.grove.doctype.model_id.model_id import ensure_model_id
 
 ANTHROPIC_VERSION = "2023-06-01"
 
-PROVIDER_NAME = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
+# An RFC 7230 token: what may name a header.
+HEADER_NAME = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
+CREDENTIAL_HEADERS = ("authorization", "x-api-key")
 
 
 class ModelProvider(Document):
@@ -19,8 +21,11 @@ class ModelProvider(Document):
 	third-party API.
 
 	Provider Name is the namespace every Model under it is named in, set once: it is already inside
-	every route key and every usage bucket a customer was billed against. A vendor has one record
-	per Geography under the same name, so the model id is the same everywhere.
+	every route key and every usage bucket a customer was billed against. A Select of the vendors
+	pathway knows (its `vendor.known`) and `frappe` for ours: a push naming any other is refused
+	there, so a new vendor ships in pathway first. A vendor has one record per Geography under the
+	same name, so the model id is the same everywhere; Display Name (`OpenAI`) is the name's too,
+	kept the same on every record, and what a customer's dashboard shows.
 
 	Self Hosted names ours: a Model with no provider is named under it, and only its models can be
 	deployed. Every other provider is a vendor: a published Model there routes straight to it and no
@@ -35,26 +40,22 @@ class ModelProvider(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		from grove.grove.doctype.model_provider_header.model_provider_header import ModelProviderHeader
 		from grove.grove.doctype.model_provider_key.model_provider_key import ModelProviderKey
 
 		anthropic_base_url: DF.Data | None
 		api_keys: DF.Table[ModelProviderKey]
-		api_version: DF.Data | None
 		base_url: DF.Data | None
+		display_name: DF.Data | None
+		extra_headers: DF.Table[ModelProviderHeader]
 		geography: DF.Link | None
 		is_self_hosted: DF.Check
 		key_selection: DF.Literal["Round Robin"]
-		provider_name: DF.Data
+		provider_name: DF.Literal["anthropic", "baseten", "deepseek", "frappe", "morph", "openai"]
 		zero_data_retention: DF.Check
 	# end: auto-generated types
 
 	def validate(self):
-		if not PROVIDER_NAME.fullmatch(self.provider_name or ""):
-			frappe.throw(
-				f"Provider name {self.provider_name!r} must be lowercase letters, digits and single "
-				"hyphens — it is the prefix of every model id this provider serves."
-			)
-
 		# mandatory_depends_on is client-side only; this is the gate an API insert hits.
 		if not self.is_self_hosted and not self.geography:
 			frappe.throw(
@@ -65,6 +66,7 @@ class ModelProvider(Document):
 			self.validate_self_hosted()
 		self.validate_siblings()
 		self.validate_key_titles()
+		self.validate_extra_headers()
 
 	def validate_self_hosted(self):
 		"""One provider is ours, and it dials nothing — a URL is what makes a vendor. It keeps
@@ -79,12 +81,13 @@ class ModelProvider(Document):
 			frappe.throw(f"{other} is already the Self Hosted provider — there is one.")
 
 	def validate_siblings(self):
-		"""Records sharing a name are one provider: one per Geography, all ours or all a vendor's.
-		The unique index backs the first rule; this is the message an operator can act on."""
+		"""Records sharing a name are one provider: one per Geography, all ours or all a vendor's,
+		one Display Name. The unique index backs the first rule; this is the message an operator can
+		act on. A new record takes the name's display name when it brings none."""
 		siblings = frappe.get_all(
 			"Model Provider",
 			filters={"provider_name": self.provider_name, "name": ("!=", self.name)},
-			fields=["geography", "is_self_hosted"],
+			fields=["geography", "is_self_hosted", "display_name"],
 		)
 		for sibling in siblings:
 			if bool(sibling.is_self_hosted) != bool(self.is_self_hosted):
@@ -93,6 +96,7 @@ class ModelProvider(Document):
 				)
 			if sibling.geography == self.geography:
 				frappe.throw(f"{self.provider_name} already has a record in {self.geography}.")
+			self.display_name = self.display_name or sibling.display_name
 
 	def validate_key_titles(self):
 		"""A key is known by its title — Provider Key Stats names it so — and a blank one is the
@@ -102,10 +106,35 @@ class ModelProvider(Document):
 		if repeated:
 			frappe.throw(f"{self.provider_name} has two keys titled {repeated[0]!r}.")
 
+	def validate_extra_headers(self):
+		"""Header names with one-line values, each name once. The credential is the gateway's: it
+		rotates keys per request, so a fixed one here would be overwritten, or worse, win."""
+		names = [row.header.lower() for row in self.extra_headers]
+		for row in self.extra_headers:
+			if not HEADER_NAME.fullmatch(row.header) or "\n" in row.value or "\r" in row.value:
+				frappe.throw(f"Extra Headers: {row.header!r} must be a header name with a one-line value.")
+			if row.header.lower() in CREDENTIAL_HEADERS:
+				frappe.throw(f"Extra Headers: {row.header} is the gateway's to set, from Keys.")
+			if names.count(row.header.lower()) > 1:
+				frappe.throw(f"Extra Headers: {row.header} is listed twice.")
+
+	@property
+	def headers(self):
+		"""Extra Headers as the gateway reads them: {name: value}, {} when there are none."""
+		return {row.header: row.value for row in self.extra_headers}
+
 	def on_update(self):
 		if self.has_value_changed("is_self_hosted"):
 			frappe.db.set_value(
 				"Model", {"provider": self.name}, "provider_is_self_hosted", self.is_self_hosted
+			)
+		if self.has_value_changed("display_name"):
+			# The display name is the provider's, so every record of the name shows the same one.
+			frappe.db.set_value(
+				"Model Provider",
+				{"provider_name": self.provider_name, "name": ("!=", self.name)},
+				"display_name",
+				self.display_name,
 			)
 
 	@frappe.whitelist()
@@ -133,7 +162,7 @@ class ModelProvider(Document):
 			params = {}
 		else:
 			url = f"{self.anthropic_base_url.rstrip('/')}/v1/models"
-			headers = {"x-api-key": secret, "anthropic-version": self.api_version or ANTHROPIC_VERSION}
+			headers = {"x-api-key": secret, "anthropic-version": ANTHROPIC_VERSION}
 			params = {"limit": 1000}
 		ids = []
 		while True:
@@ -150,12 +179,13 @@ class ModelProvider(Document):
 
 	@frappe.whitelist()
 	def add_models(self, model_ids: dict[str, str]):
-		"""Button: {upstream id: our id} as unpublished Models under this record. Our id is
-		slugified; the vendor's own spelling rides `upstream_model_id` when it differs."""
+		"""Button: {upstream id: our id} as unpublished Models under this record. Our id names a
+		Model ID, made when the site lacks it; the vendor's own spelling rides `upstream_model_id`
+		when it differs."""
 		frappe.only_for("System Manager")
 		keys = []
 		for upstream_id, model_id in model_ids.items():
-			model_id = slugify(model_id.replace("/", "-"))
+			model_id = ensure_model_id(model_id.replace("/", "-"))
 			model = {
 				"doctype": "Model",
 				"provider": self.name,

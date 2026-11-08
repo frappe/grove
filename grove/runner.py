@@ -1,3 +1,4 @@
+import time
 from enum import Enum
 from typing import TYPE_CHECKING, Literal
 
@@ -36,10 +37,28 @@ class StepHandler:
 	doctype: str
 	name: str
 
-	def handle_machine_status(self, step: GenericStep, machine: str, expected_status: str) -> None:
-		"""Poll step: sync the Machine off its cloud and pass once it reports `expected_status`."""
+	def poll(
+		self,
+		step: GenericStep,
+		done: bool,
+		waiting_for: str,
+		max_attempts: int = 120,
+		interval_sec: int = 5,
+	) -> None:
+		"""Poll step: pass once `done`, else wait and stay Running for the next job. Capped, so a box
+		that never gets there fails the step instead of holding the queue."""
 		step.attempt = (step.attempt or 0) + 1
+		if done:
+			step.status = Status.Success
+		elif step.attempt >= max_attempts:
+			frappe.throw(f"Still waiting for {waiting_for} after {step.attempt} attempts.")
+		else:
+			time.sleep(interval_sec)
+			step.status = Status.Running
+		step.save()
 
+	def handle_machine_status(self, step: GenericStep, machine: str, expected_status: str, **poll) -> None:
+		"""Poll step: sync the Machine off its cloud and pass once it reports `expected_status`."""
 		try:
 			frappe.get_doc("Machine", machine).sync()
 		except CloudClientError:
@@ -48,8 +67,9 @@ class StepHandler:
 		machine_status = frappe.db.get_value("Machine", machine, "status")
 		if machine_status == "Terminated" and expected_status != "Terminated":
 			frappe.throw(f"Machine {machine} is Terminated, it will never reach {expected_status}.")
-		step.status = Status.Success if machine_status == expected_status else Status.Running
-		step.save()
+		self.poll(
+			step, machine_status == expected_status, f"Machine {machine} to be {expected_status}", **poll
+		)
 
 	def handle_ansible_play(self, step: GenericStep, host: "AnsibleHost", playbook: str, **kwargs) -> None:
 		"""Run `playbook` on `host`'s box. The play references this doc, so its failure lands here."""

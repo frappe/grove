@@ -152,16 +152,15 @@ def usage_window(from_date, to_date, period, month):
 		return first, get_last_day(first)
 	last_month = add_months(get_first_day(today), -1)
 	windows = {
-		"Today": (today, today),
-		"Yesterday": (add_days(today, -1), add_days(today, -1)),
 		"Last 7 Days": (add_days(today, -6), today),
 		"Last 30 Days": (add_days(today, -29), today),
 		"This Month": (get_first_day(today), today),
 		"Last Month": (last_month, get_last_day(last_month)),
 	}
-	if (period or "This Month") not in windows:
+	period = period or "This Month"
+	if period not in windows:
 		frappe.throw(f"Unknown period {period!r}: one of {', '.join(windows)}.")
-	return windows[period or "This Month"]
+	return windows[period]
 
 
 def _totals_by_model(rows):

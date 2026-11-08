@@ -7,7 +7,6 @@
   gather_facts: true
   vars:
     grove_dir: "{{ playbook_dir }}"
-    grove_tls_selfsigned: false
 
   pre_tasks:
     - name: read the installed unit
@@ -23,9 +22,8 @@
           pathway here still runs as root with its pid file in /run — run Setup on the Gateway
           Server first, which ships the unit this play assumes.
 
-  # grove_https and fleet_tls supply the paths agent.env names; both write nothing they are not handed.
+  # fleet_tls supplies the paths agent.env names; it writes nothing it is not handed.
   roles:
-    - grove_https
     - fleet_tls
     - install_gateway_agent
 
@@ -45,7 +43,7 @@
           - proxy_hostname | default('') | trim | length > 0
         fail_msg: >-
           gateway_id and proxy_hostname are required — without them this box would lose the name its
-          admin plane and its scrape answer on. Re-run from the Deploy Agent button.
+          admin plane answers on. Re-run from the Deploy Agent button.
 
     - name: agent.env
       ansible.builtin.copy:
@@ -65,7 +63,6 @@
           GROVE_SELF_HOST={{ proxy_hostname }}
           GROVE_TLS_CERT={{ fleet_tls_cert_path if (fleet_tls_cert | default('')) else '' }}
           GROVE_TLS_KEY={{ fleet_tls_key_path if (fleet_tls_cert | default('')) else '' }}
-          GROVE_HTPASSWD={{ grove_metrics_htpasswd }}
           GROVE_ACCESS_LOG=/var/log/pathway/access.log
           GROVE_ERROR_LOG=/var/log/pathway/error.log
           GROVE_PAYLOAD_LOG=/var/log/pathway/payload.log

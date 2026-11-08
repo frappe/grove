@@ -1,0 +1,61 @@
+---
+- name: Read the installed redis_exporter version
+  ansible.builtin.command: redis_exporter --version
+  register: redis_exporter_probe
+  changed_when: false
+  failed_when: false
+
+- name: Install redis_exporter {{ redis_exporter_version }}
+  when: redis_exporter_version not in (redis_exporter_probe.stdout | default('')) + (redis_exporter_probe.stderr | default(''))
+  block:
+    - name: Unpack the release into a staging dir
+      ansible.builtin.unarchive:
+        src: "https://github.com/oliver006/redis_exporter/releases/download/v{{ redis_exporter_version }}/redis_exporter-v{{ redis_exporter_version }}.linux-{{ monitoring_arch }}.tar.gz"
+        dest: /tmp
+        remote_src: true
+
+    - name: Install the binary
+      ansible.builtin.copy:
+        src: "/tmp/redis_exporter-v{{ redis_exporter_version }}.linux-{{ monitoring_arch }}/redis_exporter"
+        dest: /usr/local/bin/redis_exporter
+        remote_src: true
+        mode: "0755"
+      notify: restart redis_exporter
+
+# systemd reads this as root before the unit drops to its dynamic user, so root-only is enough.
+- name: Write the exporter's password
+  ansible.builtin.copy:
+    content: "REDIS_PASSWORD={{ redis_exporter_password }}\n"
+    dest: /etc/redis_exporter.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: restart redis_exporter
+
+- name: Write the redis_exporter unit
+  ansible.builtin.template:
+    src: redis_exporter.service.j2
+    dest: /etc/systemd/system/redis_exporter.service
+    mode: "0644"
+  notify: restart redis_exporter
+
+- name: Enable and start redis_exporter
+  ansible.builtin.systemd:
+    name: redis_exporter
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Flush handlers so the health check sees the new binary and password
+  ansible.builtin.meta: flush_handlers
+
+# A wrong password still answers 200, with redis_up 0.
+- name: Check redis_exporter reaches redis
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ redis_exporter_port }}/metrics"
+    return_content: true
+  retries: 5
+  delay: 2
+  register: redis_exporter_health
+  until: "'redis_up 1' in (redis_exporter_health.content | default(''))"

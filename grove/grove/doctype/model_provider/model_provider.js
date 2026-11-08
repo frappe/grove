@@ -46,7 +46,7 @@ function name_models(frm, upstream_ids) {
 				cannot_add_rows: true,
 				in_place_edit: true,
 				description: __(
-					"Our id is what clients send; the vendor id is what the vendor is asked for."
+					"Our id is a Model ID: pick one the site holds, or type a new one and it is made. The vendor id is what the vendor is asked for."
 				),
 				data: upstream_ids.map((id) => ({
 					upstream_model_id: id,
@@ -62,10 +62,13 @@ function name_models(frm, upstream_ids) {
 					},
 					{
 						fieldname: "model_id",
-						fieldtype: "Data",
+						fieldtype: "Link",
+						options: "Model ID",
 						label: __("Model ID"),
 						reqd: 1,
 						in_list_view: 1,
+						// A typed id the site lacks stays in the cell: add_models makes the record.
+						ignore_link_validation: 1,
 					},
 				],
 			},

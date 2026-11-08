@@ -7,10 +7,14 @@
  "engine": "InnoDB",
  "field_order": [
   "label",
-  "remote_write_url",
   "column_break_upid",
   "cloud_provider",
-  "geography"
+  "geography",
+  "monitoring_tab",
+  "central_region",
+  "metrics_url",
+  "column_break_monitoring",
+  "logs_url"
  ],
  "fields": [
   {
@@ -19,6 +23,18 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Label"
+  },
+  {
+   "fieldname": "column_break_upid",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Blank = on-prem / no cloud provider.",
+   "fieldname": "cloud_provider",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Cloud Provider",
+   "options": "\nrunpod\naws"
   },
   {
    "description": "The residency boundary this region is in. Every box here inherits it. Fixed while a Network or Machine names the region.",
@@ -30,22 +46,31 @@
    "reqd": 1
   },
   {
-   "description": "Blank = on-prem / no cloud provider.",
-   "fieldname": "cloud_provider",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Cloud Provider",
-   "options": "\nrunpod\naws"
+   "fieldname": "monitoring_tab",
+   "fieldtype": "Tab Break",
+   "label": "Monitoring"
   },
   {
-   "description": "Ingestion endpoint for agents in this region, e.g. https://metrics.ap-south-1.example.com/v1/write. Keeps a region's samples off a cross-region hop. Blank = the fleet-wide URL in Grove Settings.",
-   "fieldname": "remote_write_url",
+   "description": "Central's name for the region whose datum this is (its own Region doc, e.g. blr-1): the audience of every token Grove mints for boxes here. Grove's region codes need not match Central's.",
+   "fieldname": "central_region",
    "fieldtype": "Data",
-   "label": "Remote Write URL"
+   "label": "Central Region"
   },
   {
-   "fieldname": "column_break_upid",
+   "description": "datum's remote write route for this region, e.g. http://13.206.253.38/v1/ingest/remote. Every Monitoring Agent and every Vector in this region pushes to it; there is no fleet-wide fallback.",
+   "fieldname": "metrics_url",
+   "fieldtype": "Data",
+   "label": "Metrics Endpoint"
+  },
+  {
+   "fieldname": "column_break_monitoring",
    "fieldtype": "Column Break"
+  },
+  {
+   "description": "datum's log route for this region, e.g. http://13.206.253.38/v1/logs/ingest. Every box here POSTs its journald and pathway/redis lines to it.",
+   "fieldname": "logs_url",
+   "fieldtype": "Data",
+   "label": "Logs Endpoint"
   }
  ],
  "links": [
@@ -58,9 +83,14 @@
    "group": "Infrastructure",
    "link_doctype": "Gateway Server",
    "link_fieldname": "region"
+  },
+  {
+   "group": "Infrastructure",
+   "link_doctype": "Gateway Store",
+   "link_fieldname": "region"
   }
  ],
- "modified": "2026-09-17 03:25:03.030537",
+ "modified": "2026-10-22 16:48:44.446671",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Region",

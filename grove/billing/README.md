@@ -112,7 +112,7 @@ is a doc plus the one parser line in pathway that fills its bucket from the resp
 **Revenue and usage reads.** The `Revenue` report (Desk) sums what each drain was charged —
 Grove's cost in each record's per-model detail — plus the Usage Corrections Grove made, grouped by model, API key, team or day over a date range,
 with a total row; export from the report toolbar. The `Vendor Reconciliation` report (Desk, prepared: it runs in the background and the latest run is shown) takes a vendor (a select of those with a billing read: Baseten) and a UTC day range that ends yesterday at the latest (today's figures still move on both sides) and shows, per model or per day and model (Group By), Grove's requests, input, cached and output tokens and charged cost beside the vendor's own requests, tokens and billed subtotal, with the margin and a total row; a vendor cell that disagrees with Grove's reads red. The vendor side is read live from the vendor's billing API by `vendor.py`, once per vendor account across the vendor's Model Provider records — a key row's **Account**, or the key itself when it names none, so two keys of one account (a rotation) read once and two accounts in one record both read (Baseten only so far, at most 90 days a range, the retention here); the Grove side is one grouped query over the records' per-model detail, corrections left out. A model only the vendor saw gets a row under its upstream id. `api.usage.usage(teams, from_date, to_date | period | month | pulled_after, pulled_until, key_hash)` (read-only: on the replica when the site sets `read_from_replica`) gives a control client requests and cost (what was charged; a Grove correction adds its cost under its model on the day it was resolved)
-per team and model (periods: Today, Yesterday, Last 7 Days, Last 30 Days, This Month, Last Month),
+per team and model (periods: Last 7 Days, Last 30 Days, This Month, Last Month),
 and the per-model summary again per UTC day (`daily_summary`, for a chart; a day with no usage has no entry),
 with `as_of` = when the newest usage in the range was pulled. `pulled_after`/`pulled_until` (RFC 3339 UTC, until exclusive) read by when a record or a correction landed (`creation`) instead of by day: Central's invoice is every record landed since its last one, so a drain that lands late goes on the next invoice and nothing is billed twice. Each is one grouped SQL statement
 over `usage_record.money_rows`: `JSON_TABLE` of the records (one column per Usage Counter) in a UNION ALL with the Usage Corrections, on
@@ -138,7 +138,8 @@ it holds no money that must not run out. What gates is:
   on one store and that store gates it exactly. A key is minted at 0 and refused until
   `api.keys.update_key(cap=)` gives it one.
 - **The team's `Tier`**, named by Central from the team's trust tier (`api.teams.update_team`, by
-  Central's Webhook at `api.teams.team_webhook`, and `api.teams.rename_tier` when a label changes; `Beginner`
+  Central's Webhook at `api.teams.team_webhook`, signed with the control credential and locking an
+  address out for five minutes after three bad signatures, and `api.teams.rename_tier` when a label changes; `Beginner`
   … `Elite`, the catalog seeds a starter ladder once and the operator edits the values in Desk):
   its `spend_limit` (USD a month), `max_keys` (0: no limit) and the rate limits a key with no
   limit rows of its own runs under. What the month has spoken for stays within the spend limit:

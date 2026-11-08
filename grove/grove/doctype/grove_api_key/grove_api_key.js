@@ -7,7 +7,9 @@ frappe.ui.form.on("Grove API Key", {
 	},
 
 	refresh(frm) {
-		if (frm.is_new() || frm.doc.status !== "active") return;
+		if (frm.is_new()) return;
+		frm.add_custom_button(__("Ops page"), () => frappe.set_route("ops", { api_key: frm.doc.name }));
+		if (frm.doc.status !== "active") return;
 
 		frm.add_custom_button(__("Revoke"), () => {
 			frappe.confirm(

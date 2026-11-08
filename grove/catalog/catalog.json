@@ -182,6 +182,7 @@
    "models": [
     "anthropic/claude-sonnet-5-5",
     "baseten/deepseek-v4.1-flash",
+    "morph/glm-5.3-flash",
     "openai/gpt-6-luna",
     "openai/gpt-6-sol",
     "openai/text-embedding-3-large",
@@ -192,6 +193,7 @@
  ],
  "models": [
   {
+   "display_name": "GPT-6 Luna",
    "input_modalities": [
     "Text",
     "Image"
@@ -237,6 +239,7 @@
    ]
   },
   {
+   "display_name": "GPT-6 Sol",
    "input_modalities": [
     "Text",
     "Image"
@@ -282,6 +285,7 @@
    ]
   },
   {
+   "display_name": "Claude Sonnet 5.5",
    "input_modalities": [
     "Text",
     "Image"
@@ -315,6 +319,7 @@
    ]
   },
   {
+   "display_name": "DeepSeek V4.1 Flash",
    "input_modalities": [
     "Text",
     "Image"
@@ -341,6 +346,7 @@
    "upstream_model_id": "deepseek-ai/DeepSeek-V4.1-Flash"
   },
   {
+   "display_name": "Text Embedding 3 Small",
    "input_modalities": [
     "Text"
    ],
@@ -357,6 +363,7 @@
    ]
   },
   {
+   "display_name": "Text Embedding 3 Large",
    "input_modalities": [
     "Text"
    ],
@@ -371,27 +378,98 @@
      "rate": 0.13
     }
    ]
+  },
+  {
+   "display_name": "GLM 5.3 Flash",
+   "input_modalities": [
+    "Text",
+    "Image"
+   ],
+   "model_id": "glm-5.3-flash",
+   "output_modalities": [
+    "Text"
+   ],
+   "provider": "morph",
+   "rates": [
+    {
+     "counter": "prompt_tokens",
+     "rate": 0.2
+    },
+    {
+     "counter": "cached_tokens",
+     "rate": 0.04
+    },
+    {
+     "counter": "completion_tokens",
+     "rate": 0.7
+    }
+   ],
+   "upstream_model_id": "morph-glm53flash"
+  },
+  {
+   "display_name": "DeepSeek V4.1 Flash 1017",
+   "input_modalities": [
+    "Text"
+   ],
+   "model_id": "deepseek-v4.1-flash-1017",
+   "output_modalities": [
+    "Text"
+   ],
+   "provider": "morph",
+   "rates": [
+    {
+     "counter": "prompt_tokens",
+     "rate": 0.12
+    },
+    {
+     "counter": "cached_tokens",
+     "rate": 0.008
+    },
+    {
+     "counter": "completion_tokens",
+     "rate": 0.8
+    }
+   ],
+   "upstream_model_id": "morph-dsv41flash-1017"
   }
  ],
  "providers": [
   {
    "anthropic_base_url": "https://api.anthropic.com",
+   "display_name": "Anthropic",
    "geography": "Main",
    "provider_name": "anthropic"
   },
   {
    "anthropic_base_url": "https://inference.baseten.co",
    "base_url": "https://inference.baseten.co",
+   "display_name": "Baseten",
    "geography": "Main",
    "provider_name": "baseten",
    "zero_data_retention": 1
   },
   {
+   "anthropic_base_url": "https://api.deepseek.com/anthropic",
+   "base_url": "https://api.deepseek.com",
+   "display_name": "DeepSeek",
+   "geography": "Main",
+   "provider_name": "deepseek"
+  },
+  {
+   "display_name": "Frappe",
    "is_self_hosted": 1,
    "provider_name": "frappe"
   },
   {
+   "anthropic_base_url": "https://api.morphllm.com",
+   "base_url": "https://api.morphllm.com",
+   "display_name": "Morph",
+   "geography": "Main",
+   "provider_name": "morph"
+  },
+  {
    "base_url": "https://api.openai.com",
+   "display_name": "OpenAI",
    "geography": "Main",
    "provider_name": "openai"
   }

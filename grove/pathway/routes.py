@@ -230,10 +230,12 @@ def models_in(geography):
 				"name",
 				"model_key",
 				"model_id",
+				"model_id.display_name as display_name",
 				"upstream_model_id",
 				"published",
 				"provider",
 				"provider.provider_name as provider_name",
+				"provider.display_name as provider_display_name",
 				"provider.geography as geography",
 				"provider.is_self_hosted as is_self_hosted",
 				"provider.zero_data_retention as zero_data_retention",
@@ -316,7 +318,7 @@ def vendor_endpoints(geography):
 				"fronts": fronts,
 				"credentials": credentials,
 				"key_selection": (provider.key_selection or "Round Robin").lower().replace(" ", "_"),
-				"api_version": provider.api_version or "",
+				"headers": provider.headers,
 				"denied_tools": denied.get(provider.provider_name, []),
 			}
 	return out
@@ -378,7 +380,7 @@ def add_vendor_routes(routes, models, vendors, upstream):
 					"vendor": model.provider_name,
 					"kind": "provider",
 					"upstream_model": upstream.get(model.name, ""),
-					"api_version": vendor["api_version"],
+					"headers": vendor["headers"],
 					"dialect": dialect,
 					"denied_tools": vendor["denied_tools"],
 				}

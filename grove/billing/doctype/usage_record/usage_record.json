@@ -89,7 +89,7 @@
   {
    "description": "Grove's price of this key's usage in this drain, at every pricing the gateway charged. Charged to the user only when Billed.",
    "fieldname": "cost",
-   "fieldtype": "Currency",
+   "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Cost (USD)",
    "precision": "9",
@@ -98,7 +98,7 @@
   {
    "description": "What the gateway charged for the same requests.",
    "fieldname": "gateway_cost",
-   "fieldtype": "Currency",
+   "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Gateway Cost (USD)",
    "precision": "9",

@@ -3,7 +3,6 @@
 """Engine env assembly and box-local port allocation. Pure — the deployment is passed in and
 the sibling lookup is stubbed with a small table, so no site needed."""
 
-import hashlib
 import json
 import re
 import unittest
@@ -22,7 +21,6 @@ from grove.grove.doctype.model_replica.model_replica import (
 	_engine_env,
 	_post_play_state,
 	_vllm_extravars,
-	parse_kv_cache_memory,
 	reconfigure_deployment,
 	set_container_state,
 	teardown_deployment,
@@ -255,93 +253,15 @@ class TestGpuInventory(unittest.TestCase):
 			self.validated(["gpu-a", "gpu-a"], ["gpu-a"])
 
 
-PROFILE_LINE = (
-	"(Worker_PP1_EP0 pid=1749) INFO 09-04 10:06:12 [gpu_worker.py:804] Free memory on device "
-	"(94.06/94.97 GiB) on startup. Desired GPU memory utilization is (0.92, 87.37 GiB). Actual usage "
-	"is 52.92 GiB for consumed memory (weights + non-torch),\n2.32 GiB for peak activation, and "
-	"1.51 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with "
-	"`--kv-cache-memory=32723451249` (30.48 GiB) to fit into requested memory, or "
-	"`--kv-cache-memory=39903821824` (37.16 GiB) to fully utilize gpu memory.\n"
-	"Current kv cache memory in use is 32.13 GiB.\n"
-)
+class TestPostPlayState(unittest.TestCase):
+	"""What a finished serve play writes: the URL moves only on success."""
 
+	def test_success_is_active_with_its_url(self):
+		md = SimpleNamespace(derived_engine_url="https://10.0.0.9/e/md-1")
+		self.assertEqual(_post_play_state(md, 0), {"status": "Active", "engine_url": md.derived_engine_url})
 
-class TestParseKvCacheMemory(unittest.TestCase):
-	"""The figure vLLM prints after profiling, as the log actually carries it."""
-
-	def test_takes_the_fit_figure_not_the_fully_utilize_one(self):
-		self.assertEqual(parse_kv_cache_memory(PROFILE_LINE), 32723451249)
-
-	def test_the_tightest_rank_wins(self):
-		"""Each TP/PP rank prints its own figure; vLLM sizes the cache off the smallest."""
-		log = PROFILE_LINE + PROFILE_LINE.replace("32723451249", "32000000000")
-		self.assertEqual(parse_kv_cache_memory(log), 32000000000)
-
-	def test_no_line_is_zero(self):
-		self.assertEqual(parse_kv_cache_memory(""), 0)
-		self.assertEqual(parse_kv_cache_memory(None), 0)
-		self.assertEqual(parse_kv_cache_memory("INFO Skipping memory profiling"), 0)
-
-
-class Replica:
-	"""A replica carrying the real KV-cache methods over a stub deployment. Nothing else of the
-	Document is reached, so nothing else is faked."""
-
-	engine = ModelReplica.engine
-	kv_cache_memory_key = ModelReplica.kv_cache_memory_key
-	learned_kv_cache_memory = ModelReplica.learned_kv_cache_memory
-
-	def __init__(self, kv_cache_memory=0, kv_cache_memory_for="", log=PROFILE_LINE):
-		self.name = "MD-1"
-		self.gpu_vram_gb = 96
-		self.kv_cache_memory = kv_cache_memory
-		self.kv_cache_memory_for = kv_cache_memory_for
-		self.derived_engine_url = "https://10.0.0.9/e/md-1"
-		self.deployment = SimpleNamespace(engine_image="img", engine_for=lambda replica: engine())
-		self.log = log
-
-	def get_engine_logs(self, lines):
-		return self.log() if callable(self.log) else self.log
-
-
-class TestABootTeachesItsKvCacheFigure(unittest.TestCase):
-	"""What `_post_play_state` writes about the figure, and when the engine carries it."""
-
-	KEY = hashlib.sha256(f"img\n96\n{engine().command}".encode()).hexdigest()
-
-	def test_a_profiled_boot_stores_the_figure_under_its_key(self):
-		state = _post_play_state(Replica(), 0)
-		self.assertEqual(state["status"], "Active")
-		self.assertEqual(state["kv_cache_memory"], 32723451249)
-		self.assertEqual(state["kv_cache_memory_for"], self.KEY)
-
-	def test_a_boot_that_carried_the_hint_learns_nothing(self):
-		"""vLLM skips profiling when handed the figure, so the log carries no line."""
-		state = _post_play_state(Replica(kv_cache_memory=1, kv_cache_memory_for=self.KEY, log=""), 0)
-		self.assertEqual(state, {"status": "Active", "engine_url": "https://10.0.0.9/e/md-1"})
-
-	def test_a_line_that_never_came_leaves_the_doc_alone(self):
-		self.assertNotIn("kv_cache_memory", _post_play_state(Replica(log=""), 0))
-
-	def test_a_failed_boot_under_the_hint_drops_it(self):
-		state = _post_play_state(Replica(kv_cache_memory=1, kv_cache_memory_for=self.KEY), 2)
-		self.assertEqual(state, {"status": "Broken", "kv_cache_memory": 0, "kv_cache_memory_for": ""})
-		self.assertEqual(_post_play_state(Replica(), 2), {"status": "Broken"})
-
-	def test_the_engine_carries_the_figure_only_under_its_key(self):
-		self.assertEqual(Replica(kv_cache_memory=7, kv_cache_memory_for=self.KEY).engine.kv_cache_memory, 7)
-		self.assertEqual(Replica(kv_cache_memory=7, kv_cache_memory_for="stale").engine.kv_cache_memory, 0)
-
-	def test_a_log_read_that_fails_is_logged_not_raised(self):
-		def unreachable():
-			raise OSError("ssh: connect to host timed out")
-
-		logged = []
-		with patch("frappe.log_error", side_effect=lambda title: logged.append(title)):
-			state = _post_play_state(Replica(log=unreachable), 0)
-		self.assertEqual(state["status"], "Active")
-		self.assertNotIn("kv_cache_memory", state)
-		self.assertEqual(["KV cache figure not read: MD-1"], logged)
+	def test_failure_is_broken_and_leaves_the_url(self):
+		self.assertEqual(_post_play_state(SimpleNamespace(), 2), {"status": "Broken"})
 
 
 class TestReconfigureKeepsTheModelRoutable(unittest.TestCase):
@@ -371,8 +291,6 @@ class TestReconfigureKeepsTheModelRoutable(unittest.TestCase):
 			model_key="qwen3.5-4b",
 			derived_engine_url="https://10.0.0.9/e/md-00007",
 			get_password=lambda *args, **kwargs: "internal-key",
-			engine=SimpleNamespace(kv_cache_memory=0),
-			learned_kv_cache_memory=lambda: {},
 			sync_gpu_claims=lambda: claims.append(md.status),
 			server=SimpleNamespace(
 				name="INF-1",

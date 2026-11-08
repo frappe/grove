@@ -41,9 +41,15 @@ class CloudClient(ABC):
 
 	@abstractmethod
 	def get_instance_type_info(self, instance_type):
-		"""This instance type's facts in Grove's own shape: {instance_store, gpus, is_bare_metal,
-		cpu_architecture}. The architecture is in DOCKER's vocabulary, not the provider's, because
-		that is what an Engine Image is matched against."""
+		"""This instance type's facts in Grove's own shape: {instance_type, instance_store, gpus,
+		is_bare_metal, cpu_architecture, vcpus, memory_mb}. The architecture is in DOCKER's
+		vocabulary, not the provider's, because that is what an Engine Image is matched against."""
+
+	@abstractmethod
+	def list_instance_types(self, cpu_architecture, availability_zone=""):
+		"""The types a Grove image can move onto — `cpu_architecture`, virtualised, current
+		generation, offered in `availability_zone` when given — each in get_instance_type_info's
+		shape, smallest first."""
 
 	@abstractmethod
 	def get_image_info(self, image_id):
@@ -67,6 +73,11 @@ class CloudClient(ABC):
 	@abstractmethod
 	def start_instance(self, instance_id):
 		"""Start a stopped instance."""
+
+	@abstractmethod
+	def set_instance_type(self, instance_id, instance_type):
+		"""Change a STOPPED instance's type. The disk and addresses stay; the box boots on the
+		new hardware at its next start."""
 
 	@abstractmethod
 	def terminate_instance(self, instance_id):

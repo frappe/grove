@@ -1,14 +1,12 @@
 ---
 # Provision a Gateway Server: pathway on its Network's Gateway Store. extra-vars: admin_token,
 # agent_version, gateway_id, gateway_region, gateway_geography, gateway_host, proxy_hostname,
-# redis_addr, redis_password, the fleet TLS pair, the scrape hash, and the tunables in config.json.j2.
+# redis_addr, redis_password, the fleet TLS pair, and the tunables in config.json.j2.
 - hosts: all
   become: true
   gather_facts: true
   vars:
     grove_dir: "{{ playbook_dir }}"
-    grove_tls_selfsigned: false
-    monitoring_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
 
   pre_tasks:
     - name: refuse to provision without an admin token
@@ -22,8 +20,6 @@
     - grove_user
     - remove_cloud_user
     - auditd
-    - node_exporter
-    - grove_https
     - fleet_tls
     - install_gateway_agent
     - pathway_memory
@@ -56,15 +52,6 @@
     - name: forget the removed unit
       ansible.builtin.systemd:
         daemon_reload: true
-
-    # By file, never by directory: /etc/grove/tls also holds the fleet wildcard.
-    - name: remove the self-signed certificate this box no longer serves
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - "{{ grove_tls_cert }}"
-        - "{{ grove_tls_key }}"
 
     - name: pathway config directory
       ansible.builtin.file:
@@ -123,7 +110,6 @@
           GROVE_SELF_HOST={{ proxy_hostname | default('') }}
           GROVE_TLS_CERT={{ fleet_tls_cert_path if (fleet_tls_cert | default('')) else '' }}
           GROVE_TLS_KEY={{ fleet_tls_key_path if (fleet_tls_cert | default('')) else '' }}
-          GROVE_HTPASSWD={{ grove_metrics_htpasswd }}
           GROVE_ACCESS_LOG=/var/log/pathway/access.log
           GROVE_ERROR_LOG=/var/log/pathway/error.log
           GROVE_PAYLOAD_LOG=/var/log/pathway/payload.log

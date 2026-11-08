@@ -147,10 +147,6 @@ class VllmEngine(Engine):
 			"--fingerprint-mode",
 			"none",
 		]
-		# --gpu-memory-utilization stays: vLLM ignores it for the cache when this is set, but the
-		# placement arithmetic (usable_vram_gb) still reads it.
-		if self.kv_cache_memory:
-			args += ["--kv-cache-memory", str(self.kv_cache_memory)]
 		if self.pipeline_parallel_size > 1:
 			args += ["--pipeline-parallel-size", str(self.pipeline_parallel_size)]
 		if self.dtype != "auto":

@@ -174,14 +174,6 @@ class TestVllmArgs(unittest.TestCase):
 		self.assertEqual(args[args.index("--max-num-batched-tokens") + 1], "8192")
 		self.assertEqual(args[args.index("--max-num-seqs") + 1], "64")
 
-	def test_kv_cache_memory_only_when_learned(self):
-		self.assertNotIn("--kv-cache-memory", serve().args)
-		args = serve(kv_cache_memory=32723451249).args
-		self.assertEqual(args[args.index("--kv-cache-memory") + 1], "32723451249")
-		# Both go: vLLM ignores utilization for the cache once the figure is set, and the
-		# placement arithmetic still reads it.
-		self.assertIn("--gpu-memory-utilization", args)
-
 	def test_embedding_modality_drops_chat_flags(self):
 		args = serve(dict(CHAT_MODEL, output_modalities=["embeddings"])).args
 		for flag in ("--enable-auto-tool-choice", "--tool-call-parser", "--reasoning-parser"):

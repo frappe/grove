@@ -22,7 +22,15 @@ INSTANCE_STATUS = {
 }
 
 ARCHITECTURE = {"x86_64": "amd64"}
+PROVIDER_ARCHITECTURE = {grove: aws for aws, grove in ARCHITECTURE.items()}
 RUNNABLE_ARCHITECTURES = ("amd64", "arm64")
+# What a Grove image boots on. Bare metal is left out: a twenty-minute boot nothing here needs.
+RESIZABLE_TYPE_FILTERS = [
+	{"Name": "bare-metal", "Values": ["false"]},
+	{"Name": "current-generation", "Values": ["true"]},
+	{"Name": "supported-virtualization-type", "Values": ["hvm"]},
+	{"Name": "supported-root-device-type", "Values": ["ebs"]},
+]
 
 
 class AWSError(CloudClientError):
@@ -91,6 +99,19 @@ def parse_architecture(instance_type_info):
 	]
 	runnable = [a for a in architectures if a in RUNNABLE_ARCHITECTURES]
 	return (runnable or architectures or [""])[0]
+
+
+def parse_instance_type(info):
+	"""One describe_instance_types entry in Grove's own shape."""
+	return {
+		"instance_type": info.get("InstanceType") or "",
+		"instance_store": parse_instance_store(info),
+		"gpus": parse_gpus(info),
+		"is_bare_metal": bool(info.get("BareMetal")),
+		"cpu_architecture": parse_architecture(info),
+		"vcpus": (info.get("VCpuInfo") or {}).get("DefaultVCpus") or 0,
+		"memory_mb": (info.get("MemoryInfo") or {}).get("SizeInMiB") or 0,
+	}
 
 
 def machine_status(ec2_state):
@@ -215,21 +236,52 @@ class EC2Client(CloudClient):
 		raise AWSError(f"Instance {instance_id} not found")
 
 	def get_instance_type_info(self, instance_type):
-		"""Local storage, GPUs, architecture and bare metal, in Grove's own shape — one
-		describe_instance_types call carries all four."""
+		"""Local storage, GPUs, architecture, bare metal, vCPUs and RAM, in Grove's own shape — one
+		describe_instance_types call carries all of it."""
 		types = (
 			self._call(self.ec2.describe_instance_types, InstanceTypes=[instance_type]).get("InstanceTypes")
 			or []
 		)
 		if not types:
 			raise AWSError(f"Instance type {instance_type} not available in {self.region}")
-		info = types[0]
-		return {
-			"instance_store": parse_instance_store(info),
-			"gpus": parse_gpus(info),
-			"is_bare_metal": bool(info.get("BareMetal")),
-			"cpu_architecture": parse_architecture(info),
-		}
+		return parse_instance_type(types[0])
+
+	def list_instance_types(self, cpu_architecture, availability_zone=""):
+		"""The types a Grove image moves onto: `cpu_architecture`, virtualised, current generation,
+		EBS-rooted, and offered in `availability_zone` when one is given. Smallest first."""
+		filters = [
+			{
+				"Name": "processor-info.supported-architecture",
+				"Values": [PROVIDER_ARCHITECTURE.get(cpu_architecture, cpu_architecture)],
+			},
+			*RESIZABLE_TYPE_FILTERS,
+		]
+		types = [
+			parse_instance_type(info)
+			for info in self._pages(self.ec2.describe_instance_types, "InstanceTypes", Filters=filters)
+		]
+		if availability_zone:
+			offered = {
+				offering["InstanceType"]
+				for offering in self._pages(
+					self.ec2.describe_instance_type_offerings,
+					"InstanceTypeOfferings",
+					LocationType="availability-zone",
+					Filters=[{"Name": "location", "Values": [availability_zone]}],
+				)
+			}
+			types = [t for t in types if t["instance_type"] in offered]
+		return sorted(types, key=lambda t: (t["vcpus"], t["memory_mb"], t["instance_type"]))
+
+	def _pages(self, operation, key, **kwargs):
+		"""Every `key` item of a NextToken-paged describe call."""
+		token = None
+		while True:
+			response = self._call(operation, **kwargs, **({"NextToken": token} if token else {}))
+			yield from response.get(key) or []
+			token = response.get("NextToken")
+			if not token:
+				return
 
 	def poll_instance_ready(self, instance_id, timeout_sec=900, poll_interval_sec=10):
 		"""Poll until the instance is running, addressed, and past both of EC2's status checks.
@@ -481,6 +533,14 @@ class EC2Client(CloudClient):
 
 	def terminate_instance(self, instance_id):
 		self._call(self.ec2.terminate_instances, InstanceIds=[instance_id])
+		return True
+
+	def set_instance_type(self, instance_id, instance_type):
+		self._call(
+			self.ec2.modify_instance_attribute,
+			InstanceId=instance_id,
+			InstanceType={"Value": instance_type},
+		)
 		return True
 
 	def set_termination_protection(self, instance_id, enabled):

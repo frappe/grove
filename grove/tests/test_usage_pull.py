@@ -17,6 +17,7 @@ from frappe.utils import getdate
 from grove.billing.doctype.stuck_usage.stuck_usage import StuckUsage
 from grove.billing.pricing import committed
 from grove.grove.doctype.geography.test_geography import make_test_geography
+from grove.grove.doctype.model_id.model_id import ensure_model_id
 from grove.pathway import reconcile, run, usage
 from grove.pathway.reconcile import FIELDS, Reconciler
 from grove.pathway.run import Target
@@ -50,7 +51,9 @@ class PullCase(IntegrationTestCase):
 		model_id = f"{cls.box}-7b"
 		doc = (
 			frappe.db.exists("Model", {"model_id": model_id})
-			or frappe.get_doc({"doctype": "Model", "model_id": model_id, "hf_repo": f"org/{model_id}"})
+			or frappe.get_doc(
+				{"doctype": "Model", "model_id": ensure_model_id(model_id), "hf_repo": f"org/{model_id}"}
+			)
 			.insert(ignore_permissions=True)
 			.name
 		)

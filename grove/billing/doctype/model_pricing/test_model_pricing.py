@@ -7,6 +7,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from grove.billing.pricing import CounterTable, PriceBook
+from grove.grove.doctype.model_id.model_id import ensure_model_id
 from grove.grove.doctype.model_provider.test_model_provider import provider, vendor_model
 from grove.utils import utc_today
 
@@ -31,7 +32,9 @@ class TestModelPricing(IntegrationTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		cls.model = (
-			frappe.get_doc({"doctype": "Model", "model_id": "pricing-7b", "hf_repo": "org/pricing-7b"})
+			frappe.get_doc(
+				{"doctype": "Model", "model_id": ensure_model_id("pricing-7b"), "hf_repo": "org/pricing-7b"}
+			)
 			.insert(ignore_permissions=True)
 			.name
 		)
@@ -46,7 +49,7 @@ class TestModelPricing(IntegrationTestCase):
 		self.assertEqual(doc.enabled_on, utc_today())
 
 	def test_it_carries_its_models_geography(self):
-		vendor = provider("pricing-vendor", base_url="https://api.pricing.test", api_key="k").insert()
+		vendor = provider("_T-pricing-vendor", base_url="https://api.pricing.test", api_key="k").insert()
 		model = vendor_model("priced-1", vendor.name).insert()
 		self.assertEqual(new_pricing(model.name, completion_tokens=1).geography, vendor.geography)
 		self.assertFalse(new_pricing(self.model, completion_tokens=1).geography)

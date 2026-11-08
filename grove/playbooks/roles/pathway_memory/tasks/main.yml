@@ -26,3 +26,9 @@
   ansible.builtin.systemd:
     daemon_reload: true
   when: pathway_memory_cap is changed
+
+- name: restart pathway for the new Go limit
+  ansible.builtin.systemd:
+    name: pathway
+    state: restarted
+  when: pathway_memory_cap is changed and pathway_memory_restart | bool

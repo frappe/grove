@@ -6,23 +6,24 @@ against. `grove.utils.ansible_project_dir("Gateway Server")` is literally
 
 ```
 playbooks/
-  gateway_server/     gateway.yml  deploy_agent.yml  deploy_tls.yml  config.yml   + config.json.j2, systemd/
+  gateway_server/     gateway.yml  deploy_agent.yml  deploy_tls.yml  retire_exporter.yml  config.yml  memory.yml  stop.yml   + config.json.j2, systemd/
   ingress_server/     ingress.yml  deploy_agent.yml  config.yml
   inference_server/   provision.yml  serve.yml  reconfigure.yml  container_state.yml  teardown.yml  deploy_tls.yml
   machine/            ping.yml  grow_root.yml  scan_gpus.yml     — box-level, no role layered on yet
-  monitoring_agent/   agent.yml  config.yml  exporters.yml  push_targets.yml
-  gateway_store/      store.yml  restore.yml     — Redis only, shared by a Network's gateways; restore.yml loads a backup through a side Redis + REPLICAOF
-  roles/              grove_user  remove_cloud_user  auditd  dcgm_exporter  node_exporter  fleet_tls  grove_https  install_gateway_agent  openresty  redis
+  monitoring_agent/   agent.yml  config.yml  exporters.yml  push_targets.yml  vector.yml
+  gateway_store/      store.yml  restore.yml  stop.yml  ping.yml     — Redis only, shared by a Network's gateways; restore.yml loads a backup through a side Redis + REPLICAOF
+  roles/              grove_user  remove_cloud_user  auditd  dcgm_exporter  node_exporter  fleet_tls  grove_https  install_gateway_agent  openresty  redis  redis_exporter  pathway_memory  vector
 ```
 
 A project's own `roles/` is searched first, then `playbooks/roles/`. So a shared role is written once
 and named from anywhere, with no copy and no symlink to keep pointing.
 
-Two plays deliberately live in a project that is not the doctype they run for, because they are the
-same work on either kind of box: `deploy_tls.yml` sits under `gateway_server/` and an **Ingress**
-Server runs it with `project="Gateway Server"` (a standalone Inference Server has its own, because
-its nginx needs a reload that pathway does not), and `exporters.yml` belongs to Monitoring Agent but
-runs against Inference and Gateway Server boxes.
+Some plays deliberately live in a project that is not the doctype they run for, because they are the
+same work on either kind of box: `deploy_tls.yml` and `retire_exporter.yml` sit under `gateway_server/`
+and an **Ingress** Server runs them with `project="Gateway Server"` (a standalone Inference Server has its own, because
+its nginx needs a reload that pathway does not), and `exporters.yml` and `vector.yml` belong to Monitoring Agent but
+run against the fleet's boxes (`exporters.yml` on Inference Servers, `vector.yml` on Gateway Servers,
+Gateway Stores and Ingress Servers).
 
 ## How a play is actually run
 
@@ -87,7 +88,9 @@ not what buttons call — it has no Frappe tracking.)
   too; on a live box the button runs `gateway_server/memory.yml` (Ingress Servers too), and the doc
   records the limit only once the play succeeds. The same file sets `GOMEMLIMIT` to 90% of the cap.
   `MemoryMax` lands on the running process at the `daemon-reload`; `GOMEMLIMIT` is environment, so
-  it is read at pathway's next restart, which the role never causes.
+  it is read at pathway's next restart, which the role causes only when passed
+  `pathway_memory_restart: true` — Resize Server does, on a box in maintenance with nothing in
+  flight, because its RAM just changed.
 - **Non-fatal cleanup is guarded, not assumed.** Stopping OpenResty on a box that never had it uses
   `failed_when: false`.
 - **The binary is downloaded, never compiled.** The agent lives in its own repo; `install_gateway_agent`
@@ -96,6 +99,16 @@ not what buttons call — it has no Frappe tracking.)
   `scripts/dev_deploy_pathway.py` builds a pathway working tree into `<bench>/builds/` and ships it to
   one Gateway Server through the same play. `agent_version` still records the pinned release, and the
   next Deploy Agent or Setup puts that release back.
+
+## Resizing a box
+
+`Server Resize` (see `doctype/README.md`) runs the plays around a Machine stop/start. The two
+`stop.yml`s stop the service through systemd — pathway's SIGTERM drains, redis's saves the RDB and
+fsyncs the AOF — so the box is stopped idle and AWS's graceful-stop timer never races a drain. Neither
+is `redis-cli SHUTDOWN`: the packaged unit has `Restart=always`. Both units are enabled and come back
+on boot; `gateway_store/ping.yml` is the wait for redis to answer, `redis-cli ping` until `PONG`.
+Pathway holds no usage to flush: each request lands in the store as it ends, or on the box's disk
+spool when the store refuses.
 
 ## Restoring a Gateway Store
 
@@ -117,14 +130,54 @@ the box cannot reach — same entries and labels (`machine`, `region`, `server`,
 that goes stale until Push Targets is pressed again. The agent box installs its own node_exporter, bound
 to localhost, since no Setup play would, and scrapes itself.
 
-Every box answers on one port and its exporters are re-published as paths behind it (`/metrics/node`,
-`/metrics/gpu`), so a box needs nothing open but 22 and that port; the exporters still listen on
-9100/9400, just not from outside. Every target is https on the box's TLS front with a self-signed
-certificate, so both scrape jobs skip verification: the scrape is encrypted, the box is not
-authenticated. Only the host job authenticates — the two exporter paths sit behind basic auth
-(the Scrape Password, rotated by a server's Update Scrape Auth button through `exporters.yml`),
-because an exporter answers anyone who reaches it. An engine's `/metrics` under `/e/<slug>/` is guarded
-by nothing, exactly as when its port was open: vLLM's auth middleware covers `/v1`, not `/metrics`.
+Only inference boxes are scraped; a Gateway Server, Gateway Store or Ingress Server ships its host
+metrics with Vector instead (below) and carries no exporter the fleet scrapes (a store's redis exporter
+is bound to localhost and read by its own Vector). An inference box answers on one port and
+its exporters are re-published as paths behind it (`/metrics/node`, `/metrics/gpu`), so it needs nothing
+open but 22 and that port; the exporters still listen on 9100/9400, just not from outside. Every target
+is https on the box's TLS front with a self-signed certificate, so both scrape jobs skip verification:
+the scrape is encrypted, the box is not authenticated. Only the host job authenticates — the two
+exporter paths sit behind basic auth (the Scrape Password, rotated by the Inference Server's Update
+Scrape Auth button through `exporters.yml`), because an exporter answers anyone who reaches it. An
+engine's `/metrics` under `/e/<slug>/` is guarded by nothing, exactly as when its port was open: vLLM's
+auth middleware covers `/v1`, not `/metrics`.
+
+### Vector → datum
+
+Every Gateway Server, Gateway Store and Ingress Server runs Vector (`monitoring_agent/vector.yml`, shared role
+`roles/vector`, pinned deb, the package's own unit). It pushes to **datum**, the write door in front of
+ClickHouse, at the two routes its Region's Monitoring tab names: `host_metrics` plus Vector's own
+`internal_metrics` by Prometheus remote write (`Metrics Endpoint`), and every
+`/var/log/pathway/*.log` (`payload.log` included — the box's 7-day rotation is not the retention
+story any more, datum's is; its lines run past Vector's 100 KiB default, so the file source reads up to 4 MiB a line) and `/var/log/redis/*.log` (Vector sits in `adm` for them) as datum log lines (`Logs Endpoint`: `ts`,
+`product: grove`, `service` = log directory, `level`, `source` = file name, `message`
+cut at 8 KiB, `attributes` = `host`, `server`, `machine`, `region`). Batches stay under datum's 10,000
+cap, sink healthchecks are off (datum answers 405 to a GET), and each sink keeps a disk buffer because
+datum buffers nothing. Host metrics arrive as `host_*` series, not node_exporter's `node_*` (cpu, disk, filesystem, load, host, memory,
+network, tcp; not the per-process and per-cgroup collectors, which were four fifths of the volume). On a Gateway
+Store the same play lays oliver006's `redis_exporter` (`roles/redis_exporter`, localhost 9121, the store's
+password from `vector_redis_password`, root-only env file, `DynamicUser` unit) and Vector scrapes it
+(`prometheus_scrape`) into the same remote write as `redis_*` series: memory against maxmemory, clients,
+evictions, ops, hit ratio, bgsave and AOF status. No password passed, no exporter and no scrape.
+
+The token is datum's: a JWT Central signs for one `resource_id` (`grove:<machine>`), good for as long
+as Central says (`expires_in`, 7 days today) with no revocation, addressed to the Region's `central_region`
+(Central's own name for it). Grove mints it from Central (`grove.datum.mint_token`, Grove Settings → Central)
+inside the job and stores only when it runs out (`datum_token_expires_at`); `grove.datum.refresh_tokens`,
+hourly, re-runs the play on every box with `is_vector_setup` whose token has a day or less left. Setup chains the play as its own job; **Install Vector** (then **Update
+Vector**) re-runs it by hand. A Gateway or Ingress Server set up before Vector shows **Migrate to Vector**
+instead until `is_vector_setup`: vector.yml, then `gateway_server/retire_exporter.yml` stops and removes the
+node_exporter and scrape htpasswd its old play installed — Vector first, so the box is never unwatched. `ship_host_metrics` off drops the `host_metrics` source and nothing else:
+an Atlas machine's Pilot already ships those, and nobody else ships the logs.
+
+datum keeps no roster, so a quiet `resource_id` looks the same whether the box died or Grove took it
+down. Grove writes the roster itself, Atlas's way (`atlas_metal_server_info`): every minute
+`grove.datum.push_roster` posts one `grove_machine_info{machine, status, vector} 1` per Machine under
+`grove-<region>` to each Region's datum (the JSON route beside the remote-write one), `vector` 1 when a
+box with `is_vector_setup` pushes under `grove:<machine>`. Reader rule (Insights): expected = Machines
+whose latest roster row reads Active with vector 1; alert on one with no row of its own in the last few
+minutes. Stopped and Terminated drop out of expected; an Active box that never shipped is in it, so a
+broken pipeline shows. No per-action hook, so a new action (a resize job) needs nothing.
 
 ## Running one by hand
 

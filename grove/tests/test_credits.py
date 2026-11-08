@@ -20,6 +20,7 @@ from grove.billing.doctype.gateway_spend_adjustment.gateway_spend_adjustment imp
 from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing, new_pricing
 from grove.billing.report.revenue.revenue import execute as revenue
 from grove.grove.doctype.geography.test_geography import make_test_geography
+from grove.grove.doctype.model_id.model_id import ensure_model_id
 from grove.pathway import routes, snapshot, usage
 from grove.pathway.run import Target
 from grove.tests.test_usage_pull import a_store
@@ -65,7 +66,9 @@ class CreditsCase(IntegrationTestCase):
 	@classmethod
 	def priced_model(cls, model_id, rate):
 		model = (
-			frappe.get_doc({"doctype": "Model", "model_id": model_id, "hf_repo": f"org/{model_id}"})
+			frappe.get_doc(
+				{"doctype": "Model", "model_id": ensure_model_id(model_id), "hf_repo": f"org/{model_id}"}
+			)
 			.insert(ignore_permissions=True)
 			.name
 		)

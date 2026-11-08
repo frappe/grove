@@ -69,12 +69,34 @@ class TestAnsibleStep(unittest.TestCase):
 		self.assertEqual(step.status, Status.Failure)
 
 
+class TestPoll(unittest.TestCase):
+	def poll(self, done, attempt=None, **kwargs):
+		step = FakeStep(attempt=attempt)
+		with patch.object(runner, "frappe", fake_frappe()), patch.object(runner.time, "sleep") as sleep:
+			Handler().poll(step, done, "the box", **kwargs)
+		return step, sleep
+
+	def test_done_passes_without_waiting(self):
+		step, sleep = self.poll(True)
+		self.assertEqual((step.status, step.attempt), (Status.Success, 1))
+		sleep.assert_not_called()
+
+	def test_not_done_waits_and_stays_running_for_the_next_job(self):
+		step, sleep = self.poll(False, attempt=3, interval_sec=7)
+		self.assertEqual((step.status, step.attempt), (Status.Running, 4))
+		sleep.assert_called_once_with(7)
+
+	def test_the_cap_fails_the_step_instead_of_polling_forever(self):
+		with self.assertRaisesRegex(RuntimeError, "the box"):
+			self.poll(False, attempt=4, max_attempts=5)
+
+
 class TestMachineStatusStep(unittest.TestCase):
 	def poll(self, machine_status, expected="Active"):
 		fake, step = fake_frappe(), FakeStep(attempt=None)
 		fake.get_doc.return_value.sync.side_effect = runner.CloudClientError("throttled")
 		fake.db.get_value.return_value = machine_status
-		with patch.object(runner, "frappe", fake):
+		with patch.object(runner, "frappe", fake), patch.object(runner.time, "sleep"):
 			Handler().handle_machine_status(step, "gpu-box-1", expected)
 		return step
 

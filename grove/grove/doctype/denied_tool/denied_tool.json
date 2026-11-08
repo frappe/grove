@@ -10,12 +10,13 @@
  ],
  "fields": [
   {
-   "description": "The vendor's Provider Name, as every record of it carries it. Not a link: the list belongs to the vendor, and one gateway in every geography reads it.",
+   "description": "The vendor's Provider Name, as every record of it carries it: the same list of vendors pathway knows. Not a link: the list belongs to the vendor, and one gateway in every geography reads it.",
    "fieldname": "provider_name",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Provider Name",
+   "options": "anthropic\nbaseten\ndeepseek\nfrappe\nmorph\nopenai",
    "reqd": 1,
    "set_only_once": 1
   },
@@ -30,7 +31,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-09 00:00:00",
+ "modified": "2026-11-06 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Denied Tool",

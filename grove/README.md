@@ -55,9 +55,11 @@ gateways cannot jointly overrun one replica.
 | `naming.py` | A Machine's `<prefix><n>-<region>.<geography zone>`, e.g. `gw2-ap-south-1.local.frappe.dev` (no domain for a box whose geography has no zone, or one named before this), which its server doc takes. Its `short_name` (first label) is the DNS label under the zone and the request-id / agent id. |
 | `ansible.py` / `ansible_runner.py` | Running a playbook against a box, tracked as docs. |
 | `tls.py` | Each Geography's zone wildcard: issue over DNS-01, renew, push to that geography's boxes. |
-| `monitoring.py` / `log_relay.py` | Exporters on every box, and shipping their output. |
+| `monitoring.py` / `log_relay.py` | The scrape targets a Monitoring Agent pulls, and streaming an engine's log onto an open form. |
+| `datum.py` | datum's write token for one box, minted from Central inside the job (never stored; only when it runs out is, as `datum_token_expires_at`), and the hourly tick that re-runs `vector.yml` on a box whose token has a day left. Also the roster: `push_roster`, every minute, posts one `grove_machine_info{machine, status, vector} 1` per Machine under `grove-<region>` to each Region's datum (JSON route), Atlas's shape; a reader expects rows under `grove:<machine>` only from a Machine whose latest row reads Active with vector 1, so a quiet box that was stopped or terminated is expected and one that is dead, or never shipped, is not. The role itself: `playbooks/README.md` → Vector → datum. |
 | `failure.py` | `@reports_failure` — a long job that dies marks its doc Broken and says why. |
 | `api/` | The whitelisted surface the control clients (Central, Press) call, one module per subject: `control` (enrollment), `teams`, `keys`, `catalog` (geographies, models), `usage` (usage, figures, pulls). What is one client's alone — Press's trial policy, Central's pool of pre-minted trial keys — is what it sends per mint (title, cap, expiry and whether it counts from first use), not code here. `keys.transfer_key` hands a trial's key to the team that converted; what moves is in the `Grove API Key` row of [`grove/doctype/README.md`](grove/doctype/README.md). |
+| `grove/page/ops/` | The Ops page (`/app/ops`, System Manager): fleet-wide usage by team, key and model over a window, each team against its tier and each key against its cap, the last sync of each kind, what is open for a human (Stuck Usage, Cost Discrepancy, pending Gateway Spend Adjustment), and every vendor key's counters, all read off `money_rows`, `key_rows`, `month_spent_by` and the log doctypes. **Gateway check** alone dials the boxes (`usage.peek_team`), on a button. A Frappe UI page: `ops.vue` beside `ops.json`, built by `bench build` into framework's `page-island` dist (once per bench: `yarn install --cwd apps/frappe/ui/vite/island/toolchain`). Its pickers are frappe-ui Selects off one `filter_options` read, not searching Links: frappe-ui's Combobox closes on the option's focus inside a shadow root (reka-ui's `ComboboxInput` reads `document.activeElement`), so a Link never takes a pick there until reka-ui reads the root node; the reads are `ops.py`. Grove Team and Grove API Key forms link into it filtered. |
 | `net.py` / `utils.py` | Addresses, slugs, paths. |
 
 ## What gets pushed, and under which key
@@ -126,7 +128,8 @@ record on the box: what is the team's (its models, payload
 logging, suspension) is stamped on each of its keys, so a team edit is one record per key.
 
 A model id is always `<provider>/<name>` (`frappe/qwen3.5-4b`) — the Model's **key**, not its doc
-name, which is a hash. One key, one route key, one grant — the bare form was deliberately broken,
+name, which is a hash; `<name>` is a Model ID record, one per id whoever serves it. One key, one
+route key, one grant — the bare form was deliberately broken,
 because routing keys on `deploy:<key>` while access is matched against the string the caller *sent*,
 so a route key with no matching grant is a 403 before routing is ever consulted. A key may be several
 docs, one per provider record: `openai/gpt-5` under the `in` record and under the `eu` record are two
@@ -145,8 +148,10 @@ There is no single `modality` word any more: everything that read it reads the l
 `deploy:<key>` carries both as `input_modalities` and `output_modalities`; the gateway reads which
 surfaces the model answers on off the outputs (`text` for chat, `embeddings` for `/v1/embeddings`,
 `transcription` for `/v1/audio`); the inputs it only carries. `available_models` answers
-the two lists per model, and whether its provider keeps nothing of a request (`zero_data_retention`,
-the Self Hosted one always). An engine we launch is `--language-model-only` when it is text in and
+the two lists per model, the Model ID's `display_name` and the provider's `provider_display_name`
+(the id and the name when blank) for a dashboard to show,
+and whether its provider keeps nothing of a request (`zero_data_retention`, the Self Hosted one
+always). An engine we launch is `--language-model-only` when it is text in and
 text out, and a pooling model (`--runner pooling`) when it gives `embeddings`. A vendor's embedding
 model answers on `/openai` alone and is priced on `prompt_tokens` alone — the only counter its
 usage carries.
@@ -178,8 +183,9 @@ counters as it answers, so a pull that does not land loses those 6 hours. Kept 9
 **Fetch Models** asks the vendor's `/v1/models` on one front — the OpenAI one with a Bearer when set
 (a dual vendor's Anthropic shim, DeepSeek's, has no list), else Anthropic's with `x-api-key` and the
 version header, paged with `after_id` — hides what the record already holds, then asks for our id
-for each ticked one (prefilled with the vendor's) and adds them as unpublished Models, the vendor's
-spelling kept as `Upstream Model ID` where ours differs (`org/Model` → `org-model`).
+for each ticked one — a Model ID, prefilled with the vendor's slug, picked from the site's or typed
+new and made — and adds them as unpublished Models, the vendor's spelling kept as `Upstream Model ID`
+where ours differs (`org/Model` → `org-model`).
 What the vendor is *asked* for is the route's `upstream_model`, which the control plane computes in
 one place (`_upstream_model`):
 
@@ -204,8 +210,11 @@ Providers, vendor models and their prices ship in `catalog/catalog.json`, not in
 migrate deletes and re-inserts every fixture doc, which wipes its API key and resets what the
 operator set. The file is authored, not dumped from a site: the counter table, `Main`, and the
 vendors we sell — openai (`gpt-6-luna`, `gpt-6-sol`), anthropic (`claude-sonnet-5-5`), baseten
-(`deepseek-v4.1-flash`; DeepSeek is bought through Baseten, not direct) — at the vendors' list
-prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south-1`.
+(`deepseek-v4.1-flash`), morph (`glm-5.3-flash`, `deepseek-v4.1-flash-1017`) and deepseek's own front
+(no model of its own yet) — at the vendors' list prices (2026-10-03, Morph's 2026-11-05) — and the
+fleet skeleton: the `aws` account and `ap-south-1`. A provider entry carries its `display_name` and
+its `extra_headers` rows; a model entry its Model ID's `display_name`, which fills a blank one and
+never overwrites what an operator set.
 
 - `seed.insert_missing()` runs after install and after every migrate. It inserts a geography,
   cloud account (keyless, for the operator to fill), region or model the site has no doc
@@ -245,6 +254,7 @@ prices of 2026-10-03 — and the fleet skeleton: the `aws` account and `ap-south
 | hourly | `pathway.usage.pull_all` | a store is drained once, through its first writer that answers; recorded, billed, then what landed is acked. A failed pull loses nothing: the box re-sends every unacked pair. Also Gateway Server → **Pull Usage**, Stuck Usage → **Pull Now**, and `api.usage.pull_usage(team)` for one team, which answers its `figures` afresh (2 an hour per team, counted in the site cache; the rest are not limited) |
 | hourly | `grove_api_key.revoke_expired` | every live key past its `expires_at` (its rule counted from the mint, or from its first usage record when it was minted to expire from first use) is revoked; the next tick prunes it off the boxes |
 | hourly | `tls.renew_fleet_certificate`, `cloud_provider.schedule.run_due_pods` | renew runs certbot only when it says the certificate is due, and pushes only when the certificate changed |
+| hourly | `datum.refresh_tokens` | re-runs `vector.yml` on every Active Gateway Server, Store and Ingress Server with `is_vector_setup` whose `datum_token_expires_at` (Central's `expires_in` at the mint; blank is unknown) is within a day, so the datum token Vector pushes with (Central-signed, no revocation) is minted again before it runs out; one job per box |
 
 Nothing else pushes. A doctype hook, a provision and a pod lifecycle all just write state; the
 tick carries it within a minute. The only manual paths are Gateway Server → **Full Sync**, Ingress
@@ -287,8 +297,3 @@ automatically. The first gateway set up on or moved onto a store is marked for y
   attempts, last error and payload — updated each failing pull and resolved by the pull that lands
   it. **Pull Now** on the row pulls just that user. The usage itself lives only on the gateway
   until then, so a Redis flush loses it; Log Settings clears resolved rows after 90 days.
-- **Ansible swallows whatever a callback raises**, logging `Failure using method (…)` and running
-  on. So a play's own docs are written best-effort: each write carries Frappe's
-  `dangerously_reconnect_on_connection_abort` (Ansible forks a worker per task, and a child closing
-  the inherited socket takes this process's connection with it), and the rc a caller acts on is
-  Ansible's, never the doc's status.

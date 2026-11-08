@@ -1,14 +1,12 @@
 ---
 # Provision an Ingress Server: local Redis + pathway in ingress mode. extra-vars: admin_token,
-# data_token, agent_version, ingress_id, ingress_hostname, the fleet TLS pair, the scrape hash.
+# data_token, agent_version, ingress_id, ingress_hostname, the fleet TLS pair.
 - hosts: all
   become: true
   gather_facts: true
   vars:
     grove_dir: "{{ playbook_dir }}"
     ingress_hostname: ""
-    grove_tls_selfsigned: false
-    monitoring_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
 
   pre_tasks:
     - name: refuse to provision without an admin token
@@ -29,8 +27,6 @@
     - grove_user
     - remove_cloud_user
     - auditd
-    - node_exporter
-    - grove_https
     - fleet_tls
     - install_gateway_agent
     - pathway_memory
@@ -63,15 +59,6 @@
     - name: forget the removed unit
       ansible.builtin.systemd:
         daemon_reload: true
-
-    # By file, never by directory: /etc/grove/tls also holds the fleet wildcard.
-    - name: remove the self-signed certificate this box no longer serves
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - "{{ grove_tls_cert }}"
-        - "{{ grove_tls_key }}"
 
     - name: install redis-server
       ansible.builtin.apt:
@@ -134,7 +121,6 @@
           GROVE_SELF_HOST={{ ingress_hostname }}
           GROVE_TLS_CERT={{ fleet_tls_cert_path if (fleet_tls_cert | default('')) else '' }}
           GROVE_TLS_KEY={{ fleet_tls_key_path if (fleet_tls_cert | default('')) else '' }}
-          GROVE_HTPASSWD={{ grove_metrics_htpasswd }}
           GROVE_ACCESS_LOG=/var/log/pathway/access.log
           GROVE_ERROR_LOG=/var/log/pathway/error.log
           GROVE_CONFIG=/etc/pathway/config.json

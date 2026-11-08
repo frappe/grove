@@ -17,7 +17,7 @@ class TestKeyStatsPull(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		cls.vendor = provider("probe-stats-vendor", base_url="https://api.probe.test", api_key="k").insert()
+		cls.vendor = provider("_T-probe-stats-vendor", base_url="https://api.probe.test", api_key="k").insert()
 		cls.key = cls.vendor.api_keys[0].name
 		for store in ("store-a", "store-b"):
 			frappe.get_doc({"doctype": "Gateway Store", "name": store}).db_insert()
