@@ -157,6 +157,7 @@ def usage_window(from_date, to_date, period, month):
 		"This Month": (get_first_day(today), today),
 		"Last Month": (last_month, get_last_day(last_month)),
 	}
+	period = period or "This Month"
 	if period not in windows:
 		frappe.throw(f"Unknown period {period!r}: one of {', '.join(windows)}.")
 	return windows[period]

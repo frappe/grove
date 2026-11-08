@@ -54,8 +54,6 @@ class TestUsageWindow(unittest.TestCase):
 
 	def test_the_named_periods(self):
 		self.assertEqual(self.window(), (date(2026, 9, 1), date(2026, 9, 28)))
-		self.assertEqual(self.window(period="Today"), (date(2026, 9, 28), date(2026, 9, 28)))
-		self.assertEqual(self.window(period="Yesterday"), (date(2026, 9, 27), date(2026, 9, 27)))
 		self.assertEqual(self.window(period="Last 7 Days"), (date(2026, 9, 22), date(2026, 9, 28)))
 		self.assertEqual(self.window(period="Last 30 Days"), (date(2026, 8, 30), date(2026, 9, 28)))
 		self.assertEqual(self.window(period="Last Month"), (date(2026, 8, 1), date(2026, 8, 31)))

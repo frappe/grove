@@ -4,6 +4,7 @@
 frappe.ui.form.on("Grove Team", {
 	refresh(frm) {
 		if (frm.is_new()) return;
+		frm.add_custom_button(__("Ops page"), () => frappe.set_route("ops", { team: frm.doc.name }));
 		if (frm.doc.suspended_at_grove) {
 			frm.add_custom_button(__("Resume Keys"), () =>
 				grove.confirm_call(
