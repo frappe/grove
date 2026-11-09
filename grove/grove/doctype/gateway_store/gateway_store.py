@@ -33,11 +33,13 @@ class GatewayStore(NamedHost, Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		datum_token_expires_at: DF.Datetime | None
 		frappe_public_key: DF.Code | None
 		geography: DF.Link | None
 		is_vector_setup: DF.Check
 		last_backup_at: DF.Datetime | None
 		last_backup_key: DF.Data | None
+		last_synced_at: DF.Datetime | None
 		machine: DF.Link
 		network: DF.Link | None
 		private_ip: DF.Data | None

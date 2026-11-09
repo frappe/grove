@@ -27,6 +27,7 @@ class GatewayServer(PathwayHost, Document):
 		admin_token: DF.Password | None
 		admin_url: DF.Data | None
 		agent_version: DF.Data | None
+		datum_token_expires_at: DF.Datetime | None
 		frappe_public_key: DF.Code | None
 		gateway_store: DF.Link | None
 		geography: DF.Link | None
