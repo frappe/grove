@@ -2,11 +2,17 @@
 # For license information, please see license.txt
 
 import frappe
+from frappe.rate_limiter import rate_limit
 from frappe.utils import cint, flt
 
 from grove.access import team_limits
 from grove.api.control import ALLOWED_ROLES
 from grove.api.teams import get_team
+
+# Revokes a team may send an hour, singles and bulk calls on one counter: a mint-and-revoke loop stops
+# here, since no key is held back by age. The Desk button and the expiry sweep are not counted.
+REVOKES_AN_HOUR = 15
+REVOKE_COUNTER = "grove.api.keys.revoke"
 
 KEY_FIELDS = [
 	"name",
@@ -123,10 +129,25 @@ def limits(team: str, key: str):
 
 
 @frappe.whitelist()
+@rate_limit(key="team", limit=REVOKES_AN_HOUR, seconds=60 * 60, ip_based=False, endpoint=REVOKE_COUNTER)
 def revoke_key(team: str, key: str):
+	"""Revoke one of the team's keys, refused when another team holds it. One of the team's
+	REVOKES_AN_HOUR."""
 	frappe.only_for(ALLOWED_ROLES)
 	get_api_key(team, key).revoke()
 	return "Revoked. Might take some time to reflect."
+
+
+@frappe.whitelist()
+@rate_limit(key="team", limit=REVOKES_AN_HOUR, seconds=60 * 60, ip_based=False, endpoint=REVOKE_COUNTER)
+def revoke_keys(team: str, keys: list[str]):
+	"""Revoke several of the team's keys in one call, counted once — an archive. Refused whole for
+	a key the team does not hold; nothing moves. → the names revoked."""
+	frappe.only_for(ALLOWED_ROLES)
+	docs = [get_api_key(team, key) for key in frappe.parse_json(keys)]
+	for doc in docs:
+		doc.revoke()
+	return [doc.name for doc in docs]
 
 
 @frappe.whitelist()
