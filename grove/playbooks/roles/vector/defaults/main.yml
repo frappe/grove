@@ -28,6 +28,12 @@ vector_log_files:
   - /var/log/pathway/*.log
   - /var/log/redis/*.log
 vector_log_max_line_bytes: 8388608
+# Lines that stay in the box's log and never reach datum. A rule names a file, a key of its parsed line and the
+# values that match. Route53 probes /healthz from 16 checkers, 30 lines a minute per gateway, nine in ten of access.log.
+vector_unshipped_lines:
+  - source: access.log
+    key: path
+    values: [/healthz]
 
 vector_metrics_url: ""
 vector_logs_url: ""
