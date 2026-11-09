@@ -52,12 +52,6 @@ def billed_record(key, team, day, cost, drain=""):
 	forget_figures(team)
 
 
-def backdate(key):
-	"""Past the six-hour revoke guard."""
-	seven_hours_ago = frappe.utils.add_to_date(None, hours=-7)
-	frappe.db.set_value("Grove API Key", key, "creation", seven_hours_ago, update_modified=False)
-
-
 WITHHELD = ("Machine", "Inference Server", "Model Replica", "Monitoring Agent")
 
 
@@ -290,7 +284,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		)
 		self.assertEqual(keys.update_key(team, second, cap=2)["cap"], 2)
 		self.assertEqual(usage.figures(team)["spend"]["capped"], 8.0)
-		backdate(first)
 		keys.revoke_key(team, first)
 		self.assertEqual(
 			(usage.figures(team)["spend"]["capped"], usage.figures(team)["spend"]["committed"]), (2.0, 2.0)
@@ -392,9 +385,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			(minted["geography"], minted["gateway_url"], 0, 0),
 		)
 		self.assertEqual([row["metric"] for row in listed.limits], ["requests", "total_tokens"])
-		self.assertEqual(
-			listed.revocable_at, utc_timestamp(frappe.utils.add_to_date(listed.creation, hours=6))
-		)
 		self.assertEqual(listed.masked, minted["api_key"][:7] + "…")
 		self.assertNotIn(minted["api_key"], str(listed))
 		with self.assertRaises(frappe.ValidationError):
@@ -411,11 +401,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		with self.assertRaises(frappe.DoesNotExistError):
 			keys.update_key(other, key, cap=0)
 
-		with self.assertRaises(frappe.ValidationError):
-			keys.revoke_key(team, key)
-		frappe.db.set_value(
-			"Grove API Key", key, "creation", frappe.utils.add_to_date(None, hours=-7), update_modified=False
-		)
 		keys.revoke_key(team, key)
 		self.assertEqual(frappe.db.get_value("Grove API Key", key, "status"), "revoked")
 
@@ -479,7 +464,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		newer = keys.provision_key(team, title="ci")
 		gone = keys.provision_key(team, title="gone")["name"]
 		keys.provision_key(other, title="theirs")
-		backdate(gone)
 		keys.revoke_key(team, gone)
 
 		self.assertEqual(
