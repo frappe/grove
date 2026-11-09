@@ -27,7 +27,7 @@ vector_redis_exporter_url: "http://127.0.0.1:9121/metrics"
 vector_log_files:
   - /var/log/pathway/*.log
   - /var/log/redis/*.log
-vector_log_max_line_bytes: 4194304
+vector_log_max_line_bytes: 8388608
 
 vector_metrics_url: ""
 vector_logs_url: ""
