@@ -96,7 +96,7 @@ def push_roster():
 
 def post_roster(region):
 	"""Every Machine of `region` as `grove_machine_info{machine, status, vector} 1` under
-	`grove-<region>`. Reader rule: a Machine whose latest row reads Active with vector 1 must have
+	`grove:region-<region>`. Reader rule: a Machine whose latest row reads Active with vector 1 must have
 	rows of its own (grove:<machine>) within a few minutes, or it is dead; any other latest row
 	means its silence is expected. Thrown on refusal, naming datum's answer."""
 	machines = frappe.get_all("Machine", filters={"region": region.name}, fields=["name", "status"])
@@ -113,7 +113,7 @@ def post_roster(region):
 		}
 		for m in machines
 	]
-	token, _ = mint_token(region.central_region, f"grove-{region.name}")
+	token, _ = mint_token(region.central_region, f"grove:region-{region.name}")
 	response = requests.post(
 		ingest_url(region.metrics_url),
 		json={"samples": samples},

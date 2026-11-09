@@ -173,7 +173,7 @@ an Atlas machine's Pilot already ships those, and nobody else ships the logs.
 datum keeps no roster, so a quiet `resource_id` looks the same whether the box died or Grove took it
 down. Grove writes the roster itself, Atlas's way (`atlas_metal_server_info`): every minute
 `grove.datum.push_roster` posts one `grove_machine_info{machine, status, vector} 1` per Machine under
-`grove-<region>` to each Region's datum (the JSON route beside the remote-write one), `vector` 1 when a
+`grove:region-<region>` to each Region's datum (the JSON route beside the remote-write one), `vector` 1 when a
 box with `is_vector_setup` pushes under `grove:<machine>`. Reader rule (Insights): expected = Machines
 whose latest roster row reads Active with vector 1; alert on one with no row of its own in the last few
 minutes. Stopped and Terminated drop out of expected; an Active box that never shipped is in it, so a

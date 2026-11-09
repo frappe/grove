@@ -423,7 +423,7 @@ class TestRoster(unittest.TestCase):
 			patch("grove.datum.requests.post", return_value=Mock(status_code=200)) as post,
 		):
 			datum.push_roster()
-		mint.assert_called_once_with("blr-1", "grove-ap-south-1")
+		mint.assert_called_once_with("blr-1", "grove:region-ap-south-1")
 		call = post.call_args
 		self.assertEqual("http://datum.test/v1/ingest", call.args[0])
 		self.assertEqual({"Authorization": "Bearer jwt-1"}, call.kwargs["headers"])
