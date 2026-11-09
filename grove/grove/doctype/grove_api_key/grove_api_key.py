@@ -12,7 +12,6 @@ from grove.access import team_limits, validate_limit_rows
 from grove.billing.pricing import committed, forget_figures, lock_team, usd
 
 KEY_PREFIX = "gr_"
-REVOKE_AFTER_HOURS = 6
 # The expiry rules, days after the mint; Never is not in it.
 EXPIRY_DAYS = {"1 Day": 1, "7 Days": 7, "14 Days": 14, "30 Days": 30}
 
@@ -159,22 +158,13 @@ class GroveAPIKey(Document):
 				f"{usd(team.spend_limit)}."
 			)
 
-	@property
-	def revocable_at(self):
-		"""When `revoke` stops refusing this key, in site time. Parsed first: a doc the desk sends
-		back carries `creation` as a string, and `add_to_date` hands a string back for one."""
-		return frappe.utils.add_to_date(frappe.utils.get_datetime(self.creation), hours=REVOKE_AFTER_HOURS)
-
 	@frappe.whitelist()
 	def revoke(self):
 		"""Retire the credential. The row stays as the record that it existed and when it stopped,
 		its cap leaves the team's spend limit free for another key, and the gateways' copy goes
 		when the next sync prunes the unprojected key."""
-		if frappe.utils.now_datetime() < self.revocable_at:
-			frappe.throw(f"API key cannot be revoked less than {REVOKE_AFTER_HOURS} hours of it's creation")
-
 		self.status = "revoked"
-		self.save(ignore_permissions=True)
+		self.save()
 
 	def transfer(self, to_team: str, title: str | None = None):
 		"""Hand this key to `to_team`, titled `title` when given. The trial's rules go with the
@@ -261,8 +251,7 @@ def start_expiry(keys):
 
 def revoke_expired():
 	"""Hourly: every live key past its `expires_at` is revoked, and the next tick prunes it off the
-	boxes. Every rule is a day or more, so the six-hour guard meets none minted by the rules; one it
-	does refuse (a moment moved by hand) is logged and left for the next hour, the rest still go."""
+	boxes. One that fails is logged and left for the next hour, the rest still go."""
 	# `is set` first: a bare `<=` reads a NULL as year 1 and would take every Never key.
 	due = frappe.get_all(
 		"Grove API Key",

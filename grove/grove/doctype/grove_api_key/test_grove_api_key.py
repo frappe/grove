@@ -116,13 +116,11 @@ class IntegrationTestGroveAPIKey(IntegrationTestCase):
 		frappe.db.set_value("Grove API Key", doc.name, "status", "revoked")
 		self.assertEqual([k for k in effective_keys() if k["prefix"] == doc.name], [])
 
-	def test_the_desk_button_revokes_off_the_doc_it_sent_back(self):
-		"""The form posts the doc as JSON, so `creation` arrives as a string, not a datetime."""
+	def test_the_desk_button_revokes_a_key_however_fresh(self):
+		"""The form posts the doc back as JSON; a key minted a moment ago goes at once, no age guard."""
 		doc = key("key-probe-desk-revoke")
-		sent_back = frappe.get_doc(frappe.parse_json(frappe.as_json(doc)))
-		self.assertIsInstance(sent_back.creation, str)
-		with self.assertRaises(frappe.ValidationError):
-			sent_back.revoke()
+		frappe.get_doc(frappe.parse_json(frappe.as_json(doc))).revoke()
+		self.assertEqual(frappe.db.get_value("Grove API Key", doc.name, "status"), "revoked")
 
 
 class IntegrationTestNewTeamsStartInTheDefaultGroups(IntegrationTestCase):
@@ -569,22 +567,28 @@ class IntegrationTestExpiry(IntegrationTestCase):
 		self.assertEqual([k for k in effective_keys() if k["prefix"] == due.name], [])
 
 	def test_one_key_the_guard_refuses_does_not_hold_the_rest_of_the_sweep_back(self):
-		fresh, due = (key("key-probe-sweep-guard", expiry="1 Day") for _ in range(2))
+		stuck, due = (key("key-probe-sweep-stuck", expiry="1 Day") for _ in range(2))
 		yesterday = frappe.utils.add_days(None, -1)
-		# A moment moved by hand under the six-hour guard: minted now, past its moment already.
-		frappe.db.set_value("Grove API Key", fresh.name, "expires_at", yesterday, update_modified=False)
-		frappe.db.set_value(
-			"Grove API Key",
-			due.name,
-			{"creation": frappe.utils.add_days(None, -2), "expires_at": yesterday},
-			update_modified=False,
-		)
-		with unittest.mock.patch("frappe.log_error") as logged:
+		for doc in (stuck, due):
+			frappe.db.set_value("Grove API Key", doc.name, "expires_at", yesterday, update_modified=False)
+		revoke = GroveAPIKey.revoke
+
+		def revoke_unless_stuck(self):
+			if self.name == stuck.name:
+				frappe.throw("probe")
+			revoke(self)
+
+		# One refusal is logged and does not stop the sweep.
+		with (
+			unittest.mock.patch.object(GroveAPIKey, "revoke", revoke_unless_stuck),
+			unittest.mock.patch("frappe.log_error") as logged,
+		):
 			grove_api_key.revoke_expired()
 		self.assertEqual(
-			[frappe.db.get_value("Grove API Key", d.name, "status") for d in (fresh, due)], ["active", "revoked"]
+			[frappe.db.get_value("Grove API Key", d.name, "status") for d in (stuck, due)],
+			["active", "revoked"],
 		)
-		logged.assert_called_once_with(title=f"Expired key {fresh.name} could not be revoked")
+		logged.assert_called_once_with(title=f"Expired key {stuck.name} could not be revoked")
 
 	def test_a_key_minted_to_expire_from_first_use_gets_its_moment_at_its_first_record_once(self):
 		name = team("key-probe-first-use")
