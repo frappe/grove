@@ -8,7 +8,11 @@
 - name: Install Vector {{ vector_version }}
   when: vector_version not in (vector_probe.stdout | default('')) + (vector_probe.stderr | default(''))
   ansible.builtin.apt:
-    deb: "https://github.com/vectordotdev/vector/releases/download/v{{ vector_version }}/vector_{{ vector_version }}-1_{{ monitoring_arch }}.deb"
+    deb: "{{ vector_release_url }}/vector_{{ vector_version }}-1_{{ monitoring_arch }}.deb"
+  register: vector_install
+  retries: 3
+  delay: 10
+  until: vector_install is succeeded
   notify: restart vector
 
 # The deb's unit runs Vector as `vector`; pathway's logs are 0640 to the grove user's group, redis's to adm.
