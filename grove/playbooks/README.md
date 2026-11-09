@@ -149,9 +149,11 @@ Every Gateway Server, Gateway Store and Ingress Server runs Vector (`monitoring_
 ClickHouse, at the two routes its Region's Monitoring tab names: `host_metrics` plus Vector's own
 `internal_metrics` by Prometheus remote write (`Metrics Endpoint`), and every
 `/var/log/pathway/*.log` (`payload.log` included — the box's 7-day rotation is not the retention
-story any more, datum's is; its lines run past Vector's 100 KiB default, so the file source reads up to 4 MiB a line) and `/var/log/redis/*.log` (Vector sits in `adm` for them) as datum log lines (`Logs Endpoint`: `ts`,
-`product: grove`, `service` = log directory, `level`, `source` = file name, `message`
-cut at 8 KiB, `attributes` = `host`, `server`, `machine`, `region`). Batches stay under datum's 10,000
+story any more, datum's is; its lines run past Vector's 100 KiB default, so the file source reads up to 8 MiB a line, under datum's 12 MiB body) and `/var/log/redis/*.log` (Vector sits in `adm` for them) as datum log lines (`Logs Endpoint`: `ts`,
+`product: grove`, `service` = log directory, `source` = file name; pathway's slog JSON is parsed, so
+`level` and `message` are its `level` and `msg` and every other key is an attribute, groups flattened with `_`,
+prompts and outputs whole, beside `host`, `server`, `machine`, `region`; a line that is not JSON keeps datum's
+8 KiB message cap and ships whole as attribute `line`). Batches stay under datum's 10,000
 cap and each sink flushes once a minute (datum takes 12 writes a minute per token and route), sink
 healthchecks are off (datum answers 405 to a GET), and each sink keeps a disk buffer because datum
 buffers nothing, dropping the newest event when it is full rather than stalling the sources. Host metrics arrive as `host_*` series, not node_exporter's `node_*` (cpu, disk, filesystem, load, host, memory,

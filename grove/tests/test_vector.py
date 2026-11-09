@@ -73,7 +73,16 @@ class TestTheConfig(unittest.TestCase):
 		built = re.search(r"\. = \{(.*)", source, re.S).group(1)
 		self.assertEqual(set(DATUM_LINE), set(re.findall(r'^ {2}"(\w+)":', built, re.M)))
 		self.assertIn('"product": "grove"', built)
-		self.assertIn("truncate(message, 8000)", source)
+
+	def test_pathways_json_lines_are_parsed_whole_and_only_a_plain_line_meets_datums_message_cap(self):
+		source = config()["transforms"]["datum_lines"]["source"]
+		self.assertIn("parse_json(line)", source)
+		self.assertIn('flatten(compact(parsed), "_")', source)
+		self.assertIn("encode_json(value)", source)
+		self.assertNotIn("truncate(message", source)
+		plain = source[source.index("else if length(line) > 8192") :]
+		self.assertIn("attributes.line = line", plain)
+		self.assertIn("truncate(line, 8192)", plain)
 
 	def test_host_metrics_skip_the_per_process_and_cgroup_collectors(self):
 		collectors = config()["sources"]["host"]["collectors"]

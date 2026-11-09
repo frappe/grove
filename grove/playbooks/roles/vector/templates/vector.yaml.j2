@@ -29,7 +29,7 @@ sources:
     type: file
     include: {{ vector_log_files | tojson }}
     ignore_older_secs: 86400
-    # A payload line tops Vector's 100 KiB default and would be dropped whole; the remap cuts it to 8 KiB after.
+    # A payload line tops Vector's 100 KiB default and would be dropped whole; datum takes a 12 MiB body.
     max_line_bytes: {{ vector_log_max_line_bytes }}
 
 transforms:
@@ -40,17 +40,38 @@ transforms:
       .tags.server = "{{ vector_server }}"
       .tags.machine = "{{ vector_machine }}"
       .tags.region = "{{ vector_region }}"
-  # datum's line: ts, product, service, level, source, message (8 KiB at most), attributes. Nothing else.
+  # datum's line: ts, product, service, level, source, message, attributes. pathway writes slog JSON, so its
+  # level and msg become datum's and every other key an attribute, groups flattened with _ (latency_total_ms);
+  # a prompt or output ships whole. Only datum's own 8 KiB message cap applies, to a line that is not JSON.
   datum_lines:
     type: remap
     inputs: [files]
     source: |
       parts = split(string!(.file), "/")
       source = parts[-1]
+      line = string(.message) ?? ""
       level = if source == "error.log" { "error" } else { "info" }
-      message = string(.message) ?? ""
-      message = truncate(message, 8000)
-      if length(message) > 8192 { message = truncate(message, 2048) }
+      message = line
+      attributes = {
+        "host": .host,
+        "server": "{{ vector_server }}",
+        "machine": "{{ vector_machine }}",
+        "region": "{{ vector_region }}"
+      }
+      parsed, err = parse_json(line)
+      if err == null && is_object(parsed) {
+        parsed = object!(parsed)
+        level = downcase(string(parsed.level) ?? level)
+        message = string(parsed.msg) ?? ""
+        del(parsed.time)
+        del(parsed.level)
+        del(parsed.msg)
+        values = map_values(flatten(compact(parsed), "_")) -> |value| { if is_string(value) { value } else { encode_json(value) } }
+        attributes = merge(attributes, values)
+      } else if length(line) > 8192 {
+        attributes.line = line
+        message = truncate(line, 8192)
+      }
       . = {
         "ts": format_timestamp!(.timestamp, "%+"),
         "product": "grove",
@@ -58,12 +79,7 @@ transforms:
         "level": level,
         "source": source,
         "message": message,
-        "attributes": {
-          "host": .host,
-          "server": "{{ vector_server }}",
-          "machine": "{{ vector_machine }}",
-          "region": "{{ vector_region }}"
-        }
+        "attributes": attributes
       }
 
 # Healthchecks off on both: datum answers 405 to a GET on an ingest route, and `vector validate`
