@@ -153,7 +153,8 @@ story any more, datum's is; its lines run past Vector's 100 KiB default, so the 
 `product: grove`, `service` = log directory, `source` = file name; pathway's slog JSON is parsed, so
 `level` and `message` are its `level` and `msg` and every other key is an attribute, groups flattened with `_`,
 prompts and outputs whole, beside `host`, `server`, `machine`, `region`; a line that is not JSON keeps datum's
-8 KiB message cap and ships whole as attribute `line`). Batches stay under datum's 10,000
+8 KiB message cap and ships whole as attribute `line`; a line a `vector_unshipped_lines` rule matches, by file, key and
+values, stays on the box; the default rule keeps `access.log` lines with `path` `/healthz`). Batches stay under datum's 10,000
 cap and each sink flushes once a minute (datum takes 12 writes a minute per token and route), sink
 healthchecks are off (datum answers 405 to a GET), and each sink keeps a disk buffer because datum
 buffers nothing, dropping the newest event when it is full rather than stalling the sources. Host metrics arrive as `host_*` series, not node_exporter's `node_*` (cpu, disk, filesystem, load, host, memory,

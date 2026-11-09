@@ -84,6 +84,18 @@ class TestTheConfig(unittest.TestCase):
 		self.assertIn("attributes.line = line", plain)
 		self.assertIn("truncate(line, 8192)", plain)
 
+	def test_a_line_an_unshipped_rule_matches_stays_on_the_box(self):
+		transform = config()["transforms"]["datum_lines"]
+		self.assertTrue(transform["drop_on_abort"])
+		self.assertEqual([{"source": "access.log", "key": "path", "values": ["/healthz"]}], DEFAULTS["vector_unshipped_lines"])
+		self.assertIn(
+			'if source == "access.log" && includes(["/healthz"], string(get!(parsed, ["path"])) ?? "") {', transform["source"]
+		)
+		rules = [{"source": "error.log", "key": "msg", "values": ["routes pruned partially", "usage dropped"]}]
+		source = config(vector_unshipped_lines=rules)["transforms"]["datum_lines"]["source"]
+		self.assertIn('if source == "error.log" && includes(["routes pruned partially", "usage dropped"], string(get!(parsed, ["msg"]))', source)
+		self.assertNotIn("/healthz", source)
+
 	def test_host_metrics_skip_the_per_process_and_cgroup_collectors(self):
 		collectors = config()["sources"]["host"]["collectors"]
 		self.assertEqual(DEFAULTS["vector_host_collectors"], collectors)
@@ -141,7 +153,8 @@ class TestTheConfig(unittest.TestCase):
 
 	def test_every_variable_the_template_reads_is_a_declared_default(self):
 		text = (ROLE / "templates" / "vector.yaml.j2").read_text()
-		used = set(re.findall(r"{[{%]\s*(?:if\s+)?(\w+)", text)) - {"endif"}
+		loop_variables = set(re.findall(r"{%\s*for\s+(\w+)\s+in", text))
+		used = set(re.findall(r"{[{%]\s*(?:if\s+|for\s+\w+\s+in\s+)?(\w+)", text)) - {"endif", "endfor"} - loop_variables
 		self.assertEqual(set(), used - set(DEFAULTS), "a template variable with no default")
 		self.assertEqual(set(), set(VARIABLES) - set(DEFAULTS), "an extra-var the role never declares")
 

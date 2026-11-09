@@ -43,9 +43,11 @@ transforms:
   # datum's line: ts, product, service, level, source, message, attributes. pathway writes slog JSON, so its
   # level and msg become datum's and every other key an attribute, groups flattened with _ (latency_total_ms);
   # a prompt or output ships whole. Only datum's own 8 KiB message cap applies, to a line that is not JSON.
+  # A line a vector_unshipped_lines rule matches (file, key, values) stays on the box: the health check is most of access.log.
   datum_lines:
     type: remap
     inputs: [files]
+    drop_on_abort: true
     source: |
       parts = split(string!(.file), "/")
       source = parts[-1]
@@ -63,6 +65,11 @@ transforms:
         parsed = object!(parsed)
         level = downcase(string(parsed.level) ?? level)
         message = string(parsed.msg) ?? ""
+{% for rule in vector_unshipped_lines %}
+        if source == {{ rule.source | tojson }} && includes({{ rule['values'] | tojson }}, string(get!(parsed, [{{ rule.key | tojson }}])) ?? "") {
+          abort
+        }
+{% endfor %}
         del(parsed.time)
         del(parsed.level)
         del(parsed.msg)
