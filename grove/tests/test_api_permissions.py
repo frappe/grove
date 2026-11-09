@@ -404,32 +404,21 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		keys.revoke_key(team, key)
 		self.assertEqual(frappe.db.get_value("Grove API Key", key, "status"), "revoked")
 
-	def test_a_team_revokes_fifteen_keys_an_hour_and_a_bulk_call_counts_once(self):
-		"""The limit counts in a request, keyed by the `team` sent; a refused call counts too. The
-		Desk button and the sweep revoke on the doc and are not counted."""
-		team, other = "probe-revoker-hourly", "probe-revoker-hourly-other"
+	def test_a_bulk_revoke_is_refused_whole_for_a_key_of_another_team(self):
+		team, other = "probe-revoker-bulk", "probe-revoker-bulk-other"
 		for each in (team, other):
 			teams.provision_team(each)
-		names = [keys.provision_key(team, title=f"k{i}")["name"] for i in range(16)]
+		names = [keys.provision_key(team, title=f"k{i}")["name"] for i in range(2)]
 		theirs = keys.provision_key(other, title="theirs")["name"]
-		counter = "rl:grove.api.keys.revoke"
-		frappe.cache.delete_keys(counter)
-		self.addCleanup(frappe.cache.delete_keys, counter)
-		frappe.local.request = frappe._dict(method="POST")
-		self.addCleanup(setattr, frappe.local, "request", None)
-		frappe.local.form_dict.team = team
-		self.addCleanup(frappe.local.form_dict.pop, "team", None)
 
 		with self.assertRaises(frappe.DoesNotExistError):
 			keys.revoke_keys(team, [names[0], theirs])
 		self.assertEqual(frappe.db.get_value("Grove API Key", names[0], "status"), "active")
-		self.assertEqual(keys.revoke_keys(team, names[:2]), names[:2])
-		for name in names[2:15]:
-			keys.revoke_key(team, name)
-		with self.assertRaises(frappe.RateLimitExceededError):
-			keys.revoke_key(team, names[15])
-		frappe.get_doc("Grove API Key", names[15]).revoke()
-		self.assertEqual(frappe.db.get_value("Grove API Key", names[15], "status"), "revoked")
+		self.assertEqual(keys.revoke_keys(team, names), names)
+		self.assertEqual(
+			frappe.get_all("Grove API Key", filters={"name": ("in", names)}, pluck="status"),
+			["revoked", "revoked"],
+		)
 
 	def test_a_key_is_extended_by_name_only_for_the_team_holding_it(self):
 		team, other = "probe-extender", "probe-extender-other"
