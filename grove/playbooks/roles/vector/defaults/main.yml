@@ -1,17 +1,24 @@
 ---
 vector_version: "0.60.0"
+vector_release_url: "https://packages.timber.io/vector/{{ vector_version }}"
 vector_api_address: 127.0.0.1:8686
 vector_metrics_interval_seconds: 15
 # Off where the provider's own agent already ships them (an Atlas machine runs Pilot). Logs always go.
 vector_ship_host_metrics: true
 # Not cgroups or process: one series per PID or cgroup, four fifths of the volume on a one-service box.
 vector_host_collectors: [cpu, disk, filesystem, load, host, memory, network, tcp]
+# A loop device and a squashfs mount per snap, the loopback: series for nothing.
+vector_host_network_excludes: [lo, "veth*", "docker*"]
+vector_host_disk_excludes: ["loop*", "ram*"]
+vector_host_filesystem_excludes: [tmpfs, devtmpfs, overlay, squashfs, proc, sysfs, "cgroup*", "fuse*"]
 
 # datum buffers nothing, so the box must: one disk buffer per sink.
 vector_buffer_max_bytes: 536870912
-# datum caps a batch at 10,000 lines or samples, and its proxy caps a body at 32 MB.
-vector_batch_max_events: 1000
+# datum caps a batch at 10,000 lines or samples, its proxy a body at 32 MB, and it takes 12 writes a
+# minute per token and route: a sink flushes once a minute, or sooner at 5,000 events.
+vector_batch_max_events: 5000
 vector_batch_max_bytes: 4000000
+vector_batch_timeout_seconds: 60
 
 # A store's redis password: set, the play lays redis_exporter beside Vector and this scrapes it.
 vector_redis_password: ""

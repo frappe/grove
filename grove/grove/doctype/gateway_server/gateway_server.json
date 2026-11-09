@@ -147,7 +147,6 @@
    "description": "Every team gets its own prompt-cache partition on this box: cache_salt on an engine, prompt_cache_key at OpenAI, user_id at DeepSeek. No cache hits across teams. Written to config.json and applied with SIGUSR1, so it survives a restart. Isolate/Share Caches under Gateway.",
    "fieldname": "isolate_caches",
    "fieldtype": "Check",
-   "in_standard_filter": 1,
    "label": "Isolate Caches",
    "read_only": 1
   },
@@ -200,12 +199,11 @@
    "description": "Set once Vector has been installed on this box (Setup chains it; Install Vector for an older box). It pushes logs, and host metrics when ticked, to the Region's datum; its token is minted again with a day left (Datum Token Expires At).",
    "fieldname": "is_vector_setup",
    "fieldtype": "Check",
-   "in_standard_filter": 1,
    "label": "Vector Setup",
    "read_only": 1
   },
   {
-   "description": "When the datum token Vector pushes with runs out — Central's expires_in at the mint. The hourly tick mints a new one with a day left.",
+   "description": "When the datum token Vector pushes with runs out \u2014 Central's expires_in at the mint. The hourly tick mints a new one with a day left.",
    "fieldname": "datum_token_expires_at",
    "fieldtype": "Datetime",
    "label": "Datum Token Expires At",
@@ -213,7 +211,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-04 01:33:12.711621",
+ "modified": "2026-11-09 13:39:27.190862",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Gateway Server",

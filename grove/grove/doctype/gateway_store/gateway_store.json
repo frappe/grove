@@ -49,7 +49,7 @@
    "read_only": 1
   },
   {
-   "description": "From the Machine, as of this doc's last save. Where the gateways dial and Redis binds — both read the Machine live.",
+   "description": "From the Machine, as of this doc's last save. Where the gateways dial and Redis binds \u2014 both read the Machine live.",
    "fetch_from": "machine.private_ip",
    "fieldname": "private_ip",
    "fieldtype": "Data",
@@ -124,7 +124,7 @@
    "read_only": 1
   },
   {
-   "description": "Object in the weights bucket. Restore uses a store's latest — this one's, or the Terminated store this box replaces.",
+   "description": "Object in the weights bucket. Restore uses a store's latest \u2014 this one's, or the Terminated store this box replaces.",
    "fieldname": "last_backup_key",
    "fieldtype": "Data",
    "label": "Last Backup Key",
@@ -142,12 +142,11 @@
    "description": "Set once Vector has been installed on this box (Setup chains it; Install Vector for an older box). It pushes logs, and host metrics when ticked, to the Region's datum; its token is minted again with a day left (Datum Token Expires At).",
    "fieldname": "is_vector_setup",
    "fieldtype": "Check",
-   "in_standard_filter": 1,
    "label": "Vector Setup",
    "read_only": 1
   },
   {
-   "description": "When the datum token Vector pushes with runs out — Central's expires_in at the mint. The hourly tick mints a new one with a day left.",
+   "description": "When the datum token Vector pushes with runs out \u2014 Central's expires_in at the mint. The hourly tick mints a new one with a day left.",
    "fieldname": "datum_token_expires_at",
    "fieldtype": "Datetime",
    "label": "Datum Token Expires At",
@@ -155,7 +154,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-22 16:28:36.679371",
+ "modified": "2026-11-09 13:37:12.401765",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Gateway Store",

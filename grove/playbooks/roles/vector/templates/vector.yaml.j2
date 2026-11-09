@@ -10,6 +10,9 @@ sources:
     type: host_metrics
     scrape_interval_secs: {{ vector_metrics_interval_seconds }}
     collectors: {{ vector_host_collectors | tojson }}
+    network: {devices: {excludes: {{ vector_host_network_excludes | tojson }}}}
+    disk: {devices: {excludes: {{ vector_host_disk_excludes | tojson }}}}
+    filesystem: {filesystems: {excludes: {{ vector_host_filesystem_excludes | tojson }}}}
 {% endif %}
 {% if vector_redis_password %}
   # The redis exporter beside Vector on a store: memory, clients, evictions, persistence, as redis_* series.
@@ -64,7 +67,8 @@ transforms:
       }
 
 # Healthchecks off on both: datum answers 405 to a GET on an ingest route, and `vector validate`
-# in the unit's ExecStartPre would refuse to start on that.
+# in the unit's ExecStartPre would refuse to start on that. A full buffer drops the newest event
+# rather than stall the sources.
 sinks:
   metrics:
     type: prometheus_remote_write
@@ -75,11 +79,13 @@ sinks:
       token: "{{ vector_token }}"
     batch:
       max_events: {{ vector_batch_max_events }}
+      timeout_secs: {{ vector_batch_timeout_seconds }}
     healthcheck:
       enabled: false
     buffer:
       type: disk
       max_size: {{ vector_buffer_max_bytes }}
+      when_full: drop_newest
   logs:
     type: http
     inputs: [datum_lines]
@@ -93,8 +99,10 @@ sinks:
     batch:
       max_events: {{ vector_batch_max_events }}
       max_bytes: {{ vector_batch_max_bytes }}
+      timeout_secs: {{ vector_batch_timeout_seconds }}
     healthcheck:
       enabled: false
     buffer:
       type: disk
       max_size: {{ vector_buffer_max_bytes }}
+      when_full: drop_newest

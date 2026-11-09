@@ -82,6 +82,12 @@ class TestTheConfig(unittest.TestCase):
 		self.assertNotIn("process", collectors)
 		self.assertNotIn("cgroups", collectors)
 
+	def test_host_metrics_skip_snap_devices_and_the_loopback(self):
+		host = config()["sources"]["host"]
+		self.assertIn("loop*", host["disk"]["devices"]["excludes"])
+		self.assertIn("squashfs", host["filesystem"]["filesystems"]["excludes"])
+		self.assertIn("lo", host["network"]["devices"]["excludes"])
+
 	def test_every_pathway_log_and_the_redis_log_are_read(self):
 		include = config()["sources"]["files"]["include"]
 		self.assertEqual(DEFAULTS["vector_log_files"], include)
@@ -117,11 +123,12 @@ class TestTheConfig(unittest.TestCase):
 		for sink in config()["sinks"].values():
 			self.assertEqual({"enabled": False}, sink["healthcheck"])
 
-	def test_batches_stay_under_datums_caps(self):
+	def test_batches_stay_under_datums_caps_and_flush_once_a_minute(self):
 		self.assertLessEqual(DEFAULTS["vector_batch_max_events"], DATUM_BATCH_CAP)
 		for sink in config()["sinks"].values():
 			self.assertLessEqual(sink["batch"]["max_events"], DATUM_BATCH_CAP)
-			self.assertEqual("disk", sink["buffer"]["type"])
+			self.assertEqual(60, sink["batch"]["timeout_secs"])
+			self.assertEqual({"type": "disk", "max_size": DEFAULTS["vector_buffer_max_bytes"], "when_full": "drop_newest"}, sink["buffer"])
 
 	def test_every_variable_the_template_reads_is_a_declared_default(self):
 		text = (ROLE / "templates" / "vector.yaml.j2").read_text()
