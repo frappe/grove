@@ -92,9 +92,14 @@ class GatewayStore(NamedHost, Document):
 		}
 
 	@property
-	def vector_exporter_variables(self):
-		"""The redis exporter rides along on the store's own password; vector.yml lays it on seeing one."""
-		return {"vector_redis_password": self.get_password("redis_password")}
+	def vector_variables(self):
+		"""redis's log, and the exporter that rides along on the store's own password; vector.yml
+		lays it on seeing one."""
+		return {
+			"vector_log_files": ["/var/log/redis/*.log"],
+			"vector_unshipped_lines": [],
+			"vector_redis_password": self.get_password("redis_password"),
+		}
 
 	@frappe.whitelist()
 	def setup(self):

@@ -2,7 +2,8 @@
 # Install Vector on one box: host metrics to the Region's datum remote write, journald and every
 # pathway and redis log to its log route (Setup chains it, Install Vector re-runs it, the hourly token
 # refresh re-runs it with a day left). extra-vars: vector_metrics_url, vector_logs_url, vector_token,
-# vector_ship_host_metrics, vector_server, vector_machine, vector_region; vector_redis_password (a store's)
+# vector_ship_host_metrics, vector_server, vector_machine, vector_region, vector_log_files and
+# vector_unshipped_lines (the doctype's, see NamedHost.vector_variables); vector_redis_password (a store's)
 # brings the redis exporter and its scrape.
 - name: Install Vector
   hosts: all
@@ -11,15 +12,17 @@
   vars:
     monitoring_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
   pre_tasks:
-    - name: Check the endpoints and token were passed
+    - name: Check the endpoints, token and log files were passed
       ansible.builtin.assert:
         that:
           - vector_metrics_url | default('') | trim | length > 0
           - vector_logs_url | default('') | trim | length > 0
           - vector_token | default('') | trim | length > 0
+          - vector_log_files | default([]) | length > 0
         fail_msg: >-
-          vector_metrics_url, vector_logs_url and vector_token are required — run from the Install
-          Vector button, which reads the endpoints off the box's Region and mints the token.
+          vector_metrics_url, vector_logs_url, vector_token and vector_log_files are required — run from
+          the Install Vector button, which reads the endpoints off the box's Region, mints the token and
+          passes the box type's log files.
   roles:
     - grove_user
     - role: redis_exporter

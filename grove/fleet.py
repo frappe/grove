@@ -192,8 +192,10 @@ class NamedHost(Server):
 		frappe.enqueue_doc(self.doctype, self.name, "provision_vector", queue="long", timeout=1200)
 
 	@property
-	def vector_exporter_variables(self):
-		"""Extra-vars for an exporter Vector scrapes beside its own sources: none on most boxes."""
+	def vector_variables(self):
+		"""What this kind of box asks Vector to read and keep: its log files, the lines that stay on
+		the box, an exporter beside it. Each box type declares its own; the play refuses a box with
+		no log files."""
 		return {}
 
 	@failure.reports_failure(mark_broken=False)
@@ -213,7 +215,7 @@ class NamedHost(Server):
 			"vector_server": self.name,
 			"vector_machine": self.machine,
 			"vector_region": self.region,
-			**self.vector_exporter_variables,
+			**self.vector_variables,
 		}
 		play_name, rc = self.run_playbook("vector.yml", project="Monitoring Agent", extravars=extravars)
 		if rc != 0:
@@ -282,6 +284,15 @@ class FleetHost(NamedHost):
 class PathwayHost(FleetHost):
 	"""A fleet box that runs pathway — a Gateway or an Ingress Server. Its maintenance is a
 	config.json key, owned by its `is_in_maintenance`."""
+
+	@property
+	def vector_variables(self):
+		"""pathway's access, error and payload logs. Route53 probes /healthz from 16 checkers, 30
+		lines a minute, nine in ten of access.log, so those lines stay on the box."""
+		return {
+			"vector_log_files": ["/var/log/pathway/*.log"],
+			"vector_unshipped_lines": [{"source": "access.log", "key": "path", "values": ["/healthz"]}],
+		}
 
 	@property
 	def config_variables(self):

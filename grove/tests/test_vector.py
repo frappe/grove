@@ -37,6 +37,8 @@ VARIABLES = {
 	"vector_server": "gw-1",
 	"vector_machine": "mc-1",
 	"vector_region": "ap-south-1",
+	"vector_log_files": ["/var/log/pathway/*.log"],
+	"vector_unshipped_lines": [{"source": "access.log", "key": "path", "values": ["/healthz"]}],
 }
 
 
@@ -87,13 +89,19 @@ class TestTheConfig(unittest.TestCase):
 	def test_a_line_an_unshipped_rule_matches_stays_on_the_box(self):
 		transform = config()["transforms"]["datum_lines"]
 		self.assertTrue(transform["drop_on_abort"])
-		self.assertEqual([{"source": "access.log", "key": "path", "values": ["/healthz"]}], DEFAULTS["vector_unshipped_lines"])
+		self.assertEqual([], DEFAULTS["vector_unshipped_lines"])
 		self.assertIn(
-			'if source == "access.log" && includes(["/healthz"], string(get!(parsed, ["path"])) ?? "") {', transform["source"]
+			'if source == "access.log" && includes(["/healthz"], string(get!(parsed, ["path"])) ?? "") {',
+			transform["source"],
 		)
-		rules = [{"source": "error.log", "key": "msg", "values": ["routes pruned partially", "usage dropped"]}]
+		rules = [
+			{"source": "error.log", "key": "msg", "values": ["routes pruned partially", "usage dropped"]}
+		]
 		source = config(vector_unshipped_lines=rules)["transforms"]["datum_lines"]["source"]
-		self.assertIn('if source == "error.log" && includes(["routes pruned partially", "usage dropped"], string(get!(parsed, ["msg"]))', source)
+		self.assertIn(
+			'if source == "error.log" && includes(["routes pruned partially", "usage dropped"], string(get!(parsed, ["msg"]))',
+			source,
+		)
 		self.assertNotIn("/healthz", source)
 
 	def test_host_metrics_skip_the_per_process_and_cgroup_collectors(self):
@@ -109,10 +117,13 @@ class TestTheConfig(unittest.TestCase):
 		self.assertIn("squashfs", host["filesystem"]["filesystems"]["excludes"])
 		self.assertIn("lo", host["network"]["devices"]["excludes"])
 
-	def test_every_pathway_log_and_the_redis_log_are_read(self):
-		include = config()["sources"]["files"]["include"]
-		self.assertEqual(DEFAULTS["vector_log_files"], include)
-		self.assertIn("/var/log/pathway/*.log", include)
+	def test_the_role_reads_the_log_files_the_box_names(self):
+		self.assertEqual([], DEFAULTS["vector_log_files"])
+		self.assertEqual(VARIABLES["vector_log_files"], config()["sources"]["files"]["include"])
+		self.assertEqual(
+			["/var/log/redis/*.log"],
+			config(vector_log_files=["/var/log/redis/*.log"])["sources"]["files"]["include"],
+		)
 		# A payload line runs past Vector's 100 KiB default, which drops the line whole.
 		self.assertGreater(config()["sources"]["files"]["max_line_bytes"], 102400)
 
@@ -149,12 +160,19 @@ class TestTheConfig(unittest.TestCase):
 		for sink in config()["sinks"].values():
 			self.assertLessEqual(sink["batch"]["max_events"], DATUM_BATCH_CAP)
 			self.assertEqual(60, sink["batch"]["timeout_secs"])
-			self.assertEqual({"type": "disk", "max_size": DEFAULTS["vector_buffer_max_bytes"], "when_full": "drop_newest"}, sink["buffer"])
+			self.assertEqual(
+				{"type": "disk", "max_size": DEFAULTS["vector_buffer_max_bytes"], "when_full": "drop_newest"},
+				sink["buffer"],
+			)
 
 	def test_every_variable_the_template_reads_is_a_declared_default(self):
 		text = (ROLE / "templates" / "vector.yaml.j2").read_text()
 		loop_variables = set(re.findall(r"{%\s*for\s+(\w+)\s+in", text))
-		used = set(re.findall(r"{[{%]\s*(?:if\s+|for\s+\w+\s+in\s+)?(\w+)", text)) - {"endif", "endfor"} - loop_variables
+		used = (
+			set(re.findall(r"{[{%]\s*(?:if\s+|for\s+\w+\s+in\s+)?(\w+)", text))
+			- {"endif", "endfor"}
+			- loop_variables
+		)
 		self.assertEqual(set(), used - set(DEFAULTS), "a template variable with no default")
 		self.assertEqual(set(), set(VARIABLES) - set(DEFAULTS), "an extra-var the role never declares")
 
@@ -162,7 +180,10 @@ class TestTheConfig(unittest.TestCase):
 class TestThePlayAndRole(unittest.TestCase):
 	def test_the_play_lays_the_grove_user_then_a_stores_exporter_before_the_role(self):
 		roles = play()["roles"]
-		self.assertEqual(["grove_user", "redis_exporter", "vector"], [r if isinstance(r, str) else r["role"] for r in roles])
+		self.assertEqual(
+			["grove_user", "redis_exporter", "vector"],
+			[r if isinstance(r, str) else r["role"] for r in roles],
+		)
 		self.assertIn("vector_redis_password", roles[1]["when"])
 		self.assertEqual({"redis_exporter_password": "{{ vector_redis_password }}"}, roles[1]["vars"])
 
@@ -177,13 +198,16 @@ class TestThePlayAndRole(unittest.TestCase):
 
 	def test_the_play_refuses_to_run_without_the_routes_and_the_token(self):
 		checks = play()["pre_tasks"][0]["ansible.builtin.assert"]["that"]
-		for variable in ("vector_metrics_url", "vector_logs_url", "vector_token"):
+		for variable in ("vector_metrics_url", "vector_logs_url", "vector_token", "vector_log_files"):
 			self.assertTrue(any(variable in check for check in checks), variable)
 
 	def test_the_config_is_a_secret_vector_can_read(self):
 		task = role_task("Write the Vector config")
 		self.assertTrue(task["no_log"])
-		self.assertEqual({"owner": "root", "group": "vector", "mode": "0640"}, {k: task["ansible.builtin.template"][k] for k in ("owner", "group", "mode")})
+		self.assertEqual(
+			{"owner": "root", "group": "vector", "mode": "0640"},
+			{k: task["ansible.builtin.template"][k] for k in ("owner", "group", "mode")},
+		)
 
 	def test_vector_is_let_into_the_log_groups(self):
 		groups = role_task("Let vector read the logs")["ansible.builtin.user"]["groups"]
@@ -195,16 +219,25 @@ class FakeHost(SimpleNamespace):
 	check_vector_ready = NamedHost.check_vector_ready
 	queue_vector = NamedHost.queue_vector
 	provision_vector = NamedHost.provision_vector
-	vector_exporter_variables = NamedHost.vector_exporter_variables
+	vector_variables = NamedHost.vector_variables
 
 
 class FakeStore(FakeHost):
-	vector_exporter_variables = GatewayStore.vector_exporter_variables
+	vector_variables = GatewayStore.vector_variables
+
+
+class FakePathwayHost(FakeHost):
+	vector_variables = PathwayHost.vector_variables
 
 
 def fake_host(rc=0, **fields):
 	defaults = dict(
-		doctype="Gateway Store", name="store-1", machine="mc-1", region="ap-south-1", status="Active", ship_host_metrics=1
+		doctype="Gateway Store",
+		name="store-1",
+		machine="mc-1",
+		region="ap-south-1",
+		status="Active",
+		ship_host_metrics=1,
 	)
 	return FakeHost(**{**defaults, **fields}, run_playbook=Mock(return_value=("play-1", rc)), db_set=Mock())
 
@@ -224,7 +257,10 @@ class TestTheButton(unittest.TestCase):
 			patch("frappe.get_doc", return_value=fake_region()),
 			patch("grove.datum.credential_problems", return_value=[]),
 			patch("grove.datum.mint_token", return_value=("jwt-1", EXPIRY)),
-			patch("frappe.throw", side_effect=lambda msg, *a, **k: (_ for _ in ()).throw(frappe.ValidationError(msg))),
+			patch(
+				"frappe.throw",
+				side_effect=lambda msg, *a, **k: (_ for _ in ()).throw(frappe.ValidationError(msg)),
+			),
 			patch("frappe.msgprint"),
 			patch("grove.failure.report"),
 		]
@@ -276,10 +312,24 @@ class TestTheButton(unittest.TestCase):
 		)
 		doc.db_set.assert_called_once_with({"is_vector_setup": 1, "datum_token_expires_at": EXPIRY})
 
-	def test_a_store_passes_its_redis_password_so_the_play_lays_the_exporter(self):
+	def test_a_store_passes_redis_log_and_password_so_the_play_lays_the_exporter(self):
 		doc = FakeStore(**vars(fake_host()), get_password=lambda field: "pw")
 		doc.provision_vector()
-		self.assertEqual("pw", doc.run_playbook.call_args.kwargs["extravars"]["vector_redis_password"])
+		extravars = doc.run_playbook.call_args.kwargs["extravars"]
+		self.assertEqual("pw", extravars["vector_redis_password"])
+		self.assertEqual(["/var/log/redis/*.log"], extravars["vector_log_files"])
+		self.assertEqual([], extravars["vector_unshipped_lines"])
+
+	def test_a_pathway_box_passes_its_logs_and_keeps_the_health_checks_lines(self):
+		doc = FakePathwayHost(**vars(fake_host(doctype="Gateway Server", name="gw-1")))
+		doc.provision_vector()
+		extravars = doc.run_playbook.call_args.kwargs["extravars"]
+		self.assertEqual(["/var/log/pathway/*.log"], extravars["vector_log_files"])
+		self.assertEqual(
+			[{"source": "access.log", "key": "path", "values": ["/healthz"]}],
+			extravars["vector_unshipped_lines"],
+		)
+		self.assertNotIn("vector_redis_password", extravars)
 
 	def test_a_failed_play_is_an_error_and_records_nothing(self):
 		doc = fake_host(rc=2)
@@ -288,7 +338,9 @@ class TestTheButton(unittest.TestCase):
 		doc.db_set.assert_not_called()
 
 	def test_the_job_looks_before_it_dials(self):
-		self.get_doc.return_value = fake_region(["Set Metrics Endpoint on Region ap-south-1's Monitoring tab."])
+		self.get_doc.return_value = fake_region(
+			["Set Metrics Endpoint on Region ap-south-1's Monitoring tab."]
+		)
 		doc = fake_host()
 		with self.assertRaises(frappe.ValidationError):
 			doc.provision_vector()
@@ -297,13 +349,22 @@ class TestTheButton(unittest.TestCase):
 
 
 class TestTheRefresh(unittest.TestCase):
-	def test_every_active_box_with_vector_whose_token_has_a_day_left_or_no_known_expiry_gets_a_fresh_one(self):
-		boxes = {"Gateway Server": ["gw-1", "gw-2"], "Gateway Store": ["store-1"], "Ingress Server": ["ing-1"]}
+	def test_every_active_box_with_vector_whose_token_has_a_day_left_or_no_known_expiry_gets_a_fresh_one(
+		self,
+	):
+		boxes = {
+			"Gateway Server": ["gw-1", "gw-2"],
+			"Gateway Store": ["store-1"],
+			"Ingress Server": ["ing-1"],
+		}
 
 		def get_all(doctype, filters, or_filters, pluck):
 			self.assertEqual({"status": "Active", "is_vector_setup": 1}, filters)
 			self.assertEqual(
-				[["datum_token_expires_at", "is", "not set"], ["datum_token_expires_at", "<=", NOW + timedelta(days=1)]],
+				[
+					["datum_token_expires_at", "is", "not set"],
+					["datum_token_expires_at", "<=", NOW + timedelta(days=1)],
+				],
 				or_filters,
 			)
 			return boxes[doctype]
@@ -315,7 +376,12 @@ class TestTheRefresh(unittest.TestCase):
 		):
 			datum.refresh_tokens()
 		self.assertEqual(
-			[("Gateway Server", "gw-1"), ("Gateway Server", "gw-2"), ("Gateway Store", "store-1"), ("Ingress Server", "ing-1")],
+			[
+				("Gateway Server", "gw-1"),
+				("Gateway Server", "gw-2"),
+				("Gateway Store", "store-1"),
+				("Ingress Server", "ing-1"),
+			],
 			[call.args[:2] for call in enqueue.call_args_list],
 		)
 		self.assertTrue(all(call.args[2] == "provision_vector" for call in enqueue.call_args_list))
@@ -361,7 +427,9 @@ class TestCredentialProblems(unittest.TestCase):
 	def test_each_blank_field_is_named(self):
 		with patch("frappe.get_single", return_value=fake_settings(url="", token="")):
 			problems = datum.credential_problems()
-		self.assertEqual(["Set Central URL in Grove Settings.", "Set Central Token in Grove Settings."], problems)
+		self.assertEqual(
+			["Set Central URL in Grove Settings.", "Set Central Token in Grove Settings."], problems
+		)
 
 	def test_a_filled_credential_has_none(self):
 		with patch("frappe.get_single", return_value=fake_settings()):
@@ -370,7 +438,11 @@ class TestCredentialProblems(unittest.TestCase):
 
 def fake_region_doc(**fields):
 	values = {"central_region": "blr-1", "metrics_url": "", "logs_url": "", **fields}
-	labels = {"central_region": "Central Region", "metrics_url": "Metrics Endpoint", "logs_url": "Logs Endpoint"}
+	labels = {
+		"central_region": "Central Region",
+		"metrics_url": "Metrics Endpoint",
+		"logs_url": "Logs Endpoint",
+	}
 	return SimpleNamespace(
 		name="ap-south-1",
 		get=values.get,
@@ -388,12 +460,19 @@ class TestRegion(unittest.TestCase):
 		self.assertEqual(2, len(Region.vector_problems.fget(fake_region_doc())))
 		self.assertEqual(
 			["Set Central Region on Region ap-south-1's Monitoring tab."],
-			Region.vector_problems.fget(fake_region_doc(central_region="", metrics_url="http://a", logs_url="http://b")),
+			Region.vector_problems.fget(
+				fake_region_doc(central_region="", metrics_url="http://a", logs_url="http://b")
+			),
 		)
-		self.assertEqual([], Region.vector_problems.fget(fake_region_doc(metrics_url="http://a", logs_url="http://b")))
+		self.assertEqual(
+			[], Region.vector_problems.fget(fake_region_doc(metrics_url="http://a", logs_url="http://b"))
+		)
 
 	def test_an_endpoint_without_a_scheme_is_refused(self):
-		with patch("frappe.throw", side_effect=frappe.ValidationError), self.assertRaises(frappe.ValidationError):
+		with (
+			patch("frappe.throw", side_effect=frappe.ValidationError),
+			self.assertRaises(frappe.ValidationError),
+		):
 			Region.validate(fake_region_doc(logs_url="datum.test/v1/logs/ingest"))
 		with patch("frappe.throw", side_effect=frappe.ValidationError):
 			Region.validate(fake_region_doc(logs_url="https://datum.test/v1/logs/ingest"))
@@ -403,7 +482,9 @@ class TestTheMigration(unittest.TestCase):
 	"""Migrate to Vector on a box set up before it: vector.yml first, the exporter's retirement after."""
 
 	def test_vector_lands_before_the_exporter_goes(self):
-		doc = SimpleNamespace(name="gw-1", provision_vector=Mock(), run_playbook=Mock(return_value=("play-2", 0)))
+		doc = SimpleNamespace(
+			name="gw-1", provision_vector=Mock(), run_playbook=Mock(return_value=("play-2", 0))
+		)
 		PathwayHost.migrate_vector(doc)
 		doc.provision_vector.assert_called_once_with()
 		doc.run_playbook.assert_called_once_with("retire_exporter.yml", project="Gateway Server")
@@ -422,9 +503,15 @@ class TestTheMigration(unittest.TestCase):
 	def test_the_retirement_removes_exactly_what_the_old_plays_installed(self):
 		tasks = yaml.safe_load((PLAYBOOKS / "gateway_server" / "retire_exporter.yml").read_text())[0]["tasks"]
 		removed = next(task for task in tasks if "ansible.builtin.file" in task)["loop"]
-		https_defaults = yaml.safe_load((PLAYBOOKS / "roles" / "grove_https" / "defaults" / "main.yml").read_text())
+		https_defaults = yaml.safe_load(
+			(PLAYBOOKS / "roles" / "grove_https" / "defaults" / "main.yml").read_text()
+		)
 		self.assertEqual(
-			{"/etc/systemd/system/node_exporter.service", "/usr/local/bin/node_exporter", https_defaults["grove_metrics_htpasswd"]},
+			{
+				"/etc/systemd/system/node_exporter.service",
+				"/usr/local/bin/node_exporter",
+				https_defaults["grove_metrics_htpasswd"],
+			},
 			set(removed),
 		)
 
@@ -437,7 +524,9 @@ def fake_rows(regions, machines, vector_hosts=()):
 	return lambda doctype, **kwargs: rows[doctype]
 
 
-REGION = frappe._dict(name="ap-south-1", central_region="blr-1", metrics_url="http://datum.test/v1/ingest/remote")
+REGION = frappe._dict(
+	name="ap-south-1", central_region="blr-1", metrics_url="http://datum.test/v1/ingest/remote"
+)
 MACHINES = [frappe._dict(name="mc-1", status="Active"), frappe._dict(name="mc-2", status="Terminated")]
 
 
@@ -460,8 +549,16 @@ class TestRoster(unittest.TestCase):
 		self.assertTrue(all(sample.pop("ts").endswith("+00:00") for sample in samples))
 		self.assertEqual(
 			[
-				{"metric": "grove_machine_info", "value": 1, "labels": {"machine": "mc-1", "status": "Active", "vector": "1"}},
-				{"metric": "grove_machine_info", "value": 1, "labels": {"machine": "mc-2", "status": "Terminated", "vector": "0"}},
+				{
+					"metric": "grove_machine_info",
+					"value": 1,
+					"labels": {"machine": "mc-1", "status": "Active", "vector": "1"},
+				},
+				{
+					"metric": "grove_machine_info",
+					"value": 1,
+					"labels": {"machine": "mc-2", "status": "Terminated", "vector": "0"},
+				},
 			],
 			samples,
 		)
@@ -481,7 +578,10 @@ class TestRoster(unittest.TestCase):
 		with (
 			patch("frappe.get_all", side_effect=fake_rows([REGION, other], MACHINES)),
 			patch("grove.datum.mint_token", return_value=("jwt-1", EXPIRY)),
-			patch("grove.datum.requests.post", side_effect=[Mock(status_code=401, text="expired"), Mock(status_code=200)]) as post,
+			patch(
+				"grove.datum.requests.post",
+				side_effect=[Mock(status_code=401, text="expired"), Mock(status_code=200)],
+			) as post,
 			patch("frappe.throw", side_effect=frappe.ValidationError) as throw,
 			patch("frappe.log_error") as log_error,
 		):
@@ -491,4 +591,6 @@ class TestRoster(unittest.TestCase):
 		self.assertEqual(2, post.call_count)
 
 	def test_the_json_route_sits_beside_the_remote_write_one(self):
-		self.assertEqual("http://datum.test/v1/ingest", datum.ingest_url("http://datum.test/v1/ingest/remote"))
+		self.assertEqual(
+			"http://datum.test/v1/ingest", datum.ingest_url("http://datum.test/v1/ingest/remote")
+		)
