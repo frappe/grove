@@ -50,7 +50,7 @@ class GroveAPIKey(Document):
 
 	def before_insert(self):
 		self.check_key_count()
-		# Blank is no title: NULL, which the (team, title) unique index never counts as a twin.
+		# Blank is no title: NULL, which the (title, team) unique index never counts as a twin.
 		self.title = self.title or None
 		full_key = KEY_PREFIX + secrets.token_hex(24)
 		self.key_hash = hash_secret(full_key)
@@ -272,4 +272,5 @@ def on_doctype_update():
 	frappe.db.add_unique("Grove API Key", ["key_hash"], constraint_name="unique_key_hash")
 	# A title is set once and used once per team, ever, revoked keys included: Press titles a trial
 	# site's key by the site, and a site must never get a second. NULL titles do not collide.
-	frappe.db.add_unique("Grove API Key", ["team", "title"], constraint_name="unique_team_title")
+	# Title leads: Frappe names a twin by the index's first column ("Title must be unique").
+	frappe.db.add_unique("Grove API Key", ["title", "team"], constraint_name="unique_title_team")
