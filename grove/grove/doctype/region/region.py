@@ -64,11 +64,12 @@ class Region(Document):
 		expires_at = self.datum_token_expires_at
 		if expires_at and get_datetime(expires_at) > add_to_date(now_datetime(), minutes=5):
 			return self.get_password("datum_token")
-		self.datum_token, self.datum_token_expires_at = datum.mint_token(
+		token, self.datum_token_expires_at = datum.mint_token(
 			self.central_region, f"grove:region-{self.name}"
 		)
+		self.datum_token = token
 		self.save()
-		return self.datum_token
+		return token
 
 	def gateways(self, exclude=None):
 		"""Every gateway still in this region, by name."""
