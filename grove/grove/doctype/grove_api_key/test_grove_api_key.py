@@ -106,6 +106,13 @@ class IntegrationTestGroveAPIKey(IntegrationTestCase):
 			for blank in (None, "")
 		]
 		self.assertEqual([k.title for k in untitled], [None, None])
+		index = frappe.db.sql(
+			"show index from `tabGrove API Key` where key_name like 'unique%%title%%'", as_dict=True
+		)
+		self.assertEqual(
+			[(row.Key_name, row.Column_name) for row in index],
+			[("unique_title_team", "title"), ("unique_title_team", "team")],
+		)
 		first.reload()
 		first.title = "ci-2"
 		with self.assertRaises(frappe.CannotChangeConstantError):
