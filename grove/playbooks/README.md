@@ -176,6 +176,10 @@ instead until `is_vector_setup`: vector.yml, then `gateway_server/retire_exporte
 node_exporter and scrape htpasswd its old play installed — Vector first, so the box is never unwatched. `ship_host_metrics` off drops the `host_metrics` source and nothing else:
 an Atlas machine's Pilot already ships those, and nobody else ships the logs.
 
+The roster's token is the one Grove keeps: `Region.get_datum_token` holds it on the Region (`datum_token`,
+encrypted, with `datum_token_expires_at`) and asks Central again only with five minutes left, or after datum
+answers 401 — not once a minute.
+
 datum keeps no roster, so a quiet `resource_id` looks the same whether the box died or Grove took it
 down. Grove writes the roster itself, Atlas's way (`atlas_metal_server_info`): every minute
 `grove.datum.push_roster` posts one `grove_machine_info{machine, status, vector} 1` per Machine under

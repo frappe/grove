@@ -404,6 +404,22 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		keys.revoke_key(team, key)
 		self.assertEqual(frappe.db.get_value("Grove API Key", key, "status"), "revoked")
 
+	def test_a_bulk_revoke_is_refused_whole_for_a_key_of_another_team(self):
+		team, other = "probe-revoker-bulk", "probe-revoker-bulk-other"
+		for each in (team, other):
+			teams.provision_team(each)
+		names = [keys.provision_key(team, title=f"k{i}")["name"] for i in range(2)]
+		theirs = keys.provision_key(other, title="theirs")["name"]
+
+		with self.assertRaises(frappe.DoesNotExistError):
+			keys.revoke_keys(team, [names[0], theirs])
+		self.assertEqual(frappe.db.get_value("Grove API Key", names[0], "status"), "active")
+		self.assertEqual(keys.revoke_keys(team, names), names)
+		self.assertEqual(
+			frappe.get_all("Grove API Key", filters={"name": ("in", names)}, pluck="status"),
+			["revoked", "revoked"],
+		)
+
 	def test_a_key_is_extended_by_name_only_for_the_team_holding_it(self):
 		team, other = "probe-extender", "probe-extender-other"
 		for each in (team, other):

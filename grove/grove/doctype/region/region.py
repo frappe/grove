@@ -3,6 +3,9 @@
 
 import frappe
 from frappe.model.document import Document
+from frappe.utils import add_to_date, get_datetime, now_datetime
+
+from grove import datum
 
 # The two datum routes a region's boxes push to, and Central's name for the region that datum serves.
 ENDPOINTS = ("metrics_url", "logs_url")
@@ -20,6 +23,8 @@ class Region(Document):
 
 		central_region: DF.Data | None
 		cloud_provider: DF.Literal["", "runpod", "aws"]
+		datum_token: DF.Password | None
+		datum_token_expires_at: DF.Datetime | None
 		geography: DF.Link
 		label: DF.Data | None
 		logs_url: DF.Data | None
@@ -52,6 +57,18 @@ class Region(Document):
 			for field in DATUM_FIELDS
 			if not self.get(field)
 		]
+
+	def get_datum_token(self):
+		"""The roster's token for this region's datum: the kept one, or a new one from Central once
+		it has five minutes or less left."""
+		expires_at = self.datum_token_expires_at
+		if expires_at and get_datetime(expires_at) > add_to_date(now_datetime(), minutes=5):
+			return self.get_password("datum_token")
+		self.datum_token, self.datum_token_expires_at = datum.mint_token(
+			self.central_region, f"grove:region-{self.name}"
+		)
+		self.save()
+		return self.datum_token
 
 	def gateways(self, exclude=None):
 		"""Every gateway still in this region, by name."""

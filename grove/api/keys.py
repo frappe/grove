@@ -124,9 +124,21 @@ def limits(team: str, key: str):
 
 @frappe.whitelist()
 def revoke_key(team: str, key: str):
+	"""Revoke one of the team's keys, refused when another team holds it."""
 	frappe.only_for(ALLOWED_ROLES)
 	get_api_key(team, key).revoke()
 	return "Revoked. Might take some time to reflect."
+
+
+@frappe.whitelist()
+def revoke_keys(team: str, keys: list[str]):
+	"""Revoke several of the team's keys in one call — an archive. Refused whole for a key the
+	team does not hold; nothing moves. → the names revoked."""
+	frappe.only_for(ALLOWED_ROLES)
+	docs = [get_api_key(team, key) for key in frappe.parse_json(keys)]
+	for doc in docs:
+		doc.revoke()
+	return [doc.name for doc in docs]
 
 
 @frappe.whitelist()

@@ -14,7 +14,9 @@
   "central_region",
   "metrics_url",
   "column_break_monitoring",
-  "logs_url"
+  "logs_url",
+  "datum_token",
+  "datum_token_expires_at"
  ],
  "fields": [
   {
@@ -57,7 +59,7 @@
    "label": "Central Region"
   },
   {
-   "description": "datum's remote write route for this region, e.g. http://13.206.253.38/v1/ingest/remote. Every Monitoring Agent and every Vector in this region pushes to it; there is no fleet-wide fallback.",
+   "description": "datum's remote write route for this region, e.g. https://telemetry-svc.bom.frappe.cloud/v1/ingest/remote (https: datum's proxy answers http with a 308 that Vector drops). Every Monitoring Agent and every Vector in this region pushes to it; there is no fleet-wide fallback.",
    "fieldname": "metrics_url",
    "fieldtype": "Data",
    "label": "Metrics Endpoint"
@@ -67,10 +69,26 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "datum's log route for this region, e.g. http://13.206.253.38/v1/logs/ingest. Every box here POSTs its journald and pathway/redis lines to it.",
+   "description": "datum's log route for this region, e.g. https://telemetry-svc.bom.frappe.cloud/v1/logs/ingest (https, as above). Every box here POSTs its journald and pathway/redis lines to it.",
    "fieldname": "logs_url",
    "fieldtype": "Data",
    "label": "Logs Endpoint"
+  },
+  {
+   "fieldname": "datum_token",
+   "fieldtype": "Password",
+   "hidden": 1,
+   "label": "Datum Token",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "When the kept roster token runs out. Grove asks Central for a new one just before.",
+   "fieldname": "datum_token_expires_at",
+   "fieldtype": "Datetime",
+   "label": "Datum Token Expires At",
+   "no_copy": 1,
+   "read_only": 1
   }
  ],
  "links": [
@@ -90,7 +108,7 @@
    "link_fieldname": "region"
   }
  ],
- "modified": "2026-10-22 16:48:44.446671",
+ "modified": "2026-11-11 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Region",
