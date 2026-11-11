@@ -517,16 +517,37 @@ class TestTheMigration(unittest.TestCase):
 
 
 def fake_rows(regions, machines, vector_hosts=()):
-	"""frappe.get_all by doctype: Regions with a datum, the Machines of one, the Vector hosts' machines."""
-	rows = {"Region": regions, "Machine": machines, **{doctype: [] for doctype in datum.VECTOR_HOSTS}}
+	"""frappe.get_all by doctype: Regions with a datum, by name, the Machines of one, the Vector hosts' machines."""
+	rows = {
+		"Region": [region.name for region in regions],
+		"Machine": machines,
+		**{doctype: [] for doctype in datum.VECTOR_HOSTS},
+	}
 	for doctype, machine in vector_hosts:
 		rows[doctype].append(machine)
 	return lambda doctype, **kwargs: rows[doctype]
 
 
-REGION = frappe._dict(
-	name="ap-south-1", central_region="blr-1", metrics_url="http://datum.test/v1/ingest/remote"
-)
+def fake_roster_region(name="ap-south-1"):
+	return SimpleNamespace(
+		name=name,
+		metrics_url="http://datum.test/v1/ingest/remote",
+		get_datum_token=Mock(return_value="jwt-1"),
+		db_set=Mock(),
+	)
+
+
+def kept_token_region(expires_at):
+	"""A Region as get_datum_token sees it, holding `kept` until `expires_at`."""
+	return SimpleNamespace(
+		name="ap-south-1",
+		central_region="blr-1",
+		datum_token_expires_at=expires_at,
+		get_password=Mock(return_value="kept"),
+		save=Mock(),
+	)
+
+
 MACHINES = [frappe._dict(name="mc-1", status="Active"), frappe._dict(name="mc-2", status="Terminated")]
 
 
@@ -535,13 +556,14 @@ class TestRoster(unittest.TestCase):
 	reader knows which quiet boxes are expected to be quiet — Atlas's shape, not a tombstone."""
 
 	def test_it_posts_every_machine_of_a_region_under_the_regions_own_id_to_the_json_route(self):
+		region = fake_roster_region()
 		with (
-			patch("frappe.get_all", side_effect=fake_rows([REGION], MACHINES, [("Gateway Store", "mc-1")])),
-			patch("grove.datum.mint_token", return_value=("jwt-1", EXPIRY)) as mint,
+			patch("frappe.get_all", side_effect=fake_rows([region], MACHINES, [("Gateway Store", "mc-1")])),
+			patch("frappe.get_doc", return_value=region),
 			patch("grove.datum.requests.post", return_value=Mock(status_code=200)) as post,
 		):
 			datum.push_roster()
-		mint.assert_called_once_with("blr-1", "grove:region-ap-south-1")
+		region.db_set.assert_not_called()
 		call = post.call_args
 		self.assertEqual("http://datum.test/v1/ingest", call.args[0])
 		self.assertEqual({"Authorization": "Bearer jwt-1"}, call.kwargs["headers"])
@@ -564,20 +586,21 @@ class TestRoster(unittest.TestCase):
 		)
 
 	def test_a_region_without_machines_posts_nothing(self):
+		region = fake_roster_region()
 		with (
-			patch("frappe.get_all", side_effect=fake_rows([REGION], [])),
-			patch("grove.datum.mint_token") as mint,
+			patch("frappe.get_all", side_effect=fake_rows([region], [])),
+			patch("frappe.get_doc", return_value=region),
 			patch("grove.datum.requests.post") as post,
 		):
 			datum.push_roster()
-		mint.assert_not_called()
+		region.get_datum_token.assert_not_called()
 		post.assert_not_called()
 
 	def test_a_refusal_is_logged_naming_datums_answer_and_the_next_region_still_gets_its_roster(self):
-		other = frappe._dict(REGION, name="us-east-1")
+		region, other = fake_roster_region(), fake_roster_region("us-east-1")
 		with (
-			patch("frappe.get_all", side_effect=fake_rows([REGION, other], MACHINES)),
-			patch("grove.datum.mint_token", return_value=("jwt-1", EXPIRY)),
+			patch("frappe.get_all", side_effect=fake_rows([region, other], MACHINES)),
+			patch("frappe.get_doc", side_effect=[region, other]),
 			patch(
 				"grove.datum.requests.post",
 				side_effect=[Mock(status_code=401, text="expired"), Mock(status_code=200)],
@@ -589,6 +612,30 @@ class TestRoster(unittest.TestCase):
 		self.assertIn("ap-south-1's roster: 401 expired", throw.call_args.args[0])
 		log_error.assert_called_once_with("datum roster failed: ap-south-1")
 		self.assertEqual(2, post.call_count)
+		region.db_set.assert_called_once_with("datum_token_expires_at", None)
+		other.db_set.assert_not_called()
+
+	def test_the_kept_token_is_used_until_it_has_five_minutes_left(self):
+		region = kept_token_region(NOW + timedelta(minutes=6))
+		with (
+			patch("grove.grove.doctype.region.region.now_datetime", return_value=NOW),
+			patch("grove.datum.mint_token") as mint,
+		):
+			self.assertEqual("kept", Region.get_datum_token(region))
+		mint.assert_not_called()
+		region.save.assert_not_called()
+
+	def test_a_token_about_to_run_out_or_never_minted_is_minted_and_kept(self):
+		for expires_at in (None, NOW + timedelta(minutes=5)):
+			region = kept_token_region(expires_at)
+			with (
+				patch("grove.grove.doctype.region.region.now_datetime", return_value=NOW),
+				patch("grove.datum.mint_token", return_value=("jwt-1", EXPIRY)) as mint,
+			):
+				self.assertEqual("jwt-1", Region.get_datum_token(region))
+			mint.assert_called_once_with("blr-1", "grove:region-ap-south-1")
+			self.assertEqual(("jwt-1", EXPIRY), (region.datum_token, region.datum_token_expires_at))
+			region.save.assert_called_once_with()
 
 	def test_the_json_route_sits_beside_the_remote_write_one(self):
 		self.assertEqual(

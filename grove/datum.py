@@ -2,7 +2,8 @@
 # For license information, please see license.txt
 """datum's write token for one box, minted by Central. Short-lived (Central says how long, no
 revocation) and never stored: minted inside the job that writes it to the box, which keeps only when it
-runs out, and minted again by the hourly tick with a day left. Also the roster: every minute, each
+runs out, and minted again by the hourly tick with a day left. The roster's own token is the one
+kept one, on its Region, until it runs out. Also the roster: every minute, each
 Machine's status as one sample under its Region's own resource_id, so a reader knows which quiet boxes
 are expected to be quiet (Atlas's shape: `atlas_metal_server_info`)."""
 
@@ -84,21 +85,19 @@ def vector_machines() -> set[str]:
 def push_roster():
 	"""Tick, every minute: each Region with a datum gets its Machines. One Region's refusal is
 	logged and the next still gets its roster."""
-	regions = frappe.get_all(
-		"Region", filters={"metrics_url": ("is", "set")}, fields=["name", "central_region", "metrics_url"]
-	)
-	for region in regions:
+	for name in frappe.get_all("Region", filters={"metrics_url": ("is", "set")}, pluck="name"):
 		try:
-			post_roster(region)
+			post_roster(frappe.get_doc("Region", name))
 		except Exception:
-			frappe.log_error(f"datum roster failed: {region.name}")
+			frappe.log_error(f"datum roster failed: {name}")
 
 
 def post_roster(region):
 	"""Every Machine of `region` as `grove_machine_info{machine, status, vector} 1` under
 	`grove:region-<region>`. Reader rule: a Machine whose latest row reads Active with vector 1 must have
 	rows of its own (grove:<machine>) within a few minutes, or it is dead; any other latest row
-	means its silence is expected. Thrown on refusal, naming datum's answer."""
+	means its silence is expected. Thrown on refusal, naming datum's answer; a 401 also drops the
+	kept token, so the next minute asks Central for a new one."""
 	machines = frappe.get_all("Machine", filters={"region": region.name}, fields=["name", "status"])
 	if not machines:
 		return
@@ -113,12 +112,14 @@ def post_roster(region):
 		}
 		for m in machines
 	]
-	token, _ = mint_token(region.central_region, f"grove:region-{region.name}")
+	token = region.get_datum_token()
 	response = requests.post(
 		ingest_url(region.metrics_url),
 		json={"samples": samples},
 		headers={"Authorization": f"Bearer {token}"},
 		timeout=15,
 	)
+	if response.status_code == 401:
+		region.db_set("datum_token_expires_at", None)
 	if response.status_code != 200:
 		frappe.throw(f"datum refused {region.name}'s roster: {response.status_code} {response.text[:200]}")

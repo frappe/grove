@@ -14,7 +14,9 @@
   "central_region",
   "metrics_url",
   "column_break_monitoring",
-  "logs_url"
+  "logs_url",
+  "datum_token",
+  "datum_token_expires_at"
  ],
  "fields": [
   {
@@ -71,6 +73,22 @@
    "fieldname": "logs_url",
    "fieldtype": "Data",
    "label": "Logs Endpoint"
+  },
+  {
+   "fieldname": "datum_token",
+   "fieldtype": "Password",
+   "hidden": 1,
+   "label": "Datum Token",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "When the kept roster token runs out. Grove asks Central for a new one just before.",
+   "fieldname": "datum_token_expires_at",
+   "fieldtype": "Datetime",
+   "label": "Datum Token Expires At",
+   "no_copy": 1,
+   "read_only": 1
   }
  ],
  "links": [
@@ -90,7 +108,7 @@
    "link_fieldname": "region"
   }
  ],
- "modified": "2026-10-22 16:48:44.446671",
+ "modified": "2026-11-11 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Region",
