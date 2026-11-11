@@ -626,15 +626,19 @@ class TestRoster(unittest.TestCase):
 		region.save.assert_not_called()
 
 	def test_a_token_about_to_run_out_or_never_minted_is_minted_and_kept(self):
+		"""save() masks a Password field in memory, so the minted token is what is returned."""
 		for expires_at in (None, NOW + timedelta(minutes=5)):
 			region = kept_token_region(expires_at)
+			region.save.side_effect = lambda region=region: (
+				setattr(region, "saved", region.datum_token) or setattr(region, "datum_token", "*****")
+			)
 			with (
 				patch("grove.grove.doctype.region.region.now_datetime", return_value=NOW),
 				patch("grove.datum.mint_token", return_value=("jwt-1", EXPIRY)) as mint,
 			):
 				self.assertEqual("jwt-1", Region.get_datum_token(region))
 			mint.assert_called_once_with("blr-1", "grove:region-ap-south-1")
-			self.assertEqual(("jwt-1", EXPIRY), (region.datum_token, region.datum_token_expires_at))
+			self.assertEqual(("jwt-1", EXPIRY), (region.saved, region.datum_token_expires_at))
 			region.save.assert_called_once_with()
 
 	def test_the_json_route_sits_beside_the_remote_write_one(self):
