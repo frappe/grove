@@ -17,7 +17,7 @@ watch(
 	{ immediate: true }
 );
 
-const COLUMNS = ["minmax(0,1fr)", "8rem", "minmax(0,1.3fr)", "minmax(0,1.3fr)", "5rem"];
+const COLUMNS = ["minmax(0,2fr)", "8rem", "minmax(0,1.3fr)", "minmax(0,1.3fr)", "5rem"];
 const BOX_THEME = { Active: "green", Broken: "red", Pending: "amber", Installing: "amber" };
 const rows = computed(() => (data.value?.gateways || []).map((box) => ({ ...box, id: box.name })));
 
@@ -41,7 +41,7 @@ const open = (box) => host.navigate?.(["Form", "Gateway Server", box.name]);
 		<p v-else-if="loading && !data" :class="MUTED">Loading…</p>
 		<p v-else-if="!rows.length" :class="MUTED">No gateway.</p>
 		<div v-else class="overflow-x-auto">
-			<List :columns="COLUMNS" :row-height="44" class="min-w-[56rem]">
+			<List :columns="COLUMNS" :row-height="44" class="min-w-[64rem]">
 				<ListHeader>
 					<ListHeaderCell>Gateway</ListHeaderCell>
 					<ListHeaderCell>Status</ListHeaderCell>
@@ -52,7 +52,7 @@ const open = (box) => host.navigate?.(["Form", "Gateway Server", box.name]);
 				<ListRows :items="rows" v-slot="{ item, value }">
 					<ListRow :value="value">
 						<ListCell class="flex-col !items-start justify-center">
-							<button type="button" :class="`${LINK} font-medium`" @click="open(item)">
+							<button type="button" :class="`${LINK} max-w-full font-medium`" :title="item.name" @click="open(item)">
 								{{ item.name }}
 							</button>
 							<span :class="`${MUTED} max-w-full truncate`">
