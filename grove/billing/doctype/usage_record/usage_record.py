@@ -8,7 +8,6 @@ from frappe.utils import add_days, cint
 from grove.utils import utc_today
 
 RECORD_COLUMNS = {"team": "r.team", "api_key": "r.api_key", "model": "u.model"}
-CORRECTION_COLUMNS = {"team": "c.team", "api_key": "c.api_key", "model": "coalesce(c.model, '')"}
 
 RETENTION_DAYS = 90
 # ponytail: chunked DELETEs, each its own transaction, so a day of a lakh keys never holds the table
@@ -27,6 +26,7 @@ class UsageRecord(Document):
 
 		api_key: DF.Link
 		cost: DF.Float
+		cost_discrepancy: DF.Link | None
 		day: DF.Date
 		drain_id: DF.Data | None
 		gateway_cost: DF.Float
@@ -77,36 +77,27 @@ def tokens_expression(alias="u"):
 
 def money_rows(filters, from_date=None, to_date=None, since=None, until=None):
 	"""The derived table `x` every money read sums over: one row per model entry of a record
-	(team, api_key, model, day, pulled_at, requests, tokens, cost) and one per Usage
-	Correction — cost alone, under its model key, on its day — so a correction counts wherever
+	(team, api_key, model, day, pulled_at, requests, tokens, cost). A Grove correction is a record
+	too — its delta alone, under its model key, on the day it was resolved — so it counts wherever
 	usage does, and no record is ever changed. Narrowed by `filters` ({team, api_key, model}: a
 	value or a list; None is skipped) and either a UTC day range or a landing window on when a
 	record was pulled or a correction landed (site-time datetimes, `until` exclusive). → (sql,
 	params)."""
 	given = {field: value for field, value in filters.items() if value is not None}
-	params = {**given, "from_date": from_date, "to_date": to_date, "since": since, "until": until}
-
-	def where(columns, day, at):
-		parts = [
-			f"{columns[f]} {'in' if isinstance(v, list | tuple) else '='} %({f})s" for f, v in given.items()
-		]
-		parts.append(
-			f"{at} >= %(since)s and {at} < %(until)s"
-			if since
-			else f"{day} between %(from_date)s and %(to_date)s"
-		)
-		return " and ".join(parts)
-
-	# JSON_TABLE's strings carry the JSON column's utf8mb4_bin, so the correction's model is collated
-	# to match; one with no model lands under '' rather than being dropped.
+	where = [
+		f"{RECORD_COLUMNS[f]} {'in' if isinstance(v, list | tuple) else '='} %({f})s"
+		for f, v in given.items()
+	]
+	where.append(
+		"r.creation >= %(since)s and r.creation < %(until)s"
+		if since
+		else "r.day between %(from_date)s and %(to_date)s"
+	)
 	return (
 		f"""(select r.team, r.api_key, u.model, r.day, r.creation as pulled_at,
 		u.requests, {tokens_expression()} as tokens, u.grove_cost as cost
-		from `tabUsage Record` r, {usage_table()} where {where(RECORD_COLUMNS, "r.day", "r.creation")}
-		union all
-		select c.team, c.api_key, coalesce(c.model, '') collate utf8mb4_bin, c.day, c.creation, 0, 0, c.cost
-		from `tabUsage Correction` c where {where(CORRECTION_COLUMNS, "c.day", "c.creation")}) x""",
-		params,
+		from `tabUsage Record` r, {usage_table()} where {" and ".join(where)}) x""",
+		{**given, "from_date": from_date, "to_date": to_date, "since": since, "until": until},
 	)
 
 

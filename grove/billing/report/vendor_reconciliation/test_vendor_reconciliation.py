@@ -51,9 +51,14 @@ class TestVendorReconciliation(IntegrationTestCase):
 		cls.record(cls.yesterday, requests=2, prompt=1000, cached=400, completion=100, cost=0.5)
 		cls.record(cls.earlier, requests=3, prompt=3000, cached=0, completion=300, cost=1.0)
 		cls.record(cls.earlier, requests=1, prompt=10, cached=0, completion=1, cost=0.01, drain="-small")
+		# A Grove correction is money charged: in `charged` on its day, with no requests or tokens.
+		decision = frappe.get_doc({"doctype": "Cost Discrepancy", "team": cls.team}).insert(
+			ignore_permissions=True
+		)
+		cls.record(cls.yesterday, 0, 0, 0, 0, cost=0.25, drain="-correction", correction_of=decision.name)
 
 	@classmethod
-	def record(cls, day, requests, prompt, cached, completion, cost, drain=""):
+	def record(cls, day, requests, prompt, cached, completion, cost, drain="", correction_of=None):
 		entry = {
 			"model": cls.model.model_key,
 			"pricing": None,
@@ -70,6 +75,7 @@ class TestVendorReconciliation(IntegrationTestCase):
 				"team": cls.team,
 				"day": day,
 				"drain_id": f"reconcile-{day}{drain}",
+				"cost_discrepancy": correction_of,
 				"request_count": requests,
 				"cost": cost,
 				"usage": frappe.as_json([entry]),
@@ -169,7 +175,7 @@ class TestVendorReconciliation(IntegrationTestCase):
 		self.assertEqual((row["input_grove"], row["input_vendor"]), (1000, 1000))
 		self.assertEqual((row["cached_grove"], row["cached_vendor"]), (400, 400))
 		self.assertEqual((row["output_grove"], row["output_vendor"]), (100, 100))
-		self.assertEqual((row["charged"], row["vendor_billed"], row["margin"]), (0.5, 0.4, 0.1))
+		self.assertEqual((row["charged"], row["vendor_billed"], row["margin"]), (0.75, 0.4, 0.35))
 		self.assertEqual([call[0] for call in calls], ["usage", "usage", "model_apis"])
 		self.assertEqual(calls[1][1], {"cursor": "page-2"})
 
@@ -193,7 +199,7 @@ class TestVendorReconciliation(IntegrationTestCase):
 		row = rows[(None, self.model.model_key)]
 		self.assertEqual((row["requests_grove"], row["requests_vendor"]), (6, 7))
 		self.assertEqual((row["input_grove"], row["input_vendor"]), (4010, 4010))
-		self.assertEqual((row["charged"], row["vendor_billed"], row["margin"]), (1.51, 1.3, 0.21))
+		self.assertEqual((row["charged"], row["vendor_billed"], row["margin"]), (1.76, 1.3, 0.46))
 		self.assertEqual(rows[(None, VENDOR_ONLY)]["requests_vendor"], 7)
 
 	def test_today_an_unread_vendor_and_an_unknown_name_are_refused(self):

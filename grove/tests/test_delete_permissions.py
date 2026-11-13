@@ -15,7 +15,6 @@ PROTECTED = (
 	"Grove API Key",
 	"Usage Record",
 	"Cost Discrepancy",
-	"Usage Correction",
 	"Gateway Spend Adjustment",
 	"Model Pricing",
 	"Model",

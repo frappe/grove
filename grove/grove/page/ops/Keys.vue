@@ -103,81 +103,83 @@ const open = (row) => host.navigate?.(["Form", "Grove API Key", row.name]);
 			No key matches.<template v-if="!params?.team"> Pick a team to list all of its keys.</template>
 		</p>
 		<template v-else>
-			<List :columns="COLUMNS" :row-height="48">
-				<ListHeader>
-					<ListHeaderCell>Key</ListHeaderCell>
-					<ListHeaderCell>Team</ListHeaderCell>
-					<ListHeaderCell>Cap</ListHeaderCell>
-					<ListHeaderCell>Limits</ListHeaderCell>
-					<ListHeaderCell>Last used</ListHeaderCell>
-					<ListHeaderCell class="justify-end">Requests</ListHeaderCell>
-					<ListHeaderCell class="justify-end">Cost</ListHeaderCell>
-					<ListHeaderCell />
-				</ListHeader>
-				<ListRows :items="paged" v-slot="{ item, value }">
-					<ListRow :value="value" :class="item.status === 'revoked' && 'text-ink-gray-5'">
-						<ListCell class="flex-col !items-start justify-center">
-							<span class="flex max-w-full items-center gap-2">
+			<div class="overflow-x-auto">
+				<List :columns="COLUMNS" :row-height="48" class="min-w-[60rem]">
+					<ListHeader>
+						<ListHeaderCell>Key</ListHeaderCell>
+						<ListHeaderCell>Team</ListHeaderCell>
+						<ListHeaderCell>Cap</ListHeaderCell>
+						<ListHeaderCell>Limits</ListHeaderCell>
+						<ListHeaderCell>Last used</ListHeaderCell>
+						<ListHeaderCell class="justify-end">Requests</ListHeaderCell>
+						<ListHeaderCell class="justify-end">Cost</ListHeaderCell>
+						<ListHeaderCell />
+					</ListHeader>
+					<ListRows :items="paged" v-slot="{ item, value }">
+						<ListRow :value="value" :class="item.status === 'revoked' && 'text-ink-gray-5'">
+							<ListCell class="flex-col !items-start justify-center">
+								<span class="flex max-w-full items-center gap-2">
+									<button
+										type="button"
+										:class="`${LINK} font-medium`"
+										title="Filter the page to this key"
+										@click="emit('filter', { team: item.team || '', api_key: item.name })"
+									>
+										{{ item.title || item.masked }}
+									</button>
+									<Badge v-if="item.status === 'revoked'" label="Revoked" />
+									<Badge v-else-if="!item.cap" theme="amber" label="No cap" />
+								</span>
+								<span class="font-mono text-xs text-ink-gray-5">{{ item.masked }}</span>
+							</ListCell>
+							<ListCell>
 								<button
 									type="button"
-									:class="`${LINK} font-medium`"
-									title="Filter the page to this key"
-									@click="emit('filter', { team: item.team || '', api_key: item.name })"
+									:class="LINK"
+									:title="`Filter the page to ${item.team}`"
+									@click="emit('filter', { team: item.team })"
 								>
-									{{ item.title || item.masked }}
+									{{ item.team }}
 								</button>
-								<Badge v-if="item.status === 'revoked'" label="Revoked" />
-								<Badge v-else-if="!item.cap" theme="amber" label="No cap" />
-							</span>
-							<span class="font-mono text-xs text-ink-gray-5">{{ item.masked }}</span>
-						</ListCell>
-						<ListCell>
-							<button
-								type="button"
-								:class="LINK"
-								:title="`Filter the page to ${item.team}`"
-								@click="emit('filter', { team: item.team })"
-							>
-								{{ item.team }}
-							</button>
-						</ListCell>
-						<ListCell class="flex-col !items-start justify-center gap-1">
-							<span class="text-sm tabular-nums text-ink-gray-5">
-								<span class="text-ink-gray-9">{{ usd(item.month_spent) }}</span>
-								<template v-if="item.cap"> / {{ usd(item.cap) }}</template>
-								<span v-if="item.cap_pct !== null" class="ml-1">{{ percent(item.cap_pct) }}</span>
-							</span>
-							<span
-								v-if="item.cap && item.status === 'active'"
-								class="block h-1 w-full overflow-hidden rounded-full bg-surface-gray-3"
-							>
+							</ListCell>
+							<ListCell class="flex-col !items-start justify-center gap-1">
+								<span class="text-sm tabular-nums text-ink-gray-5">
+									<span class="text-ink-gray-9">{{ usd(item.month_spent) }}</span>
+									<template v-if="item.cap"> / {{ usd(item.cap) }}</template>
+									<span v-if="item.cap_pct !== null" class="ml-1">{{ percent(item.cap_pct) }}</span>
+								</span>
 								<span
-									class="block h-full rounded-full"
-									:class="barClass(item)"
-									:style="{ width: `${Math.min(100, item.cap_pct)}%` }"
+									v-if="item.cap && item.status === 'active'"
+									class="block h-1 w-full overflow-hidden rounded-full bg-surface-gray-3"
+								>
+									<span
+										class="block h-full rounded-full"
+										:class="barClass(item)"
+										:style="{ width: `${Math.min(100, item.cap_pct)}%` }"
+									/>
+								</span>
+							</ListCell>
+							<ListCell class="flex-wrap gap-x-2 text-sm tabular-nums text-ink-gray-7">
+								<span v-for="limit in chips(item.limits)" :key="limit.key" :title="limit.text">
+									{{ limit.label }}
+								</span>
+							</ListCell>
+							<ListCell :class="CELL">{{ day(item.last_used) }}</ListCell>
+							<ListCell :class="NUM">{{ count(item.requests) }}</ListCell>
+							<ListCell :class="`${NUM} font-medium text-ink-gray-9`">{{ usd(item.cost) }}</ListCell>
+							<ListCell class="justify-end">
+								<Button
+									variant="ghost"
+									size="sm"
+									icon="lucide-arrow-up-right"
+									:aria-label="`Open key ${item.title || item.masked}`"
+									@click="open(item)"
 								/>
-							</span>
-						</ListCell>
-						<ListCell class="flex-wrap gap-x-2 text-sm tabular-nums text-ink-gray-7">
-							<span v-for="limit in chips(item.limits)" :key="limit.key" :title="limit.text">
-								{{ limit.label }}
-							</span>
-						</ListCell>
-						<ListCell :class="CELL">{{ day(item.last_used) }}</ListCell>
-						<ListCell :class="NUM">{{ count(item.requests) }}</ListCell>
-						<ListCell :class="`${NUM} font-medium text-ink-gray-9`">{{ usd(item.cost) }}</ListCell>
-						<ListCell class="justify-end">
-							<Button
-								variant="ghost"
-								size="sm"
-								icon="lucide-arrow-up-right"
-								:aria-label="`Open key ${item.title || item.masked}`"
-								@click="open(item)"
-							/>
-						</ListCell>
-					</ListRow>
-				</ListRows>
-			</List>
+							</ListCell>
+						</ListRow>
+					</ListRows>
+				</List>
+			</div>
 			<footer class="mt-2 flex items-center justify-end gap-2">
 				<span :class="MUTED">{{ range }}</span>
 				<Button

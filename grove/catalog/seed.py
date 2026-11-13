@@ -73,12 +73,7 @@ def insert_geography(geography):
 
 
 def insert_model(model, geography):
-	"""Under one record of the provider: the one in `geography` — what the catalog's own entry for
-	the provider says — else the only one the site holds. Several and none there is a question
-	for the operator. A model in a second geography is a second doc added by hand. The entry's
-	`display_name` is its Model ID's, filled when blank. Returns the doc's name, held or inserted."""
 	provider = provider_record(model["provider"], geography)
-	# Before the held check: a held model's Model ID still takes a display name it lacks.
 	model_id = ensure_model_id(model["model_id"], model.get("display_name"))
 	held = frappe.db.exists("Model", {"provider": provider, "model_id": model_id})
 	if held:
@@ -98,14 +93,9 @@ def insert_model_group(group, docs):
 	key. One the site holds gains the rows it lacks. That geography's default only when it has
 	none."""
 	if frappe.db.exists("Model Group", group["name"]):
-		doc = frappe.get_doc("Model Group", group["name"])
-		held = {row.model_key for row in doc.models}
-		for key in group["models"]:
-			if key not in held:
-				doc.append("models", {"model": docs[key]})
-		if len(doc.models) > len(held):
-			doc.save()
+		# dont touch the group if it already exists
 		return
+
 	rows = [{"model": docs[key]} for key in group["models"]]
 	landed = frappe.db.get_value("Model", rows[0]["model"], "geography") if rows else None
 	geography = landed or default_geography()
