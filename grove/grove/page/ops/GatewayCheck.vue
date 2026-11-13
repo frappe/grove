@@ -48,39 +48,41 @@ const reading = (row) => {
 			</Tooltip>
 		</header>
 		<p v-if="error" class="mt-3 text-sm text-ink-red-6">{{ error }}</p>
-		<List v-else-if="rows.length" :columns="COLUMNS" :row-height="36" class="mt-3">
-			<ListHeader>
-				<ListHeaderCell>Key</ListHeaderCell>
-				<ListHeaderCell class="justify-end">Grove</ListHeaderCell>
-				<ListHeaderCell class="justify-end">Gateway</ListHeaderCell>
-				<ListHeaderCell class="justify-end">Delta</ListHeaderCell>
-				<ListHeaderCell>Reading</ListHeaderCell>
-				<ListHeaderCell />
-			</ListHeader>
-			<ListRows :items="rows" v-slot="{ item, value }">
-				<ListRow :value="value" :class="item.status === 'revoked' && 'text-ink-gray-5'">
-					<ListCell class="gap-2">
-						<span :class="`${CELL} truncate`">{{ item.title || item.key }}</span>
-						<Badge v-if="item.status === 'revoked'" label="Revoked" />
-					</ListCell>
-					<ListCell :class="NUM">{{ usd(item.grove) }}</ListCell>
-					<ListCell :class="NUM">{{ item.gateway == null ? "—" : usd(item.gateway) }}</ListCell>
-					<ListCell :class="NUM">{{ item.delta == null ? "—" : signedUsd(item.delta) }}</ListCell>
-					<ListCell class="gap-2">
-						<Badge :theme="reading(item).theme" :label="reading(item).label" />
-						<span :class="`${MUTED} truncate`" :title="item.verdict">{{ item.verdict }}</span>
-					</ListCell>
-					<ListCell class="justify-end">
-						<Button
-							variant="ghost"
-							size="sm"
-							icon="lucide-arrow-up-right"
-							:aria-label="`Open key ${item.title || item.key}`"
-							@click="open(item)"
-						/>
-					</ListCell>
-				</ListRow>
-			</ListRows>
-		</List>
+		<div v-else-if="rows.length" class="mt-3 overflow-x-auto">
+			<List :columns="COLUMNS" :row-height="36" class="min-w-[52rem]">
+				<ListHeader>
+					<ListHeaderCell>Key</ListHeaderCell>
+					<ListHeaderCell class="justify-end">Grove</ListHeaderCell>
+					<ListHeaderCell class="justify-end">Gateway</ListHeaderCell>
+					<ListHeaderCell class="justify-end">Delta</ListHeaderCell>
+					<ListHeaderCell>Reading</ListHeaderCell>
+					<ListHeaderCell />
+				</ListHeader>
+				<ListRows :items="rows" v-slot="{ item, value }">
+					<ListRow :value="value" :class="item.status === 'revoked' && 'text-ink-gray-5'">
+						<ListCell class="gap-2">
+							<span :class="`${CELL} truncate`">{{ item.title || item.key }}</span>
+							<Badge v-if="item.status === 'revoked'" label="Revoked" />
+						</ListCell>
+						<ListCell :class="NUM">{{ usd(item.grove) }}</ListCell>
+						<ListCell :class="NUM">{{ item.gateway == null ? "—" : usd(item.gateway) }}</ListCell>
+						<ListCell :class="NUM">{{ item.delta == null ? "—" : signedUsd(item.delta) }}</ListCell>
+						<ListCell class="gap-2">
+							<Badge :theme="reading(item).theme" :label="reading(item).label" />
+							<span :class="`${MUTED} truncate`" :title="item.verdict">{{ item.verdict }}</span>
+						</ListCell>
+						<ListCell class="justify-end">
+							<Button
+								variant="ghost"
+								size="sm"
+								icon="lucide-arrow-up-right"
+								:aria-label="`Open key ${item.title || item.key}`"
+								@click="open(item)"
+							/>
+						</ListCell>
+					</ListRow>
+				</ListRows>
+			</List>
+		</div>
 	</section>
 </template>

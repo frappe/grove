@@ -34,7 +34,7 @@ const tone = (field, value) => {
 
 <template>
 	<section :class="CARD">
-		<header class="mb-2 flex items-center justify-between gap-3">
+		<header class="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
 			<h2 :class="CARD_TITLE">Key stats</h2>
 			<span :class="MUTED">vendor keys · counters pulled every 6 h, summed over the window</span>
 		</header>
@@ -45,33 +45,35 @@ const tone = (field, value) => {
 				({{ when(data.last_pull) }})</template
 			>.
 		</p>
-		<List v-else :columns="COLUMNS" :row-height="44">
-			<ListHeader>
-				<ListHeaderCell>Provider</ListHeaderCell>
-				<ListHeaderCell>Key</ListHeaderCell>
-				<ListHeaderCell v-for="field in COUNTS" :key="field" class="justify-end">
-					{{ field.replace("_", " ") }}
-				</ListHeaderCell>
-				<ListHeaderCell>Last used</ListHeaderCell>
-			</ListHeader>
-			<ListRows :items="rows" v-slot="{ item, value }">
-				<ListRow :value="value">
-					<ListCell class="flex-col !items-start justify-center">
-						<span :class="CELL">{{ item.provider || item.provider_name }}</span>
-						<span :class="MUTED">{{ item.geography }}</span>
-					</ListCell>
-					<ListCell class="gap-2">
-						<span :class="CELL">{{ item.key_title }}</span>
-						<Badge v-if="item.disabled" label="Disabled" />
-					</ListCell>
-					<ListCell v-for="field in COUNTS" :key="field" :class="`${NUM} ${tone(field, item[field])}`">
-						{{ count(item[field]) }}
-					</ListCell>
-					<ListCell :class="CELL" :title="item.last_rate_limited ? `Last throttled ${when(item.last_rate_limited)}` : ''">
-						{{ when(item.last_used) }}
-					</ListCell>
-				</ListRow>
-			</ListRows>
-		</List>
+		<div v-else class="overflow-x-auto">
+			<List :columns="COLUMNS" :row-height="44" class="min-w-[76rem]">
+				<ListHeader>
+					<ListHeaderCell>Provider</ListHeaderCell>
+					<ListHeaderCell>Key</ListHeaderCell>
+					<ListHeaderCell v-for="field in COUNTS" :key="field" class="justify-end">
+						{{ field.replace("_", " ") }}
+					</ListHeaderCell>
+					<ListHeaderCell>Last used</ListHeaderCell>
+				</ListHeader>
+				<ListRows :items="rows" v-slot="{ item, value }">
+					<ListRow :value="value">
+						<ListCell class="flex-col !items-start justify-center">
+							<span :class="CELL">{{ item.provider || item.provider_name }}</span>
+							<span :class="MUTED">{{ item.geography }}</span>
+						</ListCell>
+						<ListCell class="gap-2">
+							<span :class="CELL">{{ item.key_title }}</span>
+							<Badge v-if="item.disabled" label="Disabled" />
+						</ListCell>
+						<ListCell v-for="field in COUNTS" :key="field" :class="`${NUM} ${tone(field, item[field])}`">
+							{{ count(item[field]) }}
+						</ListCell>
+						<ListCell :class="CELL" :title="item.last_rate_limited ? `Last throttled ${when(item.last_rate_limited)}` : ''">
+							{{ when(item.last_used) }}
+						</ListCell>
+					</ListRow>
+				</ListRows>
+			</List>
+		</div>
 	</section>
 </template>
