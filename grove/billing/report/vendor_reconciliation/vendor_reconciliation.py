@@ -92,7 +92,6 @@ def grove_rows(model_keys, from_date, to_date):
 		sum(u.grove_cost) as charged
 		from `tabUsage Record` r, {usage_table()}
 		where r.day between %(from_date)s and %(to_date)s and u.model in %(models)s
-		and r.cost_discrepancy is null
 		group by r.day, u.model""",
 		{"from_date": from_date, "to_date": to_date, "models": model_keys},
 		as_dict=True,
