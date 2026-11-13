@@ -61,9 +61,14 @@ const delta = (key) => {
 			/>
 		</div>
 		<p v-if="data" :class="MUTED">
-			Drift is Grove's price minus what the boxes charged; anything but $0 is a Cost Discrepancy.
-			<template v-if="totals.drift === null">Left out under a model or provider filter.</template>
-			<template v-if="totals.as_of"> Newest usage in the window pulled {{ ago(totals.as_of) }}.</template>
+			Drift is Grove's price minus what the boxes charged; anything but $0 is a Cost
+			Discrepancy.
+			<template v-if="totals.drift === null"
+				>Left out under a model or provider filter.</template
+			>
+			<template v-if="totals.as_of">
+				Newest usage in the window pulled {{ ago(totals.as_of) }}.</template
+			>
 		</p>
 	</section>
 </template>

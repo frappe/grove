@@ -255,7 +255,11 @@ def revoke_expired():
 	# `is set` first: a bare `<=` reads a NULL as year 1 and would take every Never key.
 	due = frappe.get_all(
 		"Grove API Key",
-		filters=[["status", "=", "active"], ["expires_at", "is", "set"], ["expires_at", "<=", now_datetime()]],
+		filters=[
+			["status", "=", "active"],
+			["expires_at", "is", "set"],
+			["expires_at", "<=", now_datetime()],
+		],
 		pluck="name",
 	)
 	for name in due:

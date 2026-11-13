@@ -16,12 +16,24 @@ watch(
 	{ immediate: true }
 );
 
-const COUNTS = ["requests", "ok", "rate_limited", "unauthorized", "unpaid", "forbidden", "rejected", "failed"];
+const COUNTS = [
+	"requests",
+	"ok",
+	"rate_limited",
+	"unauthorized",
+	"unpaid",
+	"forbidden",
+	"rejected",
+	"failed",
+];
 const BAD = new Set(["unauthorized", "unpaid", "forbidden"]);
 const COLUMNS = ["minmax(0,1.2fr)", "minmax(0,1fr)", ...COUNTS.map(() => "5.5rem"), "8rem"];
 
 const rows = computed(() =>
-	(data.value?.rows || []).map((row) => ({ ...row, id: `${row.model_provider}:${row.key_title}` }))
+	(data.value?.rows || []).map((row) => ({
+		...row,
+		id: `${row.model_provider}:${row.key_title}`,
+	}))
 );
 
 const tone = (field, value) => {
@@ -36,14 +48,15 @@ const tone = (field, value) => {
 	<section :class="CARD">
 		<header class="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
 			<h2 :class="CARD_TITLE">Key stats</h2>
-			<span :class="MUTED">vendor keys · counters pulled every 6 h, summed over the window</span>
+			<span :class="MUTED"
+				>vendor keys · counters pulled every 6 h, summed over the window</span
+			>
 		</header>
 		<p v-if="error" class="text-sm text-ink-red-6">{{ error }}</p>
 		<p v-else-if="loading && !data" :class="MUTED">Loading…</p>
 		<p v-else-if="!rows.length" :class="MUTED">
-			No pull landed in this window. Last pull {{ ago(data?.last_pull) }}<template v-if="data?.last_pull">
-				({{ when(data.last_pull) }})</template
-			>.
+			No pull landed in this window. Last pull {{ ago(data?.last_pull)
+			}}<template v-if="data?.last_pull"> ({{ when(data.last_pull) }})</template>.
 		</p>
 		<div v-else class="overflow-x-auto">
 			<List :columns="COLUMNS" :row-height="44" class="min-w-[76rem]">
@@ -65,10 +78,21 @@ const tone = (field, value) => {
 							<span :class="CELL">{{ item.key_title }}</span>
 							<Badge v-if="item.disabled" label="Disabled" />
 						</ListCell>
-						<ListCell v-for="field in COUNTS" :key="field" :class="`${NUM} ${tone(field, item[field])}`">
+						<ListCell
+							v-for="field in COUNTS"
+							:key="field"
+							:class="`${NUM} ${tone(field, item[field])}`"
+						>
 							{{ count(item[field]) }}
 						</ListCell>
-						<ListCell :class="CELL" :title="item.last_rate_limited ? `Last throttled ${when(item.last_rate_limited)}` : ''">
+						<ListCell
+							:class="CELL"
+							:title="
+								item.last_rate_limited
+									? `Last throttled ${when(item.last_rate_limited)}`
+									: ''
+							"
+						>
 							{{ when(item.last_used) }}
 						</ListCell>
 					</ListRow>

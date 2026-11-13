@@ -259,7 +259,9 @@ class TestEffectiveKeys(unittest.TestCase):
 		self.calls, seen = {}, {}
 		teams = [frappe._dict(name="T-1", log_payloads=0, suspended=0)] if teams is None else teams
 		if group_docs is None:
-			group_docs = [frappe._dict(name=g, geography="in") for g in dict.fromkeys(r.model_group for r in groups)]
+			group_docs = [
+				frappe._dict(name=g, geography="in") for g in dict.fromkeys(r.model_group for r in groups)
+			]
 
 		def get_all(doctype, filters=None, **kwargs):
 			self.calls[doctype] = self.calls.get(doctype, 0) + 1
@@ -416,13 +418,19 @@ class TestEffectiveKeys(unittest.TestCase):
 				frappe._dict(parent="T-1", model="M-OURS", model_key="frappe/qwen3-4b", parentfield="allow"),
 				frappe._dict(parent="T-1", model="M-EU", model_key="openai/gpt-5-eu", parentfield="deny"),
 			],
-			[frappe._dict(parent="T-1", model_group="acme"), frappe._dict(parent="T-1", model_group="europa")],
+			[
+				frappe._dict(parent="T-1", model_group="acme"),
+				frappe._dict(parent="T-1", model_group="europa"),
+			],
 			models=[
 				frappe._dict(name="M-IN", geography="in"),
 				frappe._dict(name="M-OURS", geography=None),
 				frappe._dict(name="M-EU", geography="eu"),
 			],
-			group_docs=[frappe._dict(name="acme", geography="in"), frappe._dict(name="europa", geography="eu")],
+			group_docs=[
+				frappe._dict(name="acme", geography="in"),
+				frappe._dict(name="europa", geography="eu"),
+			],
 		)
 		self.assertEqual(
 			[(k["group"], k["allow"], k["deny"]) for k in keys],
@@ -494,7 +502,9 @@ class TestEffectiveKeys(unittest.TestCase):
 		self.keys([self.key()], names=["KEY-1"])
 		self.assertEqual(self.filters["Grove API Key"], {"status": "active", "name": ("in", ["KEY-1"])})
 		self.assertEqual(self.filters["Grove Team"], {"name": ("in", ["T-1"])})
-		self.assertEqual(self.filters["Grove Model Row"], {"parenttype": "Grove Team", "parent": ("in", ["T-1"])})
+		self.assertEqual(
+			self.filters["Grove Model Row"], {"parenttype": "Grove Team", "parent": ("in", ["T-1"])}
+		)
 		# The last membership read is the keys' own rows, narrowed to the keys named.
 		self.assertEqual(
 			self.filters["Model Group Row"], {"parenttype": "Grove API Key", "parent": ("in", ["KEY-1"])}

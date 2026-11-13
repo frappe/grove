@@ -142,7 +142,12 @@ onMounted(() => {
 					<template #prefix><span class="text-ink-gray-5">Period</span></template>
 				</Select>
 				<template v-if="filters.period === 'Custom'">
-					<input v-model="filters.from_date" type="date" aria-label="From" :class="INPUT" />
+					<input
+						v-model="filters.from_date"
+						type="date"
+						aria-label="From"
+						:class="INPUT"
+					/>
 					<span class="text-sm text-ink-gray-5">to</span>
 					<input v-model="filters.to_date" type="date" aria-label="To" :class="INPUT" />
 				</template>

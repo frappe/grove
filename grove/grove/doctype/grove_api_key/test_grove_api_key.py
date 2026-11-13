@@ -603,7 +603,9 @@ class IntegrationTestExpiry(IntegrationTestCase):
 		first_use = frappe.get_doc("Grove API Key", minted["name"])
 		ruled = key(name, expiry="1 Day")
 		ruled.reload()
-		self.assertEqual((first_use.expiry, first_use.expiry_from_first_use, first_use.expires_at), ("7 Days", 1, None))
+		self.assertEqual(
+			(first_use.expiry, first_use.expiry_from_first_use, first_use.expires_at), ("7 Days", 1, None)
+		)
 		row = keys.key_rows([first_use.name])[0]
 		self.assertEqual((row.expiry_from_first_use, row.expires_at), (True, None))
 
@@ -672,7 +674,9 @@ class IntegrationTestTransfer(IntegrationTestCase):
 		make_test_geography()
 		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 		frappe.db.set_value("Model Group", {"is_default": 1}, "is_default", 0)
-		cls.default = IntegrationTestNewTeamsStartInTheDefaultGroups.group("key-handover-default", is_default=1)
+		cls.default = IntegrationTestNewTeamsStartInTheDefaultGroups.group(
+			"key-handover-default", is_default=1
+		)
 		cls.trial_group = IntegrationTestNewTeamsStartInTheDefaultGroups.group("key-handover-trial-models")
 
 	def trial_key(self, team_name, **fields):

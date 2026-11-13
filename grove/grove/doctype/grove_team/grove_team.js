@@ -4,12 +4,16 @@
 frappe.ui.form.on("Grove Team", {
 	refresh(frm) {
 		if (frm.is_new()) return;
-		frm.add_custom_button(__("Ops page"), () => frappe.set_route("ops", { team: frm.doc.name }));
+		frm.add_custom_button(__("Ops page"), () =>
+			frappe.set_route("ops", { team: frm.doc.name })
+		);
 		if (frm.doc.suspended_at_grove) {
 			frm.add_custom_button(__("Resume Keys"), () =>
 				grove.confirm_call(
 					frm,
-					__("Lift the suspension? The gateways take this team's keys again on the next sync. Central puts it back on its next sync if the invoice is still unpaid."),
+					__(
+						"Lift the suspension? The gateways take this team's keys again on the next sync. Central puts it back on its next sync if the invoice is still unpaid."
+					),
 					"set_suspended_at_grove",
 					{ suspended: false }
 				)

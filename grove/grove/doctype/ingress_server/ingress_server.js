@@ -130,11 +130,11 @@ frappe.ui.form.on("Ingress Server", {
 						? __(
 								"Migrate {0} to Vector? It installs Vector, pushing logs — and host metrics when Ship Host Metrics is ticked — to Region {1}'s datum, then removes node_exporter and the scrape htpasswd.",
 								[frm.doc.name, frm.doc.region]
-							)
+						  )
 						: __(
 								"Re-render Vector on {0}? It pushes logs — and host metrics when Ship Host Metrics is ticked — to Region {1}'s datum.",
 								[frm.doc.name, frm.doc.region]
-							),
+						  ),
 					migrate ? "migrate_to_vector" : "install_vector"
 				)
 			);
