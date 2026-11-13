@@ -46,10 +46,16 @@ def credential_problems() -> list[str]:
 	"""Each blank Central credential in Grove Settings, named."""
 	settings = frappe.get_single("Grove Settings")
 	values = {
-		field: settings.get_password(field, raise_exception=False) if field == "central_token" else settings.get(field)
+		field: settings.get_password(field, raise_exception=False)
+		if field == "central_token"
+		else settings.get(field)
 		for field in CREDENTIAL_FIELDS
 	}
-	return [f"Set {settings.meta.get_label(field)} in Grove Settings." for field, value in values.items() if not value]
+	return [
+		f"Set {settings.meta.get_label(field)} in Grove Settings."
+		for field, value in values.items()
+		if not value
+	]
 
 
 def refresh_tokens():

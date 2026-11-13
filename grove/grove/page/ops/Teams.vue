@@ -19,7 +19,16 @@ watch(
 	{ immediate: true }
 );
 
-const COLUMNS = ["minmax(0,1.4fr)", "7rem", "4.5rem", "minmax(0,1.2fr)", "5rem", "6rem", "6rem", "2.5rem"];
+const COLUMNS = [
+	"minmax(0,1.4fr)",
+	"7rem",
+	"4.5rem",
+	"minmax(0,1.2fr)",
+	"5rem",
+	"6rem",
+	"6rem",
+	"2.5rem",
+];
 const rows = computed(() => (data.value || []).map((row) => ({ ...row, id: row.team })));
 
 const limitPct = (row) =>
@@ -65,13 +74,18 @@ const open = (row) => host.navigate?.(["Form", "Grove Team", row.team]);
 						</ListCell>
 						<ListCell :class="CELL">{{ item.tier || "(default)" }}</ListCell>
 						<ListCell :class="NUM">
-							{{ item.keys_live }}<span class="text-ink-gray-5">/{{ item.max_keys || "∞" }}</span>
+							{{ item.keys_live
+							}}<span class="text-ink-gray-5">/{{ item.max_keys || "∞" }}</span>
 						</ListCell>
 						<ListCell class="flex-col !items-start justify-center gap-1">
 							<span class="text-sm tabular-nums text-ink-gray-5">
 								<span class="text-ink-gray-9">{{ usd(item.month_spent) }}</span>
-								<template v-if="item.spend_limit"> / {{ usd(item.spend_limit) }}</template>
-								<template v-else-if="item.key_cap_window === 'Total'"> · caps for life</template>
+								<template v-if="item.spend_limit">
+									/ {{ usd(item.spend_limit) }}</template
+								>
+								<template v-else-if="item.key_cap_window === 'Total'">
+									· caps for life</template
+								>
 							</span>
 							<span
 								v-if="limitPct(item) !== null"
@@ -86,7 +100,9 @@ const open = (row) => host.navigate?.(["Form", "Grove Team", row.team]);
 						</ListCell>
 						<ListCell :class="CELL">{{ day(item.last_used) }}</ListCell>
 						<ListCell :class="NUM">{{ count(item.requests) }}</ListCell>
-						<ListCell :class="`${NUM} font-medium text-ink-gray-9`">{{ usd(item.cost) }}</ListCell>
+						<ListCell :class="`${NUM} font-medium text-ink-gray-9`">{{
+							usd(item.cost)
+						}}</ListCell>
 						<ListCell class="justify-end">
 							<Button
 								variant="ghost"

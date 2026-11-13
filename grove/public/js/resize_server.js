@@ -11,7 +11,10 @@ grove.prompt_resize = function (frm) {
 				fieldtype: "Autocomplete",
 				label: __("Instance Type"),
 				reqd: 1,
-				options: options.map((type) => ({ value: type.instance_type, description: type.size })),
+				options: options.map((type) => ({
+					value: type.instance_type,
+					description: type.size,
+				})),
 				description: __(
 					"Currently {0} ({1}, {2}). Makes a Server Resize for {3}; Start on it stops the box for a few minutes — a gateway drains first, a store puts its gateways in maintenance.",
 					[current.instance_type, current.cpu_architecture, current.size, frm.doc.name]

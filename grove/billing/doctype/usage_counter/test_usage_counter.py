@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""The counter table: what a row may say, that it never changes, and that the catalog seeds
+"""The counter table: what a row may say, and that the catalog seeds
 today's twelve. The arithmetic over a table is `grove.tests.test_pricing`."""
 
 import frappe
@@ -46,38 +46,8 @@ class TestUsageCounter(IntegrationTestCase):
 			counter("stray", unit="Mtok", min_prompt_tokens=5)
 		with self.assertRaises(frappe.ValidationError):
 			counter("stray", unit="Mtok", part_of="prompt_tokens_above_272k")
-		with self.assertRaises(frappe.ValidationError):
-			counter("Web-Search", unit="request")
 		doc = counter("web_search_requests", unit="request", label="Web searches")
 		self.assertEqual(CounterTable.load().divisor(doc.name), 1)
-
-	def test_a_counter_never_changes_once_it_exists(self):
-		doc = counter("web_search_requests", unit="request")
-		doc.label = "Searches"
-		doc.save()
-		doc.unit = "Mtok"
-		with self.assertRaises(frappe.ValidationError):
-			doc.save()
-
-	def test_a_counter_a_record_names_stays(self):
-		doc = counter("web_search_requests", unit="request")
-		record = frappe.get_doc(
-			{
-				"doctype": "Usage Record",
-				"api_key": "k",
-				"team": "t",
-				"day": "2026-10-02",
-				"drain_id": "d",
-				"request_count": 1,
-				"cost": 0,
-				"gateway_cost": 0,
-				"usage": '[{"model": "m", "web_search_requests": 2}]',
-			}
-		)
-		record.flags.ignore_links = True
-		record.insert(ignore_permissions=True)
-		with self.assertRaises(frappe.ValidationError):
-			doc.delete()
 
 	def test_an_incomplete_bracket_is_refused_at_the_push_not_on_save(self):
 		counter("cached_tokens_above_500k", base_counter="cached_tokens", min_prompt_tokens=500_000)

@@ -17,7 +17,7 @@ from grove.api import keys, teams, usage
 from grove.billing.pricing import committed, usd
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_api_key import grove_api_key
-from grove.tests.test_api_permissions import backdate, billed_record, tier
+from grove.tests.test_api_permissions import billed_record, tier
 from grove.utils import utc_today
 
 LAST_MONTH = frappe.utils.add_months(utc_today(), -1)
@@ -76,7 +76,6 @@ class TestWhatTheMonthSpentBindsTheLimit(SpendLimitCase):
 		team = self.team(spend_limit=10)
 		first, second = self.key(team, cap=10), self.key(team, cap=0)
 		billed_record(first, team, utc_today(), 6)
-		backdate(first)
 		keys.revoke_key(team, first)
 		self.assertEqual(usage.figures(team)["spend"]["capped"], 0.0)
 		self.refused(lambda: self.key(team, cap=5), "add up to 11")
@@ -108,7 +107,6 @@ class TestWhatTheMonthSpentBindsTheLimit(SpendLimitCase):
 		self.peek.return_value = {first: Decimal("6")}
 		self.refused(lambda: keys.update_key(team, second, cap=5), "add up to 11")
 		self.assertEqual(keys.update_key(team, second, cap=4)["cap"], 4)
-		backdate(first)
 		keys.revoke_key(team, first)
 		self.refused(lambda: self.key(team, cap=1), "add up to 11")
 
@@ -166,7 +164,6 @@ class TestWhereTheCheckRuns(SpendLimitCase):
 		first, second = self.key(team, cap=3), self.key(team, cap=2)
 		billed_record(first, team, utc_today(), 5)
 		billed_record(second, team, utc_today(), 1)
-		backdate(second)
 		keys.revoke_key(team, second)
 		spend = usage.figures(team)["spend"]
 		figures = (spend["capped"], spend["month_spent"], spend["committed"], spend["spend_limit"])

@@ -191,7 +191,7 @@ class IntegrationTestATeamsGrantsReachTheKeysOfTheirGeography(IntegrationTestCas
 	"""An Allow or Deny row names a Model doc: a vendor's is one geography's and reaches the team's
 	keys there; ours reaches every key."""
 
-	KEY = "allow-vendor/allow-big"
+	KEY = "_T-allow-vendor/allow-big"
 
 	@classmethod
 	def setUpClass(cls):
@@ -200,7 +200,7 @@ class IntegrationTestATeamsGrantsReachTheKeysOfTheirGeography(IntegrationTestCas
 		cls.docs = {}
 		for geography in (cls.here, cls.away):
 			vendor = provider(
-				"allow-vendor", base_url="https://allow.test/v1", api_key="k", geography=geography
+				"_T-allow-vendor", base_url="https://allow.test/v1", api_key="k", geography=geography
 			).insert()
 			cls.docs[geography] = vendor_model("allow-big", vendor.name).insert().name
 		cls.ours = our_model("allow-ours-7b").insert().name
@@ -603,7 +603,9 @@ class IntegrationTestExpiry(IntegrationTestCase):
 		first_use = frappe.get_doc("Grove API Key", minted["name"])
 		ruled = key(name, expiry="1 Day")
 		ruled.reload()
-		self.assertEqual((first_use.expiry, first_use.expiry_from_first_use, first_use.expires_at), ("7 Days", 1, None))
+		self.assertEqual(
+			(first_use.expiry, first_use.expiry_from_first_use, first_use.expires_at), ("7 Days", 1, None)
+		)
 		row = keys.key_rows([first_use.name])[0]
 		self.assertEqual((row.expiry_from_first_use, row.expires_at), (True, None))
 
@@ -672,7 +674,9 @@ class IntegrationTestTransfer(IntegrationTestCase):
 		make_test_geography()
 		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 		frappe.db.set_value("Model Group", {"is_default": 1}, "is_default", 0)
-		cls.default = IntegrationTestNewTeamsStartInTheDefaultGroups.group("key-handover-default", is_default=1)
+		cls.default = IntegrationTestNewTeamsStartInTheDefaultGroups.group(
+			"key-handover-default", is_default=1
+		)
 		cls.trial_group = IntegrationTestNewTeamsStartInTheDefaultGroups.group("key-handover-trial-models")
 
 	def trial_key(self, team_name, **fields):

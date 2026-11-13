@@ -15,10 +15,10 @@ frappe.ui.form.on("Model", {
 		if (!frm.is_new()) frm.trigger("pricing_headline");
 		if (frm.doc.published && frm.doc.__onload && frm.doc.__onload.is_granted === false) {
 			frm.dashboard.set_headline(
-				__(
-					"Published, but no Model Group has {0} — nobody can call it. {1}",
-					[frm.doc.model_key, `<a href="/app/model-group">${__("Model Groups")}</a>`]
-				),
+				__("Published, but no Model Group has {0} — nobody can call it. {1}", [
+					frm.doc.model_key,
+					`<a href="/app/model-group">${__("Model Groups")}</a>`,
+				]),
 				"orange"
 			);
 		}

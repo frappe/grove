@@ -45,7 +45,10 @@ const BOARDS = [
 
 const boards = computed(() =>
 	BOARDS.map((board) => {
-		const rows = (data.value?.[board.key] || []).map((row, index) => ({ ...row, id: `${index}` }));
+		const rows = (data.value?.[board.key] || []).map((row, index) => ({
+			...row,
+			id: `${index}`,
+		}));
 		const total = rows.reduce((sum, row) => sum + row.cost, 0);
 		return { ...board, rows, share: (row) => (total ? (row.cost / total) * 100 : 0) };
 	})
@@ -70,7 +73,9 @@ const boards = computed(() =>
 						<ListCell class="min-w-0 gap-2">
 							<button
 								type="button"
-								:class="`${LINK} shrink ${board.key === 'models' ? 'font-mono text-xs' : ''}`"
+								:class="`${LINK} shrink ${
+									board.key === 'models' ? 'font-mono text-xs' : ''
+								}`"
 								:title="`Filter the page to ${board.label(item)}`"
 								@click="emit('filter', board.filter(item))"
 							>

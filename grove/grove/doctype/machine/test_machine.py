@@ -519,8 +519,9 @@ class TestSetInstanceType(unittest.TestCase):
 
 	def test_a_running_box_is_refused_before_aws_is_asked(self):
 		doc = self.machine("Active")
-		with patch.object(frappe, "throw", side_effect=frappe.ValidationError), self.assertRaises(
-			frappe.ValidationError
+		with (
+			patch.object(frappe, "throw", side_effect=frappe.ValidationError),
+			self.assertRaises(frappe.ValidationError),
 		):
 			Machine.set_instance_type(doc, "m7g.large")
 		self.assertEqual(doc.cloud_client.calls, [])

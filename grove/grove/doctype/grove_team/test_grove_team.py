@@ -88,7 +88,9 @@ class IntegrationTestGroveTeam(IntegrationTestCase):
 		from grove.pathway import snapshot
 
 		doc = team("team-probe-suspend")
-		names = [frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert().name for _ in range(2)]
+		names = [
+			frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert().name for _ in range(2)
+		]
 
 		def limited():
 			return {record["limited"] for record in snapshot.effective_keys(names)}
@@ -113,7 +115,9 @@ class IntegrationTestGroveTeam(IntegrationTestCase):
 		self.assertEqual(doc.reload().suspended, 1, "with no hold, Central's standing is taken")
 		doc.set_suspended_at_grove(True)
 		doc.reload().set_suspended_at_grove(False)
-		self.assertEqual(doc.reload().suspended, 0, "Resume Keys clears both; Central re-asserts on its next sync")
+		self.assertEqual(
+			doc.reload().suspended, 0, "Resume Keys clears both; Central re-asserts on its next sync"
+		)
 
 	def test_a_spend_limit_cannot_be_negative(self):
 		with self.assertRaises(frappe.ValidationError):
