@@ -132,7 +132,7 @@ class CreditsCase(IntegrationTestCase):
 		today = str(usage.utc_today())
 		_, rows = revenue({"from_date": today, "to_date": today, "group_by": "Team", "team": team})
 		return (
-			usage_api.usage([team], period="Today")[team]["cost"],
+			usage_api.usage([team], from_date=today)[team]["cost"],
 			sum(row["revenue"] for row in rows),
 			usage_api.figures(team)["spend"]["month_spent"],
 		)
@@ -289,7 +289,7 @@ class TestTheUsageApiSumsInTheDatabase(CreditsCase):
 		team, key = self.team(cap=5)
 		self.pull({key: self.hash(50_000)})
 		self.pull({key: self.hash(30_000, requests=2)})
-		result = usage_api.usage([team], period="Today")
+		result = usage_api.usage([team], from_date=str(usage.utc_today()))
 		self.assertEqual(result[team], {"requests": 3, "tokens": 80_000, "cost": 0.8})
 		self.assertEqual(
 			result["model_summary"], [{"model": self.model_key, "requests": 3, "tokens": 80_000, "cost": 0.8}]
@@ -308,7 +308,8 @@ class TestTheUsageApiSumsInTheDatabase(CreditsCase):
 		)
 		self.assertTrue(result["as_of"].endswith("Z"))
 		self.assertEqual(
-			usage_api.usage([team], period="Yesterday")[team], {"requests": 0, "tokens": 0, "cost": 0}
+			usage_api.usage([team], from_date=str(frappe.utils.add_days(usage.utc_today(), -1)))[team],
+			{"requests": 0, "tokens": 0, "cost": 0},
 		)
 
 	def test_a_key_hash_narrows_it_to_that_key(self):
@@ -317,7 +318,7 @@ class TestTheUsageApiSumsInTheDatabase(CreditsCase):
 		self.pull({key: self.hash(50_000), other_key: self.hash(30_000, requests=2)})
 		key_hash = frappe.db.get_value("Grove API Key", key, "key_hash")
 
-		result = usage_api.usage([team], period="Today", key_hash=key_hash)
+		result = usage_api.usage([team], from_date=str(usage.utc_today()), key_hash=key_hash)
 		self.assertEqual(result[team], {"requests": 1, "tokens": 50_000, "cost": 0.5})
 		self.assertEqual(
 			result["model_summary"], [{"model": self.model_key, "requests": 1, "tokens": 50_000, "cost": 0.5}]
@@ -341,7 +342,7 @@ class TestTheUsageApiSumsInTheDatabase(CreditsCase):
 		key_hash = frappe.db.get_value("Grove API Key", stranger_key, "key_hash")
 
 		with self.assertRaises(frappe.DoesNotExistError):
-			usage_api.usage([team], period="Today", key_hash=key_hash)
+			usage_api.usage([team], from_date=str(usage.utc_today()), key_hash=key_hash)
 
 
 class TestTheGatewaysChargeIsAudited(CreditsCase):
@@ -390,15 +391,17 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		self.assertEqual(self.money(team), (0.6, 0.6, 0.6))
 		self.assertEqual(D(str(frappe.db.get_value("Usage Record", row.usage_record, "cost"))), D("0.5"))
 		[correction] = frappe.get_all(
-			"Usage Correction",
+			"Usage Record",
 			filters={"cost_discrepancy": row.name},
-			fields=["team", "api_key", "model", "pricing", "day", "cost"],
+			fields=["team", "api_key", "day", "cost", "request_count", "usage"],
 		)
 		self.assertEqual(
-			(correction.team, correction.api_key, correction.model, correction.pricing, correction.day),
-			(team, row.api_key, self.model_key, self.pricing, usage.utc_today()),
+			(correction.team, correction.api_key, correction.day, correction.request_count),
+			(team, row.api_key, usage.utc_today(), 0),
 		)
 		self.assertEqual(D(str(correction.cost)), D("0.1"))
+		[entry] = frappe.parse_json(correction.usage)
+		self.assertEqual((entry["model"], entry["pricing"]), (self.model_key, self.pricing))
 		with self.assertRaises(frappe.ValidationError):
 			row.correct_grove()
 
@@ -410,7 +413,11 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		row.correct_grove()
 		self.assertEqual(self.money(team), (0.6, 0.6, 0.6))
 		self.assertIn(
-			"", [entry["model"] for entry in usage_api.usage([team], period="Today")["model_summary"]]
+			"",
+			[
+				entry["model"]
+				for entry in usage_api.usage([team], from_date=str(usage.utc_today()))["model_summary"]
+			],
 		)
 
 	def test_gateway_is_wrong_writes_a_pending_adjustment_and_dials_nothing(self):
@@ -432,7 +439,7 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		)
 		self.assertEqual(D(str(adjustment.adjustment)), D("-0.1"))
 		self.assertEqual(self.state(team)[0], D("0.5"), "Grove's own spend is untouched")
-		self.assertFalse(frappe.db.exists("Usage Correction", {"cost_discrepancy": row.name}))
+		self.assertFalse(frappe.db.exists("Usage Record", {"cost_discrepancy": row.name}))
 
 	def test_a_decided_row_takes_neither_button(self):
 		_team, row = self.discrepancy()
@@ -473,7 +480,7 @@ class TestADiscrepancyIsCorrectedOnTheWrongSide(CreditsCase):
 		self.assertNotIn(row.name, self.owed_ids())
 		self.assertEqual(self.state(team)[0], D("0.5"), "Grove's own spend is untouched")
 		self.assertEqual(self.money(team), (0.5, 0.5, 0.5), "and so is every money read")
-		self.assertFalse(frappe.db.exists("Usage Correction", {"cost_discrepancy": row.name}))
+		self.assertFalse(frappe.db.exists("Usage Record", {"cost_discrepancy": row.name}))
 
 	def test_a_store_that_no_longer_holds_the_key_is_owed_no_more(self):
 		_team, row = self.discrepancy()

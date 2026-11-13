@@ -11,8 +11,9 @@ class CostDiscrepancy(Document):
 	pricing. Logged by the pull: a person decides which side is wrong and corrects that side's
 	spend, which brings the two balances back together. The one the pull decides itself is a dead
 	line's, charged by the box at nothing (`Reconciler.audit`). The row keeps the two figures and
-	the decision; the money is a record of its own — a Usage Correction when Grove was wrong, a
-	Gateway Spend Adjustment when the gateway was — so the Usage Record it names is never changed."""
+	the decision; the money is a record of its own — a Usage Record naming this row when Grove was
+	wrong, a Gateway Spend Adjustment when the gateway was — so the Usage Record it audited is never
+	changed."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -37,23 +38,28 @@ class CostDiscrepancy(Document):
 
 	@frappe.whitelist()
 	def correct_grove(self):
-		"""Grove priced it wrong: the money lands as a Usage Correction of the delta, dated today,
-		which every money read sums from then on, so Grove's spend meets the gateway's."""
+		"""Grove priced it wrong: the money lands as a Usage Record of the delta alone, dated today
+		and naming this row, which every money read sums from then on, so Grove's spend meets the
+		gateway's. One entry under the pricing's model: no requests, no tokens."""
 		from grove.billing.pricing import lock_team
 
 		self.check_open()
 		lock_team(self.team)
-		delta = Decimal(str(self.delta))
+		entry = {
+			"model": model_key_of(self.pricing),
+			"pricing": self.pricing,
+			"requests": 0,
+			"grove_cost": self.delta,
+		}
 		frappe.get_doc(
 			{
-				"doctype": "Usage Correction",
+				"doctype": "Usage Record",
 				"cost_discrepancy": self.name,
 				"team": self.team,
 				"api_key": self.api_key,
-				"model": model_key_of(self.pricing),
-				"pricing": self.pricing,
 				"day": utc_today(),
-				"cost": float(delta),
+				"cost": self.delta,
+				"usage": frappe.as_json([entry], indent=None),
 			}
 		).insert()
 		self.decide("Grove corrected")

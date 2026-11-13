@@ -66,7 +66,7 @@
    "read_only": 1
   },
   {
-   "description": "Which side a System Manager chose to correct; blank while open. The money is a Usage Correction (Grove) or a Gateway Spend Adjustment (gateway).",
+   "description": "Which side a System Manager chose to correct; blank while open. The money is a Usage Record naming this row (Grove) or a Gateway Spend Adjustment (gateway).",
    "fieldname": "resolution",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -123,7 +123,7 @@
  ],
  "links": [
   {
-   "link_doctype": "Usage Correction",
+   "link_doctype": "Usage Record",
    "link_fieldname": "cost_discrepancy"
   },
   {
@@ -131,7 +131,7 @@
    "link_fieldname": "cost_discrepancy"
   }
  ],
- "modified": "2026-10-25 00:00:00.000000",
+ "modified": "2026-11-13 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Cost Discrepancy",

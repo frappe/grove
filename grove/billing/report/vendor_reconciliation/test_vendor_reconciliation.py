@@ -51,9 +51,14 @@ class TestVendorReconciliation(IntegrationTestCase):
 		cls.record(cls.yesterday, requests=2, prompt=1000, cached=400, completion=100, cost=0.5)
 		cls.record(cls.earlier, requests=3, prompt=3000, cached=0, completion=300, cost=1.0)
 		cls.record(cls.earlier, requests=1, prompt=10, cached=0, completion=1, cost=0.01, drain="-small")
+		# A Grove correction is no vendor usage: every `charged` below holds only with it left out.
+		decision = frappe.get_doc({"doctype": "Cost Discrepancy", "team": cls.team}).insert(
+			ignore_permissions=True
+		)
+		cls.record(cls.yesterday, 0, 0, 0, 0, cost=0.25, drain="-correction", correction_of=decision.name)
 
 	@classmethod
-	def record(cls, day, requests, prompt, cached, completion, cost, drain=""):
+	def record(cls, day, requests, prompt, cached, completion, cost, drain="", correction_of=None):
 		entry = {
 			"model": cls.model.model_key,
 			"pricing": None,
@@ -70,6 +75,7 @@ class TestVendorReconciliation(IntegrationTestCase):
 				"team": cls.team,
 				"day": day,
 				"drain_id": f"reconcile-{day}{drain}",
+				"cost_discrepancy": correction_of,
 				"request_count": requests,
 				"cost": cost,
 				"usage": frappe.as_json([entry]),

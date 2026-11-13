@@ -21,3 +21,4 @@ grove.patches.v1_0.create_model_ids
 grove.patches.v1_0.fill_provider_display_names
 grove.patches.v1_0.repoint_certbot_renewal_confs
 grove.patches.v1_0.swap_key_title_index
+grove.patches.v1_0.move_corrections_to_records

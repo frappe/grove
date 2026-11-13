@@ -227,9 +227,9 @@ def committed(team, caps=None, lock=True, box_spent=None):
 def month_spent_by(field, names):
 	"""{name: USD spent this month} by `field` (team or api_key): Σ the Usage Records served
 	on a day of this UTC month — the gateway's own day, so the month its `spent:<month>` counts —
-	plus the Usage Corrections Grove made on one. A revoked key counts: what it spent is still
+	the corrections Grove made on one among them. A revoked key counts: what it spent is still
 	the team's. A key's sum is its records under the team holding it now: what a handed-over key
-	spent as a trial's stays the trial team's (`GroveAPIKey.transfer`). Two grouped queries
+	spent as a trial's stays the trial team's (`GroveAPIKey.transfer`). One grouped query
 	however many names."""
 	if field not in MONTH_SPENT_BY:
 		raise ValueError(f"month_spent_by sums by one of {MONTH_SPENT_BY}, not {field!r}")
@@ -237,21 +237,12 @@ def month_spent_by(field, names):
 		return {}
 	first = utc_today().replace(day=1)
 	own = "" if field == "team" else "join `tabGrove API Key` k on k.name = r.api_key and k.team = r.team"
-	spent = dict(
-		frappe.db.sql(
-			f"""select r.`{field}`, sum(r.cost) from `tabUsage Record` r {own}
-		where r.`{field}` in %(names)s and r.day >= %(first)s group by r.`{field}`""",
-			{"names": names, "first": first},
-		)
-	)
-	corrected = frappe.db.sql(
-		f"""select r.`{field}`, sum(r.cost) from `tabUsage Correction` r {own}
+	spent = frappe.db.sql(
+		f"""select r.`{field}`, sum(r.cost) from `tabUsage Record` r {own}
 		where r.`{field}` in %(names)s and r.day >= %(first)s group by r.`{field}`""",
 		{"names": names, "first": first},
 	)
-	for name, correction in corrected:
-		spent[name] = (spent.get(name) or 0) + correction
-	return {name: Decimal(str(total)) for name, total in spent.items()}
+	return {name: Decimal(str(total)) for name, total in spent}
 
 
 def validate_price_rows(rows, key):

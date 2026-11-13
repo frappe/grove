@@ -11,6 +11,7 @@
   "column_break_drain",
   "gateway_store",
   "drain_id",
+  "cost_discrepancy",
   "section_totals",
   "request_count",
   "total_tokens",
@@ -68,6 +69,16 @@
    "fieldtype": "Data",
    "label": "Drain",
    "read_only": 1
+  },
+  {
+   "description": "Set on a correction alone: the Cost Discrepancy resolved as Grove's error whose delta this record is. One correction per decision; blank on a drained record.",
+   "fieldname": "cost_discrepancy",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Cost Discrepancy",
+   "options": "Cost Discrepancy",
+   "read_only": 1,
+   "unique": 1
   },
   {
    "fieldname": "section_totals",
@@ -128,7 +139,7 @@
  ],
  "in_create": 1,
  "links": [],
- "modified": "2026-10-18 12:00:00.000000",
+ "modified": "2026-11-13 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Usage Record",
