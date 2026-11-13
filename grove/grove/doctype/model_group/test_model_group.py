@@ -22,7 +22,7 @@ class IntegrationTestModelGroup(IntegrationTestCase):
 
 	def test_a_vendor_model_of_another_geography_is_refused_and_ours_is_not(self):
 		vendor = provider(
-			"group-vendor", base_url="https://group.test/v1", api_key="k", geography=self.away
+			"_T-group-vendor", base_url="https://group.test/v1", api_key="k", geography=self.away
 		).insert()
 		theirs = vendor_model("group-big", vendor.name).insert().name
 		ours = our_model("group-ours-7b").insert().name

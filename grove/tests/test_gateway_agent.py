@@ -68,14 +68,19 @@ def extravars_for(doctype_class, module, doc, **kwargs):
 	return sent
 
 
-class FakeGateway(SimpleNamespace):
+class FakeDoc(SimpleNamespace):
+	def get(self, field):
+		return getattr(self, field, None)
+
+
+class FakeGateway(FakeDoc):
 	get_agent_extravars = GatewayServer.get_agent_extravars
 	config_variables = GatewayServer.config_variables
 	memory_variables = GatewayServer.memory_variables
 	short_name = GatewayServer.short_name
 
 
-class FakeIngress(SimpleNamespace):
+class FakeIngress(FakeDoc):
 	config_variables = IngressServer.config_variables
 	memory_variables = IngressServer.memory_variables
 	short_name = IngressServer.short_name

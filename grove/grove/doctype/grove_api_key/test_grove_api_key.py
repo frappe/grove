@@ -191,7 +191,7 @@ class IntegrationTestATeamsGrantsReachTheKeysOfTheirGeography(IntegrationTestCas
 	"""An Allow or Deny row names a Model doc: a vendor's is one geography's and reaches the team's
 	keys there; ours reaches every key."""
 
-	KEY = "allow-vendor/allow-big"
+	KEY = "_T-allow-vendor/allow-big"
 
 	@classmethod
 	def setUpClass(cls):
@@ -200,7 +200,7 @@ class IntegrationTestATeamsGrantsReachTheKeysOfTheirGeography(IntegrationTestCas
 		cls.docs = {}
 		for geography in (cls.here, cls.away):
 			vendor = provider(
-				"allow-vendor", base_url="https://allow.test/v1", api_key="k", geography=geography
+				"_T-allow-vendor", base_url="https://allow.test/v1", api_key="k", geography=geography
 			).insert()
 			cls.docs[geography] = vendor_model("allow-big", vendor.name).insert().name
 		cls.ours = our_model("allow-ours-7b").insert().name

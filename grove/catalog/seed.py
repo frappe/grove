@@ -17,8 +17,8 @@ def read(path=None):
 
 
 def insert_missing(path=None):
-	"""Insert what the catalog names and the site lacks: a held group gains the rows it lacks too.
-	Never updates a field, never deletes."""
+	"""Insert what the catalog names and the site lacks. Never updates a field, never deletes: a
+	held group keeps the rows it has."""
 	catalog = read(path)
 	for counter in catalog.get("counters", []):
 		if not frappe.db.exists("Usage Counter", counter["counter_name"]):

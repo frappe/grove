@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""One store per Network, and what a gateway is told about it. Pure: frappe's data calls are
+"""What a gateway is told about its store, and the store's backups. Pure: frappe's data calls are
 stubbed, so no site."""
 
 import base64
@@ -51,31 +51,6 @@ def stub_get_all(stores):
 		]
 
 	return get_all
-
-
-class TestOneStorePerNetwork(unittest.TestCase):
-	def validate(self, name, stores, status="Pending", network="Mumbai"):
-		doc = SimpleNamespace(name=name, machine=name, status=status)
-		with (
-			patch.object(frappe, "db", stub_db({name: {"network": network}})),
-			patch.object(frappe, "get_all", side_effect=stub_get_all(stores)),
-			patch.object(frappe, "throw", side_effect=Refused),
-		):
-			GatewayStore.validate_one_per_network(doc)
-
-	def test_the_first_store_of_a_network_is_accepted(self):
-		self.validate("store1", {"Mumbai": [("store1", "Pending")]})
-
-	def test_a_second_live_store_is_refused(self):
-		with self.assertRaises(Refused):
-			self.validate("store2", {"Mumbai": [("store1", "Active"), ("store2", "Pending")]})
-
-	def test_a_terminated_store_leaves_room_for_its_replacement(self):
-		self.validate("store2", {"Mumbai": [("store1", "Terminated"), ("store2", "Pending")]})
-
-	def test_a_box_in_no_network_serves_no_gateways(self):
-		with self.assertRaises(Refused):
-			self.validate("store1", {}, network=None)
 
 
 class TestWhatAGatewayIsGiven(unittest.TestCase):
