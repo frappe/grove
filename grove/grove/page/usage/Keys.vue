@@ -13,7 +13,9 @@ import {
 	CELL,
 	LINK,
 	MUTED,
+	NEAR_CAP,
 	NUM,
+	barClass,
 	compact,
 	count,
 	day,
@@ -34,7 +36,11 @@ watch(
 );
 
 const CHIPS = [
-	{ key: "near", label: "Near cap", test: (row) => row.cap_pct !== null && row.cap_pct >= 80 },
+	{
+		key: "near",
+		label: "Near cap",
+		test: (row) => row.cap_pct !== null && row.cap_pct >= NEAR_CAP,
+	},
 	{
 		key: "idle",
 		label: "Idle 30 d",
@@ -101,12 +107,6 @@ const chips = (limits) =>
 		text: `${count(limit.value)} ${limit.metric} per ${limit.window}`,
 	}));
 
-const barClass = (row) =>
-	row.cap_pct >= 100
-		? "bg-surface-red-5"
-		: row.cap_pct >= 80
-		? "bg-surface-amber-3"
-		: "bg-surface-gray-7";
 const open = (row) => host.navigate?.(["Form", "Grove API Key", row.name]);
 </script>
 
@@ -188,12 +188,16 @@ const open = (row) => host.navigate?.(["Form", "Grove API Key", row.name]);
 								</button>
 							</ListCell>
 							<ListCell class="flex-col !items-start justify-center gap-1">
-								<span class="text-sm tabular-nums text-ink-gray-5">
-									<span class="text-ink-gray-9">{{
-										usd(item.month_spent)
-									}}</span>
-									<template v-if="item.cap"> / {{ usd(item.cap) }}</template>
-									<span v-if="item.cap_pct !== null" class="ml-1">{{
+								<span
+									class="flex w-full justify-between gap-2 text-sm tabular-nums text-ink-gray-5"
+								>
+									<span>
+										<span class="text-ink-gray-9">{{
+											usd(item.month_spent)
+										}}</span>
+										<template v-if="item.cap"> / {{ usd(item.cap) }}</template>
+									</span>
+									<span v-if="item.cap_pct !== null">{{
 										percent(item.cap_pct)
 									}}</span>
 								</span>
@@ -203,7 +207,7 @@ const open = (row) => host.navigate?.(["Form", "Grove API Key", row.name]);
 								>
 									<span
 										class="block h-full rounded-full"
-										:class="barClass(item)"
+										:class="barClass(item.cap_pct)"
 										:style="{ width: `${Math.min(100, item.cap_pct)}%` }"
 									/>
 								</span>
