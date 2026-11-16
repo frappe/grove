@@ -5,7 +5,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from grove.grove.doctype.geography.test_geography import make_test_geography
-from grove.grove.doctype.model_provider.test_model_provider import our_model, provider, vendor_model
+from grove.grove.doctype.model_provider.test_model_provider import keyed_provider, our_model, vendor_model
 
 
 class IntegrationTestModelGroup(IntegrationTestCase):
@@ -21,9 +21,7 @@ class IntegrationTestModelGroup(IntegrationTestCase):
 		return frappe.get_doc({"doctype": "Model Group", "__newname": name, "geography": geography, **fields})
 
 	def test_a_vendor_model_of_another_geography_is_refused_and_ours_is_not(self):
-		vendor = provider(
-			"_T-group-vendor", base_url="https://group.test/v1", api_key="k", geography=self.away
-		).insert()
+		vendor = keyed_provider("_T-group-vendor", base_url="https://group.test/v1", geography=self.away)
 		theirs = vendor_model("group-big", vendor.name).insert().name
 		ours = our_model("group-ours-7b").insert().name
 		self.group("group-ours", self.here, models=[{"model": ours}]).insert()

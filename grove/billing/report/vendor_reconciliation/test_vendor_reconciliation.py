@@ -13,7 +13,7 @@ from frappe.tests import IntegrationTestCase
 from grove.billing import vendor
 from grove.billing.report.vendor_reconciliation.vendor_reconciliation import execute
 from grove.grove.doctype.model_id.model_id import ensure_model_id
-from grove.grove.doctype.model_provider.test_model_provider import provider
+from grove.grove.doctype.model_provider.test_model_provider import add_key, keyed_provider, provider
 from grove.utils import utc_today
 
 UPSTREAM = "probe-ai/Probe-Flash"
@@ -29,7 +29,7 @@ class TestVendorReconciliation(IntegrationTestCase):
 		cls.enterClassContext(patch("grove.pathway.usage.peek_team", return_value={}))
 		cls.yesterday = utc_today() - timedelta(days=1)
 		cls.earlier = cls.yesterday - timedelta(days=1)
-		cls.vendor = provider("baseten", base_url="https://inference.baseten.co", api_key="k").insert()
+		cls.vendor = keyed_provider("baseten", base_url="https://inference.baseten.co")
 		cls.model = frappe.get_doc(
 			{
 				"doctype": "Model",
@@ -206,7 +206,7 @@ class TestVendorReconciliation(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError) as today:
 			self.report(to_date=utc_today())
 		self.assertIn("yesterday", str(today.exception))
-		provider("_T-probe-unbilled", base_url="https://api.unbilled.test", api_key="k").insert()
+		keyed_provider("_T-probe-unbilled", base_url="https://api.unbilled.test")
 		with self.assertRaises(frappe.ValidationError) as unread:
 			self.report(provider="_T-probe-unbilled")
 		self.assertIn("_T-probe-unbilled", str(unread.exception))
@@ -221,13 +221,11 @@ class TestABillingReadIsOncePerAccount(IntegrationTestCase):
 	that names no account is an account of its own."""
 
 	def test_each_account_the_keys_name_is_read_once(self):
-		rows = [
-			{"title": "a", "api_key": "k", "account": "acct-a"},
-			{"title": "a-rotated", "api_key": "k-rotated", "account": "acct-a"},
-			{"title": "b", "api_key": "k2", "account": "acct-b"},
-			{"title": "own", "api_key": "k3"},
-		]
-		doc = provider("baseten", base_url="https://inference.baseten.co", api_keys=rows).insert()
+		doc = provider("baseten", base_url="https://inference.baseten.co").insert()
+		add_key(doc, "k", "a", account="acct-a")
+		add_key(doc, "k-rotated", "a-rotated", account="acct-a")
+		add_key(doc, "k2", "b", account="acct-b")
+		add_key(doc, "k3", "own")
 		bearers = []
 
 		def get(url, headers, params, timeout):

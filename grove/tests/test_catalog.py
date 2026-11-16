@@ -16,7 +16,7 @@ from frappe.tests import IntegrationTestCase
 from grove.billing.doctype.model_pricing.test_model_pricing import enabled_pricing
 from grove.catalog import export, seed
 from grove.grove.doctype.geography.test_geography import make_test_geography
-from grove.grove.doctype.model_provider.test_model_provider import our_model, provider, vendor_model
+from grove.grove.doctype.model_provider.test_model_provider import keyed_provider, our_model, vendor_model
 
 COUNTED = (
 	"Usage Counter",
@@ -141,7 +141,7 @@ class TestInsertMissing(CatalogCase):
 		self.assertEqual(rows, ["_T-catalog-vendor/big-1"])
 
 	def test_a_provider_the_site_holds_is_left_as_it_is(self):
-		held = provider("_T-catalog-held", base_url="https://held.test/v1", api_key="held-secret").insert()
+		held = keyed_provider("_T-catalog-held", "held-secret", base_url="https://held.test/v1")
 		self.load(
 			providers=[
 				{
@@ -154,7 +154,7 @@ class TestInsertMissing(CatalogCase):
 		[name] = frappe.get_all("Model Provider", filters={"provider_name": "_T-catalog-held"}, pluck="name")
 		doc = frappe.get_doc("Model Provider", name)
 		self.assertEqual(
-			(doc.name, doc.base_url, doc.geography, doc.api_keys[0].get_password("api_key")),
+			(doc.name, doc.base_url, doc.geography, doc.enabled_keys[0].get_password("api_key")),
 			(held.name, "https://held.test/v1", held.geography, "held-secret"),
 		)
 
@@ -180,13 +180,13 @@ class TestExport(CatalogCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		vendor = provider(
+		vendor = keyed_provider(
 			"_T-catalog-export",
+			"export-secret",
 			base_url="https://export.test/v1",
-			api_key="export-secret",
 			display_name="Catalog Export",
 			extra_headers=[{"header": "x-export", "value": "1"}],
-		).insert()
+		)
 		cls.provider = vendor.name
 		cls.model = vendor_model("big-2", vendor.name).insert().name
 		frappe.db.set_value("Model ID", "big-2", "display_name", "Big Two")

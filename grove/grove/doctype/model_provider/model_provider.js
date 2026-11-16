@@ -89,7 +89,7 @@ function name_models(frm, upstream_ids) {
 
 frappe.ui.form.on("Model Provider", {
 	refresh(frm) {
-		if (frm.is_new() || frm.doc.is_self_hosted || !(frm.doc.api_keys || []).length) {
+		if (frm.is_new() || frm.doc.is_self_hosted) {
 			return;
 		}
 		frm.add_custom_button(__("Fetch Models"), () =>

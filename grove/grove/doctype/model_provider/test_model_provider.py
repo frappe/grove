@@ -17,13 +17,23 @@ from grove.grove.doctype.model_provider import model_provider
 from grove.grove.doctype.model_provider.model_provider import self_hosted_provider
 
 
-def provider(provider_name, api_key=None, **fields):
-	"""`api_key` is one row of the Keys table — the single-key spelling most tests want."""
+def provider(provider_name, **fields):
 	if not fields.get("is_self_hosted"):
 		fields.setdefault("geography", make_test_geography())
-	if api_key:
-		fields["api_keys"] = [{"title": "key", "api_key": api_key}]
 	return frappe.get_doc({"doctype": "Model Provider", "provider_name": provider_name, **fields})
+
+
+def add_key(provider, api_key="k", title="key", **fields):
+	"""One more key of an inserted provider record."""
+	key = {"model_provider": provider.name, "title": title, "api_key": api_key, **fields}
+	return frappe.get_doc({"doctype": "Model Provider Key", **key}).insert()
+
+
+def keyed_provider(provider_name, api_key="k", **fields):
+	"""An inserted provider with one key — the single-key spelling most tests want."""
+	doc = provider(provider_name, **fields).insert()
+	add_key(doc, api_key)
+	return doc
 
 
 def vendor_model(model_id, provider):
@@ -43,7 +53,7 @@ class TestWhatAVendorModelNeeds(IntegrationTestCase):
 	def setUpClass(cls):
 		"""One provider for the class: the rollback is once at the end, not between tests."""
 		super().setUpClass()
-		cls.vendor = provider("_T-probe-vendor", base_url="https://api.probe.test", api_key="k").insert()
+		cls.vendor = keyed_provider("_T-probe-vendor", base_url="https://api.probe.test")
 
 	def test_it_needs_no_hf_repo(self):
 		doc = vendor_model("probe-sonnet", self.vendor.name).insert()
@@ -99,9 +109,7 @@ class TestOneProviderIsSelfHosted(IntegrationTestCase):
 
 	def test_it_dials_nothing(self):
 		with self.assertRaises(frappe.ValidationError) as caught:
-			provider(
-				"probe-dialer", is_self_hosted=1, base_url="https://api.probe.test", api_key="k"
-			).insert()
+			provider("probe-dialer", is_self_hosted=1, base_url="https://api.probe.test").insert()
 		self.assertIn("Self Hosted", str(caught.exception))
 
 	def test_it_keeps_nothing_and_a_vendor_says_so_itself(self):
@@ -140,15 +148,6 @@ class TestExtraHeaders(IntegrationTestCase):
 			with self.subTest(name), self.assertRaises(frappe.ValidationError) as caught:
 				self.headed("_T-probe-keyed", (name, "k")).insert()
 			self.assertIn("gateway's to set", str(caught.exception))
-
-
-class TestAKeyIsKnownByItsTitle(IntegrationTestCase):
-	def test_two_keys_of_one_provider_cannot_share_a_title(self):
-		vendor = provider("_T-probe-twice-titled", base_url="https://api.probe.test", api_key="k")
-		vendor.append("api_keys", {"title": "key", "api_key": "k2"})
-		with self.assertRaises(frappe.ValidationError) as caught:
-			vendor.insert()
-		self.assertIn("two keys titled 'key'", str(caught.exception))
 
 
 class TestOneNameAcrossGeographies(IntegrationTestCase):
@@ -241,14 +240,14 @@ class TestFetchModels(IntegrationTestCase):
 			return vendor.fetch_models(), calls
 
 	def test_an_openai_front_is_asked_with_a_bearer(self):
-		vendor = provider("_T-probe-lister", base_url="https://api.lister.test/", api_key="k").insert()
+		vendor = keyed_provider("_T-probe-lister", base_url="https://api.lister.test/")
 		url = "https://api.lister.test/v1/models"
 		result, calls = self.fetch(vendor, {url: {"object": "list", "data": [{"id": "b"}, {"id": "a"}]}})
 		self.assertEqual(calls, [(url, {"Authorization": "Bearer k"}, {})])
 		self.assertEqual(result, {"new": ["a", "b"], "held": []})
 
 	def test_an_anthropic_front_is_asked_with_its_headers_and_paged(self):
-		vendor = provider("_T-probe-pager", anthropic_base_url="https://api.pager.test", api_key="k").insert()
+		vendor = keyed_provider("_T-probe-pager", anthropic_base_url="https://api.pager.test")
 		url = "https://api.pager.test/v1/models"
 		result, calls = self.fetch(
 			vendor,
@@ -268,12 +267,11 @@ class TestFetchModels(IntegrationTestCase):
 
 	def test_a_dual_front_is_asked_on_its_openai_side_and_held_ids_are_set_apart(self):
 		# DeepSeek's Anthropic shim has no /v1/models; the OpenAI front lists the same vendor.
-		vendor = provider(
+		vendor = keyed_provider(
 			"_T-probe-dual-list",
 			base_url="https://api.dual.test",
 			anthropic_base_url="https://api.dual.test/anthropic",
-			api_key="k",
-		).insert()
+		)
 		vendor_model("held-plain", vendor.name).insert()
 		frappe.get_doc(
 			{
@@ -289,7 +287,7 @@ class TestFetchModels(IntegrationTestCase):
 		self.assertEqual(result, {"new": ["fresh"], "held": ["Held-Dated-20250101", "held-plain"]})
 
 	def test_a_refusal_names_the_provider(self):
-		vendor = provider("_T-probe-refused", base_url="https://api.refused.test", api_key="k").insert()
+		vendor = keyed_provider("_T-probe-refused", base_url="https://api.refused.test")
 		answer = Mock(ok=False, status_code=401, text="invalid key")
 		with patch.object(model_provider.requests, "get", return_value=answer):
 			with self.assertRaises(frappe.ValidationError) as caught:
@@ -302,7 +300,7 @@ class TestFetchModels(IntegrationTestCase):
 			vendor.fetch_models()
 
 	def test_picked_ids_become_unpublished_models_under_the_record(self):
-		vendor = provider("_T-probe-adder", base_url="https://api.adder.test", api_key="k").insert()
+		vendor = keyed_provider("_T-probe-adder", base_url="https://api.adder.test")
 		picked = {"gpt-4o": "gpt-4o", "GPT 4o Mini": "GPT 4o Mini", "org/Model": "org/Model", "x-2025": "x"}
 		keys = vendor.add_models(picked)
 		self.assertTrue(frappe.db.exists("Model ID", "gpt-4o-mini"))

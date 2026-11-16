@@ -65,11 +65,9 @@ def fetch_key_stats(target, ids):
 
 
 def held_keys():
-	"""{key id: (its Model Provider, its title)} for every vendor key Grove holds."""
-	rows = frappe.get_all(
-		"Model Provider Key", fields=["name", "parent", "title"], parent_doctype="Model Provider"
-	)
-	return {row.name: (row.parent, row.title) for row in rows}
+	"""{key id: its Model Provider} for every vendor key Grove holds."""
+	rows = frappe.get_all("Model Provider Key", fields=["name", "model_provider"])
+	return {row.name: row.model_provider for row in rows}
 
 
 def record_key_stats(stats, keys, gateway_store):
@@ -78,12 +76,10 @@ def record_key_stats(stats, keys, gateway_store):
 	for key_id, counts in stats.items():
 		if key_id not in keys or not int(counts.get("requests") or 0):
 			continue
-		model_provider, title = keys[key_id]
 		frappe.get_doc(
 			{
 				"doctype": "Provider Key Stats",
-				"model_provider": model_provider,
-				"key_title": title,
+				"model_provider": keys[key_id],
 				"key_id": key_id,
 				"gateway_store": gateway_store,
 				"stats": frappe.as_json(readable(counts)),

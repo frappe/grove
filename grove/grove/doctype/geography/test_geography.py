@@ -168,7 +168,6 @@ class TestWhoCarriesAGeography(unittest.TestCase):
 					"is_self_hosted": 0,
 					"validate_self_hosted": lambda: None,
 					"validate_siblings": lambda: None,
-					"validate_key_titles": lambda: None,
 					"validate_extra_headers": lambda: None,
 					**fields,
 				}

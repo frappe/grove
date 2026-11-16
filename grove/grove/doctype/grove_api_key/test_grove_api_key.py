@@ -19,7 +19,7 @@ from grove.api import keys
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_api_key import grove_api_key
 from grove.grove.doctype.grove_api_key.grove_api_key import GroveAPIKey
-from grove.grove.doctype.model_provider.test_model_provider import our_model, provider, vendor_model
+from grove.grove.doctype.model_provider.test_model_provider import keyed_provider, our_model, vendor_model
 from grove.pathway.routes import utc_timestamp
 from grove.pathway.snapshot import effective_keys
 
@@ -199,9 +199,7 @@ class IntegrationTestATeamsGrantsReachTheKeysOfTheirGeography(IntegrationTestCas
 		cls.here, cls.away = make_test_geography("allow-here"), make_test_geography("allow-away")
 		cls.docs = {}
 		for geography in (cls.here, cls.away):
-			vendor = provider(
-				"_T-allow-vendor", base_url="https://allow.test/v1", api_key="k", geography=geography
-			).insert()
+			vendor = keyed_provider("_T-allow-vendor", base_url="https://allow.test/v1", geography=geography)
 			cls.docs[geography] = vendor_model("allow-big", vendor.name).insert().name
 		cls.ours = our_model("allow-ours-7b").insert().name
 		cls.ours_key = frappe.db.get_value("Model", cls.ours, "model_key")

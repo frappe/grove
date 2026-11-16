@@ -1,13 +1,15 @@
 <script setup>
 // Each vendor key's counters over the window, as the gateways kept them since the previous
 // pull: a key the vendor refuses reads red, one it throttles reads amber.
-import { Badge } from "frappe-ui";
+import { useHost } from "@framework/ui/island";
+import { Badge, Button } from "frappe-ui";
 import { List, ListCell, ListHeader, ListHeaderCell, ListRow, ListRows } from "frappe-ui/list";
 import { computed, watch } from "vue";
 
 import { CARD, CARD_TITLE, CELL, MUTED, NUM, ago, count, useCall, when } from "./lib.js";
 
 const props = defineProps({ params: Object, version: Number });
+const host = useHost();
 const { data, loading, error, load } = useCall("key_stats");
 
 watch(
@@ -27,14 +29,24 @@ const COUNTS = [
 	"failed",
 ];
 const BAD = new Set(["unauthorized", "unpaid", "forbidden"]);
-const COLUMNS = ["minmax(0,1.2fr)", "minmax(0,1fr)", ...COUNTS.map(() => "5.5rem"), "8rem"];
+const COLUMNS = [
+	"minmax(0,1.2fr)",
+	"minmax(0,1fr)",
+	...COUNTS.map(() => "5.5rem"),
+	"8rem",
+	"2.5rem",
+];
 
+// `disabled` is the key's own, so null says the row predates key ids and matched no key.
 const rows = computed(() =>
 	(data.value?.rows || []).map((row) => ({
 		...row,
-		id: `${row.model_provider}:${row.key_title}`,
+		id: `${row.model_provider}:${row.key_id}`,
+		held: row.disabled !== null,
 	}))
 );
+
+const open = (row) => host.navigate?.(["Form", "Model Provider Key", row.key_id]);
 
 const tone = (field, value) => {
 	if (!Number(value)) return "text-ink-gray-5";
@@ -67,6 +79,7 @@ const tone = (field, value) => {
 						{{ field.replace("_", " ") }}
 					</ListHeaderCell>
 					<ListHeaderCell>Last used</ListHeaderCell>
+					<ListHeaderCell />
 				</ListHeader>
 				<ListRows :items="rows" v-slot="{ item, value }">
 					<ListRow :value="value">
@@ -74,9 +87,16 @@ const tone = (field, value) => {
 							<span :class="CELL">{{ item.provider || item.provider_name }}</span>
 							<span :class="MUTED">{{ item.geography }}</span>
 						</ListCell>
-						<ListCell class="gap-2">
-							<span :class="CELL">{{ item.key_title }}</span>
-							<Badge v-if="item.disabled" label="Disabled" />
+						<ListCell class="flex-col !items-start justify-center">
+							<span class="flex max-w-full items-center gap-2">
+								<span :class="`${CELL} font-medium`">{{
+									item.key_title || "Unknown key"
+								}}</span>
+								<Badge v-if="item.disabled" label="Disabled" />
+							</span>
+							<span class="font-mono text-xs text-ink-gray-5">{{
+								item.key_id
+							}}</span>
 						</ListCell>
 						<ListCell
 							v-for="field in COUNTS"
@@ -94,6 +114,16 @@ const tone = (field, value) => {
 							"
 						>
 							{{ when(item.last_used) }}
+						</ListCell>
+						<ListCell class="justify-end">
+							<Button
+								v-if="item.held"
+								variant="ghost"
+								size="sm"
+								icon="lucide-arrow-up-right"
+								:aria-label="`Open key ${item.key_title}`"
+								@click="open(item)"
+							/>
 						</ListCell>
 					</ListRow>
 				</ListRows>

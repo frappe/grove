@@ -15,8 +15,7 @@
   "anthropic_base_url",
   "extra_headers",
   "section_keys",
-  "key_selection",
-  "api_keys"
+  "key_selection"
  ],
  "fields": [
   {
@@ -101,21 +100,21 @@
   },
   {
    "default": "Round Robin",
-   "description": "How a gateway picks the key for a request: each in turn, in table order, one cursor per vendor across all its models. Whatever is picked, a key answering 429 is swapped for the next once, and one answering 401/402/403 is skipped for the rest of that request.",
+   "description": "How a gateway picks the key for a request: each in turn, oldest first, one cursor per vendor across all its models. Whatever is picked, a key answering 429 is swapped for the next once, and one answering 401/402/403 is skipped for the rest of that request.",
    "fieldname": "key_selection",
    "fieldtype": "Select",
    "label": "Key Selection",
    "options": "Round Robin"
-  },
-  {
-   "fieldname": "api_keys",
-   "fieldtype": "Table",
-   "label": "Keys",
-   "options": "Model Provider Key"
   }
  ],
- "links": [],
- "modified": "2026-11-06 14:00:00.000000",
+ "links": [
+  {
+   "group": "Keys",
+   "link_doctype": "Model Provider Key",
+   "link_fieldname": "model_provider"
+  }
+ ],
+ "modified": "2026-11-16 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model Provider",

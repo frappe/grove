@@ -14,7 +14,7 @@ from frappe.tests import IntegrationTestCase
 
 from grove.billing.pricing import month_spent_by
 from grove.grove.doctype.geography.test_geography import make_test_geography
-from grove.grove.doctype.model_provider.test_model_provider import provider, vendor_model
+from grove.grove.doctype.model_provider.test_model_provider import keyed_provider, vendor_model
 from grove.grove.page.usage import usage
 from grove.pathway.run import finalize, new_run
 from grove.utils import utc_today
@@ -34,7 +34,7 @@ class TestUsagePage(IntegrationTestCase):
 		cls.enterClassContext(unittest.mock.patch("grove.pathway.usage.peek_team", return_value={}))
 		cls.geography = make_test_geography()
 		cls.other_geography = make_test_geography("t-usage-elsewhere")
-		cls.vendor = provider(VENDOR, api_key="k").insert()
+		cls.vendor = keyed_provider(VENDOR)
 		cls.model_doc = vendor_model("alpha", cls.vendor.name).insert(ignore_permissions=True).name
 		cls.tier = (
 			frappe.get_doc(
@@ -85,8 +85,7 @@ class TestUsagePage(IntegrationTestCase):
 			{
 				"doctype": "Provider Key Stats",
 				"model_provider": cls.vendor.name,
-				"key_title": cls.vendor.api_keys[0].title,
-				"key_id": cls.vendor.api_keys[0].name,
+				"key_id": cls.vendor.enabled_keys[0].name,
 				"stats": json.dumps(
 					{"requests": 10, "ok": 7, "rate_limited": 1, "unauthorized": 2, "unpaid": 0}
 				),
@@ -204,6 +203,8 @@ class TestUsagePage(IntegrationTestCase):
 		answer = usage.key_stats({"period": "Today", "provider": VENDOR})
 		[row] = answer["rows"]
 		self.assertEqual((row["requests"], row["unauthorized"], row["key_title"]), (10, 2, "key"))
+		# The page opens the key by its id, and reads a null `disabled` as a row no key matched.
+		self.assertEqual((row["key_id"], row["disabled"]), (self.vendor.enabled_keys[0].name, 0))
 		self.assertIsNotNone(answer["last_pull"])
 		self.assertEqual(usage.key_stats({"period": "Last Month", "provider": VENDOR})["rows"], [])
 
