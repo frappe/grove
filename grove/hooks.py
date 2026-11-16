@@ -48,6 +48,9 @@ scheduler_events = {
 export_python_type_annotations = True
 require_type_annotated_api_methods = True
 
+# A log outlives what it names: a key, provider or store with stats can still be deleted.
+ignore_links_on_delete = ["Provider Key Stats"]
+
 default_log_clearing_doctypes = {
 	"Pathway Sync": 60,
 	"Pod Activity": 60,

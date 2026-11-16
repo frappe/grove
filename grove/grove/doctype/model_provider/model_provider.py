@@ -41,10 +41,8 @@ class ModelProvider(Document):
 		from frappe.types import DF
 
 		from grove.grove.doctype.model_provider_header.model_provider_header import ModelProviderHeader
-		from grove.grove.doctype.model_provider_key.model_provider_key import ModelProviderKey
 
 		anthropic_base_url: DF.Data | None
-		api_keys: DF.Table[ModelProviderKey]
 		base_url: DF.Data | None
 		display_name: DF.Data | None
 		extra_headers: DF.Table[ModelProviderHeader]
@@ -65,7 +63,6 @@ class ModelProvider(Document):
 		if self.is_self_hosted:
 			self.validate_self_hosted()
 		self.validate_siblings()
-		self.validate_key_titles()
 		self.validate_extra_headers()
 
 	def validate_self_hosted(self):
@@ -98,14 +95,6 @@ class ModelProvider(Document):
 				frappe.throw(f"{self.provider_name} already has a record in {self.geography}.")
 			self.display_name = self.display_name or sibling.display_name
 
-	def validate_key_titles(self):
-		"""A key is known by its title — Provider Key Stats names it so — and a blank one is the
-		mandatory check's to refuse."""
-		titles = [row.title for row in self.api_keys if row.title]
-		repeated = sorted(title for title in set(titles) if titles.count(title) > 1)
-		if repeated:
-			frappe.throw(f"{self.provider_name} has two keys titled {repeated[0]!r}.")
-
 	def validate_extra_headers(self):
 		"""Header names with one-line values, each name once. The credential is the gateway's: it
 		rotates keys per request, so a fixed one here would be overwritten, or worse, win."""
@@ -114,7 +103,7 @@ class ModelProvider(Document):
 			if not HEADER_NAME.fullmatch(row.header) or "\n" in row.value or "\r" in row.value:
 				frappe.throw(f"Extra Headers: {row.header!r} must be a header name with a one-line value.")
 			if row.header.lower() in CREDENTIAL_HEADERS:
-				frappe.throw(f"Extra Headers: {row.header} is the gateway's to set, from Keys.")
+				frappe.throw(f"Extra Headers: {row.header} is the gateway's to set, from its keys.")
 			if names.count(row.header.lower()) > 1:
 				frappe.throw(f"Extra Headers: {row.header} is listed twice.")
 
@@ -122,6 +111,18 @@ class ModelProvider(Document):
 	def headers(self):
 		"""Extra Headers as the gateway reads them: {name: value}, {} when there are none."""
 		return {row.header: row.value for row in self.extra_headers}
+
+	@property
+	def enabled_keys(self):
+		"""The keys a gateway may dial for this record, oldest first. Read live: a key saves on
+		its own, so the cached provider doc would not see it."""
+		names = frappe.get_all(
+			"Model Provider Key",
+			filters={"model_provider": self.name, "disabled": 0},
+			order_by="creation asc, name asc",
+			pluck="name",
+		)
+		return [frappe.get_doc("Model Provider Key", name) for name in names]
 
 	def on_update(self):
 		if self.has_value_changed("is_self_hosted"):
@@ -144,7 +145,7 @@ class ModelProvider(Document):
 		vendor and list the same models, and an Anthropic shim beside an OpenAI front (DeepSeek's)
 		has no list at all."""
 		frappe.only_for("System Manager")
-		enabled = [row for row in self.api_keys if not row.disabled]
+		enabled = self.enabled_keys
 		secret = enabled[0].get_password("api_key") if enabled else None
 		if not ((self.base_url or self.anthropic_base_url) and secret):
 			frappe.throw(f"{self.provider_name} has no front and key to ask for its models.")

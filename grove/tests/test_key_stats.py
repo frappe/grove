@@ -8,7 +8,7 @@ import json
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from grove.grove.doctype.model_provider.test_model_provider import provider
+from grove.grove.doctype.model_provider.test_model_provider import add_key, keyed_provider
 from grove.pathway.key_stats import KeyStats, held_keys
 from grove.pathway.run import Unit, new_run
 
@@ -17,10 +17,8 @@ class TestKeyStatsPull(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		cls.vendor = provider(
-			"_T-probe-stats-vendor", base_url="https://api.probe.test", api_key="k"
-		).insert()
-		cls.key = cls.vendor.api_keys[0].name
+		cls.vendor = keyed_provider("_T-probe-stats-vendor", base_url="https://api.probe.test")
+		cls.key = cls.vendor.enabled_keys[0].name
 		for store in ("store-a", "store-b"):
 			frappe.get_doc({"doctype": "Gateway Store", "name": store}).db_insert()
 
@@ -41,7 +39,7 @@ class TestKeyStatsPull(IntegrationTestCase):
 			"Provider Key Stats",
 			filters={"model_provider": self.vendor.name},
 			order_by="creation asc",
-			fields=["gateway_store", "stats", "key_title", "model_provider"],
+			fields=["gateway_store", "stats", "key_title", "key_id", "model_provider"],
 		)
 		for row in rows:
 			row.stats = json.loads(row.stats)
@@ -68,7 +66,7 @@ class TestKeyStatsPull(IntegrationTestCase):
 			(row.gateway_store, row.stats["requests"], row.stats["unpaid"], row.stats["rejected"]),
 			("store-a", 3, 1, 1),
 		)
-		self.assertEqual((row.key_title, row.model_provider), ("key", self.vendor.name))
+		self.assertEqual((row.key_title, row.key_id, row.model_provider), ("key", self.key, self.vendor.name))
 		self.assertEqual(row.stats["forbidden"], 0)
 		self.assertRegex(row.stats["last_used"], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
 		self.assertIsNone(row.stats["last_rate_limited"])
@@ -83,3 +81,9 @@ class TestKeyStatsPull(IntegrationTestCase):
 		self.settle({self.key: {"requests": "1"}})
 		self.settle({self.key: {"requests": "2"}})
 		self.assertEqual([r.stats["requests"] for r in self.rows()], [1, 2])
+
+	def test_a_key_with_stats_can_still_be_deleted_and_its_rows_stay(self):
+		doomed = add_key(self.vendor, "k-doomed", "doomed")
+		self.settle({doomed.name: {"requests": "1"}})
+		doomed.delete()
+		self.assertEqual([(r.key_title, r.key_id) for r in self.rows()], [("doomed", doomed.name)])

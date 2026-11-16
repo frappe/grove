@@ -28,14 +28,16 @@
    "read_only": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "description": "The key row's Title on its Model Provider."
+   "description": "The key's Title when the pull landed."
   },
   {
-   "description": "The key row's id on its Model Provider, which outlives a retitle: two keys that shared a title tell apart by it. Blank on rows from before it was kept.",
+   "description": "The key itself, under the id the gateway counts it by, which outlives a retitle: two keys that shared a title tell apart by it. Blank on rows from before it was kept; a deleted key's id stays.",
    "fieldname": "key_id",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Key Id",
+   "in_standard_filter": 1,
+   "label": "Model Provider Key",
+   "options": "Model Provider Key",
    "read_only": 1
   },
   {
@@ -59,7 +61,7 @@
  "in_create": 1,
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-12 19:00:00.000000",
+ "modified": "2026-11-16 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Provider Key Stats",

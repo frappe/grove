@@ -41,8 +41,8 @@ MODELS = [
 	model_row("kimi/embed", "kimi", model_id="embed", output_modalities=["embeddings"]),
 ]
 PROVIDERS = {
-	# `keys` becomes the Keys table: (row id, secret[, disabled]) rows, a blank secret standing for
-	# a row whose password was never set.
+	# `keys` become the record's keys: (key id, secret[, disabled]), a blank secret standing for
+	# a key whose password was never set.
 	"frappe": {"base_url": None, "keys": []},
 	"anthropic": {
 		"anthropic_base_url": "https://api.anthropic.com",
@@ -108,7 +108,8 @@ def fake_key_row(row_id, secret, disabled=0):
 
 def fake_cached_doc(doctype, name):
 	provider = frappe._dict(PROVIDERS[name], provider_name=name, headers=PROVIDERS[name].get("headers", {}))
-	provider.api_keys = [fake_key_row(*pair) for pair in PROVIDERS[name]["keys"]]
+	keys = [fake_key_row(*pair) for pair in PROVIDERS[name]["keys"]]
+	provider.enabled_keys = [key for key in keys if not key.disabled]
 	return provider
 
 
@@ -205,7 +206,7 @@ class TestAVendorModelIsRoutable(unittest.TestCase):
 			for row in rows:
 				self.assertNotIn("halfway", str(row))
 
-	def test_every_enabled_key_goes_under_its_rows_id(self):
+	def test_every_enabled_key_goes_under_its_id(self):
 		[row] = routes()["deepseek/deepseek-chat"]
 		self.assertEqual(
 			row["credentials"],
