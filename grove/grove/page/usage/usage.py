@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""The Ops page: fleet-wide usage of teams, keys and models for operators, off the helpers the
+"""The Usage page: fleet-wide usage of teams, keys and models for operators, off the helpers the
 control API reads, plus what needs a human (stuck usage, disputed costs), the last syncs, and
 each vendor key's counters. Every read is System Manager's; `peek` alone dials the gateways."""
 

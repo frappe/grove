@@ -1,9 +1,9 @@
-// What every panel of the Ops page shares: the call to its backend, a loading state around it,
+// What every panel of the Usage page shares: the call to its backend, a loading state around it,
 // the number formats, and the classes the cards and list cells agree on.
 import { dayjs, frappeRequest } from "frappe-ui";
 import { ref } from "vue";
 
-const METHODS = "grove.grove.page.ops.ops.";
+const METHODS = "grove.grove.page.usage.usage.";
 
 export const call = (method, params = {}) =>
 	frappeRequest({ url: METHODS + method, method: "POST", params });

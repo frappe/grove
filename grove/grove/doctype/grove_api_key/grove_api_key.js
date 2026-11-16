@@ -8,8 +8,8 @@ frappe.ui.form.on("Grove API Key", {
 
 	refresh(frm) {
 		if (frm.is_new()) return;
-		frm.add_custom_button(__("Ops page"), () =>
-			frappe.set_route("ops", { api_key: frm.doc.name })
+		frm.add_custom_button(__("Usage page"), () =>
+			frappe.set_route("usage", { api_key: frm.doc.name })
 		);
 		if (frm.doc.status !== "active") return;
 
