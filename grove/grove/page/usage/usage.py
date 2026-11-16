@@ -4,6 +4,8 @@
 control API reads, plus what needs a human (stuck usage, disputed costs), the last syncs, and
 each vendor key's counters. Every read is System Manager's; `peek` alone dials the gateways."""
 
+from collections import Counter
+
 import frappe
 from frappe.utils import add_days, cint, flt
 
@@ -25,6 +27,16 @@ DIMENSIONS = {
 	"provider": "substring_index(x.model, '/', 1)",
 	"team": "x.team",
 	"geography": "coalesce(k.geography, '')",
+}
+STATS_TABLES = """`tabProvider Key Stats` s
+	join `tabModel Provider` p on p.name = s.model_provider
+	left join `tabModel Provider Key` mk on mk.name = s.key_id"""
+# The six counts a vendor answer lands in exactly one of; `rejected` repeats three of them.
+OUTCOMES = ("ok", "rate_limited", "unauthorized", "unpaid", "forbidden", "failed")
+STATS_SPLITS = {
+	"outcome": "''",
+	"key": "concat_ws(' · ', p.provider_name, p.geography, coalesce(mk.title, 'Unknown key'))",
+	"provider": "p.provider_name",
 }
 TOP = 10
 # ponytail: the 500 costliest keys of the window; page past that, the filters narrow it today.
@@ -418,29 +430,15 @@ def key_stats(filters: dict | str | None = None) -> dict:
 	A key is titled as it is now; rows no key was matched to sum under a null title per provider.
 	`last_pull` is when a row last landed at all, for a window that holds none."""
 	operator()
-	given = frappe._dict(frappe.parse_json(filters) or {})
-	window = Window(filters)
 	sums = ", ".join(
 		f"sum(cast(json_value(s.stats, '$.{count}') as unsigned)) as {count}" for count in COUNTS
 	)
 	lasts = ", ".join(f"max(json_value(s.stats, '$.{field}')) as {field}" for field in LAST)
-	conditions = ["s.creation >= %(since)s", "s.creation < %(until)s"]
-	# `creation` is site time; the window's UTC days become site-time bounds.
-	params = {
-		"since": site_datetime(f"{window.from_date}T00:00:00Z"),
-		"until": site_datetime(f"{add_days(window.to_date, 1)}T00:00:00Z"),
-	}
-	for field in ("provider_name", "geography"):
-		if value := given.get(field.removesuffix("_name")):
-			conditions.append(f"p.`{field}` = %({field})s")
-			params[field] = value
+	where, params = stats_scope(filters)
 	rows = frappe.db.sql(
 		f"""select s.model_provider, p.display_name as provider, p.provider_name, p.geography,
 		s.key_id, max(mk.title) as key_title, max(mk.disabled) as disabled, {sums}, {lasts}
-		from `tabProvider Key Stats` s
-		join `tabModel Provider` p on p.name = s.model_provider
-		left join `tabModel Provider Key` mk on mk.name = s.key_id
-		where {" and ".join(conditions)}
+		from {STATS_TABLES} where {where}
 		group by s.model_provider, p.display_name, p.provider_name, p.geography, s.key_id
 		order by requests desc""",
 		params,
@@ -451,6 +449,53 @@ def key_stats(filters: dict | str | None = None) -> dict:
 		"rows": [{**row, **{count: cint(row[count]) for count in COUNTS}} for row in rows],
 		"last_pull": str(last_pull) if last_pull else None,
 	}
+
+
+def stats_scope(filters):
+	"""The where clause and params, over STATS_TABLES, of the Provider Key Stats rows pulled in
+	the window; `provider` and `geography` narrow."""
+	given = frappe._dict(frappe.parse_json(filters) or {})
+	window = Window(filters)
+	conditions = ["s.creation >= %(since)s", "s.creation < %(until)s"]
+	# `creation` is site time; the window's UTC days become site-time bounds.
+	params = {
+		"since": site_datetime(f"{window.from_date}T00:00:00Z"),
+		"until": site_datetime(f"{add_days(window.to_date, 1)}T00:00:00Z"),
+	}
+	for field in ("provider_name", "geography"):
+		if value := given.get(field.removesuffix("_name")):
+			conditions.append(f"p.`{field}` = %({field})s")
+			params[field] = value
+	return " and ".join(conditions), params
+
+
+@frappe.whitelist()
+@frappe.read_only()
+def key_stats_trend(filters: dict | str | None = None, split: str = "outcome") -> list[dict]:
+	"""Vendor-key requests per UTC day of the pull and `split` (the outcome, or the key or
+	provider that took them), in day order; the same rows `key_stats` sums."""
+	operator()
+	if split not in STATS_SPLITS:
+		frappe.throw(f"Unknown split {split!r}: one of {', '.join(STATS_SPLITS)}.")
+	where, params = stats_scope(filters)
+	# ponytail: one row per key, store and pull, folded here since SQL cannot tell a site-time
+	# `creation`'s UTC day; a stored UTC day column past a year-long window.
+	rows = frappe.db.sql(
+		f"""select s.creation, s.stats, {STATS_SPLITS[split]} as label from {STATS_TABLES}
+		where {where} order by s.creation""",
+		params,
+		as_dict=True,
+	)
+	requests = Counter()
+	for row in rows:
+		day, stats = utc_timestamp(row.creation)[:10], frappe.parse_json(row.stats) or {}
+		# {the count read: the series it adds to}
+		parts = {name: name for name in OUTCOMES} if split == "outcome" else {"requests": row.label or ""}
+		for count, label in parts.items():
+			requests[day, label] += cint(stats.get(count))
+	return [
+		{"day": day, "label": label, "requests": total} for (day, label), total in requests.items() if total
+	]
 
 
 # ponytail: every team and model in one answer; a search box past a few hundred of either.
