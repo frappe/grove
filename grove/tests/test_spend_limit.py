@@ -147,7 +147,9 @@ class TestWhereTheCheckRuns(SpendLimitCase):
 		first, second = self.key(team, cap=6), self.key(team, cap=4)
 		self.peek.reset_mock()
 		self.peek.return_value = {first: Decimal("3")}
-		keys.update_caps(team, {first: 2, second: 2})
+		with unittest.mock.patch("grove.billing.pricing.committed") as summed:
+			keys.update_caps(team, {first: 2, second: 2})
+		summed.assert_not_called()
 		self.peek.assert_not_called()
 		with unittest.mock.patch.object(grove_api_key, "committed") as per_save:
 			rows = keys.update_caps(team, {first: 3, second: 7})
