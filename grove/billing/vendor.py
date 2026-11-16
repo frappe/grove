@@ -13,7 +13,7 @@ RANGE_DAYS = 90
 def vendor_figures(providers, from_date, to_date):
 	"""{(day, upstream model id): {requests, input_tokens, cached_tokens, output_tokens, billed}} for
 	every UTC day in [from_date, to_date] the vendor saw traffic under these Model Provider records'
-	keys. The vendor bills per account, so the read is once per account: a key's Account, or
+	keys, read with the ones used for Billing. The vendor bills per account, so the read is once per account: a key's Account, or
 	the key itself when it names none. Two keys of one account (a rotation) count once, two
 	accounts in one record both count, and the same key in two geography records counts once. The
 	model id is the vendor's own spelling, what `Model.upstream_model_id` holds."""
@@ -25,11 +25,11 @@ def vendor_figures(providers, from_date, to_date):
 
 	secret_by_account = {}
 	for provider in providers:
-		for row in provider.enabled_keys:
+		for row in provider.billing_keys:
 			secret = row.get_password("api_key")
 			secret_by_account.setdefault(row.account or secret, secret)
 	if not secret_by_account:
-		frappe.throw(f"{vendor} has no enabled key to read its billing with.")
+		frappe.throw(f"{vendor} has no enabled key used for Billing.")
 
 	figures = {}
 	for secret in secret_by_account.values():

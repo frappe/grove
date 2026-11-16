@@ -290,7 +290,7 @@ def upstream_model(model, is_vendor):
 def vendor_endpoints(geography):
 	"""Every third party in `geography` we can actually dial, by provider name: a Model is served by
 	whichever record of its provider sits in the geography. A provider is dialable as a whole — an
-	address without a key is not a route. Every enabled key goes, under its own id: the gateway
+	address without a key is not a route. Every enabled key for API calls goes, under its own id: the gateway
 	picks one per request, swaps it on a per-key refusal, and counts what each answered."""
 	out = {}
 	denied = denied_tools()
@@ -310,7 +310,7 @@ def vendor_endpoints(geography):
 		# any truthiness check while carrying nothing.
 		credentials = [
 			{"id": row.name, "secret": secret}
-			for row in provider.enabled_keys
+			for row in provider.gateway_keys
 			if (secret := row.get_password("api_key", raise_exception=False))
 		]
 		if credentials:

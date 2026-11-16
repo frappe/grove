@@ -208,6 +208,20 @@ class TestUsagePage(IntegrationTestCase):
 		self.assertIsNotNone(answer["last_pull"])
 		self.assertEqual(usage.key_stats({"period": "Last Month", "provider": VENDOR})["rows"], [])
 
+	def test_key_stats_trend_splits_the_day(self):
+		day, filters = str(self.today), {"period": "Today", "provider": VENDOR}
+		by_outcome = usage.key_stats_trend(filters)
+		self.assertEqual(
+			[(row["day"], row["label"], row["requests"]) for row in by_outcome],
+			[(day, "ok", 7), (day, "rate_limited", 1), (day, "unauthorized", 2)],
+		)
+		for split, label in (("key", f"{VENDOR} · {self.vendor.geography} · key"), ("provider", VENDOR)):
+			self.assertEqual(
+				usage.key_stats_trend(filters, split=split), [{"day": day, "label": label, "requests": 10}]
+			)
+		self.assertEqual(usage.key_stats_trend({"period": "Last Month", "provider": VENDOR}), [])
+		self.assertRaises(frappe.ValidationError, usage.key_stats_trend, filters, split="model")
+
 	def test_peek_reads_the_boxes_beside_grove(self):
 		grove = month_spent_by("api_key", [self.key, self.revoked])
 		box = {self.key: grove[self.key], self.revoked: grove.get(self.revoked, Decimal(0)) + Decimal("0.25")}

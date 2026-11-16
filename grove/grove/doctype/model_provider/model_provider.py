@@ -14,6 +14,7 @@ ANTHROPIC_VERSION = "2023-06-01"
 # An RFC 7230 token: what may name a header.
 HEADER_NAME = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
 CREDENTIAL_HEADERS = ("authorization", "x-api-key")
+BILLING_USES = ("Billing", "API Calls and Billing")
 
 
 class ModelProvider(Document):
@@ -114,8 +115,8 @@ class ModelProvider(Document):
 
 	@property
 	def enabled_keys(self):
-		"""The keys a gateway may dial for this record, oldest first. Read live: a key saves on
-		its own, so the cached provider doc would not see it."""
+		"""This record's keys that are not Disabled, oldest first. Read live: a key saves on its
+		own, so the cached provider doc would not see it."""
 		names = frappe.get_all(
 			"Model Provider Key",
 			filters={"model_provider": self.name, "disabled": 0},
@@ -123,6 +124,16 @@ class ModelProvider(Document):
 			pluck="name",
 		)
 		return [frappe.get_doc("Model Provider Key", name) for name in names]
+
+	@property
+	def gateway_keys(self):
+		"""The enabled keys a gateway may dial: every one not held for billing alone."""
+		return [key for key in self.enabled_keys if key.used_for != "Billing"]
+
+	@property
+	def billing_keys(self):
+		"""The enabled keys the vendor's billing API is read with."""
+		return [key for key in self.enabled_keys if key.used_for in BILLING_USES]
 
 	def on_update(self):
 		if self.has_value_changed("is_self_hosted"):
@@ -145,7 +156,7 @@ class ModelProvider(Document):
 		vendor and list the same models, and an Anthropic shim beside an OpenAI front (DeepSeek's)
 		has no list at all."""
 		frappe.only_for("System Manager")
-		enabled = self.enabled_keys
+		enabled = self.gateway_keys
 		secret = enabled[0].get_password("api_key") if enabled else None
 		if not ((self.base_url or self.anthropic_base_url) and secret):
 			frappe.throw(f"{self.provider_name} has no front and key to ask for its models.")

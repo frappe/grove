@@ -84,7 +84,7 @@ def cached_provider(doctype, name):
 	provider = frappe._dict(PROVIDERS[name])
 	key = frappe._dict(name=f"key-{name}")
 	key.get_password = lambda *args, **kwargs: provider.api_key
-	provider.enabled_keys = [key] if provider.api_key else []
+	provider.gateway_keys = [key] if provider.api_key else []
 	return provider
 
 

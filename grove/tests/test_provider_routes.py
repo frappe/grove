@@ -109,7 +109,7 @@ def fake_key_row(row_id, secret, disabled=0):
 def fake_cached_doc(doctype, name):
 	provider = frappe._dict(PROVIDERS[name], provider_name=name, headers=PROVIDERS[name].get("headers", {}))
 	keys = [fake_key_row(*pair) for pair in PROVIDERS[name]["keys"]]
-	provider.enabled_keys = [key for key in keys if not key.disabled]
+	provider.gateway_keys = [key for key in keys if not key.disabled]
 	return provider
 
 
