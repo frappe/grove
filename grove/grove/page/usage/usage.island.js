@@ -1,7 +1,7 @@
-// The island entry for the Ops page. Desk imports this module and calls `mount`.
+// The island entry for the Usage page. Desk imports this module and calls `mount`.
 import { mountVueIsland } from "@framework/ui/island";
 
-import Page from "./ops.vue";
+import Page from "./usage.vue";
 
 // frappe-ui's request layer reads the CSRF token off `window.csrf_token`; desk keeps it on
 // `frappe.csrf_token` alone, so a POST from inside the island would be refused without this.

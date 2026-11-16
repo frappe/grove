@@ -6,7 +6,19 @@ import { Badge, Button } from "frappe-ui";
 import { List, ListCell, ListHeader, ListHeaderCell, ListRow, ListRows } from "frappe-ui/list";
 import { computed, watch } from "vue";
 
-import { CARD, CARD_TITLE, CELL, LINK, MUTED, NUM, count, day, usd, useCall } from "./lib.js";
+import {
+	CARD,
+	CARD_TITLE,
+	CELL,
+	LINK,
+	MUTED,
+	NUM,
+	barClass,
+	count,
+	day,
+	usd,
+	useCall,
+} from "./lib.js";
 
 const props = defineProps({ params: Object, version: Number });
 const emit = defineEmits(["filter"]);
@@ -33,8 +45,6 @@ const rows = computed(() => (data.value || []).map((row) => ({ ...row, id: row.t
 
 const limitPct = (row) =>
 	row.spend_limit ? Math.min(100, (row.month_spent / row.spend_limit) * 100) : null;
-const barClass = (pct) =>
-	pct >= 100 ? "bg-surface-red-5" : pct >= 80 ? "bg-surface-amber-3" : "bg-surface-gray-7";
 const open = (row) => host.navigate?.(["Form", "Grove Team", row.team]);
 </script>
 

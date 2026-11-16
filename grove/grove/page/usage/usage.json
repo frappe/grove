@@ -7,9 +7,9 @@
  "modified": "2026-11-08 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
- "name": "ops",
+ "name": "usage",
  "owner": "Administrator",
- "page_name": "ops",
+ "page_name": "usage",
  "roles": [
   {
    "role": "System Manager"
@@ -19,6 +19,6 @@
  "standard": "Yes",
  "style": null,
  "system_page": 0,
- "title": "Ops",
+ "title": "Usage",
  "type": "Frappe UI"
 }

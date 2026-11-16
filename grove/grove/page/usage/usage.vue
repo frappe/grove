@@ -1,5 +1,5 @@
 <script setup>
-// The Ops page: one filter row every panel below re-reads on, the filters mirrored into the
+// The Usage page: one filter row every panel below re-reads on, the filters mirrored into the
 // URL so a link lands on the same view. Desk draws the head; this island reports its title.
 import { useHost } from "@framework/ui/island";
 import { Button, Select } from "frappe-ui";
@@ -122,7 +122,7 @@ watch(filters, () => {
 });
 
 onMounted(() => {
-	emit("title", "Ops");
+	emit("title", "Usage");
 	emit("actions", [{ label: "Refresh", onClick: refresh }]);
 	options.load({ team: filters.team || null });
 });
