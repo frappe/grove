@@ -415,6 +415,7 @@ def last_sync(sync_type, with_rows=False):
 def key_stats(filters: dict | str | None = None) -> dict:
 	"""Each vendor key's counters summed over the Provider Key Stats rows pulled in the window (a
 	row holds the six hours before its pull), busiest first; `provider` and `geography` narrow.
+	A key is titled as it is now; rows no key was matched to sum under a null title per provider.
 	`last_pull` is when a row last landed at all, for a window that holds none."""
 	operator()
 	given = frappe._dict(frappe.parse_json(filters) or {})
@@ -435,12 +436,12 @@ def key_stats(filters: dict | str | None = None) -> dict:
 			params[field] = value
 	rows = frappe.db.sql(
 		f"""select s.model_provider, p.display_name as provider, p.provider_name, p.geography,
-		s.key_title, s.key_id, max(mk.disabled) as disabled, {sums}, {lasts}
+		s.key_id, max(mk.title) as key_title, max(mk.disabled) as disabled, {sums}, {lasts}
 		from `tabProvider Key Stats` s
 		join `tabModel Provider` p on p.name = s.model_provider
 		left join `tabModel Provider Key` mk on mk.name = s.key_id
 		where {" and ".join(conditions)}
-		group by s.model_provider, p.display_name, p.provider_name, p.geography, s.key_title, s.key_id
+		group by s.model_provider, p.display_name, p.provider_name, p.geography, s.key_id
 		order by requests desc""",
 		params,
 		as_dict=True,

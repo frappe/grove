@@ -22,3 +22,4 @@ grove.patches.v1_0.fill_provider_display_names
 grove.patches.v1_0.repoint_certbot_renewal_confs
 grove.patches.v1_0.swap_key_title_index
 grove.patches.v1_0.move_provider_keys_out
+grove.patches.v1_0.link_provider_key_stats

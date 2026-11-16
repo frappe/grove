@@ -37,11 +37,11 @@ const COLUMNS = [
 	"2.5rem",
 ];
 
-// `disabled` is the key's own, so null says the key is gone (or the row predates its id).
+// `disabled` is the key's own, so null says the row predates key ids and matched no key.
 const rows = computed(() =>
 	(data.value?.rows || []).map((row) => ({
 		...row,
-		id: `${row.model_provider}:${row.key_title}:${row.key_id}`,
+		id: `${row.model_provider}:${row.key_id}`,
 		held: row.disabled !== null,
 	}))
 );
@@ -89,7 +89,9 @@ const tone = (field, value) => {
 						</ListCell>
 						<ListCell class="flex-col !items-start justify-center">
 							<span class="flex max-w-full items-center gap-2">
-								<span :class="`${CELL} font-medium`">{{ item.key_title }}</span>
+								<span :class="`${CELL} font-medium`">{{
+									item.key_title || "Unknown key"
+								}}</span>
 								<Badge v-if="item.disabled" label="Disabled" />
 							</span>
 							<span class="font-mono text-xs text-ink-gray-5">{{

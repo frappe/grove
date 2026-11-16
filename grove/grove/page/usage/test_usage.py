@@ -85,7 +85,6 @@ class TestUsagePage(IntegrationTestCase):
 			{
 				"doctype": "Provider Key Stats",
 				"model_provider": cls.vendor.name,
-				"key_title": "key",
 				"key_id": cls.vendor.enabled_keys[0].name,
 				"stats": json.dumps(
 					{"requests": 10, "ok": 7, "rate_limited": 1, "unauthorized": 2, "unpaid": 0}
@@ -204,7 +203,7 @@ class TestUsagePage(IntegrationTestCase):
 		answer = usage.key_stats({"period": "Today", "provider": VENDOR})
 		[row] = answer["rows"]
 		self.assertEqual((row["requests"], row["unauthorized"], row["key_title"]), (10, 2, "key"))
-		# The page opens the key by its id, and reads a null `disabled` as a key that is gone.
+		# The page opens the key by its id, and reads a null `disabled` as a row no key matched.
 		self.assertEqual((row["key_id"], row["disabled"]), (self.vendor.enabled_keys[0].name, 0))
 		self.assertIsNotNone(answer["last_pull"])
 		self.assertEqual(usage.key_stats({"period": "Last Month", "provider": VENDOR})["rows"], [])

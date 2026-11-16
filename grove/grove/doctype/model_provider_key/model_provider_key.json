@@ -24,7 +24,7 @@
    "set_only_once": 1
   },
   {
-   "description": "Names this key for the operator and in Provider Key Stats, one per provider; the gateway never sees it.",
+   "description": "Names this key for the operator, on the usage page and wherever it is linked, one per provider; the gateway never sees it.",
    "fieldname": "title",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -48,7 +48,7 @@
   },
   {
    "default": "0",
-   "description": "Pushed to no gateway while ticked, so nothing dials it; the key and its stats stay. Disable first, delete once nothing missed it.",
+   "description": "Pushed to no gateway while ticked, so nothing dials it. How a key is retired: it is never deleted, since its stats name it.",
    "fieldname": "disabled",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -63,7 +63,7 @@
    "link_fieldname": "key_id"
   }
  ],
- "modified": "2026-11-16 19:00:00.000000",
+ "modified": "2026-11-16 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model Provider Key",
@@ -72,7 +72,6 @@
  "permissions": [
   {
    "create": 1,
-   "delete": 1,
    "email": 1,
    "print": 1,
    "read": 1,
@@ -83,6 +82,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

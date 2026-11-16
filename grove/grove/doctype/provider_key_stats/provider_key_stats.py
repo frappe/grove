@@ -19,7 +19,6 @@ class ProviderKeyStats(Document):
 
 		gateway_store: DF.Link | None
 		key_id: DF.Link | None
-		key_title: DF.Data | None
 		model_provider: DF.Link | None
 		stats: DF.Code | None
 	# end: auto-generated types
@@ -29,4 +28,4 @@ class ProviderKeyStats(Document):
 
 def on_doctype_update():
 	"""Every read is one key's rows in time order."""
-	frappe.db.add_index("Provider Key Stats", ["key_title", "creation"])
+	frappe.db.add_index("Provider Key Stats", ["key_id", "creation"])
