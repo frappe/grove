@@ -9,7 +9,9 @@
   "title",
   "api_key",
   "account",
-  "disabled"
+  "column_break_janj",
+  "disabled",
+  "used_for"
  ],
  "fields": [
   {
@@ -32,7 +34,18 @@
    "reqd": 1
   },
   {
-   "description": "One credential we hold with this vendor. Pushed to every gateway of the geography under this key's id; a customer's key never leaves us.",
+   "default": "API Calls",
+   "description": "API Calls: pushed to the gateways, which dial it for requests. Billing: held for the vendor's billing API alone (Vendor Reconciliation) and pushed to no gateway, as an admin key that cannot serve a request must be. API Calls and Billing: one secret that does both.",
+   "fieldname": "used_for",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Used For",
+   "options": "API Calls\nBilling\nAPI Calls and Billing",
+   "reqd": 1
+  },
+  {
+   "description": "One credential we hold with this vendor. One used for API calls is pushed to every gateway of the geography under this key's id; a customer's key never leaves us.",
    "fieldname": "api_key",
    "fieldtype": "Password",
    "label": "API Key",
@@ -40,6 +53,7 @@
    "reqd": 1
   },
   {
+   "depends_on": "eval:doc.used_for != 'API Calls'",
    "description": "Which vendor account this key belongs to, so a billing read (Vendor Reconciliation) happens once per account. Blank: the key is an account of its own.",
    "fieldname": "account",
    "fieldtype": "Data",
@@ -48,12 +62,16 @@
   },
   {
    "default": "0",
-   "description": "Pushed to no gateway while ticked, so nothing dials it. How a key is retired: it is never deleted, since its stats name it.",
+   "description": "Used for nothing while ticked: pushed to no gateway, read no billing with. How a key is retired: it is never deleted, since its stats name it.",
    "fieldname": "disabled",
    "fieldtype": "Check",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Disabled"
+  },
+  {
+   "fieldname": "column_break_janj",
+   "fieldtype": "Column Break"
   }
  ],
  "links": [
@@ -63,7 +81,7 @@
    "link_fieldname": "key_id"
   }
  ],
- "modified": "2026-11-16 20:00:00.000000",
+ "modified": "2026-11-16 20:28:46.764482",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model Provider Key",

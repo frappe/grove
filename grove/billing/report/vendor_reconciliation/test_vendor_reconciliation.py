@@ -12,6 +12,7 @@ from frappe.tests import IntegrationTestCase
 
 from grove.billing import vendor
 from grove.billing.report.vendor_reconciliation.vendor_reconciliation import execute
+from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.model_id.model_id import ensure_model_id
 from grove.grove.doctype.model_provider.test_model_provider import add_key, keyed_provider, provider
 from grove.utils import utc_today
@@ -29,7 +30,8 @@ class TestVendorReconciliation(IntegrationTestCase):
 		cls.enterClassContext(patch("grove.pathway.usage.peek_team", return_value={}))
 		cls.yesterday = utc_today() - timedelta(days=1)
 		cls.earlier = cls.yesterday - timedelta(days=1)
-		cls.vendor = keyed_provider("baseten", base_url="https://inference.baseten.co")
+		cls.vendor = provider("baseten", base_url="https://inference.baseten.co").insert()
+		add_key(cls.vendor, used_for="API Calls and Billing")
 		cls.model = frappe.get_doc(
 			{
 				"doctype": "Model",
@@ -222,10 +224,11 @@ class TestABillingReadIsOncePerAccount(IntegrationTestCase):
 
 	def test_each_account_the_keys_name_is_read_once(self):
 		doc = provider("baseten", base_url="https://inference.baseten.co").insert()
-		add_key(doc, "k", "a", account="acct-a")
-		add_key(doc, "k-rotated", "a-rotated", account="acct-a")
-		add_key(doc, "k2", "b", account="acct-b")
-		add_key(doc, "k3", "own")
+		add_key(doc, "k", "a", account="acct-a", used_for="Billing")
+		add_key(doc, "k-rotated", "a-rotated", account="acct-a", used_for="Billing")
+		add_key(doc, "k2", "b", account="acct-b", used_for="API Calls and Billing")
+		add_key(doc, "k3", "own", used_for="Billing")
+		add_key(doc, "k-dialled", "dialled")
 		bearers = []
 
 		def get(url, headers, params, timeout):
@@ -236,3 +239,9 @@ class TestABillingReadIsOncePerAccount(IntegrationTestCase):
 			vendor.vendor_figures([doc], utc_today() - timedelta(days=2), utc_today() - timedelta(days=1))
 		self.assertEqual(sorted(set(bearers)), ["Bearer k", "Bearer k2", "Bearer k3"])
 		self.assertEqual(len(bearers), 6, "the usage and the cost endpoint, once per account")
+
+	def test_a_vendor_with_no_key_used_for_billing_is_refused(self):
+		doc = keyed_provider("baseten", geography=make_test_geography("t-unbilled"))
+		with self.assertRaises(frappe.ValidationError) as caught:
+			vendor.vendor_figures([doc], utc_today() - timedelta(days=2), utc_today() - timedelta(days=1))
+		self.assertIn("no enabled key used for Billing", str(caught.exception))

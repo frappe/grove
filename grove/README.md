@@ -159,7 +159,7 @@ usage carries.
 The provider is not only a prefix. Give a `Model Provider` a Base URL and a key and its published
 models route straight to that vendor — a `kind: "provider"` row naming the provider as the placement,
 with no deployment, no pod and no capacity of ours to divide. The record's enabled `Model Provider Key`
-documents ride the row as `credentials` (`[{id, secret}]`, the id being the key's name, oldest
+documents used for API calls ride the row as `credentials` (`[{id, secret}]`, the id being the key's name, oldest
 first) with the record's **Key Selection** (`round_robin`); `internal_key` stays blank on a provider row and is the
 single-key spelling only an engine row uses. The row also carries `denied_tools`: every `Denied Tool`
 row under the vendor's Provider Name, sorted — a `tools[].type` or a top-level request field the
