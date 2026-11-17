@@ -40,7 +40,12 @@ class GroveTeam(Document):
 
 	def before_insert(self):
 		"""A new team starts in every geography's default Model Group unless the insert names its
-		own groups."""
+		own groups. A Total team is an operator's to make: the control role inserts teams too."""
+		if self.key_cap_window == "Total" and "System Manager" not in frappe.get_roles():
+			frappe.throw(
+				"Only an operator at Grove makes a team whose key caps count in Total.",
+				frappe.PermissionError,
+			)
 		if not self.model_groups:
 			defaults = frappe.get_all("Model Group", filters={"is_default": 1}, pluck="name", order_by="name")
 			for group in defaults:
