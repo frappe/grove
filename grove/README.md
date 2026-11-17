@@ -215,7 +215,8 @@ vendors we sell — openai (`gpt-6-luna`, `gpt-6-sol`), anthropic (`claude-sonne
 (no model of its own yet) — at the vendors' list prices (2026-10-03, Morph's 2026-11-05) — and the
 fleet skeleton: the `aws` account and `ap-south-1`. A provider entry carries its `display_name` and
 its `extra_headers` rows; a model entry its Model ID's `display_name`, which fills a blank one and
-never overwrites what an operator set.
+never overwrites what an operator set. Before a vendor or a model is added, walk
+[`docs/provider_onboarding_checklist.md`](../docs/provider_onboarding_checklist.md).
 
 - `seed.insert_missing()` runs after install and after every migrate. It inserts a geography,
   cloud account (keyless, for the operator to fill), region or model the site has no doc
