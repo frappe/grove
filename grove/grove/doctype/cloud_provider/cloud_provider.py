@@ -34,8 +34,8 @@ class CloudProvider(Document):
 		reload. RunPod only."""
 		if self.provider_type != "runpod":
 			frappe.throw("GPU type listing is only available for RunPod providers.")
-		if not self.get_password("api_key", raise_exception=False):
-			frappe.throw("Set an API key on this Cloud Provider first.")
+
+		self.get_password("api_key", raise_exception=True)
 		frappe.enqueue(
 			"grove.grove.doctype.cloud_provider.cloud_provider.update_gpu_types",
 			queue="short",
@@ -48,14 +48,13 @@ class CloudProvider(Document):
 
 
 def update_gpu_types(cloud_provider):
-	"""Job: pull the provider's GPU types and cache them as JSON. Secure-cloud-available first
-	(Grove uses Secure), then largest VRAM — the order the picker shows."""
 	from grove.cloud_provider.runpod import RunPodClient
 
 	cp = frappe.get_doc("Cloud Provider", cloud_provider)
 	key = cp.get_password("api_key", raise_exception=False)
 	if not key:
 		return
+
 	types = RunPodClient(key).list_gpu_types()
 	types.sort(key=lambda g: (not g.get("secureCloud"), -(g.get("memoryInGb") or 0)))
 	cp.db_set("gpu_types", json.dumps(types), update_modified=False)
