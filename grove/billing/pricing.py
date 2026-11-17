@@ -232,16 +232,21 @@ def month_spent_by(field, names):
 	the team's. A key's sum is its records under the team holding it now: what a handed-over key
 	spent as a trial's stays the trial team's (`GroveAPIKey.transfer`). One grouped query
 	however many names."""
+	return spent_by(field, names, since=utc_today().replace(day=1))
+
+
+def spent_by(field, names, since=None):
+	"""`month_spent_by` from `since`, or over every day the records hold when None."""
 	if field not in MONTH_SPENT_BY:
-		raise ValueError(f"month_spent_by sums by one of {MONTH_SPENT_BY}, not {field!r}")
+		raise ValueError(f"spent_by sums by one of {MONTH_SPENT_BY}, not {field!r}")
 	if not names:
 		return {}
-	first = utc_today().replace(day=1)
 	own = "" if field == "team" else "join `tabGrove API Key` k on k.name = r.api_key and k.team = r.team"
+	from_day = "and r.day >= %(since)s" if since else ""
 	spent = frappe.db.sql(
 		f"""select r.`{field}`, sum(r.cost) from `tabUsage Record` r {own}
-		where r.`{field}` in %(names)s and r.day >= %(first)s group by r.`{field}`""",
-		{"names": names, "first": first},
+		where r.`{field}` in %(names)s {from_day} group by r.`{field}`""",
+		{"names": names, "since": since},
 	)
 	return {name: Decimal(str(total)) for name, total in spent}
 

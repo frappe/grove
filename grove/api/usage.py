@@ -6,7 +6,7 @@ from frappe.utils import flt
 
 from grove.access import team_limits
 from grove.api.control import for_control_clients
-from grove.api.keys import key_rows
+from grove.api.keys import get_api_key, key_rows
 from grove.api.teams import get_team
 from grove.utils import site_datetime, utc_today
 
@@ -94,6 +94,29 @@ def figures(team: str):
 			"usage": usage([team], period="This Month"),
 		},
 	)
+
+
+@frappe.whitelist()
+@for_control_clients
+@frappe.read_only()
+def key_spend(team: str, key: str):
+	"""One key of `team` against its cap: `spent` over the team's cap window, this UTC month or since
+	the mint. Refused for a key the team does not hold."""
+	from grove.billing.pricing import spent_by
+
+	doc = get_api_key(get_team(team), key, ptype="read")
+	# The records are summed in SQL, past the permission system: their read is checked here.
+	frappe.has_permission("Usage Record", "read", throw=True)
+	window = team_limits(doc.team).key_cap_window or "Monthly"
+	since = utc_today().replace(day=1) if window == "Monthly" else None
+	spent = spent_by("api_key", [doc.name], since=since).get(doc.name, 0)
+	return {
+		"key": doc.name,
+		"status": doc.status,
+		"cap": flt(doc.cap, 9),
+		"spent": flt(spent, 9),
+		"key_cap_window": window,
+	}
 
 
 def spend_of(team):

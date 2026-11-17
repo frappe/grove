@@ -176,3 +176,27 @@ class TestTheMessage(unittest.TestCase):
 	def test_amounts_read_as_themselves_to_the_nano(self):
 		amounts = (10, 10.5, Decimal("0.0000465"), 0, 0.000000001)
 		self.assertEqual([usd(x) for x in amounts], ["10", "10.5", "0.0000465", "0", "0.000000001"])
+
+
+class TestOneKeysSpend(SpendLimitCase):
+	def test_a_monthly_key_reads_this_months_spend(self):
+		team = self.team(spend_limit=10)
+		key = self.key(team, cap=3)
+		billed_record(key, team, LAST_MONTH, 9)
+		billed_record(key, team, utc_today(), 1)
+		spend = usage.key_spend(team, key)
+		self.assertEqual((spend["cap"], spend["spent"], spend["key_cap_window"]), (3.0, 1.0, "Monthly"))
+
+	def test_a_total_key_reads_its_spend_since_the_mint(self):
+		team = self.team(spend_limit=10)
+		key = self.key(team, cap=3)
+		frappe.db.set_value("Grove Team", team, "key_cap_window", "Total")
+		billed_record(key, team, LAST_MONTH, 2)
+		billed_record(key, team, utc_today(), 0.5)
+		spend = usage.key_spend(team, key)
+		self.assertEqual((spend["spent"], spend["key_cap_window"]), (2.5, "Total"))
+
+	def test_another_teams_key_is_refused(self):
+		key = self.key(self.team(), cap=1)
+		with self.assertRaises(frappe.DoesNotExistError):
+			usage.key_spend(self.team(), key)
