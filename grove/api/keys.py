@@ -7,7 +7,7 @@ import frappe
 from frappe.utils import cint, flt
 
 from grove.access import team_limits
-from grove.api.control import ALLOWED_ROLES
+from grove.api.control import for_control_clients
 from grove.api.teams import get_team
 
 KEY_FIELDS = [
@@ -32,12 +32,11 @@ def changes_keys(endpoint):
 
 	@functools.wraps(endpoint)
 	def wrapper(team: str, *args, **kwargs):
-		frappe.only_for(ALLOWED_ROLES)
-		if frappe.db.get_value("Grove Team", team, "suspended"):
+		if frappe.get_list("Grove Team", filters={"name": team, "suspended": 1}, limit=1):
 			frappe.throw("This team is suspended: its keys cannot be changed until that is lifted.")
 		return endpoint(team, *args, **kwargs)
 
-	return wrapper
+	return for_control_clients(wrapper)
 
 
 @frappe.whitelist()
@@ -131,12 +130,12 @@ def update_caps(team: str, caps: dict[str, float]):
 
 
 @frappe.whitelist()
+@for_control_clients
 def limits(team: str, key: str):
 	"""The rate limits of one key of `team`, rows of `metric`, `window` and `value`, as the gateway
 	counts them for that key alone: its team's tier's (else the defaults), with its own rows
 	replacing the tier's on the metrics they name. Refused for a key the team does not hold."""
-	frappe.only_for(ALLOWED_ROLES)
-	return limit_rows_of([get_api_key(team, key).name]).get(key, [])
+	return limit_rows_of([get_api_key(team, key, "read").name]).get(key, [])
 
 
 @frappe.whitelist()
@@ -159,16 +158,17 @@ def revoke_keys(team: str, keys: list[str]):
 
 
 @frappe.whitelist()
+@for_control_clients
 def extend_key(team: str, key: str, days: int):
 	"""`days` more on the key's `expires_at`, from now or from its moment, whichever is later; a key
 	without a moment is left as it is, a revoked one refused. → the key as `keys` lists it."""
-	frappe.only_for(ALLOWED_ROLES)
 	doc = get_api_key(team, key)
 	doc.extend_expiry(cint(days))
 	return key_rows([doc.name])[0]
 
 
 @frappe.whitelist()
+@for_control_clients
 def transfer_key(team: str, key: str, to_team: str, title: str | None = None):
 	"""Hand a key of `team` to `to_team` — what Central sends when a trial converts, so the secret
 	the customer's server holds keeps working. The team and the title (`title`, when given) move,
@@ -178,7 +178,6 @@ def transfer_key(team: str, key: str, to_team: str, title: str | None = None):
 	the push. A key `to_team` already holds is answered as it is, so a lost reply is retried
 	safely; one between two teams of one cap window is refused, its spend would follow it. → the
 	key as `keys` lists it."""
-	frappe.only_for(ALLOWED_ROLES)
 	to_team = get_team(to_team)
 	# A retry after a lost reply finds the key moved already: answered as it is, nothing moves.
 	if frappe.db.get_value("Grove API Key", key or "", "team") == to_team:
@@ -189,11 +188,11 @@ def transfer_key(team: str, key: str, to_team: str, title: str | None = None):
 
 
 @frappe.whitelist()
+@for_control_clients
 def secrets(team: str):
 	"""Every live key of `team` with its secret, for the control client to hand the team's servers:
 	`name`, `title`, `geography`, `gateway_url` and `api_key` each, newest first. A revoked key is
 	not in it. An unknown team is refused."""
-	frappe.only_for(ALLOWED_ROLES)
 	from frappe.utils.password import get_decrypted_password
 
 	rows = frappe.get_list(
@@ -214,13 +213,14 @@ def get_gateway_url(geography):
 	return f"https://{host}" if host else None
 
 
-def get_api_key(team, key):
-	"""The Grove API Key doc behind `key` when `team` holds it: another team's key name must not
-	reach it. An unknown one is refused."""
-	name = frappe.db.get_value("Grove API Key", {"name": key or "", "team": team or ""})
-	if not name:
+def get_api_key(team, key, ptype="write"):
+	"""The Grove API Key doc behind `key` when `team` holds it and the caller may `ptype` it:
+	another team's key name must not reach it. An unknown one is refused. Checked at the load, as
+	not every change that follows is a save."""
+	names = frappe.get_list("Grove API Key", filters={"name": key or "", "team": team or ""}, pluck="name")
+	if not names:
 		frappe.throw("no such API key", frappe.DoesNotExistError)
-	return frappe.get_doc("Grove API Key", name)
+	return frappe.get_doc("Grove API Key", names[0], check_permission=ptype)
 
 
 def set_key_policy(doc, cap=None, limits=None):
