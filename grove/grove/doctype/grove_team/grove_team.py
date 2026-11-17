@@ -75,6 +75,15 @@ class GroveTeam(Document):
 		self.suspended_at_grove = self.suspended = suspended
 		self.save()
 
+	def revoke_keys(self):
+		"""Every live key of the team revoked: what closing it takes. → the names revoked."""
+		names = frappe.get_list(
+			"Grove API Key", filters={"team": self.name, "status": "active"}, pluck="name"
+		)
+		for name in names:
+			frappe.get_doc("Grove API Key", name).revoke()
+		return names
+
 	@property
 	def active_keys(self):
 		return frappe.db.count("Grove API Key", {"team": self.name, "status": "active"})

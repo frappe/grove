@@ -60,6 +60,14 @@ def update_team(
 	return {"team": doc.name, **team_limits(doc.name)}
 
 
+@frappe.whitelist()
+def archive_team(team: str):
+	"""The control client is closing `team`: every live key is revoked, suspended or not. What
+	closing takes is Grove's to decide, so the client sends the team alone. → the names revoked."""
+	frappe.only_for(ALLOWED_ROLES)
+	return frappe.get_doc("Grove Team", get_team(team)).revoke_keys()
+
+
 def is_not_newer(observed_at, last_reported_at) -> bool:
 	return bool(observed_at and last_reported_at) and get_datetime(observed_at) <= get_datetime(
 		last_reported_at
