@@ -15,6 +15,7 @@ import frappe
 from frappe.auth import LoginAttemptTracker
 from frappe.tests import IntegrationTestCase
 
+from grove import auth
 from grove.api import catalog, control, keys, teams, usage
 from grove.billing.pricing import forget_figures
 from grove.grove.doctype.geography.test_geography import make_test_geography
@@ -794,6 +795,49 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			for reached in (pull_all, peek_team, count_pull):
 				reached.assert_not_called()
 		self.assertEqual(frappe.db.get_value("Grove API Key", key, "expires_at"), expires_at)
+
+	def test_a_control_client_reaches_its_own_endpoints_and_nothing_else(self):
+		"""The role writes Grove Team and Grove API Key so that its endpoints run under permission
+		checks. Over REST, `frappe.client` or a Desk button that same write would reach the
+		operator's fields (`suspended_at_grove`, `max_keys`): the caller is kept to `grove.api`."""
+		self.assertIn("grove.auth.hook", frappe.get_hooks("auth_hooks"))
+		self.addCleanup(setattr, frappe.local, "request", getattr(frappe.local, "request", None))
+
+		def ask(path, **form):
+			frappe.local.request = frappe._dict(path=path)
+			with unittest.mock.patch.dict(frappe.local.form_dict, form, clear=True):
+				auth.hook()
+
+		own = "/api/method/grove.api.teams.update_team"
+		ask(own)
+		elsewhere = (
+			"/api/resource/Grove Team/probe",
+			"/api/v2/document/Grove Team/probe",
+			"/api/method/frappe.client.set_value",
+			"/api/method/run_doc_method",
+			"/api/method/grove.grove.page.usage.usage.peek",
+			"/app/grove-team",
+		)
+		for path in elsewhere:
+			with self.assertRaises(frappe.PermissionError, msg=path):
+				ask(path)
+		with self.assertRaises(frappe.PermissionError, msg="cmd names what runs, whatever the path"):
+			ask(own, cmd="frappe.client.set_value")
+		# What that prefix reaches is Grove's own: nothing whitelisted is borrowed into the modules.
+		borrowed = [
+			f"{module.__name__}.{name}"
+			for module in (catalog, control, keys, teams, usage)
+			for name, value in vars(module).items()
+			if callable(value)
+			and value in frappe.whitelisted
+			and not value.__module__.startswith("grove.api.")
+		]
+		self.assertEqual(borrowed, [])
+
+		operator = other_user("probe-both@example.com", control.CONTROL_ROLE, "System Manager")
+		for user in ("Guest", "Administrator", operator):
+			frappe.set_user(user)
+			ask(elsewhere[0])
 
 	def test_a_reader_of_a_team_and_its_key_changes_neither(self):
 		"""Read (Desk's Share gives it) is not write, nor read of the usage: checked at the load,
