@@ -432,6 +432,30 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			["revoked", "revoked"],
 		)
 
+	def test_a_suspended_teams_keys_change_only_by_its_archive(self):
+		team = "probe-suspended"
+		teams.provision_team(team)
+		teams.update_team(team, tier=tier("probe-suspended-tier", spend_limit=10))
+		first = keys.provision_key(team, title="first", cap=2)["name"]
+		second = keys.provision_key(team, title="second", cap=2)["name"]
+		teams.update_team(team, suspended=True)
+		for change in (
+			lambda: keys.provision_key(team, title="third"),
+			lambda: keys.update_key(team, first, cap=1),
+			lambda: keys.update_caps(team, {first: 1}),
+			lambda: keys.revoke_key(team, first),
+			lambda: keys.revoke_keys(team, [first]),
+		):
+			with self.assertRaisesRegex(frappe.ValidationError, "team is suspended"):
+				change()
+		self.assertEqual(len(usage.figures(team)["keys"]), 2, "reads stay open")
+
+		# Closing the team is Grove's own doing: it goes through a suspension.
+		self.assertCountEqual(teams.archive_team(team), [first, second])
+		self.assertEqual(frappe.db.count("Grove API Key", {"team": team, "status": "active"}), 0)
+		teams.update_team(team, suspended=False)
+		keys.provision_key(team, title="after")
+
 	def test_a_key_is_extended_by_name_only_for_the_team_holding_it(self):
 		team, other = "probe-extender", "probe-extender-other"
 		for each in (team, other):

@@ -1,6 +1,8 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+import functools
+
 import frappe
 from frappe.utils import cint, flt
 
@@ -23,7 +25,23 @@ KEY_FIELDS = [
 ]
 
 
+def changes_keys(endpoint):
+	"""A control client's change to `team`'s keys — a mint, a cap, a revoke: the role, and refused
+	while the team is suspended, by Central or by a hold of Grove's own. Grove's own paths
+	(`api.teams.archive_team`, expiry, Desk) do not come through here."""
+
+	@functools.wraps(endpoint)
+	def wrapper(team: str, *args, **kwargs):
+		frappe.only_for(ALLOWED_ROLES)
+		if frappe.db.get_value("Grove Team", team, "suspended"):
+			frappe.throw("This team is suspended: its keys cannot be changed until that is lifted.")
+		return endpoint(team, *args, **kwargs)
+
+	return wrapper
+
+
 @frappe.whitelist()
+@changes_keys
 def provision_key(
 	team: str,
 	title: str | None = None,
@@ -40,7 +58,6 @@ def provision_key(
 	mint, or from the key's first usage record with `expiry_from_first_use`. What it may call is
 	the team's, plus `model_groups`: groups of its geography it is in on top of the team's — a
 	product's trial catalog."""
-	frappe.only_for(ALLOWED_ROLES)
 	key = frappe.new_doc("Grove API Key")
 	key.team, key.title, key.status = get_team(team), title, "active"
 	if geography:
@@ -63,6 +80,7 @@ def provision_key(
 
 
 @frappe.whitelist()
+@changes_keys
 def update_key(
 	team: str,
 	key: str,
@@ -73,7 +91,6 @@ def update_key(
 	`[]` puts it back under its team's tier alone), each kept when not given. Its geography never
 	changes — mint another key for that — and what it may call is its team's. → the key as `keys`
 	lists it."""
-	frappe.only_for(ALLOWED_ROLES)
 	doc = get_api_key(team, key)
 	set_key_policy(doc, cap, limits)
 	doc.save()
@@ -81,6 +98,7 @@ def update_key(
 
 
 @frappe.whitelist()
+@changes_keys
 def update_caps(team: str, caps: dict[str, float]):
 	"""Set several monthly caps of `team`'s live keys at once, {key: USD}. Lowered caps are saved
 	first, so moving a cap from one key to another fits the spend limit midway as well; any
@@ -88,7 +106,6 @@ def update_caps(team: str, caps: dict[str, float]):
 	together (`pricing.committed`), with what the boxes count read under the team row: a cap a key already
 	spent frees nothing when moved. Checked once for the batch; no save checks again, and a batch
 	that raises nothing sums nothing and asks no box. → the keys as `keys` lists them."""
-	frappe.only_for(ALLOWED_ROLES)
 	from grove.billing.pricing import committed, usd
 	from grove.pathway.usage import peek_team
 
@@ -123,18 +140,18 @@ def limits(team: str, key: str):
 
 
 @frappe.whitelist()
+@changes_keys
 def revoke_key(team: str, key: str):
 	"""Revoke one of the team's keys, refused when another team holds it."""
-	frappe.only_for(ALLOWED_ROLES)
 	get_api_key(team, key).revoke()
 	return "Revoked. Might take some time to reflect."
 
 
 @frappe.whitelist()
+@changes_keys
 def revoke_keys(team: str, keys: list[str]):
-	"""Revoke several of the team's keys in one call — an archive. Refused whole for a key the
-	team does not hold; nothing moves. → the names revoked."""
-	frappe.only_for(ALLOWED_ROLES)
+	"""Revoke several of the team's keys in one call. Refused whole for a key the team does not
+	hold; nothing moves. → the names revoked."""
 	docs = [get_api_key(team, key) for key in frappe.parse_json(keys)]
 	for doc in docs:
 		doc.revoke()
