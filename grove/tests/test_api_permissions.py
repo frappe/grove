@@ -510,11 +510,11 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			keys.secrets("probe-secrets-nobody")
 
-	def test_a_tier_edit_waits_out_the_figures_cache(self):
+	def test_a_tier_edit_shows_at_once_and_a_default_tier_switch_waits_out_the_cache(self):
 		from grove.billing.pricing import forget_figures
 
-		# Operator edits in Desk: nobody is watching a console for them, so the cache keeps the
-		# old limit until something of the team's moves or FIGURES_SECONDS pass.
+		# A team at its key limit must see a raised one at once, or its console keeps Create off.
+		# Which tier is the default is switched too rarely to walk every team for.
 		frappe.set_user("Administrator")
 		was = frappe.db.get_single_value("Grove Settings", "default_tier")
 		self.addCleanup(frappe.db.set_single_value, "Grove Settings", "default_tier", was)
@@ -525,12 +525,14 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.addCleanup(forget_figures, team)
 		self.assertEqual(usage.figures(team)["spend"]["spend_limit"], 30)
 
-		default.spend_limit = 37
+		default.spend_limit, default.max_keys = 37, 4
 		default.save()
+		spend = usage.figures(team)["spend"]
+		self.assertEqual((spend["spend_limit"], spend["max_keys"]), (37, 4), "the tier's save forgot them")
 		settings = frappe.get_doc("Grove Settings")
 		settings.default_tier = tier("probe-other-default", spend_limit=50)
 		settings.save()
-		self.assertEqual(usage.figures(team)["spend"]["spend_limit"], 30, "kept through both edits")
+		self.assertEqual(usage.figures(team)["spend"]["spend_limit"], 37, "kept through the switch")
 		forget_figures(team)
 		self.assertEqual(usage.figures(team)["spend"]["spend_limit"], 50, "read afresh")
 

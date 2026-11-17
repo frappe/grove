@@ -6,6 +6,7 @@ from frappe.model.document import Document
 from frappe.utils import flt
 
 from grove.access import DEFAULT_LIMITS, default_tier, validate_limit_rows
+from grove.billing.pricing import forget_figures
 
 
 class Tier(Document):
@@ -35,6 +36,14 @@ class Tier(Document):
 		if flt(self.spend_limit) < 0:
 			frappe.throw("A spend limit cannot be negative.")
 		validate_limit_rows(self.limits)
+
+	def on_update(self):
+		"""Every team on the tier shows its new limits at once: the ones naming it, and the ones
+		naming none when it is the default."""
+		tiers = [self.name, ""] if self.name == default_tier() else [self.name]
+		# ponytail: one cache delete per team; a pattern delete if a tier ever holds a lakh of them.
+		for team in frappe.get_all("Grove Team", filters={"tier": ("in", tiers)}, pluck="name"):
+			forget_figures(team)
 
 
 def ensure(name):
