@@ -13,6 +13,8 @@ app_include_js = [
 
 notification_config = "grove.notifications.get_notification_config"
 
+auth_hooks = ["grove.auth.hook"]
+
 fixtures = [
 	{"dt": "Role", "filters": [["name", "in", ["Grove Control"]]]},
 ]

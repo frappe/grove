@@ -45,12 +45,13 @@
    "reqd": 1
   },
   {
-   "description": "One credential we hold with this vendor. One used for API calls is pushed to every gateway of the geography under this key's id; a customer's key never leaves us.",
+   "description": "One credential we hold with this vendor. One used for API calls is pushed to every gateway of the geography under this key's id; a customer's key never leaves us. Set once: a new secret is a new key, and this one is disabled.",
    "fieldname": "api_key",
    "fieldtype": "Password",
    "label": "API Key",
    "length": 1024,
-   "reqd": 1
+   "reqd": 1,
+   "set_only_once": 1
   },
   {
    "description": "Which vendor account this key belongs to: the one its calls are billed to, and a billing read (Vendor Reconciliation) happens once per account. Blank: the key is an account of its own.",
@@ -80,7 +81,7 @@
    "link_fieldname": "key_id"
   }
  ],
- "modified": "2026-11-17 12:00:00.000000",
+ "modified": "2026-11-17 16:30:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model Provider Key",

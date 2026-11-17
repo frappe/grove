@@ -2,7 +2,8 @@
 # See license.txt
 """grove.api runs under permission checks, not around them: the reads go through
 frappe.get_list and the writes through a plain save, so the Grove Control role has to carry
-exactly what those endpoints touch — and nothing more. Site-backed: DocPerms are the
+exactly what those endpoints touch — and nothing more. The role is checked as well
+(`for_control_clients`), and each gate holds with the other off. Site-backed: DocPerms are the
 behaviour under test."""
 
 import base64
@@ -14,6 +15,7 @@ import frappe
 from frappe.auth import LoginAttemptTracker
 from frappe.tests import IntegrationTestCase
 
+from grove import auth
 from grove.api import catalog, control, keys, teams, usage
 from grove.billing.pricing import forget_figures
 from grove.grove.doctype.geography.test_geography import make_test_geography
@@ -52,7 +54,23 @@ def billed_record(key, team, day, cost, drain=""):
 	forget_figures(team)
 
 
+def other_user(email, *roles):
+	"""A user holding `roles` alone, the test's fixture: the probe may not make a User."""
+	frappe.get_doc(
+		{
+			"doctype": "User",
+			"email": email,
+			"first_name": "Probe",
+			"send_welcome_email": 0,
+			"roles": [{"role": role} for role in roles],
+		}
+	).insert(ignore_permissions=True)
+	return email
+
+
 WITHHELD = ("Machine", "Inference Server", "Model Replica", "Monitoring Agent")
+# Reached without a session: a secret of their own is the gate.
+GUEST_GATED = {"create_control_client", "team_webhook"}
 
 
 class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
@@ -432,6 +450,30 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			["revoked", "revoked"],
 		)
 
+	def test_a_suspended_teams_keys_change_only_by_its_archive(self):
+		team = "probe-suspended"
+		teams.provision_team(team)
+		teams.update_team(team, tier=tier("probe-suspended-tier", spend_limit=10))
+		first = keys.provision_key(team, title="first", cap=2)["name"]
+		second = keys.provision_key(team, title="second", cap=2)["name"]
+		teams.update_team(team, suspended=True)
+		for change in (
+			lambda: keys.provision_key(team, title="third"),
+			lambda: keys.update_key(team, first, cap=1),
+			lambda: keys.update_caps(team, {first: 1}),
+			lambda: keys.revoke_key(team, first),
+			lambda: keys.revoke_keys(team, [first]),
+		):
+			with self.assertRaisesRegex(frappe.ValidationError, "team is suspended"):
+				change()
+		self.assertEqual(len(usage.figures(team)["keys"]), 2, "reads stay open")
+
+		# Closing the team is Grove's own doing: it goes through a suspension.
+		self.assertCountEqual(teams.archive_team(team), [first, second])
+		self.assertEqual(frappe.db.count("Grove API Key", {"team": team, "status": "active"}), 0)
+		teams.update_team(team, suspended=False)
+		keys.provision_key(team, title="after")
+
 	def test_a_key_is_extended_by_name_only_for_the_team_holding_it(self):
 		team, other = "probe-extender", "probe-extender-other"
 		for each in (team, other):
@@ -510,11 +552,11 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			keys.secrets("probe-secrets-nobody")
 
-	def test_a_tier_edit_waits_out_the_figures_cache(self):
+	def test_a_tier_edit_shows_at_once_and_a_default_tier_switch_waits_out_the_cache(self):
 		from grove.billing.pricing import forget_figures
 
-		# Operator edits in Desk: nobody is watching a console for them, so the cache keeps the
-		# old limit until something of the team's moves or FIGURES_SECONDS pass.
+		# A team at its key limit must see a raised one at once, or its console keeps Create off.
+		# Which tier is the default is switched too rarely to walk every team for.
 		frappe.set_user("Administrator")
 		was = frappe.db.get_single_value("Grove Settings", "default_tier")
 		self.addCleanup(frappe.db.set_single_value, "Grove Settings", "default_tier", was)
@@ -525,12 +567,14 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.addCleanup(forget_figures, team)
 		self.assertEqual(usage.figures(team)["spend"]["spend_limit"], 30)
 
-		default.spend_limit = 37
+		default.spend_limit, default.max_keys = 37, 4
 		default.save()
+		spend = usage.figures(team)["spend"]
+		self.assertEqual((spend["spend_limit"], spend["max_keys"]), (37, 4), "the tier's save forgot them")
 		settings = frappe.get_doc("Grove Settings")
 		settings.default_tier = tier("probe-other-default", spend_limit=50)
 		settings.save()
-		self.assertEqual(usage.figures(team)["spend"]["spend_limit"], 30, "kept through both edits")
+		self.assertEqual(usage.figures(team)["spend"]["spend_limit"], 37, "kept through the switch")
 		forget_figures(team)
 		self.assertEqual(usage.figures(team)["spend"]["spend_limit"], 50, "read afresh")
 
@@ -679,3 +723,147 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		tier("probe-ren-c")
 		with self.assertRaisesRegex(frappe.ValidationError, "already exists"):
 			teams.rename_tier("probe-ren-b", "probe-ren-c")
+
+	def team_with_a_key(self, team):
+		"""A team holding all an endpoint could hand out or move: a key that expires, a report on
+		record, a tier label, its figures remembered. → (team, key)"""
+		for each in (team, f"{team}-to"):
+			teams.provision_team(each)
+		tier(f"{team}-tier")
+		key = keys.provision_key(team, title="ci", expiry="7 Days")["name"]
+		teams.update_team(team, observed_at="2026-01-01 00:00:00")
+		self.addCleanup(frappe.cache.delete_value, f"figures:{team}")
+		usage.figures(team)
+		return team, key
+
+	def control_calls(self, team, key):
+		"""Every endpoint of the control clients, asked as one of them would."""
+		return {
+			"geographies": catalog.geographies,
+			"available_models": lambda: catalog.available_models(team),
+			"create_control_client_key": control.create_control_client_key,
+			"provision_key": lambda: keys.provision_key(team, title="more"),
+			"update_key": lambda: keys.update_key(team, key, cap=2),
+			"update_caps": lambda: keys.update_caps(team, {key: 2}),
+			"limits": lambda: keys.limits(team, key),
+			"revoke_key": lambda: keys.revoke_key(team, key),
+			"revoke_keys": lambda: keys.revoke_keys(team, [key]),
+			"extend_key": lambda: keys.extend_key(team, key, 3),
+			"transfer_key": lambda: keys.transfer_key(team, key, f"{team}-to"),
+			"secrets": lambda: keys.secrets(team),
+			"provision_team": lambda: teams.provision_team(team),
+			# Older than the report on record: answered without a save.
+			"update_team": lambda: teams.update_team(team, suspended=True, observed_at="2020-01-01 00:00:00"),
+			"archive_team": lambda: teams.archive_team(team),
+			"rename_tier": lambda: teams.rename_tier(f"{team}-tier", f"{team}-renamed"),
+			"usage": lambda: usage.usage([team]),
+			"figures": lambda: usage.figures(team),
+			"pull_usage": lambda: usage.pull_usage(team),
+		}
+
+	def test_an_operator_without_the_role_is_refused_by_every_endpoint(self):
+		"""The role alone: a System Manager holds every doc permission these touch."""
+		calls = self.control_calls(*self.team_with_a_key("probe-role-gate"))
+		listed = {fn.__name__ for fn in frappe.whitelisted if fn.__module__.startswith("grove.api.")}
+		self.assertEqual(set(calls) | GUEST_GATED, listed, "an endpoint is not asked here")
+		frappe.set_user(other_user("probe-operator@example.com", "System Manager"))
+		for name, call in calls.items():
+			with self.assertRaises(frappe.PermissionError, msg=name):
+				call()
+
+	def test_a_caller_without_the_doc_permissions_is_refused_before_anything_moves(self):
+		"""The doc permissions alone, the role check switched off: what a role handed out too
+		widely would meet. Refused before a remembered answer, a store or an unsaved write."""
+		team, key = self.team_with_a_key("probe-doc-gate")
+		# Suspended, which is not said to a caller who cannot read the team; remembered again after.
+		teams.update_team(team, suspended=True)
+		usage.figures(team)
+		calls = self.control_calls(team, key)
+		# It touches the caller's own User alone, which no doc permission covers: the role is its gate.
+		del calls["create_control_client_key"]
+		expires_at = frappe.db.get_value("Grove API Key", key, "expires_at")
+		frappe.set_user(other_user("probe-no-role@example.com"))
+		with (
+			unittest.mock.patch("frappe.only_for"),
+			unittest.mock.patch("grove.pathway.usage.pull_all") as pull_all,
+			unittest.mock.patch("grove.pathway.usage.peek_team") as peek_team,
+			unittest.mock.patch("grove.api.usage._count_pull") as count_pull,
+		):
+			for name, call in calls.items():
+				with self.assertRaises(frappe.PermissionError, msg=name):
+					call()
+			for reached in (pull_all, peek_team, count_pull):
+				reached.assert_not_called()
+		self.assertEqual(frappe.db.get_value("Grove API Key", key, "expires_at"), expires_at)
+
+	def test_a_control_client_reaches_its_own_endpoints_and_nothing_else(self):
+		"""The role writes Grove Team and Grove API Key so that its endpoints run under permission
+		checks. Over REST, `frappe.client` or a Desk button that same write would reach the
+		operator's fields (`suspended_at_grove`, `max_keys`): the caller is kept to `grove.api`."""
+		self.assertIn("grove.auth.hook", frappe.get_hooks("auth_hooks"))
+		self.addCleanup(setattr, frappe.local, "request", getattr(frappe.local, "request", None))
+
+		def ask(path, **form):
+			frappe.local.request = frappe._dict(path=path)
+			with unittest.mock.patch.dict(frappe.local.form_dict, form, clear=True):
+				auth.hook()
+
+		own = "/api/method/grove.api.teams.update_team"
+		ask(own)
+		elsewhere = (
+			"/api/resource/Grove Team/probe",
+			"/api/v2/document/Grove Team/probe",
+			"/api/method/frappe.client.set_value",
+			"/api/method/run_doc_method",
+			"/api/method/grove.grove.page.usage.usage.peek",
+			"/app/grove-team",
+		)
+		for path in elsewhere:
+			with self.assertRaises(frappe.PermissionError, msg=path):
+				ask(path)
+		with self.assertRaises(frappe.PermissionError, msg="cmd names what runs, whatever the path"):
+			ask(own, cmd="frappe.client.set_value")
+		# What that prefix reaches is Grove's own: nothing whitelisted is borrowed into the modules.
+		borrowed = [
+			f"{module.__name__}.{name}"
+			for module in (catalog, control, keys, teams, usage)
+			for name, value in vars(module).items()
+			if callable(value)
+			and value in frappe.whitelisted
+			and not value.__module__.startswith("grove.api.")
+		]
+		self.assertEqual(borrowed, [])
+
+		operator = other_user("probe-both@example.com", control.CONTROL_ROLE, "System Manager")
+		for user in ("Guest", "Administrator", operator):
+			frappe.set_user(user)
+			ask(elsewhere[0])
+
+	def test_a_reader_of_a_team_and_its_key_changes_neither(self):
+		"""Read (Desk's Share gives it) is not write, nor read of the usage: checked at the load,
+		since an extension is no save, a raised cap asks the stores first, an older report is
+		answered unsaved and the figures are remembered."""
+		team, key = self.team_with_a_key("probe-reader")
+		reader = other_user("probe-reader@example.com")
+		for doctype, name in (("Grove Team", team), ("Grove API Key", key)):
+			frappe.share.add_docshare(doctype, name, reader, read=1, flags={"ignore_share_permission": True})
+		expires_at = frappe.db.get_value("Grove API Key", key, "expires_at")
+		refused = (
+			lambda: keys.extend_key(team, key, 3),
+			lambda: keys.update_caps(team, {key: 2}),
+			lambda: keys.revoke_key(team, key),
+			lambda: teams.update_team(team, suspended=True, observed_at="2020-01-01 00:00:00"),
+			lambda: usage.figures(team),
+			lambda: usage.usage([team]),
+		)
+		frappe.set_user(reader)
+		with (
+			unittest.mock.patch("frappe.only_for"),
+			unittest.mock.patch("grove.pathway.usage.peek_team") as peek_team,
+		):
+			self.assertTrue(keys.limits(team, key), "read is enough to read")
+			for call in refused:
+				with self.assertRaises(frappe.PermissionError):
+					call()
+			peek_team.assert_not_called()
+		self.assertEqual(frappe.db.get_value("Grove API Key", key, "expires_at"), expires_at)

@@ -5,7 +5,7 @@ import frappe
 from frappe.utils import flt
 
 from grove.access import team_limits
-from grove.api.control import ALLOWED_ROLES
+from grove.api.control import for_control_clients
 from grove.api.keys import key_rows
 from grove.api.teams import get_team
 from grove.utils import site_datetime, utc_today
@@ -15,6 +15,7 @@ PULLS_PER_HOUR = 5
 
 
 @frappe.whitelist()
+@for_control_clients
 @frappe.read_only()
 def usage(
 	teams: list[str] | str,
@@ -26,10 +27,11 @@ def usage(
 	pulled_after: str | None = None,
 	pulled_until: str | None = None,
 ):
-	frappe.only_for(ALLOWED_ROLES)
 	from grove.billing.doctype.usage_record.usage_record import money_rows
 	from grove.pathway.routes import utc_timestamp
 
+	# The records are summed in SQL, past the permission system: their read is checked here.
+	frappe.has_permission("Usage Record", "read", throw=True)
 	if isinstance(teams, str):
 		teams = [teams]
 	window = read_window(from_date, to_date, period, month, pulled_after, pulled_until)
@@ -72,11 +74,14 @@ def usage(
 
 
 @frappe.whitelist()
+@for_control_clients
 def figures(team: str):
-	frappe.only_for(ALLOWED_ROLES)
 	from grove.billing.pricing import remembered_figures
 
 	team = get_team(team)
+	# A remembered answer skips the reads that check these.
+	for doctype in ("Grove API Key", "Usage Record"):
+		frappe.has_permission(doctype, "read", throw=True)
 	return remembered_figures(
 		team,
 		lambda: {
@@ -109,8 +114,8 @@ def spend_of(team):
 
 
 @frappe.whitelist()
+@for_control_clients
 def pull_usage(team: str):
-	frappe.only_for(ALLOWED_ROLES)
 	from grove.pathway.usage import pull_all
 
 	# TODO: this needs to trigger it but not sync it in the web thread

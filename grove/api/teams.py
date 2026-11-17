@@ -13,14 +13,14 @@ from frappe.utils import get_datetime
 from frappe.utils.password import get_decrypted_password
 
 from grove.access import team_limits
-from grove.api.control import ALLOWED_ROLES, CONTROL_ROLE
+from grove.api.control import CONTROL_ROLE, for_control_clients
 
 CONTROL_KEY_HEADER = "X-Grove-Control-Key"
 
 
 @frappe.whitelist()
+@for_control_clients
 def provision_team(team: str):
-	frappe.only_for(ALLOWED_ROLES)
 	if not team:
 		frappe.throw("A team needs an id.")
 	if frappe.db.exists("Grove Team", team):
@@ -32,6 +32,7 @@ def provision_team(team: str):
 
 
 @frappe.whitelist()
+@for_control_clients
 def update_team(
 	team: str,
 	suspended: bool | None = None,
@@ -39,10 +40,10 @@ def update_team(
 	observed_at: str | None = None,
 	log_payloads: bool | None = None,
 ):
-	frappe.only_for(ALLOWED_ROLES)
 	from grove.grove.doctype.tier.tier import ensure
 
-	doc = frappe.get_doc("Grove Team", get_team(team))
+	# Checked at the load: an older report is answered below without a save.
+	doc = frappe.get_doc("Grove Team", get_team(team), check_permission="write")
 	if is_not_newer(observed_at, doc.last_reported_at):
 		return {"team": doc.name, "ignored": "not newer", **team_limits(doc.name)}
 	if tier:
@@ -58,6 +59,14 @@ def update_team(
 			doc.set(field, value)
 	doc.save()
 	return {"team": doc.name, **team_limits(doc.name)}
+
+
+@frappe.whitelist()
+@for_control_clients
+def archive_team(team: str):
+	"""The control client is closing `team`: every live key is revoked, suspended or not. What
+	closing takes is Grove's to decide, so the client sends the team alone. → the names revoked."""
+	return frappe.get_doc("Grove Team", get_team(team)).revoke_keys()
 
 
 def is_not_newer(observed_at, last_reported_at) -> bool:
@@ -108,17 +117,21 @@ def is_signed_with(secret: str) -> bool:
 
 
 @frappe.whitelist()
+@for_control_clients
 def rename_tier(old: str, new: str):
-	frappe.only_for(ALLOWED_ROLES)
+	# A rename needs write on Tier, which Grove Control must not hold over REST. What it does hold
+	# is create, as a new label is a new tier to it: that is checked, the rename's own check is not.
+	frappe.has_permission("Tier", "create", throw=True)
 	if old == new or not frappe.db.exists("Tier", old):
 		return
 	if frappe.db.exists("Tier", new):
 		frappe.throw(f"Tier {new!r} already exists at Grove; rename or delete it first.")
-	# A rename needs write on Tier, which Grove Control must not hold over REST; only_for gates it.
 	rename_doc("Tier", old, new, ignore_permissions=True, show_alert=False)
 
 
 def get_team(team):
-	if not team or not frappe.db.exists("Grove Team", team):
+	"""`team`, when Grove knows it and the caller may read it. A team out of the caller's reach is
+	no team to it."""
+	if not team or not frappe.get_list("Grove Team", filters={"name": team}, limit=1):
 		frappe.throw(f"No Grove Team {team!r}.")
 	return team

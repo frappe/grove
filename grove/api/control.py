@@ -1,12 +1,25 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+import functools
 import hmac
 
 import frappe
 
 CONTROL_ROLE = "Grove Control"
-ALLOWED_ROLES = [CONTROL_ROLE]
+
+
+def for_control_clients(endpoint):
+	"""An endpoint of the control clients (Central, Press) alone: refused before it runs for a
+	caller without the role. What it reads and writes is checked again by the doc permissions of
+	that role, so neither gate stands in for the other."""
+
+	@functools.wraps(endpoint)
+	def wrapper(*args, **kwargs):
+		frappe.only_for(CONTROL_ROLE)
+		return endpoint(*args, **kwargs)
+
+	return wrapper
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -31,9 +44,8 @@ def create_control_client(email: str):
 
 
 @frappe.whitelist()
+@for_control_clients
 def create_control_client_key():
-	frappe.only_for(ALLOWED_ROLES)
-
 	control_user = frappe.get_doc("User", frappe.session.user)
 	api_secret = frappe.generate_hash(length=15)
 	control_user.api_key = control_user.api_key or frappe.generate_hash(length=15)

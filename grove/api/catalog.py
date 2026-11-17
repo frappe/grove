@@ -3,12 +3,12 @@
 
 import frappe
 
-from grove.api.control import ALLOWED_ROLES
+from grove.api.control import for_control_clients
 
 
 @frappe.whitelist()
+@for_control_clients
 def geographies():
-	frappe.only_for(ALLOWED_ROLES)
 	rows = frappe.get_list(
 		"Geography", fields=["name", "label", "endpoint", "is_default"], order_by="name asc"
 	)
@@ -24,15 +24,19 @@ def geographies():
 
 
 @frappe.whitelist()
+@for_control_clients
 def available_models(team: str, geography: str | None = None):
 	"""The published models a key of `team` in `geography` (the default one when none) may call:
 	the team's own reach, never another team's, nor the default group's unless the team is in it,
-	nor a key's own groups (a trial's)."""
-	frappe.only_for(ALLOWED_ROLES)
+	nor a key's own groups (a trial's). A team the caller cannot read has none."""
 	from grove.access import get_reachable_models
 	from grove.grove.doctype.model.model import get_modalities
 	from grove.pathway.routes import get_dialects, models_in
 
+	# The readers below are the projection's own and check nothing: the caller's read is checked here.
+	frappe.has_permission("Model", "read", throw=True)
+	if not frappe.get_list("Grove Team", filters={"name": team}, limit=1):
+		return []
 	geography = geography or frappe.db.get_value("Geography", {"is_default": 1})
 	reachable = set(get_reachable_models(team, geography))
 	if not reachable:
