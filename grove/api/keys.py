@@ -86,8 +86,8 @@ def update_caps(team: str, caps: dict[str, float]):
 	first, so moving a cap from one key to another fits the spend limit midway as well; any
 	refusal leaves every cap as it was. What the limit holds is this month's spend and the caps
 	together (`pricing.committed`), with what the boxes count read under the team row: a cap a key already
-	spent frees nothing when moved. Checked once for the batch; no save checks again. → the keys
-	as `keys` lists them."""
+	spent frees nothing when moved. Checked once for the batch; no save checks again, and a batch
+	that raises nothing sums nothing and asks no box. → the keys as `keys` lists them."""
 	frappe.only_for(ALLOWED_ROLES)
 	from grove.billing.pricing import committed, usd
 	from grove.pathway.usage import peek_team
@@ -99,13 +99,13 @@ def update_caps(team: str, caps: dict[str, float]):
 	raised = any(flt(caps[doc.name]) > flt(doc.cap) for doc in docs)
 	team_doc = team_limits(team, for_update=True)
 	# A Total team has no spend limit: its caps are for life, the month binds nothing.
-	raised = raised and team_doc.key_cap_window != "Total"
-	box_spent = peek_team(team) if raised else {}
-	total = committed(team, {doc.name: flt(caps[doc.name]) for doc in docs}, box_spent=box_spent)
-	if raised and total > flt(team_doc.spend_limit, 9):
-		frappe.throw(
-			f"This month's spend and caps would add up to {usd(total)} of a spend limit of {usd(team_doc.spend_limit)}."
-		)
+	if raised and team_doc.key_cap_window != "Total":
+		proposed = {doc.name: flt(caps[doc.name]) for doc in docs}
+		total = committed(team, proposed, box_spent=peek_team(team))
+		if total > flt(team_doc.spend_limit, 9):
+			frappe.throw(
+				f"This month's spend and caps would add up to {usd(total)} of a spend limit of {usd(team_doc.spend_limit)}."
+			)
 	for doc in sorted(docs, key=lambda doc: flt(caps[doc.name]) - flt(doc.cap)):
 		doc.cap = flt(caps[doc.name])
 		doc.flags.cap_checked = True

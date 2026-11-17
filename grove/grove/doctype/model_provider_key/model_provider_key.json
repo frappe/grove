@@ -53,8 +53,7 @@
    "reqd": 1
   },
   {
-   "depends_on": "eval:doc.used_for != 'API Calls'",
-   "description": "Which vendor account this key belongs to, so a billing read (Vendor Reconciliation) happens once per account. Blank: the key is an account of its own.",
+   "description": "Which vendor account this key belongs to: the one its calls are billed to, and a billing read (Vendor Reconciliation) happens once per account. Blank: the key is an account of its own.",
    "fieldname": "account",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -81,7 +80,7 @@
    "link_fieldname": "key_id"
   }
  ],
- "modified": "2026-11-16 20:28:46.764482",
+ "modified": "2026-11-17 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model Provider Key",
