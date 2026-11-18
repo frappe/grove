@@ -16,7 +16,6 @@ PULLS_PER_HOUR = 5
 
 @frappe.whitelist()
 @for_control_clients
-@frappe.read_only()
 def usage(
 	teams: list[str] | str,
 	from_date: str | None = None,

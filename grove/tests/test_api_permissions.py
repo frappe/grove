@@ -208,17 +208,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			},
 		)
 
-	def test_usage_is_read_off_the_replica_when_the_site_has_one(self):
-		with (
-			unittest.mock.patch.dict(frappe.local.conf, {"read_from_replica": 1}),
-			unittest.mock.patch("frappe.connect_replica", return_value=False) as replica,
-		):
-			usage.usage(["nobody"])
-		replica.assert_called_once()
-		with unittest.mock.patch("frappe.connect_replica") as replica:
-			usage.usage(["nobody"])
-		replica.assert_not_called()
-
 	def test_a_keys_rate_limits_are_readable(self):
 		team = "probe-limits"
 		teams.provision_team(team)

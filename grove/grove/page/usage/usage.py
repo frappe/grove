@@ -126,7 +126,6 @@ def operator():
 
 
 @frappe.whitelist()
-@frappe.read_only()
 def overview(filters: dict | str | None = None) -> dict:
 	"""The window's totals beside the previous window's."""
 	operator()
@@ -166,7 +165,6 @@ def usage_of(row):
 
 
 @frappe.whitelist()
-@frappe.read_only()
 def trend(filters: dict | str | None = None, dimension: str = "model") -> list[dict]:
 	"""Usage per UTC day and `dimension` (model, provider — the model key's prefix —, team, or
 	the key's geography), in day order."""
@@ -185,7 +183,6 @@ def trend(filters: dict | str | None = None, dimension: str = "model") -> list[d
 
 
 @frappe.whitelist()
-@frappe.read_only()
 def leaders(filters: dict | str | None = None) -> dict:
 	"""The costliest teams, keys and models of the window, TOP of each."""
 	operator()
@@ -236,7 +233,6 @@ def key_titles(names):
 
 
 @frappe.whitelist()
-@frappe.read_only()
 def teams(filters: dict | str | None = None) -> list[dict]:
 	"""One row per team with usage in the window (the filtered team always): its tier's limits,
 	live keys, this month's spend and what its caps commit, the last day it was served."""
@@ -294,7 +290,6 @@ def last_used(field, names):
 
 
 @frappe.whitelist()
-@frappe.read_only()
 def keys(filters: dict | str | None = None) -> list[dict]:
 	"""The keys of the window as `api.keys.key_rows` lists them, plus their team, model groups,
 	the window's usage, the last day served and how much of the cap the month took. Every key
@@ -353,7 +348,6 @@ def model_groups_of(names):
 
 
 @frappe.whitelist()
-@frappe.read_only()
 def gateways() -> dict:
 	"""Every gateway with its row of the last push and of the last usage pull, and the pause flags."""
 	operator()
@@ -423,7 +417,6 @@ def last_sync(sync_type, with_rows=False):
 
 
 @frappe.whitelist()
-@frappe.read_only()
 def key_stats(filters: dict | str | None = None) -> dict:
 	"""Each vendor key's counters summed over the Provider Key Stats rows pulled in the window (a
 	row holds the six hours before its pull), busiest first; `provider` and `geography` narrow.
@@ -470,7 +463,6 @@ def stats_scope(filters):
 
 
 @frappe.whitelist()
-@frappe.read_only()
 def key_stats_trend(filters: dict | str | None = None, split: str = "outcome") -> list[dict]:
 	"""Vendor-key requests per UTC day of the pull and `split` (the outcome, or the key or
 	provider that took them), in day order; the same rows `key_stats` sums."""
@@ -503,7 +495,6 @@ OPTION_LIMIT = 500
 
 
 @frappe.whitelist()
-@frappe.read_only()
 def filter_options(team: str | None = None) -> dict:
 	"""What the filter row offers: the teams, geographies, models and vendor names, and the keys
 	of `team` once one is picked (a key filter without a team is every key, too many to list)."""
