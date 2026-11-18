@@ -49,11 +49,10 @@ class TestKeyStatsPull(IntegrationTestCase):
 		outcome, rows = self.settle(
 			{
 				self.key: {
-					"requests": "4",
+					"requests": "3",
 					"ok": "2",
 					"unpaid": "1",
 					"rejected": "1",
-					"cancelled": "1",
 					"last_used": "1700000000",
 				},
 				"nobody": {"requests": "9"},
@@ -65,9 +64,8 @@ class TestKeyStatsPull(IntegrationTestCase):
 		[row] = self.rows()
 		self.assertEqual(
 			(row.gateway_store, row.stats["requests"], row.stats["unpaid"], row.stats["rejected"]),
-			("store-a", 4, 1, 1),
+			("store-a", 3, 1, 1),
 		)
-		self.assertEqual((row.stats["cancelled"], row.stats["failed"]), (1, 0))
 		self.assertEqual((row.key_id, row.model_provider), (self.key, self.vendor.name))
 		self.assertEqual(row.stats["forbidden"], 0)
 		self.assertRegex(row.stats["last_used"], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")

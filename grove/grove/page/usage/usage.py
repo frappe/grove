@@ -31,8 +31,8 @@ DIMENSIONS = {
 STATS_TABLES = """`tabProvider Key Stats` s
 	join `tabModel Provider` p on p.name = s.model_provider
 	left join `tabModel Provider Key` mk on mk.name = s.key_id"""
-# The seven counts an attempt lands in exactly one of; `rejected` repeats three of them.
-OUTCOMES = ("ok", "rate_limited", "unauthorized", "unpaid", "forbidden", "failed", "cancelled")
+# The six counts a vendor answer lands in exactly one of; `rejected` repeats three of them.
+OUTCOMES = ("ok", "rate_limited", "unauthorized", "unpaid", "forbidden", "failed")
 STATS_SPLITS = {
 	"outcome": "''",
 	"key": "concat_ws(' · ', p.provider_name, p.geography, coalesce(mk.title, 'Unknown key'))",

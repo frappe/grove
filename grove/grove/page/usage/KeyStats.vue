@@ -59,7 +59,6 @@ const COUNTS = [
 	"forbidden",
 	"rejected",
 	"failed",
-	"cancelled",
 ];
 const BAD = new Set(["unauthorized", "unpaid", "forbidden"]);
 const COLUMNS = [
@@ -122,7 +121,7 @@ const tone = (field, value) => {
 					x="day"
 					y="requests"
 					split-by="label"
-					:max-series="7"
+					:max-series="6"
 					stacked
 					palette="categorical"
 					:y-axis="{ min: 0, format: compact }"
@@ -130,7 +129,7 @@ const tone = (field, value) => {
 				/>
 			</div>
 			<div class="overflow-x-auto">
-				<List :columns="COLUMNS" :row-height="44" class="min-w-[82rem]">
+				<List :columns="COLUMNS" :row-height="44" class="min-w-[76rem]">
 					<ListHeader>
 						<ListHeaderCell>Provider</ListHeaderCell>
 						<ListHeaderCell>Key</ListHeaderCell>
