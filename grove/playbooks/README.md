@@ -151,7 +151,8 @@ ClickHouse, at the two routes its Region's Monitoring tab names: `host_metrics` 
 `/var/log/pathway/*.log` (`payload.log` included — the box's 7-day rotation is not the retention
 story any more, datum's is; its lines run past Vector's 100 KiB default, so the file source reads up to 8 MiB a line, under datum's 12 MiB body) and `/var/log/redis/*.log` (Vector sits in `adm` for them) as datum log lines (`Logs Endpoint`: `ts`,
 `product: grove`, `service` = log directory, `source` = file name; pathway's slog JSON is parsed, so
-`level` and `message` are its `level` and `msg` and every other key is an attribute, groups flattened with `_`,
+`level` is its `level` under datum's name (`vector_datum_levels`: `WARN` is `warning`; datum answers 422 to a batch
+holding a level it does not name and Vector drops that batch whole, so any other keeps the file's own), `message` is its `msg` and every other key is an attribute, groups flattened with `_`,
 prompts and outputs whole, beside `host`, `server`, `machine`, `region`; a line that is not JSON keeps datum's
 8 KiB message cap and ships whole as attribute `line`; a line a `vector_unshipped_lines` rule matches, by file, key and
 values, stays on the box). Each box type names its own log files and rules in `vector_variables`: a pathway
