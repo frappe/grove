@@ -40,7 +40,7 @@
    "in_standard_filter": 1
   },
   {
-   "description": "What the key answered on the store since the pull before this one: requests, ok, rate_limited, unauthorized, unpaid, forbidden, rejected (401 + 402 + 403), failed (a 5xx, or a hop that produced no status), cancelled (the client left, before the vendor answered or in the middle of its answer), and last_used / last_rate_limited in site time, null for never.",
+   "description": "What the key answered on the store since the pull before this one: requests, ok, rate_limited, unauthorized, unpaid, forbidden, rejected (401 + 402 + 403), failed (a 5xx, a hop that produced no status, or a good answer the vendor began and did not finish), cancelled (the client left before the vendor answered), and last_used / last_rate_limited in site time, null for never.",
    "fieldname": "stats",
    "fieldtype": "Code",
    "label": "Stats",
@@ -51,7 +51,7 @@
  "in_create": 1,
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-18 13:30:00.000000",
+ "modified": "2026-11-18 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Provider Key Stats",
