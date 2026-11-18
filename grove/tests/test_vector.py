@@ -86,6 +86,17 @@ class TestTheConfig(unittest.TestCase):
 		self.assertIn("attributes.line = line", plain)
 		self.assertIn("truncate(line, 8192)", plain)
 
+	def test_slogs_levels_leave_under_datums_names(self):
+		# datum answers 422 to a batch holding a level it does not name, and Vector drops that batch whole.
+		self.assertEqual(
+			{"info": "info", "warn": "warning", "error": "error"}, DEFAULTS["vector_datum_levels"]
+		)
+		transform = config()["transforms"]["datum_lines"]
+		self.assertIn('"warn": "warning"', transform["source"])
+		self.assertIn('[downcase(string(parsed.level) ?? "")])) ?? level', transform["source"])
+		# A line the program fails on is dropped alone, never sent as the file source read it.
+		self.assertTrue(transform["drop_on_error"])
+
 	def test_a_line_an_unshipped_rule_matches_stays_on_the_box(self):
 		transform = config()["transforms"]["datum_lines"]
 		self.assertTrue(transform["drop_on_abort"])

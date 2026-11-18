@@ -87,7 +87,14 @@ class TestUsagePage(IntegrationTestCase):
 				"model_provider": cls.vendor.name,
 				"key_id": cls.vendor.enabled_keys[0].name,
 				"stats": json.dumps(
-					{"requests": 10, "ok": 7, "rate_limited": 1, "unauthorized": 2, "unpaid": 0}
+					{
+						"requests": 10,
+						"ok": 6,
+						"rate_limited": 1,
+						"unauthorized": 2,
+						"unpaid": 0,
+						"cancelled": 1,
+					}
 				),
 			}
 		).insert(ignore_permissions=True)
@@ -213,7 +220,7 @@ class TestUsagePage(IntegrationTestCase):
 		by_outcome = usage.key_stats_trend(filters)
 		self.assertEqual(
 			[(row["day"], row["label"], row["requests"]) for row in by_outcome],
-			[(day, "ok", 7), (day, "rate_limited", 1), (day, "unauthorized", 2)],
+			[(day, "ok", 6), (day, "rate_limited", 1), (day, "unauthorized", 2), (day, "cancelled", 1)],
 		)
 		for split, label in (("key", f"{VENDOR} · {self.vendor.geography} · key"), ("provider", VENDOR)):
 			self.assertEqual(

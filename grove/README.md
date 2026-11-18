@@ -176,7 +176,8 @@ vendor answers 429 for the next (each tried once, then once more round), skips o
 (Anthropic's "credit balance", OpenAI's `insufficient_quota`) counts as the 402 it is — and answers
 such a refusal with its own 502 `upstream unavailable` — neither the vendor's words nor which
 refusal it was, both of which go to its error log. It counts what every key answered: `requests`, `ok`, `rate_limited`, `unauthorized`, `unpaid`,
-`forbidden` (`rejected` is those three together), `failed`, `last_used`, `last_rate_limited`. Every 6
+`forbidden` (`rejected` is those three together), `failed`, `cancelled` (the client left, before the vendor
+answered or in the middle of its answer, which says nothing of the key), `last_used`, `last_rate_limited`. Every 6
 hours `grove.pathway.key_stats.pull_all` reads them off every store into **Provider Key Stats**, one row
 per key per store with what it answered since the pull before, in one `stats` JSON field (the
 `last_*` seconds as site time; a key the store did not dial leaves no row). The gateway clears the
