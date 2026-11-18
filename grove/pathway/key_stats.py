@@ -14,7 +14,17 @@ import frappe
 
 from grove.pathway.run import SyncRun, gateway_units, in_turn
 
-COUNTS = ("requests", "ok", "rate_limited", "unauthorized", "unpaid", "forbidden", "rejected", "failed")
+COUNTS = (
+	"requests",
+	"ok",
+	"rate_limited",
+	"unauthorized",
+	"unpaid",
+	"forbidden",
+	"rejected",
+	"failed",
+	"cancelled",
+)
 LAST = ("last_used", "last_rate_limited")
 
 
