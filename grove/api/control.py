@@ -57,7 +57,7 @@ def create_control_client_key():
 
 
 def _create_control_user(email):
-	if frappe.db.exists("User", email):
+	if frappe.db.exists("User", {"email": email}):
 		frappe.throw("Invalid Operation")
 
 	doc = frappe.new_doc("User")
