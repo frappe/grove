@@ -4,7 +4,7 @@
 import functools
 
 import frappe
-from frappe.utils import cint, flt
+from frappe.utils import flt
 
 from grove.access import team_limits
 from grove.api.control import for_control_clients
@@ -26,14 +26,10 @@ KEY_FIELDS = [
 
 
 def changes_keys(endpoint):
-	"""A control client's change to `team`'s keys — a mint, a cap, a revoke: the role, and refused
-	while the team is suspended, by Central or by a hold of Grove's own. Grove's own paths
-	(`api.teams.archive_team`, expiry, Desk) do not come through here."""
-
 	@functools.wraps(endpoint)
 	def wrapper(team: str, *args, **kwargs):
 		if frappe.get_list("Grove Team", filters={"name": team, "suspended": 1}, limit=1):
-			frappe.throw("This team is suspended: its keys cannot be changed until that is lifted.")
+			frappe.throw("This team is suspended: this operation cannot be performed until that is lifted.")
 		return endpoint(team, *args, **kwargs)
 
 	return for_control_clients(wrapper)
@@ -48,22 +44,14 @@ def provision_key(
 	cap: float | None = None,
 	limits: list[dict] | None = None,
 	expiry: str | None = None,
-	expiry_from_first_use: bool = False,
 	model_groups: list[str] | None = None,
 ):
-	"""Mint a key for `team` in `geography` — the default one when none is given; every other
-	geography's gateway refuses it. `expiry` is when it retires on its own, one of the key's rules
-	(Never, 1 Day, 7 Days, 14 Days, 30 Days), Never when not given, fixed after; counted from the
-	mint, or from the key's first usage record with `expiry_from_first_use`. What it may call is
-	the team's, plus `model_groups`: groups of its geography it is in on top of the team's — a
-	product's trial catalog."""
 	key = frappe.new_doc("Grove API Key")
 	key.team, key.title, key.status = get_team(team), title, "active"
 	if geography:
 		key.geography = geography
 	if expiry:
 		key.expiry = expiry
-		key.expiry_from_first_use = int(bool(expiry_from_first_use))
 	key.set("model_groups", [{"model_group": group} for group in model_groups or []])
 	set_key_policy(key, cap, limits)
 	key.insert()
@@ -86,10 +74,6 @@ def update_key(
 	cap: float | None = None,
 	limits: list[dict] | None = None,
 ):
-	"""Change what a key of `team` may spend: `cap`, and `limits` (replacing its own rate limits;
-	`[]` puts it back under its team's tier alone), each kept when not given. Its geography never
-	changes — mint another key for that — and what it may call is its team's. → the key as `keys`
-	lists it."""
 	doc = get_api_key(team, key)
 	set_key_policy(doc, cap, limits)
 	doc.save()
@@ -132,16 +116,12 @@ def update_caps(team: str, caps: dict[str, float]):
 @frappe.whitelist()
 @for_control_clients
 def limits(team: str, key: str):
-	"""The rate limits of one key of `team`, rows of `metric`, `window` and `value`, as the gateway
-	counts them for that key alone: its team's tier's (else the defaults), with its own rows
-	replacing the tier's on the metrics they name. Refused for a key the team does not hold."""
 	return limit_rows_of([get_api_key(team, key, "read").name]).get(key, [])
 
 
 @frappe.whitelist()
 @changes_keys
 def revoke_key(team: str, key: str):
-	"""Revoke one of the team's keys, refused when another team holds it."""
 	get_api_key(team, key).revoke()
 	return "Revoked. Might take some time to reflect."
 
@@ -149,22 +129,10 @@ def revoke_key(team: str, key: str):
 @frappe.whitelist()
 @changes_keys
 def revoke_keys(team: str, keys: list[str]):
-	"""Revoke several of the team's keys in one call. Refused whole for a key the team does not
-	hold; nothing moves. → the names revoked."""
 	docs = [get_api_key(team, key) for key in frappe.parse_json(keys)]
 	for doc in docs:
 		doc.revoke()
 	return [doc.name for doc in docs]
-
-
-@frappe.whitelist()
-@for_control_clients
-def extend_key(team: str, key: str, days: int):
-	"""`days` more on the key's `expires_at`, from now or from its moment, whichever is later; a key
-	without a moment is left as it is, a revoked one refused. → the key as `keys` lists it."""
-	doc = get_api_key(team, key)
-	doc.extend_expiry(cint(days))
-	return key_rows([doc.name])[0]
 
 
 @frappe.whitelist()
@@ -187,36 +155,12 @@ def transfer_key(team: str, key: str, to_team: str, title: str | None = None):
 	return key_rows([doc.name])[0]
 
 
-@frappe.whitelist()
-@for_control_clients
-def secrets(team: str):
-	"""Every live key of `team` with its secret, for the control client to hand the team's servers:
-	`name`, `title`, `geography`, `gateway_url` and `api_key` each, newest first. A revoked key is
-	not in it. An unknown team is refused."""
-	from frappe.utils.password import get_decrypted_password
-
-	rows = frappe.get_list(
-		"Grove API Key",
-		filters={"team": get_team(team), "status": "active"},
-		fields=["name", "title", "geography"],
-		order_by="creation desc",
-	)
-	for row in rows:
-		row["gateway_url"] = get_gateway_url(row.geography)
-		row["api_key"] = get_decrypted_password("Grove API Key", row.name, "api_secret")
-	return rows
-
-
 def get_gateway_url(geography):
-	"""Where a key of `geography` works: its endpoint, None while it has none."""
 	host = frappe.db.get_value("Geography", geography, "endpoint")
 	return f"https://{host}" if host else None
 
 
 def get_api_key(team, key, ptype="write"):
-	"""The Grove API Key doc behind `key` when `team` holds it and the caller may `ptype` it:
-	another team's key name must not reach it. An unknown one is refused. Checked at the load, as
-	not every change that follows is a save."""
 	names = frappe.get_list("Grove API Key", filters={"name": key or "", "team": team or ""}, pluck="name")
 	if not names:
 		frappe.throw("no such API key", frappe.DoesNotExistError)
@@ -224,7 +168,6 @@ def get_api_key(team, key, ptype="write"):
 
 
 def set_key_policy(doc, cap=None, limits=None):
-	"""Write onto `doc` what was given: `cap`; `limits`, replacing its rate limits."""
 	if cap is not None:
 		doc.cap = cap
 	if limits is not None:
@@ -232,10 +175,6 @@ def set_key_policy(doc, cap=None, limits=None):
 
 
 def key_rows(names):
-	"""The keys named, as `keys` lists them: KEY_FIELDS (`masked` is the prefix and four characters,
-	kept on the key at mint, so nothing is decrypted here) plus the endpoint, the limits,
-	`month_spent`, `expires_at` (UTC) and whether the expiry counts from first use. Live keys first, newest first within each. A handful of
-	queries however many keys."""
 	from grove.billing.pricing import month_spent_by
 	from grove.pathway.routes import utc_timestamp
 
@@ -257,9 +196,6 @@ def key_rows(names):
 
 
 def limit_rows_of(names):
-	"""{key: [{metric, window, value}, ...]} for these keys as the gateway counts them: their
-	team's Tier's (else the default tier's, else the defaults), with their own rows replacing the
-	tier's on the metrics they name."""
 	from grove.access import effective_limits, limit_entries
 
 	keys = frappe.get_list("Grove API Key", filters={"name": ("in", names)}, fields=["name", "team"])

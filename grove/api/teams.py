@@ -64,8 +64,6 @@ def update_team(
 @frappe.whitelist()
 @for_control_clients
 def archive_team(team: str):
-	"""The control client is closing `team`: every live key is revoked, suspended or not. What
-	closing takes is Grove's to decide, so the client sends the team alone. → the names revoked."""
 	return frappe.get_doc("Grove Team", get_team(team)).revoke_keys()
 
 
@@ -82,9 +80,6 @@ def team_webhook(
 	suspended: bool | None = None,
 	observed_at: str | None = None,
 ):
-	"""Where Central's Webhooks land: the team's tier label (and, when Central sends it, its
-	standing) as Central read them at `observed_at`, the body signed with the control credential.
-	A team Grove does not know has AI off; it is ignored, not refused, so Central stops retrying."""
 	user = _webhook_user()
 	frappe.set_user(user)
 	if not team or not frappe.db.exists("Grove Team", team):
@@ -119,13 +114,9 @@ def is_signed_with(secret: str) -> bool:
 @frappe.whitelist()
 @for_control_clients
 def rename_tier(old: str, new: str):
-	# A rename needs write on Tier, which Grove Control must not hold over REST. What it does hold
-	# is create, as a new label is a new tier to it: that is checked, the rename's own check is not.
-	frappe.has_permission("Tier", "create", throw=True)
-	if old == new or not frappe.db.exists("Tier", old):
+	tiers = frappe.get_list("Tier", filters={"name": ["in", [old, new]]}, pluck="name")
+	if old == new or old not in tiers or new in tiers:
 		return
-	if frappe.db.exists("Tier", new):
-		frappe.throw(f"Tier {new!r} already exists at Grove; rename or delete it first.")
 	rename_doc("Tier", old, new, ignore_permissions=True, show_alert=False)
 
 

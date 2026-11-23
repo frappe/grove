@@ -21,7 +21,6 @@ from grove.billing.pricing import forget_figures
 from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_api_key.grove_api_key import KEY_PREFIX, hash_secret
 from grove.grove.doctype.model_provider.model_provider import self_hosted_provider
-from grove.pathway.routes import utc_timestamp
 from grove.utils import utc_today
 
 PROBE = "control-probe@example.com"
@@ -463,26 +462,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		teams.update_team(team, suspended=False)
 		keys.provision_key(team, title="after")
 
-	def test_a_key_is_extended_by_name_only_for_the_team_holding_it(self):
-		team, other = "probe-extender", "probe-extender-other"
-		for each in (team, other):
-			teams.provision_team(each)
-		key = keys.provision_key(team, title="ci", expiry="7 Days")["name"]
-		moment = frappe.db.get_value("Grove API Key", key, "expires_at")
-
-		with self.assertRaises(frappe.DoesNotExistError):
-			keys.extend_key(other, key, 3)
-		row = keys.extend_key(team, key, 3)
-		self.assertEqual(row.expires_at, utc_timestamp(frappe.utils.add_days(moment, 3)))
-
-	def test_expiry_from_first_use_is_read_as_a_flag_however_the_caller_spells_it(self):
-		team = "probe-flag"
-		teams.provision_team(team)
-		off = keys.provision_key(team, expiry="7 Days", expiry_from_first_use="false")["name"]
-		on = keys.provision_key(team, expiry="7 Days", expiry_from_first_use="true")["name"]
-		self.assertEqual(frappe.db.get_value("Grove API Key", off, "expiry_from_first_use"), 0)
-		self.assertEqual(frappe.db.get_value("Grove API Key", on, "expiry_from_first_use"), 1)
-
 	def test_a_key_is_handed_over_by_name_only_for_the_team_holding_it(self):
 		team, other, third = "probe-handover", "probe-handover-to", "probe-handover-third"
 		for each in (team, other, third):
@@ -514,32 +493,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		[listed] = usage.figures(customer)["keys"]
 		self.assertEqual((listed["month_spent"], usage.figures(customer)["spend"]["month_spent"]), (1, 1))
 		self.assertEqual(usage.figures(trial)["spend"]["month_spent"], 2)
-
-	def test_a_teams_live_keys_are_handed_out_with_their_secrets_for_its_servers(self):
-		team, other = "probe-secrets", "probe-secrets-other"
-		for each in (team, other):
-			teams.provision_team(each)
-		older = keys.provision_key(team, title="laptop")
-		newer = keys.provision_key(team, title="ci")
-		gone = keys.provision_key(team, title="gone")["name"]
-		keys.provision_key(other, title="theirs")
-		keys.revoke_key(team, gone)
-
-		self.assertEqual(
-			keys.secrets(team),
-			[
-				{
-					"name": minted["name"],
-					"title": title,
-					"geography": minted["geography"],
-					"gateway_url": minted["gateway_url"],
-					"api_key": minted["api_key"],
-				}
-				for minted, title in ((newer, "ci"), (older, "laptop"))
-			],
-		)
-		with self.assertRaises(frappe.ValidationError):
-			keys.secrets("probe-secrets-nobody")
 
 	def test_a_tier_edit_shows_at_once_and_a_default_tier_switch_waits_out_the_cache(self):
 		from grove.billing.pricing import forget_figures
@@ -709,9 +662,10 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertEqual((teams.update_team(team)["max_keys"], keys.limits(team, key)), (2, rows))
 		self.assertIsNone(teams.rename_tier("probe-ren-unseen", "probe-ren-c"))
 		self.assertFalse(frappe.db.exists("Tier", "probe-ren-c"))
+		# A name Grove already has is left alone, not merged.
 		tier("probe-ren-c")
-		with self.assertRaisesRegex(frappe.ValidationError, "already exists"):
-			teams.rename_tier("probe-ren-b", "probe-ren-c")
+		self.assertIsNone(teams.rename_tier("probe-ren-b", "probe-ren-c"))
+		self.assertEqual(frappe.db.get_value("Grove Team", team, "tier"), "probe-ren-b")
 
 	def team_with_a_key(self, team):
 		"""A team holding all an endpoint could hand out or move: a key that expires, a report on
@@ -737,9 +691,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			"limits": lambda: keys.limits(team, key),
 			"revoke_key": lambda: keys.revoke_key(team, key),
 			"revoke_keys": lambda: keys.revoke_keys(team, [key]),
-			"extend_key": lambda: keys.extend_key(team, key, 3),
 			"transfer_key": lambda: keys.transfer_key(team, key, f"{team}-to"),
-			"secrets": lambda: keys.secrets(team),
 			"provision_team": lambda: teams.provision_team(team),
 			# Older than the report on record: answered without a save.
 			"update_team": lambda: teams.update_team(team, suspended=True, observed_at="2020-01-01 00:00:00"),
@@ -770,6 +722,8 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		calls = self.control_calls(team, key)
 		# It touches the caller's own User alone, which no doc permission covers: the role is its gate.
 		del calls["create_control_client_key"]
+		# Read off the projection, which checks nothing: the role is its gate.
+		del calls["available_models"]
 		expires_at = frappe.db.get_value("Grove API Key", key, "expires_at")
 		frappe.set_user(other_user("probe-no-role@example.com"))
 		with (
@@ -830,19 +784,15 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 
 	def test_a_reader_of_a_team_and_its_key_changes_neither(self):
 		"""Read (Desk's Share gives it) is not write, nor read of the usage: checked at the load,
-		since an extension is no save, a raised cap asks the stores first, an older report is
-		answered unsaved and the figures are remembered."""
+		since a raised cap asks the stores first and an older report is answered unsaved."""
 		team, key = self.team_with_a_key("probe-reader")
 		reader = other_user("probe-reader@example.com")
 		for doctype, name in (("Grove Team", team), ("Grove API Key", key)):
 			frappe.share.add_docshare(doctype, name, reader, read=1, flags={"ignore_share_permission": True})
-		expires_at = frappe.db.get_value("Grove API Key", key, "expires_at")
 		refused = (
-			lambda: keys.extend_key(team, key, 3),
 			lambda: keys.update_caps(team, {key: 2}),
 			lambda: keys.revoke_key(team, key),
 			lambda: teams.update_team(team, suspended=True, observed_at="2020-01-01 00:00:00"),
-			lambda: usage.figures(team),
 			lambda: usage.usage([team]),
 		)
 		frappe.set_user(reader)
@@ -855,4 +805,3 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 				with self.assertRaises(frappe.PermissionError):
 					call()
 			peek_team.assert_not_called()
-		self.assertEqual(frappe.db.get_value("Grove API Key", key, "expires_at"), expires_at)

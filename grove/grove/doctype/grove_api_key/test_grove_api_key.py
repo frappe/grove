@@ -597,8 +597,7 @@ class IntegrationTestExpiry(IntegrationTestCase):
 
 	def test_a_key_minted_to_expire_from_first_use_gets_its_moment_at_its_first_record_once(self):
 		name = team("key-probe-first-use")
-		minted = keys.provision_key(name, expiry="7 Days", expiry_from_first_use=True)
-		first_use = frappe.get_doc("Grove API Key", minted["name"])
+		first_use = key(name, expiry="7 Days", expiry_from_first_use=1)
 		ruled = key(name, expiry="1 Day")
 		ruled.reload()
 		self.assertEqual(
@@ -631,10 +630,11 @@ class IntegrationTestExpiry(IntegrationTestCase):
 		yesterday = frappe.utils.add_days(frappe.utils.now_datetime(), -1)
 		frappe.db.set_value("Grove API Key", lapsed.name, "expires_at", yesterday, update_modified=False)
 		ahead.reload()
+		lapsed.reload()
 		moment, stamp = ahead.expires_at, ahead.modified
 
 		ahead.extend_expiry(3)
-		row = keys.extend_key(ahead.team, lapsed.name, 3)
+		lapsed.extend_expiry(3)
 
 		self.assertEqual(
 			frappe.db.get_value("Grove API Key", ahead.name, "expires_at"), frappe.utils.add_days(moment, 3)
@@ -644,7 +644,6 @@ class IntegrationTestExpiry(IntegrationTestCase):
 		self.assertAlmostEqual(
 			fresh, frappe.utils.add_days(frappe.utils.now_datetime(), 3), delta=timedelta(seconds=5)
 		)
-		self.assertEqual(row.expires_at, utc_timestamp(fresh))
 
 	def test_a_key_without_a_moment_is_not_extended_and_a_revoked_one_refuses(self):
 		unused = key("key-probe-extend-none", expiry="7 Days", expiry_from_first_use=1)
