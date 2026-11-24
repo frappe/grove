@@ -6,7 +6,8 @@ from frappe.model.document import Document
 from frappe.model.naming import make_autoname
 
 DOCTYPE = "Usage Report Day"
-OUTCOME_FIELDS = ("value_sent", "as_of", "sent_at", "confirmed_at", "refused", "reason")
+OUTCOME_FIELDS = ("value_sent", "as_of", "sent_at", "status", "confirmed_at", "reason")
+PENDING, CONFIRMED, REFUSED = "Pending", "Confirmed", "Refused"
 
 
 class UsageReportDay(Document):
@@ -27,8 +28,8 @@ class UsageReportDay(Document):
 		day: DF.Date
 		model: DF.Data | None
 		reason: DF.SmallText | None
-		refused: DF.Check
 		sent_at: DF.Datetime | None
+		status: DF.Literal["Pending", "Confirmed", "Refused"]
 		team: DF.Link
 		value_sent: DF.LongInt
 	# end: auto-generated types
@@ -43,12 +44,20 @@ def report_key(team, model, day):
 	return (team, model or "", str(day))
 
 
+def get_status(rejection):
+	"""A line Central did not reject is Confirmed; a rejected one is Pending if Central asks for it
+	again, Refused if not."""
+	if not rejection:
+		return CONFIRMED
+	return PENDING if rejection.get("retry") else REFUSED
+
+
 def get_sent_days(first_day):
 	"""{(team, model, day): row} for every landing day from `first_day` on."""
 	rows = frappe.get_all(
 		DOCTYPE,
 		filters={"day": (">=", first_day)},
-		fields=["name", "team", "model", "day", "value_sent", "confirmed_at", "refused"],
+		fields=["name", "team", "model", "day", "value_sent", "status"],
 	)
 	return {report_key(row.team, row.model, row.day): row for row in rows}
 

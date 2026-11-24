@@ -9,11 +9,11 @@
   "model",
   "day",
   "column_break_state",
+  "status",
   "value_sent",
   "as_of",
   "sent_at",
   "confirmed_at",
-  "refused",
   "reason"
  ],
  "fields": [
@@ -52,6 +52,18 @@
    "fieldtype": "Column Break"
   },
   {
+   "default": "Pending",
+   "description": "Pending: sent again next hour. Confirmed: Central accepted the value sent. Refused: Central rejected it and said not to retry; sent again only when the day's value changes.",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Pending\nConfirmed\nRefused",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
    "description": "The day's cost last sent, in nano-USD.",
    "fieldname": "value_sent",
    "fieldtype": "Long Int",
@@ -73,24 +85,14 @@
    "read_only": 1
   },
   {
-   "description": "When Central accepted the line (site time). Blank: sent again next hour.",
+   "description": "When Central last accepted the line (site time). Blank unless Confirmed.",
    "fieldname": "confirmed_at",
    "fieldtype": "Datetime",
-   "in_list_view": 1,
    "label": "Confirmed At",
    "read_only": 1
   },
   {
-   "default": "0",
-   "description": "Central refused the line and said not to retry. Sent again only when the day's value changes.",
-   "fieldname": "refused",
-   "fieldtype": "Check",
-   "in_standard_filter": 1,
-   "label": "Refused",
-   "read_only": 1
-  },
-  {
-   "description": "Central's reason for the last refusal.",
+   "description": "Central's reason for the last rejection: why a Pending line is retried or a Refused one held.",
    "fieldname": "reason",
    "fieldtype": "Small Text",
    "label": "Reason",
@@ -113,7 +115,7 @@
  ],
  "row_format": "Dynamic",
  "search_fields": "team,model",
- "sort_field": "modified",
+ "sort_field": "sent_at",
  "sort_order": "DESC",
  "states": []
 }

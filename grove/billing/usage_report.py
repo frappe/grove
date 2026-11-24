@@ -131,9 +131,9 @@ class UsageReport:
 		every recent day is sent again."""
 		if not row or row.value_sent != line.value:
 			return True
-		if row.refused:
+		if row.status == usage_report_day.REFUSED:
 			return False
-		return not row.confirmed_at or line.day >= self.first_resent_day
+		return row.status == usage_report_day.PENDING or line.day >= self.first_resent_day
 
 	def post(self, lines):
 		"""Central's `rejected`, keyed like the lines. Thrown on anything but 200: the lines stay
@@ -161,14 +161,15 @@ class UsageReport:
 		now = frappe.utils.now_datetime()
 		outcomes = {}
 		for line in lines:
-			refusal = rejected.get(line.key)
+			rejection = rejected.get(line.key) or {}
+			status = usage_report_day.get_status(rejection)
 			outcomes[line.key] = {
 				"value_sent": line.value,
 				"as_of": site_datetime(self.as_of),
 				"sent_at": now,
-				"confirmed_at": None if refusal else now,
-				"refused": int(bool(refusal) and not refusal.get("retry")),
-				"reason": (refusal or {}).get("reason") or "",
+				"status": status,
+				"confirmed_at": now if status == usage_report_day.CONFIRMED else None,
+				"reason": rejection.get("reason") or "",
 			}
 		return outcomes
 

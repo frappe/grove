@@ -189,8 +189,14 @@ class TestCentralsAnswer(ReportCase):
 		self.central.refuse = {}
 
 		self.assertEqual(set(self.mine(self.report())), {(self.team, "m2", "2026-11-15")})
-		self.assertTrue(
-			frappe.db.get_value("Usage Report Day", {"team": self.team, "model": "m1"}, "refused")
+		self.assertEqual(
+			frappe.db.get_all(
+				"Usage Report Day", {"team": self.team}, ["model", "status", "reason"], order_by="model"
+			),
+			[
+				{"model": "m1", "status": "Refused", "reason": "no"},
+				{"model": "m2", "status": "Confirmed", "reason": ""},
+			],
 		)
 
 		landed(self.team, NOON - timedelta(days=5), ("m1", 1))
