@@ -220,15 +220,17 @@ class CentralReply:
 
 
 def as_rejection(rejection):
-	"""An unreadable `subject` holds every line of the batch, an unreadable `day` every day of its
-	subject; neither ever names a line exactly."""
+	"""An unreadable `subject` holds every line of the batch. An unreadable `day` or `dimension` is
+	left out, so it matches every day or model and the rejection names no line exactly."""
 	if not isinstance(rejection, dict):
 		return {}
 	if not is_readable(rejection.get("subject")):
 		return {"reason": rejection.get("reason")}
-	if not is_readable(rejection.get("day")):
-		return {key: value for key, value in rejection.items() if key not in ("day", "retry")}
-	return rejection
+	return {
+		key: value
+		for key, value in rejection.items()
+		if key not in ("day", "dimension") or is_readable(value)
+	}
 
 
 def is_readable(value):
