@@ -393,6 +393,17 @@ class TestAnOlderCentralsAnswer(ReportCase):
 
 		self.assertEqual(set(self.statuses().values()), {"Pending"})
 
+	def test_a_rejection_with_a_subject_that_is_not_a_string_keeps_the_whole_batch_pending(self):
+		for subject in (["a"], {"a": 1}, 5):
+			with self.subTest(subject=subject):
+				frappe.db.delete("Usage Report Day", {"team": ("in", (self.team, self.other))})
+				rejection = {"subject": subject, "reason": "no", "retry": False}
+				self.central.reply = {"message": {"accepted": 3, "rejected": [rejection]}}
+
+				self.report()
+
+				self.assertEqual(set(self.statuses().values()), {"Pending"})
+
 	def test_a_reply_without_rejected_fails_the_run_and_confirms_nothing(self):
 		for reply in ({"message": {"accepted": 4}}, {"ok": True}, ["no"]):
 			self.central.reply = reply

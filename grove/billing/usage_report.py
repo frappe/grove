@@ -189,8 +189,7 @@ class CentralReply:
 
 	def __init__(self, rejections):
 		self.rejections_by_subject = {}
-		for rejection in rejections:
-			rejection = rejection if isinstance(rejection, dict) else {}
+		for rejection in map(as_rejection, rejections):
 			self.rejections_by_subject.setdefault(rejection.get("subject") or "", []).append(rejection)
 
 	@classmethod
@@ -218,6 +217,16 @@ class CentralReply:
 			"status": get_status(rejections, line),
 			"reason": "; ".join(reason for reason in reasons if reason),
 		}
+
+
+def as_rejection(rejection):
+	"""One that names no team as a string names no line, so it holds every line of the batch."""
+	if not isinstance(rejection, dict):
+		return {}
+	subject = rejection.get("subject")
+	if subject is None or isinstance(subject, str):
+		return rejection
+	return {"reason": rejection.get("reason")}
 
 
 def get_status(rejections, line):
