@@ -293,6 +293,35 @@ class TestCentralsAnswer(ReportCase):
 		self.assertEqual(self.read_days[0], "2026-11-10")
 		self.assertEqual(set(lines), {(self.team, "m1", "2026-11-12"), (self.team, "m1", "2026-11-14")})
 
+	def test_a_day_split_across_batches_resends_only_its_unsent_lines(self):
+		day = "2026-11-15"
+		landed(self.team, NOON - timedelta(days=5), ("m1", 1), ("m2", 1))
+		sent = []
+
+		def post_then_fail(url, data, headers, timeout):
+			if self.team in data.decode():
+				if sent:
+					raise requests.Timeout("killed")
+				sent.append(json.loads(data)["lines"][0]["dimension"])
+			return self.central.post(url, data, headers, timeout)
+
+		with (
+			unittest.mock.patch.object(usage_report, "BATCH_LINES", 1),
+			unittest.mock.patch.object(usage_report.requests, "post", post_then_fail),
+			self.assertRaises(requests.Timeout),
+		):
+			self.report()
+		unsent = ({"m1", "m2"} - set(sent)).pop()
+
+		with unittest.mock.patch.object(usage_report, "BATCH_LINES", 1):
+			lines = self.mine(self.report())
+
+		self.assertEqual(lines, {(self.team, unsent, day): 1_000_000_000})
+		self.assertEqual(
+			frappe.db.get_all("Usage Report Day", {"team": self.team}, ["model", "status"], order_by="model"),
+			[{"model": "m1", "status": "Confirmed"}, {"model": "m2", "status": "Confirmed"}],
+		)
+
 	def test_a_bad_signature_fails_the_run_and_confirms_nothing(self):
 		landed(self.team, NOON, ("m1", 1))
 		set_encrypted_password("Grove Settings", "Grove Settings", "wrong", "central_report_secret")
