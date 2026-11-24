@@ -195,17 +195,17 @@ or is one of the resend days:
 Grove commits a whole gateway answer at once, so a record stamped 23:59:50 UTC can appear after
 midnight, and Central keeps the line with the newer `as_of`. A line is Confirmed only when no
 rejection in Central's reply could name it (`CentralReply`): a rejection names a line by `subject`,
-`day` and `dimension` (a null `dimension` names the blank model), and a field it leaves out (an older Central sends only `subject` and
-`reason`) or a blank `subject` or `day` matches every line, so all of them stay Pending. So does a
-rejection that is not an object or whose `subject` is not a string: it holds the whole batch
-Pending and never refuses a line. One whose `day` is not a string holds every day of its
-`subject` the same way. A line
-rejected with `retry` true, or without `retry`, or by a rejection that does not name it exactly
-is sent again next run; one that every matching rejection names exactly with `retry` false is
-Refused and sent again only when its value changes. A refused call (bad signature, bad `as_of`), a
-5xx, no answer, or a reply with no `message.rejected` list fails the run and leaves the batch
-unconfirmed for the next hour. **Pause Usage Report** stops it; with no Central URL
-or secret it sends nothing.
+`day` and `dimension` (a null `dimension` names the blank model), and a field it leaves out (an
+older Central sends only `subject` and `reason`) or a blank `subject` or `day` matches every line,
+so all of them stay Pending. A rejection that is not an object, or whose `subject` is not a string,
+holds the whole batch Pending. One whose `day` is not a string holds its subject's model on every
+day, and one whose `dimension` is not a string holds every model of its subject's day. None of
+these names a line exactly, so none refuses one. A line rejected with `retry` true, or without
+`retry`, or by a rejection that does not name it exactly is sent again next run; one that every
+matching rejection names exactly with `retry` false is Refused and sent again only when its value
+changes. A refused call (bad signature, bad `as_of`), a 5xx, no answer, or a reply with no
+`message.rejected` list fails the run and leaves the batch unconfirmed for the next hour. **Pause
+Usage Report** stops it; with no Central URL or secret it sends nothing.
 
 **The 30-day window.** A landing day older than 30 days (`usage_report.WINDOW_DAYS`) is never sent,
 and its outbox row is deleted. The Usage Record purge does not ask the outbox, so a day the purge
