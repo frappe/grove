@@ -17,6 +17,7 @@ from frappe.utils.password import set_encrypted_password
 from grove.api import control
 from grove.billing import usage_report
 from grove.billing.usage_report import UsageReport
+from grove.patches.v1_0 import set_report_resend_days
 from grove.tests.test_api_permissions import other_user
 from grove.utils import site_datetime
 
@@ -233,3 +234,15 @@ class TestCentralSetsTheReportSecret(IntegrationTestCase):
 
 		settings = frappe.get_single("Grove Settings")
 		self.assertEqual(settings.get_password("central_report_secret"), "from-central")
+
+
+class TestResendDaysOnAnExistingSite(IntegrationTestCase):
+	def test_a_site_with_no_resend_days_row_gets_the_default(self):
+		frappe.db.delete("Singles", {"doctype": "Grove Settings", "field": "report_resend_days"})
+		frappe.db.delete("Singles", {"doctype": "Grove Settings", "field": "pause_usage_report"})
+		self.assertFalse(frappe.db.get_single_value("Grove Settings", "report_resend_days"))
+
+		set_report_resend_days.execute()
+
+		settings = frappe.get_single("Grove Settings")
+		self.assertEqual((settings.report_resend_days, settings.pause_usage_report), (3, 0))
