@@ -36,6 +36,11 @@
   "central_url",
   "column_break_central",
   "central_token",
+  "section_usage_report",
+  "pause_usage_report",
+  "report_resend_days",
+  "column_break_usage_report",
+  "central_report_secret",
   "pod_tab",
   "pod_geography"
  ],
@@ -235,11 +240,42 @@
    "fieldname": "central_token",
    "fieldtype": "Password",
    "label": "Central Token"
+  },
+  {
+   "description": "Grove pushes each team's AI cost per model and UTC landing day to Central every hour (central.billing.api.metering.report at Central URL), signed with the ai Service's report secret. Central sets the secret through grove.api.control.set_report_secret.",
+   "fieldname": "section_usage_report",
+   "fieldtype": "Section Break",
+   "label": "Central (usage report)"
+  },
+  {
+   "default": "0",
+   "description": "Stops the hourly usage report. Unconfirmed days wait in Usage Report Day and go with the next report; a day older than 30 days is never sent.",
+   "fieldname": "pause_usage_report",
+   "fieldtype": "Check",
+   "label": "Pause Usage Report"
+  },
+  {
+   "default": "3",
+   "description": "How many of the latest UTC landing days every report sends again, confirmed or not: a record stamped just before midnight can be committed after it.",
+   "fieldname": "report_resend_days",
+   "fieldtype": "Int",
+   "label": "Resend Days",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "column_break_usage_report",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The ai Service's report secret in Central. Set by Central; the report signs its body with it (HMAC-SHA256).",
+   "fieldname": "central_report_secret",
+   "fieldtype": "Password",
+   "label": "Central Report Secret"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-22 16:48:44.446671",
+ "modified": "2026-11-24 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove Settings",

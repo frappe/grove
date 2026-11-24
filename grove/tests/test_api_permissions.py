@@ -673,6 +673,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			"geographies": catalog.geographies,
 			"available_models": lambda: catalog.available_models(team),
 			"create_control_client_key": control.create_control_client_key,
+			"set_report_secret": lambda: control.set_report_secret("probe-secret"),
 			"provision_key": lambda: keys.provision_key(team, title="more"),
 			"update_key": lambda: keys.update_key(team, key, cap=2),
 			"update_caps": lambda: keys.update_caps(team, {key: 2}),
@@ -707,8 +708,9 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		teams.update_team(team, suspended=True)
 		usage.figures(team)
 		calls = self.control_calls(team, key)
-		# It touches the caller's own User alone, which no doc permission covers: the role is its gate.
-		del calls["create_control_client_key"]
+		# They touch the caller's own User or the report secret, which no doc permission covers: the
+		# role is their gate.
+		del calls["create_control_client_key"], calls["set_report_secret"]
 		# Read off the projection, which checks nothing: the role is its gate.
 		del calls["available_models"]
 		expires_at = frappe.db.get_value("Grove API Key", key, "expires_at")

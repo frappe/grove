@@ -5,6 +5,7 @@ import functools
 import hmac
 
 import frappe
+from frappe.utils.password import set_encrypted_password
 
 CONTROL_ROLE = "Grove Control"
 
@@ -54,6 +55,19 @@ def create_control_client_key():
 	control_user.save(ignore_permissions=True)
 
 	return {"api_key": control_user.api_key, "api_secret": api_secret, "user": control_user.name}
+
+
+@frappe.whitelist(methods=["POST"])
+@for_control_clients
+def set_report_secret(secret: str):
+	"""Central hands Grove the `ai` Service's report secret, which signs every usage report."""
+	# the secret should not be stored in the Request Log.
+	frappe.form_dict.pop("secret", None)
+	if not secret:
+		frappe.throw("A report secret is required.")
+	# Grove Control holds no write on Grove Settings; the control role is the gate.
+	set_encrypted_password("Grove Settings", "Grove Settings", secret, "central_report_secret")
+	frappe.db.set_single_value("Grove Settings", "central_report_secret", "*" * len(secret))
 
 
 def _create_control_user(email):

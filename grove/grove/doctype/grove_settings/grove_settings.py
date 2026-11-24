@@ -34,13 +34,16 @@ class GroveSettings(Document):
 		from frappe.types import DF
 
 		acme_email: DF.Data | None
+		central_report_secret: DF.Password | None
 		central_token: DF.Password | None
 		central_url: DF.Data | None
 		dns_provider: DF.Link | None
 		monitoring_extra_labels: DF.SmallText | None
 		pathway_release: DF.Data | None
 		pathway_repo: DF.Data | None
+		pause_usage_report: DF.Check
 		pod_geography: DF.Link | None
+		report_resend_days: DF.Int
 		scrape_password: DF.Password | None
 		scrape_password_hash: DF.Data | None
 		sd_token: DF.Password | None
