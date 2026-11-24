@@ -186,7 +186,7 @@ the newest day in the outbox. Batches hold at most 1,000 lines, signed as
 base64 HMAC-SHA256 of the raw body with **Central Report Secret** (`X-Central-Service: ai`,
 `X-Central-Signature`). Central sets the secret with `api.control.set_report_secret(secret)`
 (control clients only, POST). A run reads only the landing days whose value can still change: the
-last **Resend Days** (default 3, at least 1), the days still Pending, and every day since the newest
+last **Resend Days** (default 3, at least 1; a site with none stored uses the default), the days still Pending, and every day since the newest
 day in the outbox (a pause or a failed run left those unsent); with an empty outbox it reads the
 whole window. Every writer stamps a Usage Record as it is written, so an older landing day cannot
 change; a Confirmed or Refused day past the resend days is never read again. Of what it reads, a run

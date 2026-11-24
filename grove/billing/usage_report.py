@@ -101,7 +101,7 @@ class UsageReport:
 	def first_resent_day(self):
 		"""Grove commits a whole gateway answer at once, so a record stamped just before midnight
 		can appear after it: the last few landing days are sent every run."""
-		return self.today - timedelta(days=self.settings.report_resend_days - 1)
+		return self.today - timedelta(days=self.settings.resend_days - 1)
 
 	def send(self):
 		"""Day by day, oldest first, committing each batch: a run killed part way keeps the days it

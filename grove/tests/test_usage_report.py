@@ -180,6 +180,15 @@ class TestALateCommitBillsOnItsLandingDay(ReportCase):
 
 
 class TestOnlyDaysThatCanChangeAreRead(ReportCase):
+	def test_a_site_with_no_resend_days_row_resends_the_default_days(self):
+		landed(self.team, NOON, ("m1", 1))
+		self.report()
+		frappe.db.delete("Singles", {"doctype": "Grove Settings", "field": "report_resend_days"})
+
+		self.report()
+
+		self.assertEqual(self.read_days, ["2026-11-18", "2026-11-19", TODAY])
+
 	def test_the_first_run_reads_the_whole_window(self):
 		self.report()
 
@@ -404,6 +413,13 @@ class TestResendDays(IntegrationTestCase):
 
 		settings = frappe.get_single("Grove Settings")
 		self.assertEqual((settings.report_resend_days, settings.pause_usage_report), (3, 0))
+
+	def test_a_site_with_no_resend_days_row_saves_the_default(self):
+		frappe.db.delete("Singles", {"doctype": "Grove Settings", "field": "report_resend_days"})
+
+		frappe.get_single("Grove Settings").save()
+
+		self.assertEqual(frappe.db.get_single_value("Grove Settings", "report_resend_days"), 3)
 
 	def test_resend_days_below_one_is_refused(self):
 		settings = frappe.get_single("Grove Settings")

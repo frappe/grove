@@ -7,7 +7,7 @@ import re
 import bcrypt
 import frappe
 from frappe.model.document import Document
-from frappe.utils import get_url
+from frappe.utils import cint, get_url
 
 # The SD token rides in a query string: URL-unreserved characters only.
 SD_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._~-]{16,}$")
@@ -80,8 +80,16 @@ class GroveSettings(Document):
 			)
 
 	def validate_report_resend_days(self):
+		self.report_resend_days = self.resend_days
 		if self.report_resend_days < 1:
 			frappe.throw("Resend Days must be at least 1: every report sends today again.")
+
+	@property
+	def resend_days(self):
+		"""Resend Days, or its default on a site that has never stored one."""
+		if self.report_resend_days in (None, ""):
+			return cint(self.meta.get_field("report_resend_days").default)
+		return self.report_resend_days
 
 	def get_unset_field_problems(self, fields):
 		"""Each of `fields` left blank, named."""
