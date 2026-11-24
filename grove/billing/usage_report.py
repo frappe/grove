@@ -13,8 +13,13 @@ import frappe
 import requests
 
 from grove.billing.doctype.usage_record.usage_record import money_rows
-from grove.billing.doctype.usage_report_day import usage_report_day
-from grove.billing.doctype.usage_report_day.usage_report_day import UsageReportDays, report_key
+from grove.billing.doctype.usage_report_day.usage_report_day import (
+	CONFIRMED,
+	PENDING,
+	REFUSED,
+	UsageReportDays,
+	report_key,
+)
 from grove.utils import site_datetime
 
 REPORT_ROUTE = "/api/method/central.billing.api.metering.report"
@@ -136,9 +141,9 @@ class UsageReport:
 		every recent day is sent again."""
 		if not row or row.value_sent != line.value:
 			return True
-		if row.status == usage_report_day.REFUSED:
+		if row.status == REFUSED:
 			return False
-		return row.status == usage_report_day.PENDING or line.day >= self.first_resent_day
+		return row.status == PENDING or line.day >= self.first_resent_day
 
 	def post(self, lines):
 		"""Central's `rejected`, keyed like the lines. Thrown on anything but 200: the lines stay
@@ -167,16 +172,22 @@ class UsageReport:
 		outcomes = {}
 		for line in lines:
 			rejection = rejected.get(line.key) or {}
-			status = usage_report_day.get_status(rejection)
 			outcomes[line.key] = {
 				"value_sent": line.value,
 				"as_of": site_datetime(self.as_of),
 				"sent_at": now,
-				"status": status,
-				"confirmed_at": now if status == usage_report_day.CONFIRMED else None,
+				"status": get_status(rejection),
 				"reason": rejection.get("reason") or "",
 			}
 		return outcomes
+
+
+def get_status(rejection):
+	"""A line Central did not reject is Confirmed; a rejected one is Pending if Central asks for it
+	again, Refused if not."""
+	if not rejection:
+		return CONFIRMED
+	return PENDING if rejection.get("retry") else REFUSED
 
 
 def sign(secret, body):

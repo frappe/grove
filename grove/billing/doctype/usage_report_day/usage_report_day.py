@@ -45,14 +45,6 @@ def report_key(team, model, day):
 	return (team, model or "", str(day))
 
 
-def get_status(rejection):
-	"""A line Central did not reject is Confirmed; a rejected one is Pending if Central asks for it
-	again, Refused if not."""
-	if not rejection:
-		return CONFIRMED
-	return PENDING if rejection.get("retry") else REFUSED
-
-
 class UsageReportDays:
 	"""The outbox rows of the landing days the report still sends, keyed like its lines. Rows of
 	days before `first_day` are dropped on load."""
@@ -75,9 +67,12 @@ class UsageReportDays:
 		return max((getdate(row.day) for row in self.rows.values()), default=None)
 
 	def record(self, outcomes):
-		"""Writes each line's outcome, {key: fields}: a known day in place, a new one inserted."""
+		"""Writes each line's outcome, {key: fields}: a known day in place, a new one inserted. A
+		Confirmed line is stamped confirmed now."""
 		new = []
+		now = frappe.utils.now_datetime()
 		for key, fields in outcomes.items():
+			fields = {**fields, "confirmed_at": now if fields["status"] == CONFIRMED else None}
 			if row := self.rows.get(key):
 				frappe.db.set_value(DOCTYPE, row.name, fields, update_modified=False)
 				row.update(fields)
