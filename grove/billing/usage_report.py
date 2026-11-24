@@ -104,11 +104,16 @@ class UsageReport:
 		return self.today - timedelta(days=self.settings.report_resend_days - 1)
 
 	def send(self):
+		"""Day by day, oldest first, committing each batch: a run killed part way keeps the days it
+		sent, and the next one goes on from the newest day in the outbox."""
 		if not self.is_ready:
 			return
 		outbox = UsageReportDays(self.first_day)
-		lines = [line for day in self.get_days(outbox) for line in self.get_day_lines(day)]
-		due = [line for line in lines if self.is_due(line, outbox.get(line.key))]
+		for day in self.get_days(outbox):
+			self.send_day(outbox, day)
+
+	def send_day(self, outbox, day):
+		due = [line for line in self.get_day_lines(day) if self.is_due(line, outbox.get(line.key))]
 		for start in range(0, len(due), BATCH_LINES):
 			batch = due[start : start + BATCH_LINES]
 			outbox.record(self.get_outcomes(batch, self.post(batch)))

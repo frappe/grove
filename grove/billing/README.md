@@ -179,7 +179,10 @@ UTC **landing day** (the UTC date a record was created in Grove, not the day it 
 day's cost so far: meter `cost`, `value` in nano-USD (may be negative after a correction),
 `amount` in USD, currency `USD`. The value is summed in SQL as a decimal off `money_rows` over the
 day's UTC bounds turned to site time (never `date(creation)`), never through the float `usage()`
-API. `as_of` is taken before the records are read. Batches hold at most 1,000 lines, signed as
+API. `as_of` is taken before the records are read. A run goes day by day, oldest first, holding
+one landing day's lines at a time and committing the outbox after each batch, so a run killed part
+way (the first one reads the whole window) keeps the days it sent and the next run goes on from
+the newest day in the outbox. Batches hold at most 1,000 lines, signed as
 base64 HMAC-SHA256 of the raw body with **Central Report Secret** (`X-Central-Service: ai`,
 `X-Central-Signature`). Central sets the secret with `api.control.set_report_secret(secret)`
 (control clients only, POST). A run reads only the landing days whose value can still change: the

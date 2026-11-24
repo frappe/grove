@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import frappe
 import requests
 from frappe.tests import IntegrationTestCase
+from frappe.utils import getdate
 from frappe.utils.password import set_encrypted_password
 
 from grove.api import control
@@ -53,10 +54,13 @@ class FakeCentral:
 
 	def __init__(self):
 		self.bodies, self.refuse, self.failure, self.reply = [], {}, None, None
+		self.failing_day = None
 
 	def post(self, url, data, headers, timeout):
 		if self.failure:
 			raise self.failure
+		if self.failing_day and self.failing_day in data.decode():
+			raise requests.Timeout("killed")
 		expected = base64.b64encode(hmac.new(SECRET.encode(), data, hashlib.sha256).digest()).decode()
 		if headers["X-Central-Service"] != "ai" or headers["X-Central-Signature"] != expected:
 			return SimpleNamespace(status_code=403, text="signature mismatch")
@@ -78,10 +82,11 @@ class FakeCentral:
 
 	@property
 	def lines(self):
-		"""{(subject, dimension, day): value} of the last report."""
+		"""{(subject, dimension, day): value} of every batch of the last report."""
 		return {
 			(line["subject"], line["dimension"], line["day"]): line["value"]
-			for line in self.bodies[-1]["lines"]
+			for body in self.bodies
+			for line in body["lines"]
 		}
 
 
@@ -135,7 +140,8 @@ class TestALineIsTheLandingDaysDecimalSum(ReportCase):
 		)
 		line = next(
 			line
-			for line in self.central.bodies[-1]["lines"]
+			for body in self.central.bodies
+			for line in body["lines"]
 			if (line["subject"], line["dimension"], line["day"]) == (self.team, "m1", TODAY)
 		)
 		self.assertEqual((line["meter"], line["currency"], line["amount"]), ("cost", "USD", 3.123456792))
@@ -260,6 +266,24 @@ class TestCentralsAnswer(ReportCase):
 			self.mine(self.report()),
 			{(self.team, "m1", yesterday): 2_000_000_000, (self.team, "m2", yesterday): 1_000_000_000},
 		)
+
+	def test_a_run_killed_part_way_keeps_the_days_it_sent_and_the_next_goes_on(self):
+		for days_ago in (10, 8, 6):
+			landed(self.team, NOON - timedelta(days=days_ago), ("m1", 1))
+		self.central.failing_day = "2026-11-12"
+		with self.assertRaises(requests.Timeout):
+			self.report()
+		self.assertEqual(
+			frappe.db.get_all("Usage Report Day", {"team": self.team}, ["day", "status"]),
+			[{"day": getdate("2026-11-10"), "status": "Confirmed"}],
+		)
+		frappe.db.commit.assert_called()
+
+		self.central.failing_day = None
+		lines = self.mine(self.report())
+
+		self.assertEqual(self.read_days[0], "2026-11-10")
+		self.assertEqual(set(lines), {(self.team, "m1", "2026-11-12"), (self.team, "m1", "2026-11-14")})
 
 	def test_a_bad_signature_fails_the_run_and_confirms_nothing(self):
 		landed(self.team, NOON, ("m1", 1))
