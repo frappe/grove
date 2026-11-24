@@ -24,14 +24,17 @@ def verify_scrape_password(password: str, stored: str) -> bool:
 		return False
 
 
-def set_missing_defaults():
+def set_missing_defaults(fields=None):
 	"""Store the default of each Grove Settings field the site holds no value for: a Single written
-	before its defaults applied, or before a field existed, never took them."""
+	before its defaults applied, or before a field existed, never took them. `fields` limits it to
+	those names."""
 	stored = frappe.db.get_singles_dict("Grove Settings")
 	missing = {
 		field.fieldname: field.default
 		for field in frappe.get_meta("Grove Settings").fields
-		if field.default and stored.get(field.fieldname) in (None, "")
+		if field.default
+		and (fields is None or field.fieldname in fields)
+		and stored.get(field.fieldname) in (None, "")
 	}
 	if missing:
 		frappe.db.set_single_value("Grove Settings", missing, update_modified=False)

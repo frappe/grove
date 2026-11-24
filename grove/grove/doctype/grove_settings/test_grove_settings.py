@@ -131,12 +131,23 @@ class TestMissingDefaults(IntegrationTestCase):
 		values = frappe.db.get_singles_dict("Grove Settings")
 		return {field: values.get(field) for field in self.defaults}
 
-	def test_each_defaulted_field_takes_its_default(self):
+	def test_install_stores_every_default(self):
 		self.assertTrue({"report_resend_days", "usage_retention", "pathway_release"} <= set(self.defaults))
 
-		set_missing_settings_defaults.execute()
+		for method in frappe.get_hooks("after_install", app_name="grove"):
+			if method.endswith("set_missing_defaults"):
+				frappe.get_attr(method)()
 
 		self.assertEqual(self.stored(), self.defaults)
+
+	def test_the_patch_fills_only_fields_whose_blank_acts_as_the_default(self):
+		set_missing_settings_defaults.execute()
+
+		stored = self.stored()
+		self.assertEqual(
+			(stored["pathway_release"], stored["usage_retention"], stored["report_resend_days"]),
+			(None, None, self.defaults["report_resend_days"]),
+		)
 
 	def test_a_stored_value_is_kept_and_a_blank_one_filled(self):
 		frappe.db.set_single_value(
