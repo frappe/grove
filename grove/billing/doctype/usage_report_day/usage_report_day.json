@@ -1,0 +1,119 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-24 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "team",
+  "model",
+  "day",
+  "column_break_state",
+  "value_sent",
+  "as_of",
+  "sent_at",
+  "confirmed_at",
+  "refused",
+  "reason"
+ ],
+ "fields": [
+  {
+   "description": "The line's subject in Central: the Grove team id.",
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Team",
+   "options": "Grove Team",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "The model key, the line's dimension. Blank for a correction that names no model.",
+   "fieldname": "model",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Model",
+   "read_only": 1
+  },
+  {
+   "description": "The UTC landing day: the UTC date the Usage Records were created in Grove.",
+   "fieldname": "day",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Day",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_state",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The day's cost last sent, in nano-USD.",
+   "fieldname": "value_sent",
+   "fieldtype": "Long Int",
+   "label": "Value Sent",
+   "read_only": 1
+  },
+  {
+   "description": "The as_of of the last report that carried the line (site time).",
+   "fieldname": "as_of",
+   "fieldtype": "Datetime",
+   "label": "As Of",
+   "read_only": 1
+  },
+  {
+   "description": "When the line was last sent (site time).",
+   "fieldname": "sent_at",
+   "fieldtype": "Datetime",
+   "label": "Sent At",
+   "read_only": 1
+  },
+  {
+   "description": "When Central accepted the line (site time). Blank: sent again next hour.",
+   "fieldname": "confirmed_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Confirmed At",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Central refused the line and said not to retry. Sent again only when the day's value changes.",
+   "fieldname": "refused",
+   "fieldtype": "Check",
+   "in_standard_filter": 1,
+   "label": "Refused",
+   "read_only": 1
+  },
+  {
+   "description": "Central's reason for the last refusal.",
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-11-24 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Usage Report Day",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "team,model",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

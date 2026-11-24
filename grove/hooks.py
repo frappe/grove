@@ -42,6 +42,7 @@ scheduler_events = {
 	],
 	"hourly_long": [
 		"grove.pathway.usage.pull_all",
+		"grove.billing.usage_report.report_usage",
 		"grove.infrastructure.tls.renew_fleet_certificate",
 		"grove.infrastructure.cloud_provider.schedule.run_due_pods",
 	],
