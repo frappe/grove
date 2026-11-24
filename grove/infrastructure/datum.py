@@ -43,18 +43,7 @@ def mint_token(region: str, resource_id: str) -> tuple[str, datetime]:
 
 
 def credential_problems() -> list[str]:
-	settings = frappe.get_single("Grove Settings")
-	values = {
-		field: settings.get_password(field, raise_exception=False)
-		if field == "central_token"
-		else settings.get(field)
-		for field in CREDENTIAL_FIELDS
-	}
-	return [
-		f"Set {settings.meta.get_label(field)} in Grove Settings."
-		for field, value in values.items()
-		if not value
-	]
+	return frappe.get_single("Grove Settings").get_unset_field_problems(CREDENTIAL_FIELDS)
 
 
 def refresh_tokens():

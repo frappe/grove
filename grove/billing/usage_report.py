@@ -19,6 +19,7 @@ from grove.utils import site_datetime
 REPORT_ROUTE = "/api/method/central.billing.api.metering.report"
 SERVICE = "ai"
 METER = "cost"
+REPORT_FIELDS = ("central_url", "central_report_secret")
 NANO_PER_USD = 10**9
 # Inside the Usage Record purge horizon (90 days), so no day sent can be partly purged.
 WINDOW_DAYS = 30
@@ -76,12 +77,7 @@ class UsageReport:
 	@property
 	def problems(self):
 		"""Each blank setting the report needs, named."""
-		values = {"central_url": self.settings.central_url, "central_report_secret": self.secret}
-		return [
-			f"Set {self.settings.meta.get_label(field)} in Grove Settings."
-			for field, value in values.items()
-			if not value
-		]
+		return self.settings.get_unset_field_problems(REPORT_FIELDS)
 
 	@property
 	def is_ready(self):

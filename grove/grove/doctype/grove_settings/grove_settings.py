@@ -83,6 +83,19 @@ class GroveSettings(Document):
 		if self.report_resend_days < 1:
 			frappe.throw("Resend Days must be at least 1: every report sends today again.")
 
+	def get_unset_field_problems(self, fields):
+		"""Each of `fields` left blank, named."""
+		return [
+			f"Set {self.meta.get_label(field)} in Grove Settings."
+			for field in fields
+			if not self.is_field_set(field)
+		]
+
+	def is_field_set(self, field):
+		if self.meta.get_field(field).fieldtype == "Password":
+			return bool(self.get_password(field, raise_exception=False))
+		return bool(self.get(field))
+
 	def set_scrape_password_hash(self):
 		"""The hash each box writes into its htpasswd file, derived here so the password never reaches a
 		box or an Ansible argv. bcrypt because three things verify this one file — the gateway's Go
