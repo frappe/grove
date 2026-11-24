@@ -11,7 +11,6 @@ from decimal import Decimal
 
 import frappe
 import requests
-from frappe.utils import cint
 
 from grove.billing.doctype.usage_record.usage_record import money_rows
 from grove.billing.doctype.usage_report_day import usage_report_day
@@ -100,7 +99,7 @@ class UsageReport:
 	def first_resent_day(self):
 		"""Grove commits a whole gateway answer at once, so a record stamped just before midnight
 		can appear after it: the last few landing days are sent every run."""
-		return self.today - timedelta(days=max(cint(self.settings.report_resend_days), 1) - 1)
+		return self.today - timedelta(days=self.settings.report_resend_days - 1)
 
 	def send(self):
 		if not self.is_ready:

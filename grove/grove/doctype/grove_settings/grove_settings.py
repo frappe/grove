@@ -59,6 +59,7 @@ class GroveSettings(Document):
 
 	def validate(self):
 		self.validate_sd_token()
+		self.validate_report_resend_days()
 		self.set_scrape_password_hash()
 		if self.monitoring_extra_labels:
 			try:
@@ -77,6 +78,10 @@ class GroveSettings(Document):
 				"Service Discovery Token must be at least 16 characters of letters, digits, "
 				"'-', '_', '.' or '~'. Generate one with: openssl rand -hex 32"
 			)
+
+	def validate_report_resend_days(self):
+		if self.report_resend_days < 1:
+			frappe.throw("Resend Days must be at least 1: every report sends today again.")
 
 	def set_scrape_password_hash(self):
 		"""The hash each box writes into its htpasswd file, derived here so the password never reaches a

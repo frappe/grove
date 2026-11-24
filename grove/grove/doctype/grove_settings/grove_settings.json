@@ -256,7 +256,7 @@
   },
   {
    "default": "3",
-   "description": "How many of the latest UTC landing days every report sends again, confirmed or not: a record stamped just before midnight can be committed after it.",
+   "description": "How many of the latest UTC landing days every report sends again, confirmed or not, at least 1 (today): a record stamped just before midnight can be committed after it.",
    "fieldname": "report_resend_days",
    "fieldtype": "Int",
    "label": "Resend Days",

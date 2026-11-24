@@ -245,7 +245,7 @@ class TestCentralSetsTheReportSecret(IntegrationTestCase):
 		self.assertEqual(settings.get_password("central_report_secret"), "from-central")
 
 
-class TestResendDaysOnAnExistingSite(IntegrationTestCase):
+class TestResendDays(IntegrationTestCase):
 	def test_a_site_with_no_resend_days_row_gets_the_default(self):
 		frappe.db.delete("Singles", {"doctype": "Grove Settings", "field": "report_resend_days"})
 		frappe.db.delete("Singles", {"doctype": "Grove Settings", "field": "pause_usage_report"})
@@ -255,3 +255,10 @@ class TestResendDaysOnAnExistingSite(IntegrationTestCase):
 
 		settings = frappe.get_single("Grove Settings")
 		self.assertEqual((settings.report_resend_days, settings.pause_usage_report), (3, 0))
+
+	def test_resend_days_below_one_is_refused(self):
+		settings = frappe.get_single("Grove Settings")
+		settings.report_resend_days = 0
+
+		with self.assertRaisesRegex(frappe.ValidationError, "Resend Days must be at least 1"):
+			settings.save()
