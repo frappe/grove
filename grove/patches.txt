@@ -28,3 +28,4 @@ grove.patches.v1_0.log_past_key_transfers
 grove.patches.v1_0.drop_key_limit_rows
 grove.patches.v1_0.move_tier_limits_per_key
 grove.patches.v1_0.settle_limit_scope_and_tables
+grove.patches.v1_0.unique_provider_key_title
