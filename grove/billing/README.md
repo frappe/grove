@@ -182,8 +182,13 @@ day's UTC bounds turned to site time (never `date(creation)`), never through the
 API. `as_of` is taken before the records are read. Batches hold at most 1,000 lines, signed as
 base64 HMAC-SHA256 of the raw body with **Central Report Secret** (`X-Central-Service: ai`,
 `X-Central-Signature`). Central sets the secret with `api.control.set_report_secret(secret)`
-(control clients only, POST). A run sends a line when its day has no outbox row, is unconfirmed,
-has a value other than the one last sent, or is one of the last **Resend Days** (default 3):
+(control clients only, POST). A run reads only the landing days whose value can still change: the
+last **Resend Days** (default 3, at least 1), the days still Pending, and every day since the newest
+day in the outbox (a pause or a failed run left those unsent); with an empty outbox it reads the
+whole window. Every writer stamps a Usage Record as it is written, so an older landing day cannot
+change; a Confirmed or Refused day past the resend days is never read again. Of what it reads, a run
+sends a line when its day has no outbox row, is Pending, has a value other than the one last sent,
+or is one of the resend days:
 Grove commits a whole gateway answer at once, so a record stamped 23:59:50 UTC can appear after
 midnight, and Central keeps the line with the newer `as_of`. A line Central accepts is confirmed;
 one rejected with `retry` true (an unknown subject: a team with no AI subscription in Central) is

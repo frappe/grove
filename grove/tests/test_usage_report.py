@@ -98,11 +98,17 @@ class ReportCase(IntegrationTestCase):
 			{"central_url": "https://central.test", "pause_usage_report": 0, "report_resend_days": 3},
 		)
 		set_encrypted_password("Grove Settings", "Grove Settings", SECRET, "central_report_secret")
+		frappe.db.delete("Usage Report Day")
 		self.team = f"t-{frappe.generate_hash(length=8)}"
+		self.read_days = []
 
 	def report(self, at=NOON):
 		self.central.bodies = []
-		UsageReport(frappe.get_single("Grove Settings"), at).send()
+		with unittest.mock.patch.object(
+			UsageReport, "get_day_lines", autospec=True, side_effect=UsageReport.get_day_lines
+		) as get_day_lines:
+			UsageReport(frappe.get_single("Grove Settings"), at).send()
+		self.read_days = [str(call.args[1]) for call in get_day_lines.call_args_list]
 		return self.central.lines if self.central.bodies else {}
 
 	def mine(self, lines):
@@ -165,6 +171,53 @@ class TestALateCommitBillsOnItsLandingDay(ReportCase):
 		self.assertEqual({key[2] for key in lines}, {"2026-11-19", "2026-11-18"})
 
 
+class TestOnlyDaysThatCanChangeAreRead(ReportCase):
+	def test_the_first_run_reads_the_whole_window(self):
+		self.report()
+
+		self.assertEqual(len(self.read_days), 30)
+		self.assertEqual((self.read_days[0], self.read_days[-1]), ("2026-10-22", TODAY))
+
+	def test_a_confirmed_day_past_the_resend_days_is_not_read_again(self):
+		landed(self.team, NOON, ("m1", 1))
+		landed(self.team, NOON - timedelta(days=5), ("m1", 1))
+		self.report()
+
+		landed(self.team, NOON - timedelta(days=5), ("m1", 1))
+		lines = self.mine(self.report())
+
+		self.assertEqual(self.read_days, ["2026-11-18", "2026-11-19", TODAY])
+		self.assertEqual(set(lines), {(self.team, "m1", TODAY)})
+
+	def test_a_pending_day_past_the_resend_days_is_read_until_confirmed(self):
+		landed(self.team, NOON, ("m1", 1))
+		landed(self.team, NOON - timedelta(days=5), ("m1", 1))
+		self.central.refuse = {(self.team, "m1", "2026-11-15"): True}
+		self.report()
+		self.assertEqual(
+			frappe.db.get_value("Usage Report Day", {"team": self.team, "day": "2026-11-15"}, "status"),
+			"Pending",
+		)
+		self.central.refuse = {}
+
+		lines = self.mine(self.report())
+
+		self.assertEqual(self.read_days, ["2026-11-15", "2026-11-18", "2026-11-19", TODAY])
+		self.assertEqual(lines[(self.team, "m1", "2026-11-15")], 1_000_000_000)
+		self.report()
+		self.assertNotIn("2026-11-15", self.read_days)
+
+	def test_a_run_after_a_pause_reads_every_day_since_the_last_one_sent(self):
+		landed(self.team, NOON - timedelta(days=10), ("m1", 1))
+		self.report(at=NOON - timedelta(days=10))
+
+		landed(self.team, NOON - timedelta(days=6), ("m1", 2))
+		lines = self.mine(self.report())
+
+		self.assertEqual((self.read_days[0], len(self.read_days)), ("2026-11-10", 11))
+		self.assertEqual(lines, {(self.team, "m1", "2026-11-14"): 2_000_000_000})
+
+
 class TestCentralsAnswer(ReportCase):
 	def test_unconfirmed_days_carry_over_a_central_outage(self):
 		landed(self.team, NOON - timedelta(days=5), ("m1", 1))
@@ -182,13 +235,14 @@ class TestCentralsAnswer(ReportCase):
 		)
 
 	def test_a_refused_day_is_not_resent_until_its_value_changes(self):
-		landed(self.team, NOON - timedelta(days=5), ("m1", 1))
-		landed(self.team, NOON - timedelta(days=5), ("m2", 1))
-		self.central.refuse = {(self.team, "m1", "2026-11-15"): False, (self.team, "m2", "2026-11-15"): True}
+		yesterday = "2026-11-19"
+		landed(self.team, NOON - timedelta(days=1), ("m1", 1))
+		landed(self.team, NOON - timedelta(days=1), ("m2", 1))
+		self.central.refuse = {(self.team, "m1", yesterday): False, (self.team, "m2", yesterday): True}
 		self.report()
 		self.central.refuse = {}
 
-		self.assertEqual(set(self.mine(self.report())), {(self.team, "m2", "2026-11-15")})
+		self.assertEqual(set(self.mine(self.report())), {(self.team, "m2", yesterday)})
 		self.assertEqual(
 			frappe.db.get_all(
 				"Usage Report Day", {"team": self.team}, ["model", "status", "reason"], order_by="model"
@@ -199,8 +253,11 @@ class TestCentralsAnswer(ReportCase):
 			],
 		)
 
-		landed(self.team, NOON - timedelta(days=5), ("m1", 1))
-		self.assertEqual(self.mine(self.report()), {(self.team, "m1", "2026-11-15"): 2_000_000_000})
+		landed(self.team, NOON - timedelta(days=1), ("m1", 1))
+		self.assertEqual(
+			self.mine(self.report()),
+			{(self.team, "m1", yesterday): 2_000_000_000, (self.team, "m2", yesterday): 1_000_000_000},
+		)
 
 	def test_a_bad_signature_fails_the_run_and_confirms_nothing(self):
 		landed(self.team, NOON, ("m1", 1))

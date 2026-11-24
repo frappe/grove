@@ -102,15 +102,21 @@ class UsageReport:
 		if not self.is_ready:
 			return
 		outbox = UsageReportDays(self.first_day)
-		due = [line for line in self.get_lines() if self.is_due(line, outbox.get(line.key))]
+		lines = [line for day in self.get_days(outbox) for line in self.get_day_lines(day)]
+		due = [line for line in lines if self.is_due(line, outbox.get(line.key))]
 		for start in range(0, len(due), BATCH_LINES):
 			batch = due[start : start + BATCH_LINES]
 			outbox.record(self.get_outcomes(batch, self.post(batch)))
 			frappe.db.commit()
 
-	def get_lines(self):
-		days = (self.first_day + timedelta(days=offset) for offset in range(WINDOW_DAYS))
-		return [line for day in days for line in self.get_day_lines(day)]
+	def get_days(self, outbox):
+		"""The landing days to read, oldest first. A Usage Record is stamped as it is written, so
+		only the resend days can still change; the days still Pending and every day since the
+		newest one in the outbox (left unsent by a pause or a failed run) are read too. An empty
+		outbox reads the whole window."""
+		start = max(self.first_day, min(self.first_resent_day, outbox.newest_day or self.first_day))
+		recent = {start + timedelta(days=offset) for offset in range((self.today - start).days + 1)}
+		return sorted(recent | outbox.pending_days)
 
 	def get_day_lines(self, day):
 		"""Summed in SQL as decimals and read as text: the database driver turns a decimal into a

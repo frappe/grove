@@ -4,6 +4,7 @@
 import frappe
 from frappe.model.document import Document
 from frappe.model.naming import make_autoname
+from frappe.utils import getdate
 
 DOCTYPE = "Usage Report Day"
 OUTCOME_FIELDS = ("value_sent", "as_of", "sent_at", "status", "confirmed_at", "reason")
@@ -63,6 +64,15 @@ class UsageReportDays:
 
 	def get(self, key):
 		return self.rows.get(key)
+
+	@property
+	def pending_days(self):
+		return {getdate(row.day) for row in self.rows.values() if row.status == PENDING}
+
+	@property
+	def newest_day(self):
+		"""None while the outbox is empty."""
+		return max((getdate(row.day) for row in self.rows.values()), default=None)
 
 	def record(self, outcomes):
 		"""Writes each line's outcome, {key: fields}: a known day in place, a new one inserted."""
