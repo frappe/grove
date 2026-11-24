@@ -347,6 +347,16 @@ class TestAnOlderCentralsAnswer(ReportCase):
 		self.assertEqual(self.statuses()[(self.team, "m1")], "Pending")
 		self.assertEqual(self.statuses()[(self.team, "m2")], "Confirmed")
 
+	def test_a_blank_model_line_rejected_with_a_null_dimension_is_refused(self):
+		landed(self.team, NOON, ("", 1))
+		rejection = {"subject": self.team, "day": TODAY, "dimension": None, "reason": "no", "retry": False}
+		self.central.reply = {"message": {"accepted": 4, "rejected": [rejection]}}
+
+		self.report()
+
+		self.assertEqual(self.statuses()[(self.team, "")], "Refused")
+		self.assertEqual(self.statuses()[(self.team, "m1")], "Confirmed")
+
 	def test_a_rejection_without_a_subject_keeps_the_whole_batch_pending(self):
 		self.central.reply = {"message": {"accepted": 3, "rejected": [{"reason": "no", "retry": False}]}}
 

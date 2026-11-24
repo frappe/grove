@@ -232,10 +232,12 @@ def could_name(rejection, line):
 
 
 def names_exactly(rejection, line):
-	return (rejection.get("subject"), rejection.get("day"), rejection.get("dimension")) == (
-		line.team,
-		str(line.day),
-		line.model,
+	"""A null `dimension` names the blank model; a missing one names none."""
+	return (
+		rejection.get("subject") == line.team
+		and rejection.get("day") == str(line.day)
+		and "dimension" in rejection
+		and (rejection["dimension"] or "") == line.model
 	)
 
 

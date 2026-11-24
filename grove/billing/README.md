@@ -195,7 +195,7 @@ or is one of the resend days:
 Grove commits a whole gateway answer at once, so a record stamped 23:59:50 UTC can appear after
 midnight, and Central keeps the line with the newer `as_of`. A line is Confirmed only when no
 rejection in Central's reply could name it (`CentralReply`): a rejection names a line by `subject`,
-`day` and `dimension`, and a field it leaves out (an older Central sends only `subject` and
+`day` and `dimension` (a null `dimension` names the blank model), and a field it leaves out (an older Central sends only `subject` and
 `reason`) or a blank `subject` or `day` matches every line, so all of them stay Pending. A line
 rejected with `retry` true, or without `retry`, or by a rejection that does not name it exactly
 is sent again next run; one that every matching rejection names exactly with `retry` false is
