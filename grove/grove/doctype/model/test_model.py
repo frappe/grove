@@ -146,6 +146,15 @@ class TestLoadPricing(IntegrationTestCase):
 class TestModalities(IntegrationTestCase):
 	counter = 0
 
+	@classmethod
+	def setUpClass(cls):
+		"""Audio and Transcription, which the catalog does not seed."""
+		super().setUpClass()
+		for name, is_input, is_output in (("Audio", 1, 0), ("Transcription", 0, 1)):
+			if not frappe.db.exists("Modality", name):
+				modality = {"doctype": "Modality", "name": name, "is_input": is_input, "is_output": is_output}
+				frappe.get_doc(modality).insert()
+
 	def model(self, **lists):
 		TestModalities.counter += 1
 		model_id = f"modalities-{TestModalities.counter}"
