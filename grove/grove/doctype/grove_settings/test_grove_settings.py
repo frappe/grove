@@ -11,7 +11,9 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from grove.grove.doctype.grove_settings.grove_settings import set_missing_defaults
 from grove.infrastructure import tls
+from grove.patches.v1_0 import set_missing_settings_defaults
 
 
 class TestLineageStaleness(unittest.TestCase):
@@ -111,6 +113,55 @@ class TestServiceDiscoveryToken(IntegrationTestCase):
 
 	def test_a_save_that_leaves_the_token_alone_is_not_checked(self):
 		frappe.get_single("Grove Settings").save()
+
+
+class TestMissingDefaults(IntegrationTestCase):
+	"""A site whose Single never took its JSON defaults: the install seed writes it first."""
+
+	def setUp(self):
+		self.defaults = {
+			field.fieldname: field.default
+			for field in frappe.get_meta("Grove Settings").fields
+			if field.default
+		}
+		frappe.db.delete("Singles", {"doctype": "Grove Settings", "field": ("in", tuple(self.defaults))})
+		self.addCleanup(frappe.clear_document_cache, "Grove Settings", "Grove Settings")
+
+	def stored(self):
+		values = frappe.db.get_singles_dict("Grove Settings")
+		return {field: values.get(field) for field in self.defaults}
+
+	def test_each_defaulted_field_takes_its_default(self):
+		self.assertTrue({"report_resend_days", "usage_retention", "pathway_release"} <= set(self.defaults))
+
+		set_missing_settings_defaults.execute()
+
+		self.assertEqual(self.stored(), self.defaults)
+
+	def test_a_stored_value_is_kept_and_a_blank_one_filled(self):
+		frappe.db.set_single_value(
+			"Grove Settings",
+			{"pause_usage_report": 0, "pathway_release": "v9.9.9", "usage_retention": ""},
+		)
+
+		set_missing_defaults()
+
+		stored = self.stored()
+		self.assertEqual(
+			(stored["pause_usage_report"], stored["pathway_release"], stored["usage_retention"]),
+			("0", "v9.9.9", self.defaults["usage_retention"]),
+		)
+
+	def test_a_second_run_writes_nothing_and_neither_touches_modified(self):
+		modified = frappe.db.get_singles_dict("Grove Settings").get("modified")
+		set_missing_defaults()
+
+		with patch.object(frappe.db, "set_single_value") as set_single_value:
+			set_missing_defaults()
+
+		set_single_value.assert_not_called()
+		self.assertEqual(self.stored(), self.defaults)
+		self.assertEqual(frappe.db.get_singles_dict("Grove Settings").get("modified"), modified)
 
 
 if __name__ == "__main__":

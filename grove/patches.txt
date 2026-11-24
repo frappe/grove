@@ -30,4 +30,4 @@ grove.patches.v1_0.drop_key_limit_rows
 grove.patches.v1_0.move_tier_limits_per_key
 grove.patches.v1_0.settle_limit_scope_and_tables
 grove.patches.v1_0.unique_provider_key_title
-grove.patches.v1_0.set_report_resend_days
+grove.patches.v1_0.set_missing_settings_defaults

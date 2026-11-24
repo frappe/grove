@@ -19,8 +19,11 @@ fixtures = [
 	{"dt": "Role", "filters": [["name", "in", ["Grove Control"]]]},
 ]
 
-# The seed writes Grove Settings first, so the fields after it get no default of their own.
-after_install = ["grove.catalog.seed.insert_missing", "grove.patches.v1_0.set_report_resend_days.execute"]
+# The seed writes Grove Settings before its defaults apply, so they are stored after it.
+after_install = [
+	"grove.catalog.seed.insert_missing",
+	"grove.grove.doctype.grove_settings.grove_settings.set_missing_defaults",
+]
 after_migrate = ["grove.catalog.seed.insert_missing"]
 
 scheduler_events = {
