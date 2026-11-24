@@ -14,7 +14,7 @@ import requests
 
 from grove.billing.doctype.usage_record.usage_record import money_rows
 from grove.billing.doctype.usage_report_day import usage_report_day
-from grove.billing.doctype.usage_report_day.usage_report_day import report_key
+from grove.billing.doctype.usage_report_day.usage_report_day import UsageReportDays, report_key
 from grove.utils import site_datetime
 
 REPORT_ROUTE = "/api/method/central.billing.api.metering.report"
@@ -101,12 +101,11 @@ class UsageReport:
 	def send(self):
 		if not self.is_ready:
 			return
-		usage_report_day.prune(self.first_day)
-		sent = usage_report_day.get_sent_days(self.first_day)
-		due = [line for line in self.get_lines() if self.is_due(line, sent.get(line.key))]
+		outbox = UsageReportDays(self.first_day)
+		due = [line for line in self.get_lines() if self.is_due(line, outbox.get(line.key))]
 		for start in range(0, len(due), BATCH_LINES):
 			batch = due[start : start + BATCH_LINES]
-			usage_report_day.record_outcomes(self.get_outcomes(batch, self.post(batch)), sent)
+			outbox.record(self.get_outcomes(batch, self.post(batch)))
 			frappe.db.commit()
 
 	def get_lines(self):

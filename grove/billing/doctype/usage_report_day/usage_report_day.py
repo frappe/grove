@@ -52,27 +52,30 @@ def get_status(rejection):
 	return PENDING if rejection.get("retry") else REFUSED
 
 
-def get_sent_days(first_day):
-	"""{(team, model, day): row} for every landing day from `first_day` on."""
-	rows = frappe.get_all(
-		DOCTYPE,
-		filters={"day": (">=", first_day)},
-		fields=["name", "team", "model", "day", "value_sent", "status"],
-	)
-	return {report_key(row.team, row.model, row.day): row for row in rows}
+class UsageReportDays:
+	"""The outbox rows of the landing days the report still sends, keyed like its lines. Rows of
+	days before `first_day` are dropped on load."""
 
+	def __init__(self, first_day):
+		frappe.db.delete(DOCTYPE, {"day": ("<", first_day)})
+		rows = frappe.get_all(DOCTYPE, fields=["name", "team", "model", "day", "value_sent", "status"])
+		self.rows = {report_key(row.team, row.model, row.day): row for row in rows}
 
-def record_outcomes(outcomes, sent):
-	"""Writes each line's outcome: {(team, model, day): fields}. `sent` is get_sent_days' map, so
-	a known day is updated in place and a new one inserted."""
-	new = []
-	for key, fields in outcomes.items():
-		if row := sent.get(key):
-			frappe.db.set_value(DOCTYPE, row.name, fields, update_modified=False)
-		else:
-			new.append(new_row(key, fields))
-	if new:
-		frappe.db.bulk_insert(DOCTYPE, list(new[0]), [list(row.values()) for row in new])
+	def get(self, key):
+		return self.rows.get(key)
+
+	def record(self, outcomes):
+		"""Writes each line's outcome, {key: fields}: a known day in place, a new one inserted."""
+		new = []
+		for key, fields in outcomes.items():
+			if row := self.rows.get(key):
+				frappe.db.set_value(DOCTYPE, row.name, fields, update_modified=False)
+				row.update(fields)
+			else:
+				new.append(new_row(key, fields))
+				self.rows[key] = frappe._dict(new[-1])
+		if new:
+			frappe.db.bulk_insert(DOCTYPE, list(new[0]), [list(row.values()) for row in new])
 
 
 def new_row(key, fields):
@@ -89,8 +92,3 @@ def new_row(key, fields):
 		"day": day,
 		**{field: fields[field] for field in OUTCOME_FIELDS},
 	}
-
-
-def prune(first_day):
-	"""Drops the rows of landing days the report no longer sends."""
-	frappe.db.delete(DOCTYPE, {"day": ("<", first_day)})
