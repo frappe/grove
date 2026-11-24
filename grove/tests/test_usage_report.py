@@ -63,7 +63,11 @@ class FakeCentral:
 		body = json.loads(data)
 		self.bodies.append(body)
 		rejected = [
-			{**{k: line[k] for k in ("subject", "meter", "day", "dimension")}, "reason": "no", "retry": retry}
+			{
+				**{key: line[key] for key in ("subject", "meter", "day", "dimension")},
+				"reason": "no",
+				"retry": retry,
+			}
 			for line in body["lines"]
 			if (retry := self.refuse.get((line["subject"], line["dimension"], line["day"]))) is not None
 		]
@@ -73,7 +77,10 @@ class FakeCentral:
 	@property
 	def lines(self):
 		"""{(subject, dimension, day): value} of the last report."""
-		return {(l["subject"], l["dimension"], l["day"]): l["value"] for l in self.bodies[-1]["lines"]}
+		return {
+			(line["subject"], line["dimension"], line["day"]): line["value"]
+			for line in self.bodies[-1]["lines"]
+		}
 
 
 class ReportCase(IntegrationTestCase):
@@ -119,7 +126,9 @@ class TestALineIsTheLandingDaysDecimalSum(ReportCase):
 			},
 		)
 		line = next(
-			l for l in self.central.bodies[-1]["lines"] if l["dimension"] == "m1" and l["day"] == TODAY
+			line
+			for line in self.central.bodies[-1]["lines"]
+			if (line["subject"], line["dimension"], line["day"]) == (self.team, "m1", TODAY)
 		)
 		self.assertEqual((line["meter"], line["currency"], line["amount"]), ("cost", "USD", 3.123456792))
 		self.assertTrue(self.central.bodies[-1]["as_of"].endswith("Z"))
