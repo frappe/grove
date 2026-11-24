@@ -52,7 +52,7 @@ class FakeCentral:
 	"""Central's report endpoint: checks the signature, refuses the lines it is told to."""
 
 	def __init__(self):
-		self.bodies, self.refuse, self.failure = [], {}, None
+		self.bodies, self.refuse, self.failure, self.reply = [], {}, None, None
 
 	def post(self, url, data, headers, timeout):
 		if self.failure:
@@ -71,8 +71,10 @@ class FakeCentral:
 			for line in body["lines"]
 			if (retry := self.refuse.get((line["subject"], line["dimension"], line["day"]))) is not None
 		]
-		message = {"accepted": len(body["lines"]) - len(rejected), "rejected": rejected}
-		return SimpleNamespace(status_code=200, json=lambda: {"message": message})
+		reply = self.reply or {
+			"message": {"accepted": len(body["lines"]) - len(rejected), "rejected": rejected}
+		}
+		return SimpleNamespace(status_code=200, json=lambda: reply, text=json.dumps(reply))
 
 	@property
 	def lines(self):
@@ -267,6 +269,66 @@ class TestCentralsAnswer(ReportCase):
 			self.report()
 
 		self.assertFalse(frappe.db.exists("Usage Report Day", {"team": self.team}))
+
+
+class TestAnOlderCentralsAnswer(ReportCase):
+	def setUp(self):
+		super().setUp()
+		self.other = f"t-{frappe.generate_hash(length=8)}"
+		for team in (self.team, self.other):
+			landed(team, NOON, ("m1", 1), ("m2", 1))
+
+	def statuses(self):
+		return {
+			(row.team, row.model): row.status
+			for row in frappe.db.get_all(
+				"Usage Report Day", {"team": ("in", (self.team, self.other))}, ["team", "model", "status"]
+			)
+		}
+
+	def test_a_rejection_naming_only_its_subject_keeps_every_line_of_it_pending(self):
+		self.central.reply = {
+			"message": {"accepted": 2, "rejected": [{"subject": self.team, "reason": "no"}]}
+		}
+
+		self.report()
+
+		self.assertEqual(
+			self.statuses(),
+			{
+				(self.team, "m1"): "Pending",
+				(self.team, "m2"): "Pending",
+				(self.other, "m1"): "Confirmed",
+				(self.other, "m2"): "Confirmed",
+			},
+		)
+		self.assertEqual(
+			frappe.db.get_value("Usage Report Day", {"team": self.team, "model": "m1"}, "reason"), "no"
+		)
+
+	def test_an_exact_rejection_without_retry_stays_pending(self):
+		rejection = {"subject": self.team, "day": TODAY, "dimension": "m1", "reason": "no"}
+		self.central.reply = {"message": {"accepted": 3, "rejected": [rejection]}}
+
+		self.report()
+
+		self.assertEqual(self.statuses()[(self.team, "m1")], "Pending")
+		self.assertEqual(self.statuses()[(self.team, "m2")], "Confirmed")
+
+	def test_a_rejection_without_a_subject_keeps_the_whole_batch_pending(self):
+		self.central.reply = {"message": {"accepted": 3, "rejected": [{"reason": "no", "retry": False}]}}
+
+		self.report()
+
+		self.assertEqual(set(self.statuses().values()), {"Pending"})
+
+	def test_a_reply_without_rejected_fails_the_run_and_confirms_nothing(self):
+		for reply in ({"message": {"accepted": 4}}, {"ok": True}, ["no"]):
+			self.central.reply = reply
+			with self.assertRaisesRegex(frappe.ValidationError, "no rejected list"):
+				self.report()
+
+			self.assertEqual(self.statuses(), {})
 
 
 class TestTheWindow(ReportCase):

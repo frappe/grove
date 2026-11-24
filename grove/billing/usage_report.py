@@ -146,8 +146,7 @@ class UsageReport:
 		return row.status == PENDING or line.day >= self.first_resent_day
 
 	def post(self, lines):
-		"""Central's `rejected`, keyed like the lines. Thrown on anything but 200: the lines stay
-		unconfirmed for the next run."""
+		"""Central's reply. Thrown on anything but 200: the lines stay unconfirmed for the next run."""
 		body = json.dumps(
 			{"as_of": self.as_of.strftime("%Y-%m-%dT%H:%M:%SZ"), "lines": [line.payload for line in lines]}
 		)
@@ -163,31 +162,76 @@ class UsageReport:
 		)
 		if response.status_code != 200:
 			frappe.throw(f"Central refused the usage report: {response.status_code} {response.text[:200]}")
-		rejected = response.json()["message"]["rejected"]
-		return {report_key(line["subject"], line.get("dimension"), line["day"]): line for line in rejected}
+		return CentralReply.parse(response)
 
-	def get_outcomes(self, lines, rejected):
+	def get_outcomes(self, lines, reply):
 		"""{line key: the outbox fields} for each line sent."""
 		now = frappe.utils.now_datetime()
-		outcomes = {}
-		for line in lines:
-			rejection = rejected.get(line.key) or {}
-			outcomes[line.key] = {
+		return {
+			line.key: {
 				"value_sent": line.value,
 				"as_of": site_datetime(self.as_of),
 				"sent_at": now,
-				"status": get_status(rejection),
-				"reason": rejection.get("reason") or "",
+				"status": reply.get_status(line),
+				"reason": reply.get_reason(line),
 			}
-		return outcomes
+			for line in lines
+		}
 
 
-def get_status(rejection):
-	"""A line Central did not reject is Confirmed; a rejected one is Pending if Central asks for it
-	again, Refused if not."""
-	if not rejection:
-		return CONFIRMED
-	return PENDING if rejection.get("retry") else REFUSED
+class CentralReply:
+	"""Central's answer to one batch. A line is Confirmed only when no rejection could name it: an
+	older Central names a rejected line by `subject` alone, so a field it leaves out matches any."""
+
+	def __init__(self, rejections):
+		self.rejections = [rejection if isinstance(rejection, dict) else {} for rejection in rejections]
+
+	@classmethod
+	def parse(cls, response):
+		"""Thrown when the reply has no `rejected` list: nothing in the batch can be confirmed."""
+		try:
+			rejections = response.json()["message"]["rejected"]
+		except (ValueError, KeyError, TypeError):
+			rejections = None
+		if not isinstance(rejections, list):
+			frappe.throw(f"Central's reply to the usage report has no rejected list: {response.text[:200]}")
+		return cls(rejections)
+
+	def get_rejections(self, line):
+		return [rejection for rejection in self.rejections if could_name(rejection, line)]
+
+	def get_status(self, line):
+		"""Refused only when every rejection that could name the line names it exactly and says
+		`retry` false; Pending when any rejection could name it otherwise."""
+		rejections = self.get_rejections(line)
+		if not rejections:
+			return CONFIRMED
+		if all(
+			rejection.get("retry") is False and names_exactly(rejection, line) for rejection in rejections
+		):
+			return REFUSED
+		return PENDING
+
+	def get_reason(self, line):
+		reasons = dict.fromkeys(str(rejection.get("reason") or "") for rejection in self.get_rejections(line))
+		return "; ".join(reason for reason in reasons if reason)
+
+
+def could_name(rejection, line):
+	"""A blank `subject` or `day` matches any line; `dimension`, when present, is the model."""
+	if rejection.get("subject") and rejection["subject"] != line.team:
+		return False
+	if rejection.get("day") and rejection["day"] != str(line.day):
+		return False
+	return "dimension" not in rejection or (rejection["dimension"] or "") == line.model
+
+
+def names_exactly(rejection, line):
+	return (rejection.get("subject"), rejection.get("day"), rejection.get("dimension")) == (
+		line.team,
+		str(line.day),
+		line.model,
+	)
 
 
 def sign(secret, body):
