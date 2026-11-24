@@ -38,6 +38,11 @@ def on_doctype_update():
 	frappe.db.add_unique(DOCTYPE, ["team", "model", "day"], constraint_name="unique_team_model_day")
 
 
+def report_key(team, model, day):
+	"""A report line's identity: a blank model is "", the day an ISO date."""
+	return (team, model or "", str(day))
+
+
 def get_sent_days(first_day):
 	"""{(team, model, day): row} for every landing day from `first_day` on."""
 	rows = frappe.get_all(
@@ -45,7 +50,7 @@ def get_sent_days(first_day):
 		filters={"day": (">=", first_day)},
 		fields=["name", "team", "model", "day", "value_sent", "confirmed_at", "refused"],
 	)
-	return {(row.team, row.model or "", str(row.day)): row for row in rows}
+	return {report_key(row.team, row.model, row.day): row for row in rows}
 
 
 def record_outcomes(outcomes, sent):

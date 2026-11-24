@@ -14,6 +14,7 @@ import requests
 
 from grove.billing.doctype.usage_record.usage_record import money_rows
 from grove.billing.doctype.usage_report_day import usage_report_day
+from grove.billing.doctype.usage_report_day.usage_report_day import report_key
 from grove.utils import site_datetime
 
 REPORT_ROUTE = "/api/method/central.billing.api.metering.report"
@@ -38,7 +39,7 @@ class ReportLine:
 
 	@property
 	def key(self):
-		return (self.team, self.model, str(self.day))
+		return report_key(self.team, self.model, self.day)
 
 	@property
 	def value(self):
@@ -153,7 +154,7 @@ class UsageReport:
 		if response.status_code != 200:
 			frappe.throw(f"Central refused the usage report: {response.status_code} {response.text[:200]}")
 		rejected = response.json()["message"]["rejected"]
-		return {(line["subject"], line.get("dimension") or "", line["day"]): line for line in rejected}
+		return {report_key(line["subject"], line.get("dimension"), line["day"]): line for line in rejected}
 
 	def get_outcomes(self, lines, rejected):
 		"""{line key: the outbox fields} for each line sent."""
