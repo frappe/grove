@@ -177,8 +177,7 @@ class UsageReport:
 				"value_sent": line.value,
 				"as_of": site_datetime(self.as_of),
 				"sent_at": now,
-				"status": reply.get_status(line),
-				"reason": reply.get_reason(line),
+				**reply.get_verdict(line),
 			}
 			for line in lines
 		}
@@ -189,7 +188,10 @@ class CentralReply:
 	older Central names a rejected line by `subject` alone, so a field it leaves out matches any."""
 
 	def __init__(self, rejections):
-		self.rejections = [rejection if isinstance(rejection, dict) else {} for rejection in rejections]
+		self.rejections_by_subject = {}
+		for rejection in rejections:
+			rejection = rejection if isinstance(rejection, dict) else {}
+			self.rejections_by_subject.setdefault(rejection.get("subject") or "", []).append(rejection)
 
 	@classmethod
 	def parse(cls, response):
@@ -203,23 +205,27 @@ class CentralReply:
 		return cls(rejections)
 
 	def get_rejections(self, line):
-		return [rejection for rejection in self.rejections if could_name(rejection, line)]
+		"""Those naming the line's team, or no team, that could name the line."""
+		candidates = self.rejections_by_subject.get(line.team, []) + self.rejections_by_subject.get("", [])
+		return [rejection for rejection in candidates if could_name(rejection, line)]
 
-	def get_status(self, line):
-		"""Refused only when every rejection that could name the line names it exactly and says
-		`retry` false; Pending when any rejection could name it otherwise."""
+	def get_verdict(self, line):
+		"""The line's status and reason. Refused only when every rejection that could name the line
+		names it exactly and says `retry` false; Pending when any rejection could name it otherwise."""
 		rejections = self.get_rejections(line)
-		if not rejections:
-			return CONFIRMED
-		if all(
-			rejection.get("retry") is False and names_exactly(rejection, line) for rejection in rejections
-		):
-			return REFUSED
-		return PENDING
+		reasons = dict.fromkeys(str(rejection.get("reason") or "") for rejection in rejections)
+		return {
+			"status": get_status(rejections, line),
+			"reason": "; ".join(reason for reason in reasons if reason),
+		}
 
-	def get_reason(self, line):
-		reasons = dict.fromkeys(str(rejection.get("reason") or "") for rejection in self.get_rejections(line))
-		return "; ".join(reason for reason in reasons if reason)
+
+def get_status(rejections, line):
+	if not rejections:
+		return CONFIRMED
+	if all(rejection.get("retry") is False and names_exactly(rejection, line) for rejection in rejections):
+		return REFUSED
+	return PENDING
 
 
 def could_name(rejection, line):
