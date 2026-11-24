@@ -220,13 +220,19 @@ class CentralReply:
 
 
 def as_rejection(rejection):
-	"""One that names no team as a string names no line, so it holds every line of the batch."""
+	"""An unreadable `subject` holds every line of the batch, an unreadable `day` every day of its
+	subject; neither ever names a line exactly."""
 	if not isinstance(rejection, dict):
 		return {}
-	subject = rejection.get("subject")
-	if subject is None or isinstance(subject, str):
-		return rejection
-	return {"reason": rejection.get("reason")}
+	if not is_readable(rejection.get("subject")):
+		return {"reason": rejection.get("reason")}
+	if not is_readable(rejection.get("day")):
+		return {key: value for key, value in rejection.items() if key not in ("day", "retry")}
+	return rejection
+
+
+def is_readable(value):
+	return value is None or isinstance(value, str)
 
 
 def get_status(rejections, line):
