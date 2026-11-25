@@ -28,7 +28,7 @@ class TestTheKeyTitlePatch(IntegrationTestCase):
 		add_key(vendor, "k2")
 		with self.assertRaises(frappe.ValidationError) as raised:
 			execute()
-		twin = f"_T-probe-twins ({vendor.name}), title {frappe.bold('key')}: 2 keys"
+		twin = f"_T-probe-twins ({vendor.name}), title key: 2 keys"
 		self.assertIn(twin, str(raised.exception))
 		self.assertFalse(frappe.db.has_index("tabModel Provider Key", INDEX))
 		self.assertEqual(frappe.db.count("Model Provider Key", {"model_provider": vendor.name}), 2)
