@@ -12,8 +12,8 @@ from frappe.utils import get_system_timezone
 
 from grove.billing.pricing import PriceBook
 from grove.grove.doctype.model.model import get_modalities
+from grove.infrastructure.net import private_url
 from grove.naming import short_name
-from grove.net import private_url
 from grove.serving.base import engine_class
 
 REPLICA_FIELDS = [

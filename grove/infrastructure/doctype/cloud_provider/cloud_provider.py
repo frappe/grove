@@ -1,0 +1,62 @@
+# Copyright (c) 2026, Frappe and contributors
+# For license information, please see license.txt
+
+import json
+
+import frappe
+from frappe.model.document import Document
+
+
+class CloudProvider(Document):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+
+		access_key_id: DF.Data | None
+		api_key: DF.Password
+		gpu_types: DF.JSON | None
+		gpu_types_updated: DF.Datetime | None
+		provider_type: DF.Literal["runpod", "aws"]
+		resource_type: DF.Literal["Machine", "Pod"]
+		status: DF.Literal["active", "inactive"]
+	# end: auto-generated types
+
+	def validate(self):
+		self.resource_type = "Pod" if self.provider_type == "runpod" else "Machine"
+
+	@frappe.whitelist()
+	def fetch_gpu_types(self):
+		"""Refresh the cached GPU-type list in the background; the form's HTML field renders it on
+		reload. RunPod only."""
+		if self.provider_type != "runpod":
+			frappe.throw("GPU type listing is only available for RunPod providers.")
+
+		self.get_password("api_key", raise_exception=True)
+		frappe.enqueue(
+			"grove.infrastructure.doctype.cloud_provider.cloud_provider.update_gpu_types",
+			queue="short",
+			timeout=120,
+			cloud_provider=self.name,
+		)
+		frappe.msgprint(
+			"Fetching GPU types in the background — reload the page in a few seconds.", alert=True
+		)
+
+
+def update_gpu_types(cloud_provider):
+	from grove.infrastructure.cloud_provider.runpod import RunPodClient
+
+	cp = frappe.get_doc("Cloud Provider", cloud_provider)
+	key = cp.get_password("api_key", raise_exception=False)
+	if not key:
+		return
+
+	types = RunPodClient(key).list_gpu_types()
+	types.sort(key=lambda g: (not g.get("secureCloud"), -(g.get("memoryInGb") or 0)))
+	cp.db_set("gpu_types", json.dumps(types), update_modified=False)
+	cp.db_set("gpu_types_updated", frappe.utils.now(), update_modified=False)
+	frappe.db.commit()

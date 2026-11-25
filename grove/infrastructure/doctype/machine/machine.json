@@ -1,0 +1,268 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-07-01 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "machine_type",
+  "network",
+  "region",
+  "geography",
+  "status",
+  "column_break_cloud",
+  "cloud_provider",
+  "column_break_net",
+  "public_ip",
+  "private_ip",
+  "ssh_user",
+  "ssh_port",
+  "ssh_key",
+  "section_aws",
+  "instance_id",
+  "instance_type",
+  "root_volume_gb",
+  "is_static_ip",
+  "static_ip_allocation_id",
+  "termination_protection",
+  "column_break_aws_spec",
+  "machine_image",
+  "cpu_architecture",
+  "is_bare_metal",
+  "instance_store_disks",
+  "instance_store_gb",
+  "section_gpus",
+  "gpus",
+  "gpu_interconnect"
+ ],
+ "fields": [
+  {
+   "description": "What this box backs \u2014 the doctype of the same name, plus the word Server where it has one. Drives its Network security-group list on AWS; informational on bare-metal.",
+   "fieldname": "machine_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Machine Type",
+   "options": "Gateway\nIngress\nInference\nMonitoring Agent\nGateway Store",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "description": "Derived from Network",
+   "fieldname": "region",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Region",
+   "options": "Region",
+   "read_only_depends_on": "eval:doc.network"
+  },
+  {
+   "description": "Derived from Region",
+   "fieldname": "geography",
+   "fieldtype": "Link",
+   "label": "Geography",
+   "options": "Geography",
+   "read_only": 1
+  },
+  {
+   "fieldname": "network",
+   "fieldtype": "Link",
+   "label": "Network",
+   "options": "Network",
+   "set_only_once": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Draft\nPending\nActive\nStopped\nTerminated",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_cloud",
+   "fieldtype": "Column Break",
+   "label": "Cloud Provisioning"
+  },
+  {
+   "description": "Provider to use for provisioning (e.g. AWS). Blank = manual/on-prem.",
+   "fieldname": "cloud_provider",
+   "fieldtype": "Link",
+   "label": "Cloud Provider",
+   "link_filters": "[[\"Cloud Provider\",\"resource_type\",\"=\",\"Machine\"]]",
+   "options": "Cloud Provider"
+  },
+  {
+   "fieldname": "column_break_net",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Bare-metal: type the box's address here. Cloud: read-only \u2014 the provider hands it out, and Provision/Sync/Start write it.",
+   "fieldname": "public_ip",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Public IP",
+   "read_only_depends_on": "eval:doc.cloud_provider"
+  },
+  {
+   "fieldname": "private_ip",
+   "fieldtype": "Data",
+   "label": "Private IP",
+   "read_only_depends_on": "eval:doc.cloud_provider"
+  },
+  {
+   "default": "root",
+   "fieldname": "ssh_user",
+   "fieldtype": "Data",
+   "label": "SSH User",
+   "set_only_once": 1
+  },
+  {
+   "default": "22",
+   "fieldname": "ssh_port",
+   "fieldtype": "Int",
+   "label": "SSH Port",
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "ssh_key",
+   "fieldtype": "Link",
+   "label": "SSH Key",
+   "options": "SSH Key",
+   "set_only_once": 1
+  },
+  {
+   "depends_on": "eval:doc.cloud_provider",
+   "description": "Launch spec for this box. Blank fields fall back to the Cloud Provider's account-wide default.",
+   "fieldname": "section_aws",
+   "fieldtype": "Section Break",
+   "label": "Cloud"
+  },
+  {
+   "fieldname": "instance_id",
+   "fieldtype": "Data",
+   "label": "Instance ID",
+   "read_only": 1
+  },
+  {
+   "description": "e.g. g6.12xlarge. Its GPUs seed the table below at provision.",
+   "fieldname": "instance_type",
+   "fieldtype": "Data",
+   "label": "Instance Type"
+  },
+  {
+   "description": "The only disk attached. Holds the OS, the engine images AND the model weights, so size it for every model this box will serve \u2014 weights are hundreds of GB and the local NVMe is not used for them.",
+   "fieldname": "root_volume_gb",
+   "fieldtype": "Int",
+   "label": "Root Volume (GB)"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_static_ip",
+   "fieldtype": "Check",
+   "label": "Static IP",
+   "read_only_depends_on": "eval:doc.instance_id"
+  },
+  {
+   "depends_on": "eval:doc.is_static_ip",
+   "description": "The Static IP this box holds. Released by the Release Static IP button, or by Terminate.",
+   "fieldname": "static_ip_allocation_id",
+   "fieldtype": "Data",
+   "label": "Static IP Allocation ID",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "description": "Makes the provider refuse to terminate this box. Set at launch, then changed with its button; Sync reads it back off the provider.",
+   "fieldname": "termination_protection",
+   "fieldtype": "Check",
+   "label": "Termination Protection",
+   "read_only_depends_on": "eval:doc.instance_id"
+  },
+  {
+   "fieldname": "column_break_aws_spec",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "AMI to launch from. Editable while this box is Pending \u2014 after that it is what the box was launched with, and Sync keeps it in step with the instance.",
+   "fieldname": "machine_image",
+   "fieldtype": "Data",
+   "label": "Machine Image",
+   "read_only_depends_on": "eval:doc.status != 'Pending'"
+  },
+  {
+   "description": "What this box runs, read off its instance type. An Engine Image is matched against it \u2014 an arm64 box needs an arm64 image and an arm64 AMI. Blank on-prem.",
+   "fieldname": "cpu_architecture",
+   "fieldtype": "Select",
+   "label": "CPU Architecture",
+   "options": "\namd64\narm64",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Whether this instance type is a .metal SKU. Bare metal spends ten to twenty minutes in firmware POST on every boot and every reboot, so Grove waits longer for it \u2014 at launch, at start, and at the driver reboot during Setup.",
+   "fieldname": "is_bare_metal",
+   "fieldtype": "Check",
+   "label": "Bare Metal",
+   "read_only": 1
+  },
+  {
+   "description": "Ephemeral local NVMe this instance type ships. Wiped on stop and terminate \u2014 survives a reboot only. Unmounted unless the Inference Server opts its HF cache onto it (Use Instance Store For HF Cache).",
+   "fieldname": "instance_store_disks",
+   "fieldtype": "Int",
+   "label": "Instance Store Disks",
+   "read_only": 1
+  },
+  {
+   "fieldname": "instance_store_gb",
+   "fieldtype": "Int",
+   "label": "Instance Store (GB)",
+   "read_only": 1
+  },
+  {
+   "description": "The cards in this box. Read-only, and rewritten by Scan GPUs alongside the GPU records themselves \u2014 one writer, so this grid cannot drift from them. Open a row's GPU to see its history and what holds it.",
+   "fieldname": "section_gpus",
+   "fieldtype": "Section Break",
+   "label": "GPUs"
+  },
+  {
+   "depends_on": "eval: doc.machine_type === 'Inference' && (doc.gpus || []).length > 1",
+   "description": "How the cards reach each other, off nvidia-smi topo. Blank until Scan GPUs runs, and on a one-card box.",
+   "fieldname": "gpu_interconnect",
+   "fieldtype": "Select",
+   "label": "GPU Interconnect",
+   "options": "\nPCIe\nNVLink\nMixed"
+  },
+  {
+   "fieldname": "gpus",
+   "fieldtype": "Table",
+   "label": "GPUs",
+   "options": "Machine GPU",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-22 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Infrastructure",
+ "name": "Machine",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

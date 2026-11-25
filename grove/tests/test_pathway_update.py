@@ -11,9 +11,9 @@ from unittest.mock import Mock, patch
 import frappe
 import requests
 
-from grove.grove.doctype.pathway_update import pathway_update as module
-from grove.grove.doctype.pathway_update.pathway_update import PathwayUpdate
-from grove.runner import Status, StepHandler
+from grove.infrastructure.doctype.pathway_update import pathway_update as module
+from grove.infrastructure.doctype.pathway_update.pathway_update import PathwayUpdate
+from grove.infrastructure.runner import Status, StepHandler
 
 
 def setUpModule():

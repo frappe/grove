@@ -12,7 +12,6 @@ from unittest.mock import patch
 
 import frappe
 
-from grove.grove.doctype.gpu.gpu import GPUUnavailable
 from grove.grove.doctype.model_replica.model_replica import (
 	CLAIM_HOLDING_STATUSES,
 	ENGINE_PORT_BASE,
@@ -25,6 +24,7 @@ from grove.grove.doctype.model_replica.model_replica import (
 	set_container_state,
 	teardown_deployment,
 )
+from grove.infrastructure.doctype.gpu.gpu import GPUUnavailable
 from grove.serving.base import DEFAULT_MAX_MODEL_LEN, parse_context_length
 from grove.serving.custom import CustomEngine
 from grove.serving.vllm import VllmEngine

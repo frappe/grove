@@ -9,9 +9,9 @@ from unittest.mock import patch
 
 import requests
 
-from grove.cloud_provider.provisioner import PodProvisioner
-from grove.cloud_provider.runpod import RunPodClient, RunPodError, pod_status
 from grove.grove.doctype.pod.pod import Pod
+from grove.infrastructure.cloud_provider.provisioner import PodProvisioner
+from grove.infrastructure.cloud_provider.runpod import RunPodClient, RunPodError, pod_status
 from grove.serving.base import build_engine
 
 
@@ -285,7 +285,7 @@ class TestPodEnv(unittest.TestCase):
 		pod.allow_long_max_model_len = 0
 		pod.get_password = lambda *args, **kwargs: None
 		pod.env = [SimpleNamespace(key=k, value=v) for k, v in rows]
-		from grove.cloud_provider import provisioner
+		from grove.infrastructure.cloud_provider import provisioner
 
 		settings = SimpleNamespace(weights_s3_engine_environment={"AWS_ACCESS_KEY_ID": "AKIA"})
 		with (
@@ -367,7 +367,7 @@ class TestGatedStatus(unittest.TestCase):
 	"""What a gated pod's status is allowed to say, given the provider's own state."""
 
 	def gated(self, state, serving, **pod_kwargs):
-		from grove.cloud_provider import provisioner
+		from grove.infrastructure.cloud_provider import provisioner
 
 		with patch.object(provisioner, "_is_engine_serving", return_value=serving):
 			return PodProvisioner(serving_pod(**pod_kwargs)).gated_status(state)
@@ -485,7 +485,7 @@ class TestPodWarmup(unittest.TestCase):
 
 	def post(self, response=None, error=None, **kwargs):
 		"""Run get_warmup_error against a stubbed POST; returns (reason, captured call)."""
-		with patch("grove.cloud_provider.provisioner.requests.post") as posted:
+		with patch("grove.infrastructure.cloud_provider.provisioner.requests.post") as posted:
 			posted.side_effect = error
 			posted.return_value = response
 			return self.provisioner(**kwargs).get_warmup_error(), posted
@@ -518,12 +518,12 @@ class TestPodWarmup(unittest.TestCase):
 		self.assertIn("connection refused", reason)
 
 	def test_a_custom_engine_has_no_payload_to_prove(self):
-		with patch("grove.cloud_provider.provisioner.PodProvisioner.current_status", "Running"):
+		with patch("grove.infrastructure.cloud_provider.provisioner.PodProvisioner.current_status", "Running"):
 			self.assertFalse(self.provisioner(engine_kind="custom").is_warmup_due)
 			self.assertTrue(self.provisioner().is_warmup_due)
 
 	def test_a_pod_that_never_served_is_not_warmed(self):
-		with patch("grove.cloud_provider.provisioner.PodProvisioner.current_status", "Loading"):
+		with patch("grove.infrastructure.cloud_provider.provisioner.PodProvisioner.current_status", "Loading"):
 			self.assertFalse(self.provisioner().is_warmup_due)
 
 
@@ -544,7 +544,7 @@ class TestWarmupWithholdsTheRoute(unittest.TestCase):
 			set_state=lambda self, values: calls.setdefault("state", values),
 			sync_model_published=lambda self: calls.setdefault("synced", True),
 		):
-			with patch("grove.cloud_provider.provisioner.failure.report") as reported:
+			with patch("grove.infrastructure.cloud_provider.provisioner.failure.report") as reported:
 				provisioner.await_ready()
 		return calls, reported
 

@@ -7,7 +7,7 @@ firewall hole for nobody."""
 
 import unittest
 
-from grove.net import reachable_ip
+from grove.infrastructure.net import reachable_ip
 
 NETWORK = "NET-mumbai"
 

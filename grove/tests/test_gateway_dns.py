@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 import frappe
 
-from grove.cloud_provider.dns import (
+from grove.infrastructure.cloud_provider.dns import (
 	HEALTH_CHECK_FAILURES,
 	HEALTH_CHECK_INTERVAL,
 	NAME_TTL,
@@ -26,7 +26,7 @@ from grove.cloud_provider.dns import (
 	Route53Client,
 	Route53Error,
 )
-from grove.grove.doctype.gateway_server.gateway_server import GatewayServer
+from grove.infrastructure.doctype.gateway_server.gateway_server import GatewayServer
 
 ZONE = "grove.example.com"
 GATEWAY_HOST = f"api.{ZONE}"
@@ -279,7 +279,7 @@ class TestHealthChecks(unittest.TestCase):
 		self.assertEqual("hc-orphan", self.client.create_endpoint_health_check("203.0.113.7", "", "ref-1"))
 
 
-MODULE = "grove.grove.doctype.gateway_server.gateway_server"
+MODULE = "grove.infrastructure.doctype.gateway_server.gateway_server"
 
 
 def geography_endpoint(doctype, name, field):

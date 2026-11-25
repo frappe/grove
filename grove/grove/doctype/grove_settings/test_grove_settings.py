@@ -12,7 +12,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from grove import tls
+from grove.infrastructure import tls
 
 
 class TestLineageStaleness(unittest.TestCase):

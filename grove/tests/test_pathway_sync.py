@@ -1096,8 +1096,8 @@ class TestTheTickIsTheOnlyAutomaticPush(unittest.TestCase):
 
 	BUTTONS: ClassVar[dict] = {
 		"pathway/projection.py",
-		"grove/doctype/gateway_server/gateway_server.py",
-		"grove/doctype/ingress_server/ingress_server.py",
+		"infrastructure/doctype/gateway_server/gateway_server.py",
+		"infrastructure/doctype/ingress_server/ingress_server.py",
 		"grove/doctype/pathway_sync/pathway_sync.py",
 	}
 

@@ -13,9 +13,9 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from grove.billing.pricing import month_spent_by
-from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.model_provider.test_model_provider import keyed_provider, vendor_model
 from grove.grove.page.usage import usage
+from grove.infrastructure.doctype.geography.test_geography import make_test_geography
 from grove.pathway.run import finalize, new_run
 from grove.utils import utc_today
 

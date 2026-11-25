@@ -7,7 +7,7 @@ what collapses three sources onto one record without anybody writing an alias by
 
 import unittest
 
-from grove.grove.doctype.gpu_type.gpu_type import type_name_from
+from grove.infrastructure.doctype.gpu_type.gpu_type import type_name_from
 
 
 class TestDerivingTheName(unittest.TestCase):

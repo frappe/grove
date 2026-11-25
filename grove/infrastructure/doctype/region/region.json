@@ -1,0 +1,133 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "prompt",
+ "creation": "2026-07-02 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "label",
+  "column_break_upid",
+  "cloud_provider",
+  "geography",
+  "monitoring_tab",
+  "central_region",
+  "metrics_url",
+  "column_break_monitoring",
+  "logs_url",
+  "datum_token",
+  "datum_token_expires_at"
+ ],
+ "fields": [
+  {
+   "description": "Human-friendly name, e.g. Singapore. The record's Name (e.g. ap-south-1) is the provider's own region code, and is what Grove sends to the API.",
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Label"
+  },
+  {
+   "fieldname": "column_break_upid",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Blank = on-prem / no cloud provider.",
+   "fieldname": "cloud_provider",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Cloud Provider",
+   "options": "\nrunpod\naws"
+  },
+  {
+   "description": "The residency boundary this region is in. Every box here inherits it. Fixed while a Network or Machine names the region.",
+   "fieldname": "geography",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Geography",
+   "options": "Geography",
+   "reqd": 1
+  },
+  {
+   "fieldname": "monitoring_tab",
+   "fieldtype": "Tab Break",
+   "label": "Monitoring"
+  },
+  {
+   "description": "Central's name for the region whose datum this is (its own Region doc, e.g. blr-1): the audience of every token Grove mints for boxes here. Grove's region codes need not match Central's.",
+   "fieldname": "central_region",
+   "fieldtype": "Data",
+   "label": "Central Region"
+  },
+  {
+   "description": "datum's remote write route for this region, e.g. https://telemetry-svc.bom.frappe.cloud/v1/ingest/remote (https: datum's proxy answers http with a 308 that Vector drops). Every Monitoring Agent and every Vector in this region pushes to it; there is no fleet-wide fallback.",
+   "fieldname": "metrics_url",
+   "fieldtype": "Data",
+   "label": "Metrics Endpoint"
+  },
+  {
+   "fieldname": "column_break_monitoring",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "datum's log route for this region, e.g. https://telemetry-svc.bom.frappe.cloud/v1/logs/ingest (https, as above). Every box here POSTs its journald and pathway/redis lines to it.",
+   "fieldname": "logs_url",
+   "fieldtype": "Data",
+   "label": "Logs Endpoint"
+  },
+  {
+   "fieldname": "datum_token",
+   "fieldtype": "Password",
+   "hidden": 1,
+   "label": "Datum Token",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "When the kept roster token runs out. Grove asks Central for a new one just before.",
+   "fieldname": "datum_token_expires_at",
+   "fieldtype": "Datetime",
+   "label": "Datum Token Expires At",
+   "no_copy": 1,
+   "read_only": 1
+  }
+ ],
+ "links": [
+  {
+   "group": "Infrastructure",
+   "link_doctype": "Machine",
+   "link_fieldname": "region"
+  },
+  {
+   "group": "Infrastructure",
+   "link_doctype": "Gateway Server",
+   "link_fieldname": "region"
+  },
+  {
+   "group": "Infrastructure",
+   "link_doctype": "Gateway Store",
+   "link_fieldname": "region"
+  }
+ ],
+ "modified": "2026-11-11 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Infrastructure",
+ "name": "Region",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

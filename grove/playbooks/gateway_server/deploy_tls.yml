@@ -1,5 +1,5 @@
 ---
-# Push the fleet wildcard onto one provisioned Gateway or Ingress Server (grove.tls, after an
+# Push the fleet wildcard onto one provisioned Gateway or Ingress Server (grove.infrastructure.tls, after an
 # issuance or renewal). extra-vars: fleet_tls_cert, fleet_tls_key.
 - name: Install the fleet certificate on a Gateway or Ingress Server
   hosts: all

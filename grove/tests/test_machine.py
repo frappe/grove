@@ -15,7 +15,12 @@ from unittest.mock import patch
 
 import yaml
 
-from grove.cloud_provider.aws import AWSError, EC2Client, normalize_architecture, parse_architecture
+from grove.infrastructure.cloud_provider.aws import (
+	AWSError,
+	EC2Client,
+	normalize_architecture,
+	parse_architecture,
+)
 
 GPU_HOST_ROLE = Path(__file__).parent.parent / "playbooks/inference_server/roles/gpu_host"
 
@@ -265,7 +270,7 @@ class TestRebootTimeoutIsWiredThrough(unittest.TestCase):
 
 	def test_inference_server_sends_that_same_name(self):
 		source = (
-			Path(__file__).parent.parent / "grove/doctype/inference_server/inference_server.py"
+			Path(__file__).parent.parent / "infrastructure/doctype/inference_server/inference_server.py"
 		).read_text()
 		self.assertIn('"gpu_reboot_timeout"', source)
 

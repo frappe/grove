@@ -12,7 +12,7 @@ import frappe
 import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-from grove.fleet import PathwayHost
+from grove.infrastructure.fleet import PathwayHost
 
 PLAYBOOKS = Path(__file__).parent.parent / "playbooks"
 ROLE = PLAYBOOKS / "roles" / "pathway_memory"

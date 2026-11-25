@@ -7,9 +7,9 @@ import frappe
 from frappe.model.document import Document
 
 from grove.grove.doctype.engine_image.engine_image import engine_tuning
-from grove.grove.doctype.gpu.gpu import GPUUnavailable, cards_on
 from grove.grove.doctype.model.model import launch_config
 from grove.grove.doctype.model_replica.model_replica import GPU_CLAIMING_STATUSES
+from grove.infrastructure.doctype.gpu.gpu import GPUUnavailable, cards_on
 from grove.naming import next_deployment_name
 from grove.placement import lease
 from grove.placement.base import Candidate, fitting_gpus, placement_policy, sort_key

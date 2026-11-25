@@ -6,8 +6,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from grove import runner
-from grove.runner import Status, StepHandler
+from grove.infrastructure import runner
+from grove.infrastructure.runner import Status, StepHandler
 
 
 class FakeStep(SimpleNamespace):

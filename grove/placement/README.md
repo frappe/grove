@@ -17,7 +17,7 @@ exception and says why below.
 Cards are addressed by **GPU docname** throughout — `fitting_gpus` returns them, a `Candidate`
 carries them, the lease keys on them and a replica pins them. A CUDA index is operator vocabulary
 and is resolved exactly once, in `cards_at`, where someone typed it. Why that split exists, and why
-a rented box identifies its cards by slot: `grove/grove/doctype/gpu/README.md`.
+a rented box identifies its cards by slot: `grove/infrastructure/doctype/gpu/README.md`.
 
 ## Adding a preference
 

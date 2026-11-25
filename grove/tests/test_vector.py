@@ -14,10 +14,10 @@ import frappe
 import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-from grove import datum
-from grove.fleet import NamedHost, PathwayHost
-from grove.grove.doctype.gateway_store.gateway_store import GatewayStore
-from grove.grove.doctype.region.region import Region
+from grove.infrastructure import datum
+from grove.infrastructure.doctype.gateway_store.gateway_store import GatewayStore
+from grove.infrastructure.doctype.region.region import Region
+from grove.infrastructure.fleet import NamedHost, PathwayHost
 
 PLAYBOOKS = Path(__file__).parent.parent / "playbooks"
 NOW = datetime(2026, 11, 2, 9, 30)
@@ -263,8 +263,8 @@ class TestTheButton(unittest.TestCase):
 	def setUp(self):
 		patches = [
 			patch("frappe.get_doc", return_value=fake_region()),
-			patch("grove.datum.credential_problems", return_value=[]),
-			patch("grove.datum.mint_token", return_value=("jwt-1", EXPIRY)),
+			patch("grove.infrastructure.datum.credential_problems", return_value=[]),
+			patch("grove.infrastructure.datum.mint_token", return_value=("jwt-1", EXPIRY)),
 			patch(
 				"frappe.throw",
 				side_effect=lambda msg, *a, **k: (_ for _ in ()).throw(frappe.ValidationError(msg)),
@@ -378,7 +378,7 @@ class TestTheRefresh(unittest.TestCase):
 			return boxes[doctype]
 
 		with (
-			patch("grove.datum.now_datetime", return_value=NOW),
+			patch("grove.infrastructure.datum.now_datetime", return_value=NOW),
 			patch("frappe.get_all", side_effect=get_all),
 			patch("frappe.enqueue_doc") as enqueue,
 		):
@@ -410,8 +410,8 @@ class TestMintToken(unittest.TestCase):
 		response = Mock(status_code=200, json=lambda: {"message": {"token": "jwt-1", "expires_in": 604800}})
 		with (
 			patch("frappe.get_single", return_value=fake_settings()),
-			patch("grove.datum.now_datetime", return_value=NOW),
-			patch("grove.datum.requests.get", return_value=response) as get,
+			patch("grove.infrastructure.datum.now_datetime", return_value=NOW),
+			patch("grove.infrastructure.datum.requests.get", return_value=response) as get,
 		):
 			self.assertEqual(("jwt-1", EXPIRY), datum.mint_token("ap-south-1", "grove:mc-1"))
 		call = get.call_args
@@ -423,7 +423,7 @@ class TestMintToken(unittest.TestCase):
 		response = Mock(status_code=401, text="not permitted")
 		with (
 			patch("frappe.get_single", return_value=fake_settings()),
-			patch("grove.datum.requests.get", return_value=response),
+			patch("grove.infrastructure.datum.requests.get", return_value=response),
 			patch("frappe.throw", side_effect=frappe.ValidationError) as throw,
 			self.assertRaises(frappe.ValidationError),
 		):
@@ -568,7 +568,7 @@ class TestRoster(unittest.TestCase):
 		with (
 			patch("frappe.get_all", side_effect=fake_rows([region], MACHINES, [("Gateway Store", "mc-1")])),
 			patch("frappe.get_doc", return_value=region),
-			patch("grove.datum.requests.post", return_value=Mock(status_code=200)) as post,
+			patch("grove.infrastructure.datum.requests.post", return_value=Mock(status_code=200)) as post,
 		):
 			datum.push_roster()
 		region.db_set.assert_not_called()
@@ -598,7 +598,7 @@ class TestRoster(unittest.TestCase):
 		with (
 			patch("frappe.get_all", side_effect=fake_rows([region], [])),
 			patch("frappe.get_doc", return_value=region),
-			patch("grove.datum.requests.post") as post,
+			patch("grove.infrastructure.datum.requests.post") as post,
 		):
 			datum.push_roster()
 		region.get_datum_token.assert_not_called()
@@ -610,7 +610,7 @@ class TestRoster(unittest.TestCase):
 			patch("frappe.get_all", side_effect=fake_rows([region, other], MACHINES)),
 			patch("frappe.get_doc", side_effect=[region, other]),
 			patch(
-				"grove.datum.requests.post",
+				"grove.infrastructure.datum.requests.post",
 				side_effect=[Mock(status_code=401, text="expired"), Mock(status_code=200)],
 			) as post,
 			patch("frappe.throw", side_effect=frappe.ValidationError) as throw,
@@ -626,8 +626,8 @@ class TestRoster(unittest.TestCase):
 	def test_the_kept_token_is_used_until_it_has_five_minutes_left(self):
 		region = kept_token_region(NOW + timedelta(minutes=6))
 		with (
-			patch("grove.grove.doctype.region.region.now_datetime", return_value=NOW),
-			patch("grove.datum.mint_token") as mint,
+			patch("grove.infrastructure.doctype.region.region.now_datetime", return_value=NOW),
+			patch("grove.infrastructure.datum.mint_token") as mint,
 		):
 			self.assertEqual("kept", Region.get_datum_token(region))
 		mint.assert_not_called()
@@ -641,8 +641,8 @@ class TestRoster(unittest.TestCase):
 				setattr(region, "saved", region.datum_token) or setattr(region, "datum_token", "*****")
 			)
 			with (
-				patch("grove.grove.doctype.region.region.now_datetime", return_value=NOW),
-				patch("grove.datum.mint_token", return_value=("jwt-1", EXPIRY)) as mint,
+				patch("grove.infrastructure.doctype.region.region.now_datetime", return_value=NOW),
+				patch("grove.infrastructure.datum.mint_token", return_value=("jwt-1", EXPIRY)) as mint,
 			):
 				self.assertEqual("jwt-1", Region.get_datum_token(region))
 			mint.assert_called_once_with("blr-1", "grove:region-ap-south-1")
