@@ -1,0 +1,20 @@
+{# Rendered by the redis role — do not edit on the box. In /etc/systemd/system it is the redis-server unit: the packages' own, under /usr/lib, is never read. #}
+[Unit]
+Description=Redis for a Grove Gateway Store
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+User={{ redis_user }}
+Group={{ redis_user }}
+ExecStart=/usr/bin/redis-server /etc/redis-server/redis.conf
+# A stop waits out the final save, however long it takes.
+TimeoutStopSec=0
+Restart=always
+LimitNOFILE=65535
+UMask=0027
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

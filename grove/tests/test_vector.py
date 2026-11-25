@@ -325,7 +325,9 @@ class TestTheButton(unittest.TestCase):
 		doc.provision_vector()
 		extravars = doc.run_playbook.call_args.kwargs["extravars"]
 		self.assertEqual("pw", extravars["vector_redis_password"])
-		self.assertEqual(["/var/log/redis/*.log"], extravars["vector_log_files"])
+		self.assertEqual(
+			["/var/log/redis-server/*.log", "/var/log/redis/*.log"], extravars["vector_log_files"]
+		)
 		self.assertEqual([], extravars["vector_unshipped_lines"])
 
 	def test_a_pathway_box_passes_its_logs_and_keeps_the_health_checks_lines(self):

@@ -8,12 +8,5 @@ redis_version: "~=8.12.0"
 # .asc: apt reads an armored key as it is served.
 redis_keyring: /usr/share/keyrings/redis-archive-keyring.asc
 
-# A literal: upgrade_redis.yml runs this role with no grove_user in scope.
+# Who runs redis. A literal: upgrade_redis.yml runs this role with no grove_user in scope.
 redis_user: frappe
-
-# What the packages would hand to `redis`. Vector reads the log through adm.
-redis_paths:
-  - {path: /etc/redis, state: directory, group: "{{ redis_user }}", mode: "2770"}
-  - {path: /etc/redis/redis.conf, state: file, group: "{{ redis_user }}", mode: "640"}
-  - {path: /var/lib/redis, state: directory, group: "{{ redis_user }}", mode: "750"}
-  - {path: /var/log/redis, state: directory, group: adm, mode: "2750"}

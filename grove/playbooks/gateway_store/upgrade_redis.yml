@@ -1,14 +1,13 @@
 ---
-# Move a live store onto the newest redis the role's `redis_version` allows. The store is down from
-# the stop until the package starts redis again. A run with nothing newer stops nothing, unless
-# redis still runs as another account than the role's: the role stops it to hand its files over.
-# extra-vars: redis_bind_ip, redis_password.
+# Move a live store onto the newest redis the role's `redis_version` allows, under Grove's own
+# unit. The store is down while redis is stopped: for a new package, or once for the move off the
+# packaged unit. A run with neither to do stops nothing. extra-vars: redis_bind_ip, redis_password.
 - hosts: all
   become: true
   gather_facts: true
 
   vars:
-    redis_data_copy: "/var/lib/redis.before-{{ redis_release }}"
+    redis_data_copy: "/var/lib/redis-server.before-{{ redis_release }}"
 
   pre_tasks:
     - name: refuse to upgrade without a password
@@ -31,10 +30,17 @@
       register: redis_installed
       changed_when: false
 
+    - name: look for redis's own data dir
+      ansible.builtin.stat:
+        path: /var/lib/redis-server
+      register: redis_own_data
+
     - name: swap redis, bringing it back if a step fails
       block:
+        # A store still on the packaged redis has no copy to take: the role stops that one for the
+        # move and leaves its directory as it was.
         - name: stop redis and keep its data dir, only when the package changes
-          when: redis_installed.stdout != redis_package
+          when: redis_installed.stdout != redis_package and redis_own_data.stat.exists
           block:
             - name: look for an earlier copy of the data dir
               ansible.builtin.stat:
@@ -54,7 +60,7 @@
 
             # The only way back: an older redis cannot read what this one writes.
             - name: keep the data dir as the old redis left it
-              ansible.builtin.command: cp -a /var/lib/redis {{ redis_data_copy }}
+              ansible.builtin.command: cp -a /var/lib/redis-server {{ redis_data_copy }}
 
         - name: install redis and start it
           ansible.builtin.include_role:

@@ -14,9 +14,12 @@ from grove.infrastructure.fleet import NamedHost
 
 REDIS_PORT = 6379
 RDB_MAGIC = b"REDIS"
-# The password is read on the box from requirepass, so it never lands in argv or a log.
+# The password is read on the box from requirepass, so it never lands in argv or a log. A store not
+# yet moved onto its own unit (Upgrade Redis) still has only the packaged conf and log directory.
+CONFS = "/etc/redis-server/redis.conf /etc/redis/redis.conf"
+LOGS = ["/var/log/redis-server/*.log", "/var/log/redis/*.log"]
 DUMP = (
-	"REDISCLI_AUTH=\"$(awk '/^requirepass/{print $2}' /etc/redis/redis.conf)\" "
+	f"REDISCLI_AUTH=\"$(cat {CONFS} 2>/dev/null | awk '/^requirepass/{{print $2; exit}}')\" "
 	"redis-cli --rdb - 2>/dev/null | base64 -w0"
 )
 # The redis role's last task, as an Ansible Task records it.
@@ -104,7 +107,7 @@ class GatewayStore(NamedHost, Document):
 		"""redis's log, and the exporter that rides along on the store's own password; vector.yml
 		lays it on seeing one."""
 		return {
-			"vector_log_files": ["/var/log/redis/*.log"],
+			"vector_log_files": LOGS,
 			"vector_unshipped_lines": [],
 			"vector_redis_password": self.get_password("redis_password"),
 		}
@@ -131,9 +134,9 @@ class GatewayStore(NamedHost, Document):
 
 	@frappe.whitelist()
 	def upgrade_redis(self):
-		"""Button: move this store onto the newest Redis the role's `redis_version` allows, run as
-		the service account. The store is down while the play swaps it; nothing is stopped when
-		it is already both."""
+		"""Button: move this store onto the newest Redis the role's `redis_version` allows, under
+		Grove's own unit. The store is down while the play swaps it; nothing is stopped when it
+		is already both."""
 		if self.status != "Active":
 			frappe.throw(f"{self.name} is {self.status}: only an Active store's Redis is upgraded.")
 		frappe.enqueue_doc(self.doctype, self.name, "run_redis_upgrade", queue="long", timeout=1800)

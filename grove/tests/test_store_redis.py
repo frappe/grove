@@ -9,6 +9,7 @@ import unittest
 
 import yaml
 
+from grove.infrastructure.doctype.gateway_store import gateway_store
 from grove.infrastructure.doctype.gateway_store.gateway_store import VERSION_TASK
 
 PLAYBOOKS = pathlib.Path(__file__).resolve().parent.parent / "playbooks"
@@ -61,104 +62,116 @@ class TestWhichReleaseAStoreTakes(unittest.TestCase):
 		self.assertEqual(choose["environment"]["FLOOR"], "{{ redis_version | replace('~=', '') }}")
 
 
-class TestAnInstallLeavesAStoreThatStarts(unittest.TestCase):
+class TestAStoreRunsItsOwnRedis(unittest.TestCase):
+	"""As the service account, from Grove's own unit, config and directories. The packages' unit of
+	the same name is never read, and the three directories their installs chown are not used."""
+
 	def setUp(self):
 		self.tasks = role_tasks("main")
 		self.names = [task.get("name") for task in self.tasks]
+		self.unit = (ROLE / "templates/redis-server.service.j2").read_text()
+		self.conf = (ROLE / "templates/redis.conf.j2").read_text()
 
-	def test_a_kept_conf_stops_daemonizing_before_the_package_restarts_redis(self):
-		"""Ubuntu's conf says `daemonize yes`; under redis.io's bare unit that never reports ready."""
-		foreground = named(self.tasks, "redis stays in the foreground under systemd")
-		self.assertEqual(foreground["loop"], ["daemonize no", "supervised auto"])
-		self.assertEqual(foreground["when"], "redis_conf.stat.exists")
-		self.assertLess(self.names.index(foreground["name"]), self.names.index("install redis"))
+	def test_the_unit_is_ours_and_runs_as_the_service_account(self):
+		"""In /etc/systemd/system it outranks the packages' unit of the same name."""
+		unit = named(self.tasks, "redis unit")["ansible.builtin.template"]
+		self.assertEqual(unit["dest"], "/etc/systemd/system/redis-server.service")
+		self.assertIn("User={{ redis_user }}", self.unit)
+		self.assertIn("ExecStart=/usr/bin/redis-server /etc/redis-server/redis.conf", self.unit)
 
-	def test_the_install_is_the_chosen_package_and_keeps_our_conf(self):
-		install = named(self.tasks, "install redis")["ansible.builtin.apt"]
+	def test_systemd_is_told_when_redis_is_ready(self):
+		"""The unit waits for the notify; a conf that daemonized would never send it."""
+		self.assertIn("Type=notify", self.unit)
+		self.assertIn("daemonize no", self.conf)
+		self.assertIn("supervised systemd", self.conf)
+
+	def test_nothing_of_ours_is_in_a_directory_the_packages_chown(self):
+		directories = named(self.tasks, "redis's own directories")
 		self.assertEqual(
-			install["name"], ["redis-server={{ redis_package }}", "redis-tools={{ redis_package }}"]
+			directories["loop"], ["/etc/redis-server", "/var/lib/redis-server", "/var/log/redis-server"]
 		)
-		self.assertIn("force-confold", install["dpkg_options"])
+		self.assertEqual(directories["ansible.builtin.file"]["owner"], "{{ redis_user }}")
+		self.assertIn("dir /var/lib/redis-server\n", self.conf)
+		self.assertIn("logfile /var/log/redis-server/", self.conf)
 
-	def test_a_fresh_install_drops_the_packaged_modules_and_restarts(self):
-		modules = named(self.tasks, "redis loads no modules")
-		self.assertEqual(modules["ansible.builtin.lineinfile"]["regexp"], "^loadmodule ")
-		self.assertEqual(modules["ansible.builtin.lineinfile"]["state"], "absent")
-		restart = named(self.tasks, "restart redis onto its listen address and password")
-		self.assertIn("redis_modules is changed", restart["when"])
+	def test_the_unit_and_config_are_there_before_the_package_starts_redis(self):
+		"""The install starts `redis-server`; that has to be ours already, loaded."""
+		install = self.names.index("install redis")
+		for name in ("redis's own directories", "redis config", "redis unit", "load the unit"):
+			self.assertLess(self.names.index(name), install, name)
+		packages = named(self.tasks, "install redis")["ansible.builtin.apt"]["name"]
+		self.assertEqual(packages, ["redis-server={{ redis_package }}", "redis-tools={{ redis_package }}"])
+
+	def test_a_changed_config_or_unit_restarts_redis_by_a_task(self):
+		restart = named(self.tasks, "restart redis onto a changed config or unit")
+		self.assertEqual(restart["when"], "redis_conf is changed or redis_unit is changed")
+		for name in ("redis config", "redis unit"):
+			self.assertNotIn("notify", named(self.tasks, name))
 
 	def test_the_doc_reads_the_release_the_role_checked(self):
 		last = self.tasks[-1]
 		self.assertEqual(VERSION_TASK, f"redis : {last['name']}")
 		self.assertIn("redis_release", last["failed_when"])
 
+	def test_the_backup_and_the_log_shipper_look_where_redis_now_is(self):
+		conf = named(self.tasks, "redis config")["ansible.builtin.template"]["dest"]
+		self.assertEqual(gateway_store.CONFS.split()[0], conf)
+		log_dir = gateway_store.LOGS[0].removesuffix("*.log")
+		self.assertIn(f"logfile {log_dir}", self.conf)
 
-class TestRedisRunsAsTheServiceAccount(unittest.TestCase):
-	"""Not as the packages' `redis`: the unit, the paths it writes to and dpkg all have to agree,
-	and before the install, which starts it."""
+
+class TestTheMoveOffThePackagedRedis(unittest.TestCase):
+	"""Once per store: the packaged redis stopped, its data copied, its directory left as it was."""
 
 	def setUp(self):
-		self.tasks = role_tasks("account")
-		self.names = [task["name"] for task in self.tasks]
-		self.paths = yaml.safe_load((ROLE / "defaults/main.yml").read_text())["redis_paths"]
+		self.tasks = role_tasks("main")
+		self.names = [task.get("name") for task in self.tasks]
+		self.adopt = named(self.tasks, "adopt the data the packaged redis held")
 
-	def test_the_account_is_settled_before_the_install_starts_redis(self):
-		names = [task.get("name") for task in role_tasks("main")]
-		self.assertLess(names.index("redis runs as the service account"), names.index("install redis"))
+	def test_it_happens_only_while_our_unit_is_not_there_yet(self):
+		"""Later, an emptied data dir must not be refilled from what the packaged redis once held."""
+		stop = named(self.tasks, "stop the packaged redis for the move")
+		for task in (stop, self.adopt):
+			self.assertEqual(task["when"], "not redis_own_unit.stat.exists")
+		self.assertLess(self.names.index("look for our own redis unit"), self.names.index(stop["name"]))
 
-	def test_the_unit_names_the_account(self):
-		drop_in = named(self.tasks, "redis runs as the service account")["ansible.builtin.copy"]
-		self.assertEqual(drop_in["dest"], "/etc/systemd/system/redis-server.service.d/account.conf")
-		self.assertIn("User={{ redis_user }}", drop_in["content"])
+	def test_the_packaged_redis_stops_before_its_files_are_copied_and_ours_starts_after(self):
+		order = ["stop the packaged redis for the move", self.adopt["name"], "redis unit", "redis started"]
+		self.assertEqual(sorted(order, key=self.names.index), order)
 
-	def test_a_redis_under_another_account_stops_before_its_files_change_hands(self):
-		"""Still running, it could write to what it has open and create nothing new: no save."""
-		stop = named(self.tasks, "stop a redis that runs as another account")
-		self.assertIn('!= "{{ redis_user }}"', stop["ansible.builtin.shell"])
-		self.assertLess(
-			self.names.index(stop["name"]), self.names.index("hand what is in them to the service account")
-		)
+	def adopt_into(self, ours, theirs):
+		env = {
+			"PATH": os.environ["PATH"],
+			"OURS": str(ours),
+			"THEIRS": str(theirs),
+			"OWNER": str(os.getuid()),
+		}
+		script = self.adopt["ansible.builtin.shell"]
+		return subprocess.run(["sh", "-c", script], env=env, capture_output=True, text=True, check=True)
 
-	def test_every_path_the_packages_chown_is_held(self):
-		"""redis-tools' postinst chowns the three directories and redis-server's the conf, each
-		unless dpkg holds an override for it."""
-		held = {path["path"]: path["group"] for path in self.paths}
-		self.assertEqual(
-			held,
-			{
-				"/etc/redis": "{{ redis_user }}",
-				"/etc/redis/redis.conf": "{{ redis_user }}",
-				"/var/lib/redis": "{{ redis_user }}",
-				"/var/log/redis": "adm",
-			},
-		)
-		override = named(self.tasks, "dpkg leaves redis's paths to the service account")
-		self.assertEqual(override["loop"], "{{ redis_paths }}")
-
-	@unittest.skipUnless(shutil.which("dpkg-statoverride"), "the role holds its paths with dpkg-statoverride")
-	def test_an_override_is_set_once_and_replaces_the_packages_own(self):
-		script = named(self.tasks, "dpkg leaves redis's paths to the service account")[
-			"ansible.builtin.shell"
-		]
-		user = subprocess.run(["id", "-un"], capture_output=True, text=True, check=True).stdout.strip()
-		real = shutil.which("dpkg-statoverride")
+	def test_data_is_copied_into_an_empty_dir_and_the_old_one_is_left_whole(self):
 		with tempfile.TemporaryDirectory() as folder:
-			pathlib.Path(folder, "statoverride").write_text(f"{user} {user} 600 /etc/redis/redis.conf\n")
-			stub = pathlib.Path(folder, "dpkg-statoverride")
-			stub.write_text(f'#!/bin/sh\nexec {real} --admindir={folder} "$@"\n')
-			stub.chmod(0o755)
-			env = {
-				"PATH": f"{folder}:{os.environ['PATH']}",
-				"OWNER": f"{user} {user} 640",
-				"TARGET": "/etc/redis/redis.conf",
-			}
-			runs = [
-				subprocess.run(["sh", "-c", script], env=env, capture_output=True, text=True, check=True)
-				for _ in range(2)
-			]
-			held = pathlib.Path(folder, "statoverride").read_text()
-		self.assertEqual([run.stdout.strip() for run in runs], ["changed", ""])
-		self.assertEqual(held, f"{user} {user} 640 /etc/redis/redis.conf\n")
+			ours, theirs = pathlib.Path(folder, "ours"), pathlib.Path(folder, "theirs")
+			ours.mkdir()
+			(theirs / "appendonlydir").mkdir(parents=True)
+			(theirs / "dump.rdb").write_text("snapshot")
+			(theirs / "appendonlydir/appendonly.aof.manifest").write_text("manifest")
+			self.assertEqual(self.adopt_into(ours, theirs).stdout.strip(), "adopted")
+			copied = sorted(str(path.relative_to(ours)) for path in ours.rglob("*") if path.is_file())
+			self.assertEqual(copied, ["appendonlydir/appendonly.aof.manifest", "dump.rdb"])
+			self.assertEqual((theirs / "dump.rdb").read_text(), "snapshot")
+			(theirs / "later").write_text("written after the move")
+			self.assertEqual(self.adopt_into(ours, theirs).stdout.strip(), "")
+			self.assertFalse((ours / "later").exists())
+
+	def test_a_new_store_has_nothing_to_adopt(self):
+		with tempfile.TemporaryDirectory() as folder:
+			ours, theirs = pathlib.Path(folder, "ours"), pathlib.Path(folder, "theirs")
+			ours.mkdir()
+			self.assertEqual(self.adopt_into(ours, theirs).stdout.strip(), "")
+			theirs.mkdir()
+			self.assertEqual(self.adopt_into(ours, theirs).stdout.strip(), "")
+			self.assertEqual(list(ours.iterdir()), [])
 
 
 class TestALiveStoreIsUpgraded(unittest.TestCase):
@@ -171,10 +184,15 @@ class TestALiveStoreIsUpgraded(unittest.TestCase):
 		[check] = self.play["pre_tasks"]
 		self.assertIn("redis_password", " ".join(check["ansible.builtin.assert"]["that"]))
 
-	def test_redis_stops_only_when_the_package_changes(self):
-		self.assertEqual(self.stop["when"], "redis_installed.stdout != redis_package")
+	def test_redis_stops_for_the_copy_only_when_the_package_changes_under_our_own_unit(self):
+		"""A store still on the packaged redis is stopped by the role, for the move."""
+		self.assertEqual(
+			self.stop["when"], "redis_installed.stdout != redis_package and redis_own_data.stat.exists"
+		)
 		names = [task["name"] for task in self.stop["block"]]
 		self.assertEqual(names[-2:], ["redis stopped", "keep the data dir as the old redis left it"])
+		copy = self.stop["block"][-1]["ansible.builtin.command"]
+		self.assertEqual(copy, "cp -a /var/lib/redis-server {{ redis_data_copy }}")
 
 	def test_an_earlier_copy_is_refused_before_redis_stops(self):
 		names = [task["name"] for task in self.stop["block"]]

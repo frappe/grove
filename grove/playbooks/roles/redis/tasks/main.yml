@@ -3,77 +3,91 @@
   ansible.builtin.include_tasks: repository.yml
   when: redis_package is not defined
 
-- name: redis runs as the service account
-  ansible.builtin.include_tasks: account.yml
-
-- name: look for a config an earlier redis left
+# Redis runs as the service account from Grove's own unit, config and directories. The packages'
+# unit of the same name is never read, and their /etc/redis, /var/lib/redis and /var/log/redis,
+# which every install chowns back to `redis`, are not used.
+- name: look for our own redis unit
   ansible.builtin.stat:
-    path: /etc/redis/redis.conf
+    path: /etc/systemd/system/redis-server.service
+  register: redis_own_unit
+
+- name: redis's own directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ redis_user }}"
+    group: "{{ redis_user }}"
+    mode: "0750"
+  loop:
+    - /etc/redis-server
+    - /var/lib/redis-server
+    - /var/log/redis-server
+
+# The move off the packaged redis, once: stopped so that its files are whole, then copied. Its own
+# directory is left as it was, which is the way back.
+- name: stop the packaged redis for the move
+  ansible.builtin.shell: |
+    set -eu
+    if systemctl is-active --quiet redis-server; then
+      systemctl stop redis-server
+      echo stopped
+    fi
+  register: redis_packaged
+  changed_when: redis_packaged.stdout | trim == "stopped"
+  when: not redis_own_unit.stat.exists
+
+- name: adopt the data the packaged redis held
+  ansible.builtin.shell: |
+    set -eu
+    if [ -z "$(ls -A "$OURS")" ] && [ -n "$(ls -A "$THEIRS" 2>/dev/null)" ]; then
+      cp -a "$THEIRS/." "$OURS/"
+      chown -R "$OWNER:$OWNER" "$OURS"
+      echo adopted
+    fi
+  environment:
+    OURS: /var/lib/redis-server
+    THEIRS: /var/lib/redis
+    OWNER: "{{ redis_user }}"
+  register: redis_adopted
+  changed_when: redis_adopted.stdout | trim == "adopted"
+  when: not redis_own_unit.stat.exists
+
+- name: redis config
+  ansible.builtin.template:
+    src: redis.conf.j2
+    dest: /etc/redis-server/redis.conf
+    owner: "{{ redis_user }}"
+    group: "{{ redis_user }}"
+    mode: "0640"
+  no_log: true
   register: redis_conf
 
-# Ubuntu's conf daemonizes and its unit said otherwise on the command line. This unit starts redis
-# bare, and the package restarts it on install: a kept conf must already say so, or it never comes up.
-- name: redis stays in the foreground under systemd
-  ansible.builtin.lineinfile:
-    path: /etc/redis/redis.conf
-    regexp: "^{{ item.split() | first }} "
-    line: "{{ item }}"
-  loop:
-    - daemonize no
-    - supervised auto
-  when: redis_conf.stat.exists
+- name: redis unit
+  ansible.builtin.template:
+    src: redis-server.service.j2
+    dest: /etc/systemd/system/redis-server.service
+    mode: "0644"
+  register: redis_unit
 
-# confold: an upgrade keeps the conf that carries the two blocks below.
+- name: load the unit
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: redis_unit is changed
+
+# The package starts `redis-server` as it lands: by now that name is the unit above.
 - name: install redis
   ansible.builtin.apt:
     name:
       - "redis-server={{ redis_package }}"
       - "redis-tools={{ redis_package }}"
     state: present
-    dpkg_options: "force-confdef,force-confold"
 
-# The packaged conf loads search, json, bloom and timeseries; a store runs none of them.
-- name: redis loads no modules
-  ansible.builtin.lineinfile:
-    path: /etc/redis/redis.conf
-    regexp: "^loadmodule "
-    state: absent
-  register: redis_modules
-
-# The marker predates this role: renaming it writes a second block on every existing store.
-# save: one pair per line, Redis 6.x ignores the one-line form.
-- name: redis zero-loss persistence
-  ansible.builtin.blockinfile:
-    path: /etc/redis/redis.conf
-    marker: "# {mark} grove gateway zero-loss"
-    block: |
-      appendonly yes
-      appendfsync everysec
-      maxmemory-policy noeviction
-      save 3600 1
-      save 300 100
-      save 60 10000
-      auto-aof-rewrite-percentage 100
-      auto-aof-rewrite-min-size 256mb
-      no-appendfsync-on-rewrite no
-      stop-writes-on-bgsave-error yes
-
-- name: redis listens for the gateways
-  ansible.builtin.blockinfile:
-    path: /etc/redis/redis.conf
-    marker: "# {mark} grove state store network"
-    block: |
-      bind {{ redis_bind }}
-      requirepass {{ redis_password }}
-  no_log: true
-  register: redis_network
-  when: redis_password | length > 0
-
-- name: restart redis onto its listen address and password
+# A task, not a handler: a handler that failed to fire once never fires again, the file being right.
+- name: restart redis onto a changed config or unit
   ansible.builtin.systemd:
     name: redis-server
     state: restarted
-  when: redis_network is changed or redis_modules is changed
+  when: redis_conf is changed or redis_unit is changed
 
 - name: redis started
   ansible.builtin.systemd:

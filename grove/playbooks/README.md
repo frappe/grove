@@ -119,33 +119,42 @@ line with nothing at the floor fails there, before anything is stopped. Two stor
 days can be on different patch releases, so a Gateway Store's `redis_version` is what the box reported
 (the role's last task), not the setting.
 
-Redis runs as the `frappe` account, not the packages' `redis` (`tasks/account.yml`, before the install,
-which starts it): a unit drop-in names the account, the three directories (`/etc/redis`,
-`/var/lib/redis`, `/var/log/redis`, the last in group `adm` for Vector) and what is in them are handed
-over, and a `dpkg-statoverride` holds each path, because the packages chown them back to `redis` at
-every install otherwise. A Redis still running as another account is stopped first, so the first
-Upgrade Redis on such a store has a short stop even with no newer release.
+The packages are there for the binary. Redis itself runs from Grove's own unit, as the `frappe`
+account, on Grove's own files:
 
-The role also makes the config fit the package. `daemonize no` and `supervised auto` go into a config
-an earlier Redis left, *before* the install: Ubuntu's says `daemonize yes` and its unit overrode that on
-the command line, while this unit starts Redis bare and the package restarts it as it lands. The
-packaged config's `loadmodule` lines come out; a store runs no modules.
+| | Path |
+|---|---|
+| unit | `/etc/systemd/system/redis-server.service` (same name as the packages' unit under `/usr/lib`, which it outranks and which is never read) |
+| config | `/etc/redis-server/redis.conf`, written whole by the role (`templates/redis.conf.j2`); what it does not set is Redis's own default |
+| data | `/var/lib/redis-server` |
+| log | `/var/log/redis-server/redis-server.log`, which Vector reads through the `frappe` group |
+
+The packages' `/etc/redis`, `/var/lib/redis` and `/var/log/redis` are not used: their install scripts
+chown those back to `redis` at every install. The unit, config and directories are in place before the
+install, because the package starts `redis-server` as it lands and that name is ours by then. A config
+or unit that changed restarts Redis; persistence is checked on the running server as well.
+
+A store set up before this ran the packaged Redis. Its first run of the role (Upgrade Redis) moves it,
+once: the packaged Redis is stopped, its data copied into `/var/lib/redis-server`, and Redis started
+from our unit. The packaged data dir is left as it was, which is the way back: start nothing on it
+until it is no longer needed. Until a store has moved, its backups and log shipping still read the
+packaged paths (`CONFS`, `LOGS` in `gateway_store.py` name both).
 
 **Upgrade Redis** on a Gateway Store runs `gateway_store/upgrade_redis.yml`. With nothing newer than
-what is installed, and Redis already under the account, it stops nothing. Otherwise it stops Redis, copies the data dir to
-`/var/lib/redis.before-<release>` (refused, before the stop, when that copy exists) and runs the role;
-a step that fails starts Redis again. The store is down for that stretch and its gateways refuse
-requests, so for a jump to a new line:
+what is installed, and the store already on its own unit, it stops nothing. For a new package it stops
+Redis, copies the data dir to `/var/lib/redis-server.before-<release>` (refused, before the stop, when
+that copy exists) and runs the role; a step that fails starts Redis again. The store is down for that
+stretch, and for the move, and its gateways refuse requests, so:
 
 1. Start Maintenance on each of its gateways; wait for in-flight 0.
 2. Pull Usage.
 3. Upgrade Redis. The doc's Redis Version changes when it is done.
 4. End Maintenance.
 
-The copy is the only way back: an older Redis cannot read what a newer one wrote (6.0 starts empty
-with no error, 7.0 refuses after the first AOF rewrite). Taken after the pull with the gateways
-drained, it holds no unbilled usage. Delete it once the new release has soaked. A patch release on
-the same line needs no bracket beyond a quiet minute.
+The copy, or at the move the packaged data dir, is the only way back: an older Redis cannot read what
+a newer one wrote (6.0 starts empty with no error, 7.0 refuses after the first AOF rewrite). Taken
+after the pull with the gateways drained, it holds no unbilled usage. Delete it once the new release
+has soaked. A patch release on the same line needs no bracket beyond a quiet minute.
 
 ## Monitoring
 
