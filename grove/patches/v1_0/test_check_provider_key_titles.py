@@ -44,7 +44,9 @@ class TestTheKeyTitleCheckBeforeSync(IntegrationTestCase):
 
 	def test_twins_among_child_rows_stop_and_are_named(self):
 		vendor = keyed_provider("_T-probe-child-twins", base_url="https://api.probe.test")
-		make_child_row(frappe.get_last_doc("Model Provider Key", {"model_provider": vendor.name}), vendor.name)
+		make_child_row(
+			frappe.get_last_doc("Model Provider Key", {"model_provider": vendor.name}), vendor.name
+		)
 		make_child_row(add_key(vendor, "k2"), vendor.name)
 		with self.assertRaises(frappe.ValidationError) as raised:
 			execute()
