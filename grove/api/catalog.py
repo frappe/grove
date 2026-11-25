@@ -33,10 +33,6 @@ def available_models(team: str, geography: str | None = None):
 	from grove.grove.doctype.model.model import get_modalities
 	from grove.pathway.routes import get_dialects, models_in
 
-	# The readers below are the projection's own and check nothing: the caller's read is checked here.
-	frappe.has_permission("Model", "read", throw=True)
-	if not frappe.get_list("Grove Team", filters={"name": team}, limit=1):
-		return []
 	geography = geography or frappe.db.get_value("Geography", {"is_default": 1})
 	reachable = set(get_reachable_models(team, geography))
 	if not reachable:

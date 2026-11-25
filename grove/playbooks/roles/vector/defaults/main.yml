@@ -30,9 +30,6 @@ vector_redis_exporter_url: "http://127.0.0.1:9121/metrics"
 vector_log_files: []
 vector_unshipped_lines: []
 vector_log_max_line_bytes: 8388608
-# slog's level, lowered, to the name datum takes. datum answers 422 to a batch holding any other
-# (`warn` since 2026-11-15), and Vector drops that batch whole.
-vector_datum_levels: {info: info, warn: warning, error: error}
 
 vector_metrics_url: ""
 vector_logs_url: ""

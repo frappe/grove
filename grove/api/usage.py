@@ -16,7 +16,6 @@ PULLS_PER_HOUR = 5
 
 @frappe.whitelist()
 @for_control_clients
-@frappe.read_only()
 def usage(
 	teams: list[str] | str,
 	from_date: str | None = None,
@@ -79,9 +78,6 @@ def figures(team: str):
 	from grove.billing.pricing import remembered_figures
 
 	team = get_team(team)
-	# A remembered answer skips the reads that check these.
-	for doctype in ("Grove API Key", "Usage Record"):
-		frappe.has_permission(doctype, "read", throw=True)
 	return remembered_figures(
 		team,
 		lambda: {
