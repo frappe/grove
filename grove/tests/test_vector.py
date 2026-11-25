@@ -86,14 +86,11 @@ class TestTheConfig(unittest.TestCase):
 		self.assertIn("attributes.line = line", plain)
 		self.assertIn("truncate(line, 8192)", plain)
 
-	def test_slogs_levels_leave_under_datums_names(self):
-		# datum answers 422 to a batch holding a level it does not name, and Vector drops that batch whole.
-		self.assertEqual(
-			{"info": "info", "warn": "warning", "error": "error"}, DEFAULTS["vector_datum_levels"]
-		)
+	def test_a_line_leaves_at_the_level_pathway_wrote(self):
+		# pathway names its levels as datum takes them, so the role maps none.
 		transform = config()["transforms"]["datum_lines"]
-		self.assertIn('"warn": "warning"', transform["source"])
-		self.assertIn('[downcase(string(parsed.level) ?? "")])) ?? level', transform["source"])
+		self.assertIn("level = string(parsed.level) ?? level\n", transform["source"])
+		self.assertNotIn("vector_datum_levels", DEFAULTS)
 		# A line the program fails on is dropped alone, never sent as the file source read it.
 		self.assertTrue(transform["drop_on_error"])
 
