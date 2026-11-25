@@ -3,13 +3,13 @@
 
 import base64
 import binascii
-import os
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 
 import frappe
 from frappe.model.document import Document
 
 from grove import failure
+from grove.infrastructure.ansible import task_result
 from grove.infrastructure.fleet import NamedHost
 
 REDIS_PORT = 6379
@@ -19,6 +19,8 @@ DUMP = (
 	"REDISCLI_AUTH=\"$(awk '/^requirepass/{print $2}' /etc/redis/redis.conf)\" "
 	"redis-cli --rdb - 2>/dev/null | base64 -w0"
 )
+# The redis role's last task, as an Ansible Task records it.
+VERSION_TASK = "redis : read the running redis version"
 
 
 class GatewayStore(NamedHost, Document):
@@ -45,6 +47,7 @@ class GatewayStore(NamedHost, Document):
 		private_ip: DF.Data | None
 		public_ip: DF.Data | None
 		redis_password: DF.Password | None
+		redis_version: DF.Data | None
 		region: DF.Link | None
 		ship_host_metrics: DF.Check
 		status: DF.Literal["Pending", "Installing", "Active", "Broken", "Terminated"]
@@ -92,6 +95,11 @@ class GatewayStore(NamedHost, Document):
 		}
 
 	@property
+	def play_variables(self):
+		"""What this store's own plays are passed. Carries the password, so resolve it inside a job."""
+		return {"redis_bind_ip": self.listen_ip, "redis_password": self.get_password("redis_password")}
+
+	@property
 	def vector_variables(self):
 		"""redis's log, and the exporter that rides along on the store's own password; vector.yml
 		lays it on seeing one."""
@@ -111,20 +119,41 @@ class GatewayStore(NamedHost, Document):
 	def provision(self):
 		frappe.db.set_value(self.doctype, self.name, "status", "Installing")
 		frappe.db.commit()
-		play_name, rc = self.run_playbook(
-			"store.yml",
-			extravars={
-				"redis_bind_ip": self.listen_ip,
-				"redis_password": self.get_password("redis_password"),
-			},
-		)
+		play_name, rc = self.run_playbook("store.yml", extravars=self.play_variables)
 		frappe.db.set_value(self.doctype, self.name, "status", "Active" if rc == 0 else "Broken")
 		if rc == 0:
+			self.record_redis_version(play_name)
 			# Redis is up whatever Route53 says next: a DNS failure must not roll that back.
 			frappe.db.commit()
 			self.queue_vector()
 			self.sync_dns_records()
 		return play_name, rc
+
+	@frappe.whitelist()
+	def upgrade_redis(self):
+		"""Button: move this store onto the newest Redis the role's `redis_version` allows. The store
+		is down while the play swaps it; nothing is stopped when no newer release is out."""
+		if self.status != "Active":
+			frappe.throw(f"{self.name} is {self.status}: only an Active store's Redis is upgraded.")
+		frappe.enqueue_doc(self.doctype, self.name, "run_redis_upgrade", queue="long", timeout=1800)
+		frappe.msgprint(f"Upgrading Redis on {self.name} — watch its Ansible Plays.", alert=True)
+
+	@failure.reports_failure()
+	def run_redis_upgrade(self):
+		"""Worker: a snapshot off the box first, where the geography has a bucket, then the play."""
+		if frappe.db.get_value("Geography", self.geography, "backup_bucket"):
+			self.backup()
+		play_name, rc = self.run_playbook("upgrade_redis.yml", extravars=self.play_variables)
+		if rc != 0:
+			frappe.throw(f"Upgrade play {play_name} exited {rc}.")
+		self.record_redis_version(play_name)
+		return play_name, rc
+
+	def record_redis_version(self, play_name):
+		"""What the box reports after a play, not the role's `~=` setting: stores take patch
+		releases on different days."""
+		version = task_result(play_name, VERSION_TASK).get("stdout", "").strip()
+		frappe.db.set_value(self.doctype, self.name, "redis_version", version)
 
 	def backup(self):
 		"""A point-in-time RDB off the live Redis into its geography's backup bucket, and the doc points at it.
@@ -145,51 +174,6 @@ class GatewayStore(NamedHost, Document):
 			self.doctype, self.name, {"last_backup_key": key, "last_backup_at": frappe.utils.now_datetime()}
 		)
 		return key
-
-	@frappe.whitelist()
-	def restore(self, source: str | None = None):
-		"""Button: replace this store's Redis with `source`'s latest backup — itself, or the
-		Terminated store this box replaces. Resolved here, before the insurance backup in the
-		worker moves this store's own pointer."""
-		source = source or self.name
-		key, geography = frappe.db.get_value("Gateway Store", source, ["last_backup_key", "geography"])
-		if geography != self.geography:
-			frappe.throw(
-				f"{source} is in {geography}, not {self.geography}: a snapshot never leaves its geography."
-			)
-		if not key:
-			frappe.throw(f"{source} has no backup yet.")
-		frappe.enqueue_doc(
-			self.doctype, self.name, "restore_from", source=source, key=key, queue="long", timeout=900
-		)
-		frappe.msgprint(f"Restoring {key} onto {self.name} — watch its Ansible Plays.", alert=True)
-
-	@failure.reports_failure()
-	def restore_from(self, source, key):
-		"""Worker: this store's own snapshot first, then `key` loaded through a side Redis (see
-		restore.yml). Live counters a later drain already billed are dropped on the box, and this
-		month's spend on each live key is raised to what Grove has billed it where the snapshot has
-		less. `restore` held `source` to this geography, so its bucket is this one."""
-		self.backup()
-		bucket, client = frappe.get_doc("Geography", self.geography).get_backup_bucket_and_client()
-		path = os.path.abspath(frappe.get_site_path("private", "gateway-store", f"{self.name}.rdb"))
-		os.makedirs(os.path.dirname(path), exist_ok=True)
-		client.download_file(bucket, key, path)
-		try:
-			play_name, rc = self.run_playbook(
-				"restore.yml",
-				extravars={
-					"restore_file": path,
-					"redis_password": self.get_password("redis_password"),
-					"drop_prefixes": landed_since(source, key),
-					"spent_seeds": spent_seeds(self.name),
-				},
-			)
-		finally:
-			os.remove(path)
-		if rc != 0:
-			frappe.throw(f"Restore play {play_name} exited {rc}.")
-		return play_name, rc
 
 
 def stores_in(network, **filters):
@@ -225,49 +209,6 @@ def backup_key(store, at=None):
 	compares against it as a string."""
 	stamp = (at or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
 	return f"gateway-store/{store}/{stamp}.rdb"
-
-
-def landed_since(store, key):
-	"""The API-key prefixes a drain AFTER the snapshot in `key` landed: their live buckets in it
-	are billed already (a drain takes every bucket of a key), so a restore drops them. Drain ids are minted on the box at the rename in
-	the stamp's format, so strings order them; a blank id (a pre-ack gateway) never matches."""
-	stamp = key.rsplit("/", 1)[-1].removesuffix(".rdb")
-	return frappe.get_all(
-		"Usage Record",
-		filters=[["gateway_store", "=", store], ["drain_id", ">", stamp], ["drain_id", "not like", "dead:%"]],
-		pluck="api_key",
-		distinct=True,
-	)
-
-
-def spent_seeds(store):
-	"""What this month's counter on each live key record of `store` must read at least, in
-	nano-USD off Grove's billed records: a snapshot older than the last pull would hand every key
-	the difference of its cap again. [{key, field, value}] for the active keys of the geographies
-	this store's Active gateways serve; a key with nothing billed this month needs no seed."""
-	from grove.billing.pricing import NANO, month_spent_by
-	from grove.utils import utc_today
-
-	geographies = frappe.get_all(
-		"Gateway Server",
-		filters={"gateway_store": store, "status": "Active"},
-		pluck="geography",
-		distinct=True,
-	)
-	if not geographies:
-		return []
-	keys = frappe.get_all(
-		"Grove API Key",
-		filters={"status": "active", "geography": ("in", geographies)},
-		fields=["name", "key_hash"],
-	)
-	spent = month_spent_by("api_key", [k.name for k in keys])
-	field = f"spent:{utc_today():%Y-%m}"
-	return [
-		{"key": f"key:{k.key_hash}", "field": field, "value": round(spent[k.name] * NANO)}
-		for k in keys
-		if spent.get(k.name)
-	]
 
 
 def backup_all():

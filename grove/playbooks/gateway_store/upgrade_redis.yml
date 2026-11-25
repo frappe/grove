@@ -1,0 +1,72 @@
+---
+# Move a live store onto the newest redis the role's `redis_version` allows. The store is down from
+# the stop until the package starts redis again; a run with nothing newer stops nothing.
+# extra-vars: redis_bind_ip, redis_password.
+- hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    redis_data_copy: "/var/lib/redis.before-{{ redis_release }}"
+
+  pre_tasks:
+    - name: refuse to upgrade without a password
+      ansible.builtin.assert:
+        that:
+          - redis_password | default('') | trim | length > 0
+          - redis_bind_ip | default('') | trim | length > 0
+        fail_msg: >-
+          redis_password and redis_bind_ip are required — upgrade from the Gateway Store's
+          Upgrade Redis button, or pass the same extra-vars it does.
+
+  tasks:
+    - name: find the redis package to install
+      ansible.builtin.include_role:
+        name: redis
+        tasks_from: repository
+
+    - name: read the installed redis package
+      ansible.builtin.command: dpkg-query -W -f=${Version} redis-server
+      register: redis_installed
+      changed_when: false
+
+    - name: swap redis, bringing it back if a step fails
+      block:
+        - name: stop redis and keep its data dir, only when the package changes
+          when: redis_installed.stdout != redis_package
+          block:
+            - name: look for an earlier copy of the data dir
+              ansible.builtin.stat:
+                path: "{{ redis_data_copy }}"
+              register: redis_copy
+
+            - name: refuse to write over an earlier copy
+              ansible.builtin.assert:
+                that: not redis_copy.stat.exists
+                fail_msg: "{{ redis_data_copy }} is already there from an earlier run. Remove it once nothing needs it."
+
+            # SIGTERM saves the RDB and fsyncs the AOF, as in stop.yml.
+            - name: redis stopped
+              ansible.builtin.systemd:
+                name: redis-server
+                state: stopped
+
+            # The only way back: an older redis cannot read what this one writes.
+            - name: keep the data dir as the old redis left it
+              ansible.builtin.command: cp -a /var/lib/redis {{ redis_data_copy }}
+
+        - name: install redis and start it
+          ansible.builtin.include_role:
+            name: redis
+          vars:
+            redis_bind: "127.0.0.1 {{ redis_bind_ip }}"
+
+      rescue:
+        - name: bring redis back
+          ansible.builtin.systemd:
+            name: redis-server
+            state: started
+
+        - name: report the step that failed
+          ansible.builtin.fail:
+            msg: "The upgrade failed at '{{ ansible_failed_task.name }}'; redis-server was started again."

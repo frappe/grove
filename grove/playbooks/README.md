@@ -11,7 +11,7 @@ playbooks/
   inference_server/   provision.yml  serve.yml  reconfigure.yml  container_state.yml  teardown.yml  deploy_tls.yml
   machine/            ping.yml  grow_root.yml  scan_gpus.yml     — box-level, no role layered on yet
   monitoring_agent/   agent.yml  config.yml  exporters.yml  push_targets.yml  vector.yml
-  gateway_store/      store.yml  restore.yml  stop.yml  ping.yml     — Redis only, shared by a Network's gateways; restore.yml loads a backup through a side Redis + REPLICAOF
+  gateway_store/      store.yml  upgrade_redis.yml  stop.yml  ping.yml     — Redis only, shared by a Network's gateways
   roles/              grove_user  remove_cloud_user  auditd  dcgm_exporter  node_exporter  fleet_tls  grove_https  install_gateway_agent  openresty  redis  redis_exporter  pathway_memory  vector
 ```
 
@@ -110,15 +110,35 @@ on boot; `gateway_store/ping.yml` is the wait for redis to answer, `redis-cli pi
 Pathway holds no usage to flush: each request lands in the store as it ends, or on the box's disk
 spool when the store refuses.
 
-## Restoring a Gateway Store
+## A store's Redis, and upgrading it
 
-`gateway_store/restore.yml` loads one RDB into the live store without a restart: a side `redis-server`
-(:6380, no password) reads it, the live one `REPLICAOF`s it for a few seconds, rewrites its own AOF from
-what it got, and is a master again. Afterwards it drops every transient key (`inflight:*`, `health:*`,
-`sticky:*`) and the `usage:<prefix>:<day>` buckets a drain newer than the snapshot already billed
-(`drop_prefixes`), and raises each live key's `spent:<month>` to what Grove has billed it where the
-snapshot has less (`spent_seeds`) — a snapshot older than the last pull would otherwise hand every key
-the difference of its cap again. For a lost disk only: an AOF that survived already holds everything.
+`roles/redis` installs Redis from Redis's own APT repository (`packages.redis.io`), not Ubuntu's.
+`redis_version` in its defaults is pip's `~=`: `~=8.12.0` takes the newest 8.12.x the repository has,
+never 8.14. `tasks/repository.yml` adds the repository and picks that package; a
+line with nothing at the floor fails there, before anything is stopped. Two stores set up on different
+days can be on different patch releases, so a Gateway Store's `redis_version` is what the box reported
+(the role's last task), not the setting.
+
+The role also makes the config fit the package. `daemonize no` and `supervised auto` go into a config
+an earlier Redis left, *before* the install: Ubuntu's says `daemonize yes` and its unit overrode that on
+the command line, while this unit starts Redis bare and the package restarts it as it lands. The
+packaged config's `loadmodule` lines come out; a store runs no modules.
+
+**Upgrade Redis** on a Gateway Store runs `gateway_store/upgrade_redis.yml`. With nothing newer than
+what is installed it stops nothing. Otherwise it stops Redis, copies the data dir to
+`/var/lib/redis.before-<release>` (refused, before the stop, when that copy exists) and runs the role;
+a step that fails starts Redis again. The store is down for that stretch and its gateways refuse
+requests, so for a jump to a new line:
+
+1. Start Maintenance on each of its gateways; wait for in-flight 0.
+2. Pull Usage.
+3. Upgrade Redis. The doc's Redis Version changes when it is done.
+4. End Maintenance.
+
+The copy is the only way back: an older Redis cannot read what a newer one wrote (6.0 starts empty
+with no error, 7.0 refuses after the first AOF rewrite). Taken after the pull with the gateways
+drained, it holds no unbilled usage. Delete it once the new release has soaked. A patch release on
+the same line needs no bracket beyond a quiet minute.
 
 ## Monitoring
 

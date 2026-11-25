@@ -4,11 +4,8 @@
 stubbed, so no site."""
 
 import base64
-import os
-import tempfile
 import unittest
-from datetime import UTC, date, datetime, timezone
-from decimal import Decimal
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -21,8 +18,6 @@ from grove.infrastructure.doctype.gateway_store.gateway_store import (
 	GatewayStore,
 	backup_all,
 	backup_key,
-	landed_since,
-	spent_seeds,
 )
 
 
@@ -191,97 +186,63 @@ class TestBackup(unittest.TestCase):
 		self.assertEqual((backed, reported), (["store2"], ["store1"]))
 
 
-class TestRestore(unittest.TestCase):
-	"""A store's latest backup loaded onto a box; counters a later drain billed are dropped."""
+class TestUpgradeRedis(unittest.TestCase):
+	"""An Active store is moved onto the newest Redis the role allows; the doc keeps what the box
+	then reports."""
 
-	def test_landed_since_names_the_prefixes_a_later_drain_billed(self):
-		calls = []
-		with patch.object(frappe, "get_all", side_effect=lambda *a, **k: calls.append((a, k)) or ["k1"]):
-			self.assertEqual(landed_since("store1", "gateway-store/store1/20260928T100000Z.rdb"), ["k1"])
+	def test_a_stores_plays_get_its_bind_address_and_password(self):
+		store = SimpleNamespace(listen_ip="10.0.61.9", get_password=lambda field: "pw")
 		self.assertEqual(
-			calls[0][1]["filters"],
-			[
-				["gateway_store", "=", "store1"],
-				["drain_id", ">", "20260928T100000Z"],
-				["drain_id", "not like", "dead:%"],
-			],
+			GatewayStore.play_variables.fget(store), {"redis_bind_ip": "10.0.61.9", "redis_password": "pw"}
 		)
 
-	def test_a_drain_id_orders_against_the_stamp_as_a_string(self):
-		stamp = "20260928T100000Z"
-		self.assertGreater("20260928T100001Z-1a2b3c4d", stamp)
-		self.assertLess("20260928T095959Z-1a2b3c4d", stamp)
-		self.assertLess("", stamp)
+	def test_only_an_active_store_is_upgraded(self):
+		store = SimpleNamespace(name="store1", doctype="Gateway Store", status="Broken")
+		with patch.object(frappe, "throw", side_effect=Refused), self.assertRaises(Refused):
+			GatewayStore.upgrade_redis(store)
 
-	def test_a_restore_seeds_this_months_spend_of_the_stores_live_keys(self):
-		"""Off Grove's records, nano-USD, keys with nothing billed left out: the play raises each
-		counter only where the snapshot has less."""
-		import grove.billing.pricing as pricing
-		import grove.utils as utils
-
-		def get_all(doctype, **kwargs):
-			if doctype == "Gateway Server":
-				self.assertEqual(kwargs["filters"], {"gateway_store": "store2", "status": "Active"})
-				return ["in"]
-			self.assertEqual(kwargs["filters"], {"status": "active", "geography": ("in", ["in"])})
-			return [SimpleNamespace(name="k1", key_hash="h1"), SimpleNamespace(name="k2", key_hash="h2")]
-
-		with (
-			patch.object(frappe, "get_all", get_all),
-			patch.object(pricing, "month_spent_by", lambda field, names: {"k1": Decimal("0.0000155")}),
-			patch.object(utils, "utc_today", lambda: date(2026, 10, 13)),
-		):
-			self.assertEqual(
-				spent_seeds("store2"), [{"key": "key:h1", "field": "spent:2026-10", "value": 15500}]
-			)
-
-	def restore(self, key, geography):
-		store = SimpleNamespace(name="store2", doctype="Gateway Store", geography="in")
-		with (
-			patch.object(frappe, "db", SimpleNamespace(get_value=lambda *a: (key, geography))),
-			patch.object(frappe, "throw", side_effect=Refused),
-			self.assertRaises(Refused),
-		):
-			GatewayStore.restore(store, source="store1")
-
-	def test_restore_refuses_a_source_with_no_backup(self):
-		self.restore(None, "in")
-
-	def test_restore_refuses_a_source_in_another_geography(self):
-		self.restore("gateway-store/store1/20260928T100000Z.rdb", "eu")
-
-	def test_restore_from_ships_the_landed_prefixes_and_fails_on_a_bad_play(self):
-		plays, site = [], tempfile.mkdtemp()
-		seed = {"key": "key:h1", "field": "spent:2026-10", "value": 5}
-		self.addCleanup(lambda: __import__("shutil").rmtree(site, True))
+	def upgrade(self, rc=0, bucket="b"):
+		calls, written = [], {}
 		store = SimpleNamespace(
-			name="store2",
+			name="store1",
 			doctype="Gateway Store",
 			geography="in",
-			get_password=lambda field: "pw",
-			backup=lambda: "insurance",
-			run_playbook=lambda playbook, **kwargs: plays.append(
-				(playbook, kwargs, os.path.exists(kwargs["extravars"]["restore_file"]))
-			)
-			or ("play-1", 2),
+			play_variables={"redis_bind_ip": "10.0.61.9", "redis_password": "pw"},
+			backup=lambda: calls.append("backup"),
+			run_playbook=lambda playbook, extravars: calls.append((playbook, extravars)) or ("play-1", rc),
 		)
+		store.record_redis_version = lambda play: GatewayStore.record_redis_version(store, play)
+		db = SimpleNamespace(
+			get_value=lambda doctype, name, field: bucket,
+			set_value=lambda doctype, name, field, value: written.update({field: value}),
+		)
+		results = {("play-1", gateway_store.VERSION_TASK): {"stdout": "8.12.2\n"}}
 		with (
-			patch.object(frappe, "get_doc", lambda dt, name: bucket_of(FakeS3())),
-			patch.object(frappe, "get_site_path", lambda *parts: os.path.join(site, *parts)),
-			patch.object(gateway_store, "landed_since", lambda store, key: ["k1"]),
-			patch.object(gateway_store, "spent_seeds", lambda store: [seed]),
+			patch.object(frappe, "db", db),
+			patch.object(gateway_store, "task_result", lambda play, task: results[(play, task)]),
 			patch.object(frappe, "local", SimpleNamespace(grove_failure_reported=True)),
 			patch.object(frappe, "throw", side_effect=Refused),
-			self.assertRaises(Refused),
 		):
-			GatewayStore.restore_from(store, "store1", "gateway-store/store1/20260928T100000Z.rdb")
-		playbook, kwargs, file_was_there = plays[0]
-		self.assertEqual(playbook, "restore.yml")
-		self.assertEqual(kwargs["extravars"]["drop_prefixes"], ["k1"])
-		self.assertEqual(kwargs["extravars"]["spent_seeds"], [seed])
-		self.assertEqual(kwargs["extravars"]["redis_password"], "pw")
-		self.assertTrue(file_was_there)
-		self.assertFalse(os.path.exists(kwargs["extravars"]["restore_file"]))
+			try:
+				GatewayStore.run_redis_upgrade(store)
+			except Refused:
+				calls.append("refused")
+		return calls, written
+
+	def test_an_upgrade_snapshots_first_and_records_what_the_box_runs(self):
+		calls, written = self.upgrade()
+		play = ("upgrade_redis.yml", {"redis_bind_ip": "10.0.61.9", "redis_password": "pw"})
+		self.assertEqual(calls, ["backup", play])
+		self.assertEqual(written, {"redis_version": "8.12.2"})
+
+	def test_a_geography_with_no_bucket_upgrades_without_a_snapshot(self):
+		calls, _ = self.upgrade(bucket=None)
+		self.assertEqual([call[0] for call in calls], ["upgrade_redis.yml"])
+
+	def test_a_failed_play_throws_and_records_nothing(self):
+		calls, written = self.upgrade(rc=2)
+		self.assertEqual(calls[-1], "refused")
+		self.assertEqual(written, {})
 
 
 if __name__ == "__main__":
@@ -292,13 +253,13 @@ class TestDnsRecord(unittest.TestCase):
 	"""A store's own name is what operators SSH to: written on a good Setup, removed on Terminated."""
 
 	def provision(self, rc):
-		synced, self.vector_queued = [], []
+		synced, self.vector_queued, self.version_read_off = [], [], []
 		store = SimpleNamespace(
 			name="store1",
 			doctype="Gateway Store",
-			listen_ip="10.0.0.5",
-			get_password=lambda field: "pw",
+			play_variables={"redis_bind_ip": "10.0.0.5", "redis_password": "pw"},
 			run_playbook=lambda playbook, **kwargs: ("play-1", rc),
+			record_redis_version=self.version_read_off.append,
 			sync_dns_records=lambda: synced.append(True),
 			queue_vector=lambda: self.vector_queued.append(True),
 		)
@@ -315,6 +276,12 @@ class TestDnsRecord(unittest.TestCase):
 		self.assertEqual([True], self.vector_queued)
 		self.provision(2)
 		self.assertEqual([], self.vector_queued)
+
+	def test_a_good_setup_records_the_redis_its_play_installed(self):
+		self.provision(2)
+		self.assertEqual(self.version_read_off, [])
+		self.provision(0)
+		self.assertEqual(self.version_read_off, ["play-1"])
 
 	def test_terminating_removes_the_record(self):
 		removed = []

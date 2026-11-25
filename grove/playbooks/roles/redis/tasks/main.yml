@@ -1,9 +1,41 @@
 ---
-- name: install redis-server
+- name: find the redis package to install
+  ansible.builtin.include_tasks: repository.yml
+  when: redis_package is not defined
+
+- name: look for a config an earlier redis left
+  ansible.builtin.stat:
+    path: /etc/redis/redis.conf
+  register: redis_conf
+
+# Ubuntu's conf daemonizes and its unit said otherwise on the command line. This unit starts redis
+# bare, and the package restarts it on install: a kept conf must already say so, or it never comes up.
+- name: redis stays in the foreground under systemd
+  ansible.builtin.lineinfile:
+    path: /etc/redis/redis.conf
+    regexp: "^{{ item.split() | first }} "
+    line: "{{ item }}"
+  loop:
+    - daemonize no
+    - supervised auto
+  when: redis_conf.stat.exists
+
+# confold: an upgrade keeps the conf that carries the two blocks below.
+- name: install redis
   ansible.builtin.apt:
-    name: redis-server
+    name:
+      - "redis-server={{ redis_package }}"
+      - "redis-tools={{ redis_package }}"
     state: present
-    update_cache: true
+    dpkg_options: "force-confdef,force-confold"
+
+# The packaged conf loads search, json, bloom and timeseries; a store runs none of them.
+- name: redis loads no modules
+  ansible.builtin.lineinfile:
+    path: /etc/redis/redis.conf
+    regexp: "^loadmodule "
+    state: absent
+  register: redis_modules
 
 # The marker predates this role: renaming it writes a second block on every existing store.
 # save: one pair per line, Redis 6.x ignores the one-line form.
@@ -38,7 +70,7 @@
   ansible.builtin.systemd:
     name: redis-server
     state: restarted
-  when: redis_network is changed
+  when: redis_network is changed or redis_modules is changed
 
 - name: redis started
   ansible.builtin.systemd:
@@ -67,3 +99,12 @@
   environment: "{{ {'REDISCLI_AUTH': redis_password} if redis_password else {} }}"
   register: redis_runtime_persistence
   changed_when: redis_runtime_persistence.stdout | trim == "1"
+
+# gateway_store.py reads this task's stdout: what the box runs, which `redis_version` only bounds.
+- name: read the running redis version
+  ansible.builtin.shell: >-
+    redis-cli info server | awk -F: '/^redis_version:/ {print $2}' | tr -d '\r'
+  environment: "{{ {'REDISCLI_AUTH': redis_password} if redis_password else {} }}"
+  register: redis_running
+  changed_when: false
+  failed_when: redis_running.stdout | trim != redis_release

@@ -18,6 +18,7 @@
   "datum_token_expires_at",
   "column_break_redis",
   "redis_password",
+  "redis_version",
   "frappe_public_key",
   "section_backup",
   "last_backup_at",
@@ -113,6 +114,13 @@
    "read_only": 1
   },
   {
+   "description": "What the box reported after its last Setup or Upgrade Redis. The role allows a whole line (8.12.x), so two stores can be on different patch releases.",
+   "fieldname": "redis_version",
+   "fieldtype": "Data",
+   "label": "Redis Version",
+   "read_only": 1
+  },
+  {
    "fieldname": "section_backup",
    "fieldtype": "Section Break",
    "label": "Backup"
@@ -124,7 +132,7 @@
    "read_only": 1
   },
   {
-   "description": "Object in the weights bucket. Restore uses a store's latest \u2014 this one's, or the Terminated store this box replaces.",
+   "description": "The newest snapshot, an object in the Geography's backup bucket.",
    "fieldname": "last_backup_key",
    "fieldtype": "Data",
    "label": "Last Backup Key",
@@ -154,7 +162,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-09 13:37:12.401765",
+ "modified": "2026-11-26 01:30:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Gateway Store",
