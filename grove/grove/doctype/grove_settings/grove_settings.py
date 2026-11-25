@@ -6,6 +6,7 @@ import re
 
 import bcrypt
 import frappe
+from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, get_url
 
@@ -98,7 +99,7 @@ class GroveSettings(Document):
 	def validate_report_resend_days(self):
 		self.report_resend_days = self.resend_days
 		if self.report_resend_days < 1:
-			frappe.throw("Resend Days must be at least 1: every report sends today again.")
+			frappe.throw(_("Resend Days must be at least 1: every report sends today again."))
 
 	@property
 	def resend_days(self):

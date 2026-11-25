@@ -117,7 +117,8 @@ class UsageReport:
 		for start in range(0, len(due), BATCH_LINES):
 			batch = due[start : start + BATCH_LINES]
 			outbox.record(self.get_outcomes(batch, self.post(batch)))
-			frappe.db.commit()
+			# keep each batch Central answered, so a later failure in the run does not send it again.
+			frappe.db.commit()  # nosemgrep
 
 	def get_days(self, outbox):
 		"""The landing days to read, oldest first. A Usage Record is stamped as it is written, so
@@ -132,7 +133,8 @@ class UsageReport:
 		"""Summed in SQL as decimals and read as text: the database driver turns a decimal into a
 		float. The landing day's bounds are UTC; `creation` is site time."""
 		table, params = money_rows({}, since=site_datetime(day), until=site_datetime(day + timedelta(days=1)))
-		rows = frappe.db.sql(
+		# `table` is fixed SQL and Usage Counter column names from money_rows; values are in `params`.
+		rows = frappe.db.sql(  # nosemgrep
 			f"""select team, coalesce(model, '') as model,
 			cast(sum(cost) as char) as cost from {table}
 			where team is not null and team != '' group by team, coalesce(model, '')""",
@@ -189,7 +191,7 @@ class CentralReply:
 
 	def __init__(self, rejections):
 		self.rejections_by_subject = {}
-		for rejection in map(as_rejection, rejections):
+		for rejection in (as_rejection(raw) for raw in rejections):
 			self.rejections_by_subject.setdefault(rejection.get("subject") or "", []).append(rejection)
 
 	@classmethod

@@ -5,6 +5,7 @@ import functools
 import hmac
 
 import frappe
+from frappe import _
 from frappe.utils.password import set_encrypted_password
 
 CONTROL_ROLE = "Grove Control"
@@ -64,7 +65,7 @@ def set_report_secret(secret: str):
 	# the secret should not be stored in the Request Log.
 	frappe.form_dict.pop("secret", None)
 	if not secret:
-		frappe.throw("A report secret is required.")
+		frappe.throw(_("A report secret is required."))
 	# Grove Control holds no write on Grove Settings; the control role is the gate.
 	set_encrypted_password("Grove Settings", "Grove Settings", secret, "central_report_secret")
 	frappe.db.set_single_value("Grove Settings", "central_report_secret", "*" * len(secret))
