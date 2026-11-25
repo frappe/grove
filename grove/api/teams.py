@@ -21,12 +21,13 @@ CONTROL_KEY_HEADER = "X-Grove-Control-Key"
 @frappe.whitelist()
 @for_control_clients
 def provision_team(team: str):
-	if not team:
-		frappe.throw("A team needs an id.")
-	if frappe.db.exists("Grove Team", team):
+	try:
 		doc = frappe.get_doc("Grove Team", team)
-	else:
+	except frappe.DoesNotExistError:
+		# get_doc already logged a red "not found" for the response.
+		frappe.clear_last_message()
 		doc = frappe.get_doc({"doctype": "Grove Team", "__newname": team})
+
 	doc.save()
 	return {"team": doc.name}
 

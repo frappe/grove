@@ -23,6 +23,14 @@ class TestModelID(IntegrationTestCase):
 		self.assertEqual(name, ensure_model_id("probe-ensured-7b"))
 		self.assertEqual(1, frappe.db.count("Model ID", {"name": name}))
 
+	def test_ensure_fills_a_blank_display_name_and_keeps_a_set_one(self):
+		frappe.clear_messages()
+		name = ensure_model_id("Probe Named 7B")
+		self.assertEqual([], frappe.get_message_log())
+		ensure_model_id("Probe Named 7B", "Probe Named")
+		ensure_model_id("Probe Named 7B", "Renamed")
+		self.assertEqual("Probe Named", frappe.db.get_value("Model ID", name, "display_name"))
+
 	def test_a_model_cannot_name_an_id_the_site_has_no_record_of(self):
 		model = {"doctype": "Model", "model_id": "never-made-7b", "hf_repo": "probe/Repo"}
 		with self.assertRaises(frappe.LinkValidationError):

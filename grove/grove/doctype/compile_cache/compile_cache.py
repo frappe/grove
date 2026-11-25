@@ -139,11 +139,12 @@ def _upsert(digest, gpu, tp, model, stats, bucket):
 		"last_synced": now_datetime(),
 	}
 	name = f"{model}-{gpu}-tp{tp}-{digest}"
-	if frappe.db.exists("Compile Cache", name):
+	try:
 		doc = frappe.get_doc("Compile Cache", name)
-		doc.update(values)
-	else:
-		doc = frappe.get_doc({"doctype": "Compile Cache", **values})
+	except frappe.DoesNotExistError:
+		frappe.clear_last_message()
+		doc = frappe.new_doc("Compile Cache")
+	doc.update(values)
 	doc.s3_uri = f"s3://{bucket}/{PREFIX}{digest}/{gpu}/tp{tp}/{model}"
 	doc.save()
 	return doc

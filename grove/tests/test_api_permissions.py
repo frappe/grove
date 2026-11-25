@@ -226,7 +226,9 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 
 	def test_provisioning_again_keeps_the_team_and_its_keys(self):
 		team = "TEAM-PROBE"
+		frappe.clear_messages()
 		self.assertEqual(teams.provision_team(team), {"team": team})
+		self.assertEqual([], frappe.get_message_log())
 		key = keys.provision_key(team)["api_key"]
 		self.assertEqual(teams.provision_team(team), {"team": team})
 		self.assertEqual(frappe.db.get_value("Grove API Key", {"key_hash": hash_secret(key)}, "team"), team)

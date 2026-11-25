@@ -58,10 +58,12 @@ def sync_tier(entry):
 	from the file when they differ. The rows are the catalog's; `spend_limit` is the operator's
 	once the tier exists. After the models, so a row's model key can be checked."""
 	rows = sorted_limits(entry.get("limits", []))
-	if not frappe.db.exists("Tier", entry["name"]):
+	try:
+		doc = frappe.get_doc("Tier", entry["name"])
+	except frappe.DoesNotExistError:
+		frappe.clear_last_message()
 		frappe.get_doc({"doctype": "Tier", **entry, "limits": rows}).insert()
 		return
-	doc = frappe.get_doc("Tier", entry["name"])
 	if sorted_limits(doc.limits) != rows:
 		doc.set("limits", rows)
 		doc.save()

@@ -72,36 +72,33 @@ def resolve(reported, vram_gb=None, compute_capability=None):
 	if not name:
 		return None
 
-	if frappe.db.exists("GPU Type", name):
+	try:
 		doc = frappe.get_doc("GPU Type", name)
-		changed = False
-		# Seeded only where blank: the sources disagree, so overwriting would follow the last rescan.
-		if vram_gb and not doc.vram_gb:
-			doc.vram_gb = vram_gb
-			changed = True
-		if compute_capability and not doc.compute_capability:
-			doc.compute_capability = compute_capability
-			changed = True
-		if not doc.knows(reported):
-			doc.append("aliases", {"alias": reported})
-			changed = True
-		if changed:
-			doc.save(ignore_permissions=True)
-		return doc.name
+	except frappe.DoesNotExistError:
+		frappe.clear_last_message()
+		record = {
+			"doctype": "GPU Type",
+			"name": name,
+			"vram_gb": vram_gb or 0,
+			"compute_capability": compute_capability or 0,
+			"aliases": [{"alias": reported}],
+		}
+		return frappe.get_doc(record).insert(ignore_permissions=True).name
 
-	return (
-		frappe.get_doc(
-			{
-				"doctype": "GPU Type",
-				"name": name,
-				"vram_gb": vram_gb or 0,
-				"compute_capability": compute_capability or 0,
-				"aliases": [{"alias": reported}],
-			}
-		)
-		.insert(ignore_permissions=True)
-		.name
-	)
+	changed = False
+	# Seeded only where blank: the sources disagree, so overwriting would follow the last rescan.
+	if vram_gb and not doc.vram_gb:
+		doc.vram_gb = vram_gb
+		changed = True
+	if compute_capability and not doc.compute_capability:
+		doc.compute_capability = compute_capability
+		changed = True
+	if not doc.knows(reported):
+		doc.append("aliases", {"alias": reported})
+		changed = True
+	if changed:
+		doc.save(ignore_permissions=True)
+	return doc.name
 
 
 def match_alias(reported):
