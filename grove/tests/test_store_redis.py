@@ -93,6 +93,74 @@ class TestAnInstallLeavesAStoreThatStarts(unittest.TestCase):
 		self.assertIn("redis_release", last["failed_when"])
 
 
+class TestRedisRunsAsTheServiceAccount(unittest.TestCase):
+	"""Not as the packages' `redis`: the unit, the paths it writes to and dpkg all have to agree,
+	and before the install, which starts it."""
+
+	def setUp(self):
+		self.tasks = role_tasks("account")
+		self.names = [task["name"] for task in self.tasks]
+		self.paths = yaml.safe_load((ROLE / "defaults/main.yml").read_text())["redis_paths"]
+
+	def test_the_account_is_settled_before_the_install_starts_redis(self):
+		names = [task.get("name") for task in role_tasks("main")]
+		self.assertLess(names.index("redis runs as the service account"), names.index("install redis"))
+
+	def test_the_unit_names_the_account(self):
+		drop_in = named(self.tasks, "redis runs as the service account")["ansible.builtin.copy"]
+		self.assertEqual(drop_in["dest"], "/etc/systemd/system/redis-server.service.d/account.conf")
+		self.assertIn("User={{ redis_user }}", drop_in["content"])
+
+	def test_a_redis_under_another_account_stops_before_its_files_change_hands(self):
+		"""Still running, it could write to what it has open and create nothing new: no save."""
+		stop = named(self.tasks, "stop a redis that runs as another account")
+		self.assertIn('!= "{{ redis_user }}"', stop["ansible.builtin.shell"])
+		self.assertLess(
+			self.names.index(stop["name"]), self.names.index("hand what is in them to the service account")
+		)
+
+	def test_every_path_the_packages_chown_is_held(self):
+		"""redis-tools' postinst chowns the three directories and redis-server's the conf, each
+		unless dpkg holds an override for it."""
+		held = {path["path"]: path["group"] for path in self.paths}
+		self.assertEqual(
+			held,
+			{
+				"/etc/redis": "{{ redis_user }}",
+				"/etc/redis/redis.conf": "{{ redis_user }}",
+				"/var/lib/redis": "{{ redis_user }}",
+				"/var/log/redis": "adm",
+			},
+		)
+		override = named(self.tasks, "dpkg leaves redis's paths to the service account")
+		self.assertEqual(override["loop"], "{{ redis_paths }}")
+
+	@unittest.skipUnless(shutil.which("dpkg-statoverride"), "the role holds its paths with dpkg-statoverride")
+	def test_an_override_is_set_once_and_replaces_the_packages_own(self):
+		script = named(self.tasks, "dpkg leaves redis's paths to the service account")[
+			"ansible.builtin.shell"
+		]
+		user = subprocess.run(["id", "-un"], capture_output=True, text=True, check=True).stdout.strip()
+		real = shutil.which("dpkg-statoverride")
+		with tempfile.TemporaryDirectory() as folder:
+			pathlib.Path(folder, "statoverride").write_text(f"{user} {user} 600 /etc/redis/redis.conf\n")
+			stub = pathlib.Path(folder, "dpkg-statoverride")
+			stub.write_text(f'#!/bin/sh\nexec {real} --admindir={folder} "$@"\n')
+			stub.chmod(0o755)
+			env = {
+				"PATH": f"{folder}:{os.environ['PATH']}",
+				"OWNER": f"{user} {user} 640",
+				"TARGET": "/etc/redis/redis.conf",
+			}
+			runs = [
+				subprocess.run(["sh", "-c", script], env=env, capture_output=True, text=True, check=True)
+				for _ in range(2)
+			]
+			held = pathlib.Path(folder, "statoverride").read_text()
+		self.assertEqual([run.stdout.strip() for run in runs], ["changed", ""])
+		self.assertEqual(held, f"{user} {user} 640 /etc/redis/redis.conf\n")
+
+
 class TestALiveStoreIsUpgraded(unittest.TestCase):
 	def setUp(self):
 		[self.play] = yaml.safe_load((PLAYBOOKS / "gateway_store/upgrade_redis.yml").read_text())

@@ -119,13 +119,20 @@ line with nothing at the floor fails there, before anything is stopped. Two stor
 days can be on different patch releases, so a Gateway Store's `redis_version` is what the box reported
 (the role's last task), not the setting.
 
+Redis runs as the `frappe` account, not the packages' `redis` (`tasks/account.yml`, before the install,
+which starts it): a unit drop-in names the account, the three directories (`/etc/redis`,
+`/var/lib/redis`, `/var/log/redis`, the last in group `adm` for Vector) and what is in them are handed
+over, and a `dpkg-statoverride` holds each path, because the packages chown them back to `redis` at
+every install otherwise. A Redis still running as another account is stopped first, so the first
+Upgrade Redis on such a store has a short stop even with no newer release.
+
 The role also makes the config fit the package. `daemonize no` and `supervised auto` go into a config
 an earlier Redis left, *before* the install: Ubuntu's says `daemonize yes` and its unit overrode that on
 the command line, while this unit starts Redis bare and the package restarts it as it lands. The
 packaged config's `loadmodule` lines come out; a store runs no modules.
 
 **Upgrade Redis** on a Gateway Store runs `gateway_store/upgrade_redis.yml`. With nothing newer than
-what is installed it stops nothing. Otherwise it stops Redis, copies the data dir to
+what is installed, and Redis already under the account, it stops nothing. Otherwise it stops Redis, copies the data dir to
 `/var/lib/redis.before-<release>` (refused, before the stop, when that copy exists) and runs the role;
 a step that fails starts Redis again. The store is down for that stretch and its gateways refuse
 requests, so for a jump to a new line:

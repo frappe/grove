@@ -3,6 +3,9 @@
   ansible.builtin.include_tasks: repository.yml
   when: redis_package is not defined
 
+- name: redis runs as the service account
+  ansible.builtin.include_tasks: account.yml
+
 - name: look for a config an earlier redis left
   ansible.builtin.stat:
     path: /etc/redis/redis.conf

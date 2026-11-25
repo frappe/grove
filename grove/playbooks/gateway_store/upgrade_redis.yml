@@ -1,6 +1,7 @@
 ---
 # Move a live store onto the newest redis the role's `redis_version` allows. The store is down from
-# the stop until the package starts redis again; a run with nothing newer stops nothing.
+# the stop until the package starts redis again. A run with nothing newer stops nothing, unless
+# redis still runs as another account than the role's: the role stops it to hand its files over.
 # extra-vars: redis_bind_ip, redis_password.
 - hosts: all
   become: true

@@ -317,6 +317,9 @@ class TestOneServiceAccount(unittest.TestCase):
 			"vmagent_user": yaml.safe_load(
 				(PLAYBOOKS / "monitoring_agent/roles/vmagent/defaults/main.yml").read_text()
 			)["vmagent_user"],
+			"redis_user": yaml.safe_load((SHARED_ROLES / "redis/defaults/main.yml").read_text())[
+				"redis_user"
+			],
 		}
 		for unit in ("gateway_server/systemd/pathway.service", "ingress_server/systemd/pathway.service"):
 			user = next(l for l in (PLAYBOOKS / unit).read_text().splitlines() if l.startswith("User="))

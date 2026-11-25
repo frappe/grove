@@ -1,0 +1,65 @@
+---
+# Redis runs as the service account, not the packages' `redis`. All of this lands before the
+# install, which starts redis: by then the unit and the paths it writes to must already agree.
+- name: redis drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/redis-server.service.d
+    state: directory
+    mode: "0755"
+
+- name: redis runs as the service account
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/redis-server.service.d/account.conf
+    content: |
+      [Service]
+      User={{ redis_user }}
+      Group={{ redis_user }}
+    mode: "0644"
+  register: redis_account
+
+- name: load the drop-in
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: redis_account is changed
+
+# Its open files would keep working while every new one, a save or an AOF rewrite, was refused.
+- name: stop a redis that runs as another account
+  ansible.builtin.shell: |
+    set -eu
+    running=$(ps -o user= -C redis-server | head -1 | tr -d ' ')
+    if [ -n "$running" ] && [ "$running" != "{{ redis_user }}" ]; then
+      systemctl stop redis-server
+      echo stopped
+    fi
+  register: redis_other_account
+  changed_when: redis_other_account.stdout | trim == "stopped"
+
+- name: redis's directories are the service account's
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ redis_user }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop: "{{ redis_paths | selectattr('state', 'equalto', 'directory') }}"
+
+- name: hand what is in them to the service account
+  ansible.builtin.command: chown -Rc {{ redis_user }}:{{ item.group }} {{ item.path }}
+  loop: "{{ redis_paths | selectattr('state', 'equalto', 'directory') }}"
+  register: redis_handed_over
+  changed_when: redis_handed_over.stdout | trim | length > 0
+
+# The packages chown these to `redis` at every install, except a path dpkg holds an override for.
+- name: dpkg leaves redis's paths to the service account
+  ansible.builtin.shell: |
+    set -eu
+    if [ "$(dpkg-statoverride --list "$TARGET" 2>/dev/null)" != "$OWNER $TARGET" ]; then
+      dpkg-statoverride --force-statoverride-add --add $OWNER "$TARGET"
+      echo changed
+    fi
+  environment:
+    OWNER: "{{ redis_user }} {{ item.group }} {{ item.mode }}"
+    TARGET: "{{ item.path }}"
+  loop: "{{ redis_paths }}"
+  register: redis_override
+  changed_when: redis_override.stdout | trim == "changed"

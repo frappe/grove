@@ -131,8 +131,9 @@ class GatewayStore(NamedHost, Document):
 
 	@frappe.whitelist()
 	def upgrade_redis(self):
-		"""Button: move this store onto the newest Redis the role's `redis_version` allows. The store
-		is down while the play swaps it; nothing is stopped when no newer release is out."""
+		"""Button: move this store onto the newest Redis the role's `redis_version` allows, run as
+		the service account. The store is down while the play swaps it; nothing is stopped when
+		it is already both."""
 		if self.status != "Active":
 			frappe.throw(f"{self.name} is {self.status}: only an Active store's Redis is upgraded.")
 		frappe.enqueue_doc(self.doctype, self.name, "run_redis_upgrade", queue="long", timeout=1800)
