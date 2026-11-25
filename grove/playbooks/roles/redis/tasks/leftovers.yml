@@ -1,0 +1,40 @@
+---
+# What an earlier version of this role left on a store when it ran the packaged unit as the
+# service account. Nothing reads them now. Data directories are not touched here.
+- name: remove the account drop-in from the unit
+  ansible.builtin.file:
+    path: /etc/systemd/system/redis-server.service.d/account.conf
+    state: absent
+  register: redis_drop_in
+
+- name: remove the drop-in directory when it is empty
+  ansible.builtin.shell: |
+    set -eu
+    if [ -d "$DROP_INS" ] && [ -z "$(ls -A "$DROP_INS")" ]; then
+      rmdir "$DROP_INS"
+      echo removed
+    fi
+  environment:
+    DROP_INS: /etc/systemd/system/redis-server.service.d
+  register: redis_drop_ins
+  changed_when: redis_drop_ins.stdout | trim == "removed"
+
+- name: reload systemd without the drop-in
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: redis_drop_in is changed
+
+# Only the overrides that name the service account: the packages' own on the conf stays theirs.
+- name: release the packaged paths dpkg held for the service account
+  ansible.builtin.shell: |
+    set -eu
+    for path in /etc/redis /etc/redis/redis.conf /var/lib/redis /var/log/redis; do
+      if dpkg-statoverride --list "$path" 2>/dev/null | grep -q "^$OWNER "; then
+        dpkg-statoverride --remove "$path"
+        echo "released $path"
+      fi
+    done
+  environment:
+    OWNER: "{{ redis_user }}"
+  register: redis_released
+  changed_when: redis_released.stdout | trim | length > 0

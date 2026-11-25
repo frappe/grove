@@ -209,5 +209,64 @@ class TestALiveStoreIsUpgraded(unittest.TestCase):
 		self.assertIn("ansible.builtin.fail", self.swap["rescue"][1])
 
 
+class TestWhatAnEarlierRoleLeft(unittest.TestCase):
+	"""It ran the packaged unit as the service account: a drop-in on the unit and a dpkg stat
+	override on each packaged path. The upgrade play clears both and touches no data directory."""
+
+	def setUp(self):
+		self.tasks = role_tasks("leftovers")
+
+	def test_the_upgrade_play_clears_them_after_the_swap(self):
+		[play] = yaml.safe_load((PLAYBOOKS / "gateway_store/upgrade_redis.yml").read_text())
+		last = play["tasks"][-1]["ansible.builtin.include_role"]
+		self.assertEqual((last["name"], last["tasks_from"]), ("redis", "leftovers"))
+
+	def test_the_drop_in_goes_and_systemd_is_told(self):
+		drop_in = named(self.tasks, "remove the account drop-in from the unit")["ansible.builtin.file"]
+		self.assertEqual(drop_in["path"], "/etc/systemd/system/redis-server.service.d/account.conf")
+		self.assertEqual(drop_in["state"], "absent")
+		reload = named(self.tasks, "reload systemd without the drop-in")
+		self.assertEqual(reload["when"], "redis_drop_in is changed")
+
+	def test_no_data_directory_is_removed(self):
+		text = (ROLE / "tasks/leftovers.yml").read_text()
+		for word in ("rm -", "/var/lib/redis-server", ".before-"):
+			self.assertNotIn(word, text)
+
+	@unittest.skipUnless(shutil.which("dpkg-statoverride"), "the role releases paths with dpkg-statoverride")
+	def test_only_the_service_accounts_overrides_are_released(self):
+		"""The packages hold one of their own on the conf, for `redis`: that one stays."""
+		release = named(self.tasks, "release the packaged paths dpkg held for the service account")
+		user, group = (
+			subprocess.run(["id", flag], capture_output=True, text=True, check=True).stdout.strip()
+			for flag in ("-un", "-gn")
+		)
+		real = shutil.which("dpkg-statoverride")
+		with tempfile.TemporaryDirectory() as folder:
+			held = pathlib.Path(folder, "statoverride")
+			held.write_text(
+				f"{user} {group} 2770 /etc/redis\n"
+				f"{user} {group} 750 /var/lib/redis\n"
+				f"{user} adm 2750 /var/log/redis\n"
+				"root root 640 /etc/redis/redis.conf\n"
+				f"{user} {group} 750 /somewhere/else\n"
+			)
+			stub = pathlib.Path(folder, "dpkg-statoverride")
+			stub.write_text(f'#!/bin/sh\nexec {real} --admindir={folder} "$@"\n')
+			stub.chmod(0o755)
+			env = {"PATH": f"{folder}:{os.environ['PATH']}", "OWNER": user}
+			script = release["ansible.builtin.shell"]
+			runs = [
+				subprocess.run(["sh", "-c", script], env=env, capture_output=True, text=True, check=True)
+				for _ in range(2)
+			]
+			left = sorted(held.read_text().splitlines())
+		self.assertEqual(len(runs[0].stdout.splitlines()), 3)
+		self.assertEqual(runs[1].stdout, "")
+		self.assertEqual(
+			left, sorted(["root root 640 /etc/redis/redis.conf", f"{user} {group} 750 /somewhere/else"])
+		)
+
+
 if __name__ == "__main__":
 	unittest.main()

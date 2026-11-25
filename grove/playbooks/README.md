@@ -140,6 +140,9 @@ from our unit. The packaged data dir is left as it was, which is the way back: s
 until it is no longer needed. Until a store has moved, its backups and log shipping still read the
 packaged paths (`CONFS`, `LOGS` in `gateway_store.py` name both).
 
+The play ends by clearing what an earlier version of the role left on a store (`tasks/leftovers.yml`: a
+drop-in on the unit and dpkg stat overrides on the packaged paths). It removes no data directory.
+
 **Upgrade Redis** on a Gateway Store runs `gateway_store/upgrade_redis.yml`. With nothing newer than
 what is installed, and the store already on its own unit, it stops nothing. For a new package it stops
 Redis, copies the data dir to `/var/lib/redis-server.before-<release>` (refused, before the stop, when

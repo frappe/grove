@@ -77,3 +77,8 @@
         - name: report the step that failed
           ansible.builtin.fail:
             msg: "The upgrade failed at '{{ ansible_failed_task.name }}'; redis-server was started again."
+
+    - name: clear what an earlier version of the role left
+      ansible.builtin.include_role:
+        name: redis
+        tasks_from: leftovers
