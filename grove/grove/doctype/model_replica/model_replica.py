@@ -8,7 +8,7 @@ import frappe
 from frappe.model.document import Document
 
 from grove import failure
-from grove.grove.doctype.gpu.gpu import (
+from grove.infrastructure.doctype.gpu.gpu import (
 	GPUUnavailable,
 	cards_on,
 	claim,

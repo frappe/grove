@@ -9,13 +9,13 @@ from unittest.mock import patch
 
 import frappe
 
-from grove.grove.doctype.gateway_server.gateway_server import GatewayServer
-from grove.grove.doctype.gateway_store.gateway_store import GatewayStore
-from grove.grove.doctype.inference_server.inference_server import InferenceServer
-from grove.grove.doctype.ingress_server.ingress_server import IngressServer
-from grove.grove.doctype.machine.machine import Machine
-from grove.grove.doctype.monitoring_agent.monitoring_agent import MonitoringAgent
-from grove.server import Server
+from grove.infrastructure.doctype.gateway_server.gateway_server import GatewayServer
+from grove.infrastructure.doctype.gateway_store.gateway_store import GatewayStore
+from grove.infrastructure.doctype.inference_server.inference_server import InferenceServer
+from grove.infrastructure.doctype.ingress_server.ingress_server import IngressServer
+from grove.infrastructure.doctype.machine.machine import Machine
+from grove.infrastructure.doctype.monitoring_agent.monitoring_agent import MonitoringAgent
+from grove.infrastructure.server import Server
 
 LIVE = ("!=", "Terminated")
 

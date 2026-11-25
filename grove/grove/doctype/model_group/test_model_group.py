@@ -4,8 +4,8 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.model_provider.test_model_provider import keyed_provider, our_model, vendor_model
+from grove.infrastructure.doctype.geography.test_geography import make_test_geography
 
 
 class IntegrationTestModelGroup(IntegrationTestCase):

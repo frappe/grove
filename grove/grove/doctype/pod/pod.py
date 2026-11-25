@@ -142,7 +142,7 @@ class Pod(Document):
 	def spawn(self):
 		"""Spawn this pod on its provider (long job)."""
 		frappe.enqueue(
-			"grove.cloud_provider.provisioner.spawn_pod_doc",
+			"grove.infrastructure.cloud_provider.provisioner.spawn_pod_doc",
 			# The poll and the engine gate fill 1800 s; the create retries add up on top.
 			queue="long",
 			timeout=2100,
@@ -154,7 +154,7 @@ class Pod(Document):
 	def sync(self):
 		"""Pull the pod's state off the provider and update this Pod. Runs inline for immediate
 		feedback."""
-		from grove.cloud_provider.provisioner import sync_pod
+		from grove.infrastructure.cloud_provider.provisioner import sync_pod
 
 		res = sync_pod(self.name)
 		frappe.msgprint(f"Synced pod {self.name}: {res['status']}.", alert=True)
@@ -164,7 +164,7 @@ class Pod(Document):
 	def stop(self):
 		"""Free the GPU but keep the pod and its volume (weights survive); Start resumes it."""
 		frappe.enqueue(
-			"grove.cloud_provider.provisioner.stop_pod",
+			"grove.infrastructure.cloud_provider.provisioner.stop_pod",
 			queue="short",
 			timeout=600,
 			pod_name=self.name,
@@ -175,7 +175,7 @@ class Pod(Document):
 	def start(self):
 		"""Resume a stopped pod and re-read its endpoints (the provider re-maps ports)."""
 		frappe.enqueue(
-			"grove.cloud_provider.provisioner.start_pod",
+			"grove.infrastructure.cloud_provider.provisioner.start_pod",
 			queue="long",
 			timeout=1800,
 			pod_name=self.name,
@@ -188,11 +188,11 @@ class Pod(Document):
 		serve_command and resets, keeping its id and volume (so weights are not re-downloaded),
 		then endpoints are re-synced. Refused for an edit the provider can't apply to a live pod
 		— an edited GPU shape needs Terminate + Spawn. Long job."""
-		from grove.cloud_provider.provisioner import PodProvisioner
+		from grove.infrastructure.cloud_provider.provisioner import PodProvisioner
 
 		PodProvisioner(self).validate_restart()
 		frappe.enqueue(
-			"grove.cloud_provider.provisioner.restart_pod",
+			"grove.infrastructure.cloud_provider.provisioner.restart_pod",
 			queue="long",
 			timeout=1800,
 			pod_name=self.name,
@@ -211,7 +211,7 @@ class Pod(Document):
 			frappe.throw("Pod is not spawned yet — there are no logs to stream.")
 		log_relay.keep_alive(self.doctype, self.name)
 		frappe.enqueue(
-			"grove.cloud_provider.provisioner.stream_pod_logs",
+			"grove.infrastructure.cloud_provider.provisioner.stream_pod_logs",
 			queue="long",
 			timeout=1800,
 			job_id=f"pod-logs-{self.name}",
@@ -230,7 +230,7 @@ class Pod(Document):
 	def terminate(self):
 		"""Terminate the provider pod (frees GPU/disk/billing) and mark this Pod Terminated."""
 		frappe.enqueue(
-			"grove.cloud_provider.provisioner.terminate_pod_doc",
+			"grove.infrastructure.cloud_provider.provisioner.terminate_pod_doc",
 			queue="long",
 			timeout=600,
 			pod_name=self.name,

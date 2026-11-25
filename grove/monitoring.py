@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 import frappe
 from werkzeug.wrappers import Response
 
-from grove.net import reachable_ip
+from grove.infrastructure.net import reachable_ip
 
 NODE_EXPORTER_PORT = 9100
 DCGM_EXPORTER_PORT = 9400

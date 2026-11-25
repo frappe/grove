@@ -15,8 +15,8 @@ from frappe.tests import IntegrationTestCase
 
 from grove.api import keys, teams, usage
 from grove.billing.pricing import committed, usd
-from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_api_key import grove_api_key
+from grove.infrastructure.doctype.geography.test_geography import make_test_geography
 from grove.tests.test_api_permissions import billed_record, tier
 from grove.utils import utc_today
 

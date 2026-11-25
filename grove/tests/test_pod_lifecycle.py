@@ -12,10 +12,10 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 
-from grove.cloud_provider import provisioner, schedule
-from grove.cloud_provider.provisioner import PodProvisioner
-from grove.cloud_provider.runpod import RunPodError
 from grove.grove.doctype.pod_activity import pod_activity
+from grove.infrastructure.cloud_provider import provisioner, schedule
+from grove.infrastructure.cloud_provider.provisioner import PodProvisioner
+from grove.infrastructure.cloud_provider.runpod import RunPodError
 
 T0 = datetime.datetime(2026, 9, 8, 12, 0, 0)
 DOCTYPE = pathlib.Path(__file__).parent.parent / "grove/doctype/pod_activity/pod_activity.json"
@@ -250,7 +250,7 @@ class TestTheWindowTick(unittest.TestCase):
 		writes, queued, _ = self.tick([self.pod()])
 		self.assertEqual(writes, [("Pod", "POD-1", "scheduled_for", datetime.date(2026, 9, 8))])
 		method, kwargs = queued[0]
-		self.assertEqual(method, "grove.cloud_provider.provisioner.spawn_pod_doc")
+		self.assertEqual(method, "grove.infrastructure.cloud_provider.provisioner.spawn_pod_doc")
 		self.assertEqual(
 			(kwargs["pod_name"], kwargs["trigger"], kwargs["job_id"], kwargs["deduplicate"]),
 			("POD-1", "Scheduled", "pod-spawn_pod_doc-POD-1", True),
@@ -269,7 +269,7 @@ class TestTheWindowTick(unittest.TestCase):
 			[self.pod(pod_id="p1", status="Running")], now=datetime.datetime(2026, 9, 8, 18, 0)
 		)
 		self.assertEqual(writes, [])
-		self.assertEqual(queued[0][0], "grove.cloud_provider.provisioner.terminate_pod_doc")
+		self.assertEqual(queued[0][0], "grove.infrastructure.cloud_provider.provisioner.terminate_pod_doc")
 		self.assertEqual(queued[0][1]["job_id"], "pod-terminate_pod_doc-POD-1")
 
 	def test_outside_the_window_nothing_else_happens(self):

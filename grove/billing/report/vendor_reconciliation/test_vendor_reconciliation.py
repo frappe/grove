@@ -12,9 +12,9 @@ from frappe.tests import IntegrationTestCase
 
 from grove.billing import vendor
 from grove.billing.report.vendor_reconciliation.vendor_reconciliation import execute
-from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.model_id.model_id import ensure_model_id
 from grove.grove.doctype.model_provider.test_model_provider import add_key, keyed_provider, provider
+from grove.infrastructure.doctype.geography.test_geography import make_test_geography
 from grove.utils import utc_today
 
 UPSTREAM = "probe-ai/Probe-Flash"

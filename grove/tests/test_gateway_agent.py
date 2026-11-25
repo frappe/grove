@@ -21,9 +21,9 @@ from unittest.mock import Mock, patch
 import frappe
 import yaml
 
-from grove.fleet import FleetHost, gateway_agent_release, gateway_agent_version
-from grove.grove.doctype.gateway_server.gateway_server import GatewayServer
-from grove.grove.doctype.ingress_server.ingress_server import IngressServer
+from grove.infrastructure.doctype.gateway_server.gateway_server import GatewayServer
+from grove.infrastructure.doctype.ingress_server.ingress_server import IngressServer
+from grove.infrastructure.fleet import FleetHost, gateway_agent_release, gateway_agent_version
 
 PLAYBOOKS = Path(__file__).parent.parent / "playbooks"
 TTL = "2m"
@@ -116,13 +116,13 @@ def fake_gateway(**fields):
 
 def gateway_extravars(**fields):
 	return extravars_for(
-		GatewayServer, "grove.grove.doctype.gateway_server.gateway_server", fake_gateway(**fields)
+		GatewayServer, "grove.infrastructure.doctype.gateway_server.gateway_server", fake_gateway(**fields)
 	)
 
 
 def ingress_extravars(**fields):
 	return extravars_for(
-		IngressServer, "grove.grove.doctype.ingress_server.ingress_server", fake_ingress(**fields)
+		IngressServer, "grove.infrastructure.doctype.ingress_server.ingress_server", fake_ingress(**fields)
 	)
 
 
@@ -313,7 +313,7 @@ class TestAGatewayIsToldWhichRedis(unittest.TestCase):
 		with (
 			patch.object(frappe, "db", db),
 			patch(
-				"grove.grove.doctype.gateway_server.gateway_server.store_writers", return_value=list(writers)
+				"grove.infrastructure.doctype.gateway_server.gateway_server.store_writers", return_value=list(writers)
 			),
 		):
 			GatewayServer.record_store(SimpleNamespace(doctype="Gateway Server", name="gw-1"), rc, store)
@@ -391,7 +391,7 @@ class TestPingReachesHealthz(unittest.TestCase):
 		)
 		doc.health_url = FleetHost.health_url.fget(doc)
 		with (
-			patch("grove.fleet.requests.get", **get) as request,
+			patch("grove.infrastructure.fleet.requests.get", **get) as request,
 			patch("frappe.msgprint") as msgprint,
 			patch("frappe.throw", side_effect=frappe.ValidationError),
 		):
@@ -445,7 +445,7 @@ class TestADevDeployShipsALocalBuild(unittest.TestCase):
 	def test_a_named_build_reaches_the_play(self):
 		sent = extravars_for(
 			GatewayServer,
-			"grove.grove.doctype.gateway_server.gateway_server",
+			"grove.infrastructure.doctype.gateway_server.gateway_server",
 			fake_gateway(),
 			agent_binary="/builds/pathway",
 		)
@@ -456,10 +456,10 @@ class TestAnUpdateOwnsItsPlays(unittest.TestCase):
 	def test_both_planes_hand_the_reference_to_the_play(self):
 		reference = {"reference_doctype": "Pathway Update", "reference_docname": "r1"}
 		gateway = extravars_for(
-			GatewayServer, "grove.grove.doctype.gateway_server.gateway_server", fake_gateway(), **reference
+			GatewayServer, "grove.infrastructure.doctype.gateway_server.gateway_server", fake_gateway(), **reference
 		)
 		ingress = extravars_for(
-			IngressServer, "grove.grove.doctype.ingress_server.ingress_server", fake_ingress(), **reference
+			IngressServer, "grove.infrastructure.doctype.ingress_server.ingress_server", fake_ingress(), **reference
 		)
 		self.assertEqual(reference, gateway["play_kwargs"])
 		self.assertEqual(reference, ingress["play_kwargs"])
@@ -492,7 +492,7 @@ class TestMaintenanceIsHeldInConfigJson(unittest.TestCase):
 		with (
 			patch("frappe.get_single", return_value=SETTINGS),
 			patch("frappe.throw", side_effect=frappe.ValidationError),
-			patch("grove.fleet.time.sleep"),
+			patch("grove.infrastructure.fleet.time.sleep"),
 			patch("grove.failure.report"),
 		):
 			result = GatewayServer.apply_config(doc)
@@ -519,7 +519,7 @@ class TestMaintenanceIsHeldInConfigJson(unittest.TestCase):
 		doc.run_playbook = Mock(return_value=("play-1", 0))
 		with (
 			patch("frappe.get_single", return_value=SETTINGS),
-			patch("grove.fleet.time.sleep"),
+			patch("grove.infrastructure.fleet.time.sleep"),
 		):
 			self.assertEqual(("play-1", 0), GatewayServer.apply_config(doc))
 		self.assertEqual(2, answers.call_count)
@@ -534,7 +534,7 @@ class TestMaintenanceIsHeldInConfigJson(unittest.TestCase):
 		with (
 			patch("frappe.get_single", return_value=SETTINGS),
 			patch("frappe.throw", side_effect=frappe.ValidationError) as throw,
-			patch("grove.fleet.time.sleep"),
+			patch("grove.infrastructure.fleet.time.sleep"),
 			patch("grove.failure.report"),
 			self.assertRaises(frappe.ValidationError),
 		):

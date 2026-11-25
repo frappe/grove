@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import frappe
 
-from grove.net import private_url
+from grove.infrastructure.net import private_url
 from grove.tests.model_rows import model_row
 
 

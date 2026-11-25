@@ -18,9 +18,9 @@ from frappe.tests import IntegrationTestCase
 from grove import auth
 from grove.api import catalog, control, keys, teams, usage
 from grove.billing.pricing import forget_figures
-from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.grove_api_key.grove_api_key import KEY_PREFIX, hash_secret
 from grove.grove.doctype.model_provider.model_provider import self_hosted_provider
+from grove.infrastructure.doctype.geography.test_geography import make_test_geography
 from grove.utils import utc_today
 
 PROBE = "control-probe@example.com"

@@ -11,9 +11,9 @@ import re
 import unittest
 from pathlib import Path
 
-from grove.grove.doctype.machine.machine import NAME_PREFIX
+from grove.infrastructure.doctype.machine.machine import NAME_PREFIX
 
-DOCTYPES = Path(__file__).parent.parent.parent / "grove/grove/doctype"
+DOCTYPES = Path(__file__).parent.parent.parent / "grove/infrastructure/doctype"
 
 
 def doctype_json(name):

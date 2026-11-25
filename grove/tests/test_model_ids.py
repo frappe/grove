@@ -15,10 +15,10 @@ import unittest
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.model_id.model_id import ensure_model_id
 from grove.grove.doctype.model_provider.model_provider import self_hosted_provider
 from grove.grove.doctype.model_provider.test_model_provider import provider
+from grove.infrastructure.doctype.geography.test_geography import make_test_geography
 
 
 class TestTheIdIsAlwaysPrefixed(IntegrationTestCase):

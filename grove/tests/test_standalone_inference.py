@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 import yaml
 
-from grove.grove.doctype.inference_server.inference_server import InferenceServer
+from grove.infrastructure.doctype.inference_server.inference_server import InferenceServer
 
 FLEET_TLS_DEFAULTS = Path(__file__).parent.parent / "playbooks/roles/fleet_tls/defaults/main.yml"
 

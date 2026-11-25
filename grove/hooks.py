@@ -26,24 +26,24 @@ scheduler_events = {
 	"cron": {
 		"*/1 * * * *": [
 			"grove.pathway.projection.sync_projection",
-			"grove.datum.push_roster",
+			"grove.infrastructure.datum.push_roster",
 		],
 		"0 */6 * * *": [
 			"grove.pathway.key_stats.pull_all",
 		],
 		"*/5 * * * *": [
-			"grove.grove.doctype.gateway_store.gateway_store.backup_all",
-			"grove.cloud_provider.reconcile.sync_all",
+			"grove.infrastructure.doctype.gateway_store.gateway_store.backup_all",
+			"grove.infrastructure.cloud_provider.reconcile.sync_all",
 		],
 	},
 	"hourly": [
 		"grove.grove.doctype.grove_api_key.grove_api_key.revoke_expired",
-		"grove.datum.refresh_tokens",
+		"grove.infrastructure.datum.refresh_tokens",
 	],
 	"hourly_long": [
 		"grove.pathway.usage.pull_all",
-		"grove.tls.renew_fleet_certificate",
-		"grove.cloud_provider.schedule.run_due_pods",
+		"grove.infrastructure.tls.renew_fleet_certificate",
+		"grove.infrastructure.cloud_provider.schedule.run_due_pods",
 	],
 }
 

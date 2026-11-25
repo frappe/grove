@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import frappe
 
-from grove.grove.doctype.machine.machine import NAME_PREFIX, Machine
+from grove.infrastructure.doctype.machine.machine import NAME_PREFIX, Machine
 from grove.naming import next_machine_name, next_replica_name, short_name
 from grove.utils import is_label, slugify
 
@@ -104,7 +104,7 @@ class TestAMachineIsNamedByWhatItBacks(unittest.TestCase):
 		machine = SimpleNamespace(**{"machine_type": "Inference", "region": "ap-south-1", **fields})
 		values = {("Region", "ap-south-1", "geography"): "in", ("Geography", "in", "fleet_zone"): zone}
 		with (
-			patch("grove.grove.doctype.machine.machine.next_machine_name", lambda *args: args),
+			patch("grove.infrastructure.doctype.machine.machine.next_machine_name", lambda *args: args),
 			patch.object(frappe, "db", SimpleNamespace(get_value=lambda *key: values[key])),
 			patch.object(frappe, "throw", side_effect=ValueError),
 		):

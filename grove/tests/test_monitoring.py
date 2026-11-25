@@ -23,7 +23,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from grove import monitoring
 from grove.grove.doctype.grove_settings.grove_settings import SD_TOKEN_PATTERN
-from grove.grove.doctype.monitoring_agent.monitoring_agent import MonitoringAgent
+from grove.infrastructure.doctype.monitoring_agent.monitoring_agent import MonitoringAgent
 from grove.monitoring import (
 	BOX_HTTPS_PORT,
 	DCGM_EXPORTER_PORT,
@@ -609,7 +609,7 @@ class TestPushedTargets(unittest.TestCase):
 		self.assertIn("monitoring_static_targets", write["when"])
 
 	def test_pushing_is_a_dev_site_fallback_and_nothing_else(self):
-		from grove.grove.doctype.monitoring_agent.monitoring_agent import is_pushing_targets
+		from grove.infrastructure.doctype.monitoring_agent.monitoring_agent import is_pushing_targets
 
 		with unittest.mock.patch.object(frappe, "conf", {"developer_mode": 1}):
 			self.assertTrue(is_pushing_targets())

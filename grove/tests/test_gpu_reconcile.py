@@ -9,7 +9,7 @@ replica's GPU with it and hands the same card to the next placement."""
 import unittest
 from types import SimpleNamespace
 
-from grove.grove.doctype.machine.machine import is_placeholder_device_id, plan_reconcile
+from grove.infrastructure.doctype.machine.machine import is_placeholder_device_id, plan_reconcile
 
 UUID = "GPU-70d10f6c-268d-493a-572d-aeb575e8a866"
 OTHER_UUID = "GPU-902a29d1-5c94-5f97-6c22-ce812ed7b58c"

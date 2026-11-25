@@ -12,8 +12,8 @@ from types import SimpleNamespace
 import frappe
 import yaml
 
-from grove import ansible
-from grove.ansible import AnsibleHost
+from grove.infrastructure import ansible
+from grove.infrastructure.ansible import AnsibleHost
 
 PLAYBOOKS = Path(__file__).parent.parent / "playbooks"
 SHARED_ROLES = PLAYBOOKS / "roles"
@@ -152,7 +152,7 @@ class CallbackCase(unittest.TestCase):
 	"""A callback wired to a FakeRunner, and results shaped like Ansible's."""
 
 	def callback(self):
-		from grove.ansible_runner import AnsibleCallback
+		from grove.infrastructure.ansible_runner import AnsibleCallback
 
 		runner = FakeRunner()
 		callback = AnsibleCallback.__new__(AnsibleCallback)
@@ -238,7 +238,7 @@ class TestTheKeyHasAFieldToLandOn(unittest.TestCase):
 	DOCTYPES = ("gateway_server", "ingress_server", "monitoring_agent", "gateway_store")
 
 	def test_every_server_that_gets_the_account_has_the_field(self):
-		doctypes = Path(__file__).resolve().parents[1] / "grove" / "doctype"
+		doctypes = Path(__file__).resolve().parents[1] / "infrastructure" / "doctype"
 		for name in self.DOCTYPES:
 			with self.subTest(name):
 				doc = json.loads((doctypes / name / f"{name}.json").read_text())
@@ -343,7 +343,7 @@ class TestTheRunCodeComesFromAnsible(unittest.TestCase):
 	still said Running was reported as a failed deploy."""
 
 	def rc_of(self, rc, stopped=False, play_status="Running"):
-		from grove.ansible_runner import Ansible
+		from grove.infrastructure.ansible_runner import Ansible
 
 		run = Ansible.__new__(Ansible)
 		run.playbook_path = "/nowhere/serve.yml"
@@ -352,7 +352,7 @@ class TestTheRunCodeComesFromAnsible(unittest.TestCase):
 		run.callback = SimpleNamespace(thread_db=None, stopped=stopped)
 		play = SimpleNamespace(name="PLAY-1", status=play_status)
 		with (
-			unittest.mock.patch("grove.ansible_runner.PlaybookExecutor", lambda **kw: FakeExecutor(rc)),
+			unittest.mock.patch("grove.infrastructure.ansible_runner.PlaybookExecutor", lambda **kw: FakeExecutor(rc)),
 			unittest.mock.patch("frappe.get_doc", lambda *args, **kwargs: play),
 		):
 			return run.run()[1]
@@ -375,7 +375,7 @@ class TestALostConnectionDoesNotLoseTheWrite(unittest.TestCase):
 
 	def update_play(self, error=None):
 		"""Run Ansible.update_play with the doc read raising `error` once. Returns its attempts."""
-		from grove.ansible_runner import Ansible
+		from grove.infrastructure.ansible_runner import Ansible
 
 		runner = Ansible.__new__(Ansible)
 		runner.play_name = "PLAY-1"

@@ -11,7 +11,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from grove.access import team_limits
-from grove.grove.doctype.geography.test_geography import make_test_geography
+from grove.infrastructure.doctype.geography.test_geography import make_test_geography
 
 
 def team(name, **fields):

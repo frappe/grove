@@ -169,8 +169,8 @@ evictions, ops, hit ratio, bgsave and AOF status. No password passed, no exporte
 
 The token is datum's: a JWT Central signs for one `resource_id` (`grove:<machine>`), good for as long
 as Central says (`expires_in`, 7 days today) with no revocation, addressed to the Region's `central_region`
-(Central's own name for it). Grove mints it from Central (`grove.datum.mint_token`, Grove Settings → Central)
-inside the job and stores only when it runs out (`datum_token_expires_at`); `grove.datum.refresh_tokens`,
+(Central's own name for it). Grove mints it from Central (`grove.infrastructure.datum.mint_token`, Grove Settings → Central)
+inside the job and stores only when it runs out (`datum_token_expires_at`); `grove.infrastructure.datum.refresh_tokens`,
 hourly, re-runs the play on every box with `is_vector_setup` whose token has a day or less left. Setup chains the play as its own job; **Install Vector** (then **Update
 Vector**) re-runs it by hand. A Gateway or Ingress Server set up before Vector shows **Migrate to Vector**
 instead until `is_vector_setup`: vector.yml, then `gateway_server/retire_exporter.yml` stops and removes the
@@ -183,7 +183,7 @@ answers 401 — not once a minute.
 
 datum keeps no roster, so a quiet `resource_id` looks the same whether the box died or Grove took it
 down. Grove writes the roster itself, Atlas's way (`atlas_metal_server_info`): every minute
-`grove.datum.push_roster` posts one `grove_machine_info{machine, status, vector} 1` per Machine under
+`grove.infrastructure.datum.push_roster` posts one `grove_machine_info{machine, status, vector} 1` per Machine under
 `grove:region-<region>` to each Region's datum (the JSON route beside the remote-write one), `vector` 1 when a
 box with `is_vector_setup` pushes under `grove:<machine>`. Reader rule (Insights): expected = Machines
 whose latest roster row reads Active with vector 1; alert on one with no row of its own in the last few

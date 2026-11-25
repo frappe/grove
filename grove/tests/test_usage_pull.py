@@ -16,8 +16,8 @@ from frappe.utils import getdate
 
 from grove.billing.doctype.stuck_usage.stuck_usage import StuckUsage
 from grove.billing.pricing import committed
-from grove.grove.doctype.geography.test_geography import make_test_geography
 from grove.grove.doctype.model_id.model_id import ensure_model_id
+from grove.infrastructure.doctype.geography.test_geography import make_test_geography
 from grove.pathway import reconcile, run, usage
 from grove.pathway.reconcile import FIELDS, Reconciler
 from grove.pathway.run import Target
@@ -58,7 +58,7 @@ class PullCase(IntegrationTestCase):
 			.name
 		)
 		cls.model = frappe.db.get_value("Model", doc, "model_key")
-		gateway_module = "grove.grove.doctype.gateway_server.gateway_server"
+		gateway_module = "grove.infrastructure.doctype.gateway_server.gateway_server"
 		with unittest.mock.patch(f"{gateway_module}.GatewayServer.set_admin_url"):
 			machine = frappe.get_doc(
 				{"doctype": "Machine", "name": cls.box, "machine_type": "Gateway"}

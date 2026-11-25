@@ -1,0 +1,335 @@
+# Copyright (c) 2026, Frappe and contributors
+# For license information, please see license.txt
+
+import frappe
+from frappe.model.document import Document
+
+from grove import failure
+from grove.infrastructure.cloud_provider.dns import Route53Error
+from grove.infrastructure.doctype.gateway_store.gateway_store import store_writers, stores_in
+from grove.infrastructure.fleet import (
+	PathwayHost,
+	gateway_agent_release,
+	gateway_agent_version,
+)
+from grove.pathway import projection
+
+
+class GatewayServer(PathwayHost, Document):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+
+		admin_token: DF.Password | None
+		admin_url: DF.Data | None
+		agent_version: DF.Data | None
+		datum_token_expires_at: DF.Datetime | None
+		frappe_public_key: DF.Code | None
+		gateway_store: DF.Link | None
+		geography: DF.Link | None
+		health_check_id: DF.Data | None
+		is_in_maintenance: DF.Check
+		is_static_ip: DF.Check
+		is_store_writer: DF.Check
+		is_vector_setup: DF.Check
+		isolate_caches: DF.Check
+		last_synced_at: DF.Datetime | None
+		machine: DF.Link
+		memory_limit_mb: DF.Int
+		network: DF.Link | None
+		private_ip: DF.Data | None
+		public_ip: DF.Data | None
+		region: DF.Link | None
+		ship_host_metrics: DF.Check
+		status: DF.Literal["Pending", "Installing", "Active", "Broken", "Terminated"]
+	# end: auto-generated types
+
+	dns_fields = ("public_ip", "geography")
+
+	def validate(self):
+		self.set_admin_url()
+		self.set_admin_token()
+		if self.is_store_writer and not self.gateway_store:
+			frappe.throw(
+				f"{self.name} is not on a Gateway Store yet — only a gateway deployed onto one can be its writer."
+			)
+
+	def set_admin_token(self):
+		"""The credential the control plane authenticates every push with. Generated rather than
+		typed: the field is read-only, so there is no way to enter one.
+
+		In validate rather than before_insert, so it also heals docs that exist without one.
+		Clearing the field and saving is how it is rotated, which then needs a Deploy Agent —
+		the box holds the old value until agent.env is rewritten.
+
+		Tested through get_password, NOT `if not self.admin_token`: a saved Password field reads
+		back as asterisks and stays truthy even when the __Auth row holding the real value is
+		gone, which is exactly the state this heals."""
+		if not self.get_password("admin_token", raise_exception=False):
+			self.admin_token = frappe.generate_hash(length=48)
+
+	def on_update(self):
+		if self.has_value_changed("status") and self.status == "Terminated":
+			self.remove_dns_records()
+
+	def on_trash(self):
+		self.remove_dns_records()
+
+	@frappe.whitelist()
+	def set_isolate_caches(self, on: int):
+		"""Button: give every team its own prompt-cache partition on this box, or share one again.
+		Applied as maintenance is: config.json rewritten and the box signalled."""
+		self.db_set("isolate_caches", on)
+		frappe.enqueue_doc(self.doctype, self.name, "apply_config", queue="short", timeout=600)
+		frappe.msgprint(f"{'Isolating' if on else 'Sharing'} caches on {self.name}.", alert=True)
+
+	@property
+	def archive_blockers(self):
+		"""The last gateway of a region is what serves its boxes; with a sibling left, or nothing
+		left to serve, it can go."""
+		if not self.region or frappe.get_doc("Region", self.region).gateways(exclude=self.name):
+			return []
+		served = [
+			doctype
+			for doctype in ("Ingress Server", "Inference Server")
+			if frappe.db.exists(doctype, {"region": self.region, "status": ("!=", "Terminated")})
+		]
+		if not served:
+			return []
+		return [f"Last gateway in {self.region}, which still has a live {' and '.join(served)}."]
+
+	@property
+	def network_store(self):
+		"""The Active store of this box's Network, the Network read off the Machine live."""
+		network = frappe.db.get_value("Machine", self.machine, "network")
+		if not network:
+			frappe.throw(f"Machine {self.machine} is in no Network — a gateway runs on its Network's store.")
+		stores = stores_in(network, status="Active")
+		if not stores:
+			frappe.throw(f"Network {network} has no Active Gateway Store — set one up before {self.name}.")
+		return stores[0]
+
+	def record_store(self, rc, store):
+		"""Which store the agent now runs on, on the runs that wrote agent.env. A writer stays one
+		while its store is unchanged, and a store with no Active writer takes this gateway. db.set_value,
+		like record_agent_version, so it fires no on_update."""
+		if rc != 0:
+			return
+		before = frappe.db.get_value(
+			self.doctype, self.name, ["gateway_store", "is_store_writer"], as_dict=True
+		)
+		stays_writer = before.gateway_store == store and before.is_store_writer
+		is_writer = bool(stays_writer or not store_writers(store))
+		frappe.db.set_value(
+			self.doctype, self.name, {"gateway_store": store, "is_store_writer": int(is_writer)}
+		)
+
+	@frappe.whitelist()
+	def check_state(self):
+		"""Button: which sections a tick would push, pushing nothing."""
+		result = projection.check_state("Gateway Server", self.name)
+		if result["in_sync"]:
+			frappe.msgprint(f"{self.name} holds the current desired state.", alert=True)
+		else:
+			frappe.msgprint(
+				f"Drift on {self.name}: {', '.join(result['drift'])} — "
+				"the next tick (or Full Sync) will push it."
+			)
+		return result
+
+	@frappe.whitelist()
+	def full_sync(self):
+		"""Button: push the COMPLETE key set + routing table to this proxy now
+		(logged on a Pathway Sync doc)."""
+		frappe.enqueue(
+			"grove.pathway.projection.full_sync",
+			queue="short",
+			proxies=[self.name],
+			trigger="Manual",
+		)
+		frappe.msgprint(f"Full sync queued for {self.name}.", alert=True)
+
+	@frappe.whitelist()
+	def pull_usage(self):
+		"""Button: drain this box's store now instead of at the next hourly pull (logged on a
+		Pathway Sync doc)."""
+		frappe.enqueue(
+			"grove.pathway.usage.pull_all", queue="short", gateways=[self.name], trigger="Manual", wait=60
+		)
+		frappe.msgprint(f"Usage pull queued for {self.name}.", alert=True)
+
+	@property
+	def caller_reference(self):
+		"""Idempotency token for the health check. The creation stamp is in it so a name reused
+		after a terminate cannot collide with the old box's check."""
+		# The short name: Route53 caps a caller reference at 64 characters.
+		return f"grove-{self.short_name}-{frappe.utils.get_datetime(self.creation):%Y%m%d%H%M%S}"
+
+	def ensure_health_check(self, client):
+		"""Created once, then kept on this box's address. It is what drops this box alone out of the
+		multivalue answer when its /healthz stops answering 200."""
+		if self.health_check_id:
+			client.update_health_check_ip(self.health_check_id, self.public_ip)
+			return self.health_check_id
+		self.db_set(
+			"health_check_id",
+			client.create_endpoint_health_check(self.public_ip, self.hostname, self.caller_reference),
+		)
+		return self.health_check_id
+
+	@frappe.whitelist()
+	def sync_dns_records(self):
+		"""Button + provision step: point this box's name at it and put it in the shared multivalue set
+		behind its health check. UPSERT, so a box back on a new address is corrected by running it
+		again."""
+		client = self.dns_client()
+		if not client:
+			return None
+		return client.upsert_gateway_records(
+			self.fleet_zone,
+			self.hostname,
+			frappe.db.get_value("Geography", self.geography, "endpoint"),
+			self.public_ip,
+			self.name,
+			self.ensure_health_check(client),
+		)
+
+	def delete_health_check(self, client):
+		"""Only ever after its row has let go: Route53 refuses to delete a check a record still names."""
+		if self.health_check_id:
+			client.delete_health_check(self.health_check_id)
+			self.db_set("health_check_id", "")
+
+	def remove_dns_records(self):
+		"""Two records, then the health check — in that order, because Route53 refuses to delete a check
+		a record still names. A record already gone is not worth blocking a deletion over, and only
+		InvalidChangeBatch is tolerated."""
+		if not self.has_dns_records:
+			return None
+		client = self.dns_client()
+		if not client:
+			return None
+		change = None
+		try:
+			change = client.delete_gateway_records(
+				self.fleet_zone,
+				self.hostname,
+				frappe.db.get_value("Geography", self.geography, "endpoint"),
+				self.public_ip,
+				self.name,
+				self.health_check_id,
+			)
+		except Route53Error as e:
+			if e.code != "InvalidChangeBatch":
+				raise
+		self.delete_health_check(client)
+		return change
+
+	@frappe.whitelist()
+	def deploy_agent(self):
+		"""Button: install the pinned release on an already-provisioned proxy."""
+		frappe.enqueue_doc(
+			self.doctype,
+			self.name,
+			"_deploy_agent",
+			queue="long",
+			timeout=1200,
+		)
+		frappe.msgprint(
+			f"Deploying agent {gateway_agent_version()} to {self.name} — watch its Ansible Plays.",
+			alert=True,
+		)
+
+	@failure.reports_failure(mark_broken=False)
+	def _deploy_agent(self, agent_binary="", **play):
+		"""Install the pinned agent release — or, for a dev deploy, the build `agent_binary` names
+		on the control plane — and rewrite both halves of its configuration. `play` names the doc
+		the play is run for, e.g. a Pathway Update.
+
+		One button for binary AND config: agent.env names every listener, certificate and hostname,
+		and config.json holds the tunables. Written whole from the same extra-vars provision passes,
+		so a config-only run never blanks the admin token.
+
+		Stays on the Redis it is on: moving a live gateway onto a store drains it first, which a deploy
+		does not."""
+		store = self.gateway_store
+		play_name, rc = self.run_playbook(
+			"deploy_agent.yml", extravars=self.get_agent_extravars(store, agent_binary), **play
+		)
+		self.record_agent_version(rc)
+		self.record_store(rc, store)
+		return play_name, rc
+
+	def get_agent_extravars(self, store, agent_binary=""):
+		"""Everything agent.env and config.json render, onto `store`'s Redis. Resolved inside the job,
+		so the secrets never sit in a job payload. The fleet key stays out: agent.env names only the
+		certificate's path, and deploy_tls owns writing the material."""
+		if not store:
+			frappe.throw(f"{self.name} is on no Gateway Store — Setup it first.")
+		tls_variables = self.tls_variables
+		tls_variables.pop("fleet_tls_key", None)
+		return {
+			**gateway_agent_release(),
+			"agent_binary": agent_binary,
+			"admin_token": self.get_password("admin_token"),
+			"gateway_id": self.short_name,
+			"gateway_region": self.region or "",
+			"gateway_geography": self.geography or "",
+			"gateway_host": frappe.db.get_value("Geography", self.geography, "endpoint")
+			if self.geography
+			else "",
+			"proxy_hostname": self.hostname,
+			**frappe.get_doc("Gateway Store", store).redis_variables,
+			**tls_variables,
+			**self.config_variables,
+		}
+
+	@frappe.whitelist()
+	def setup(self):
+		"""Provision this proxy (OpenResty + Redis + Go agent) via gateway.yml."""
+		frappe.enqueue_doc(
+			self.doctype,
+			self.name,
+			"provision",
+			queue="long",
+			timeout=1800,
+		)
+		frappe.msgprint(f"Provisioning {self.name} — watch its Ansible Plays.", alert=True)
+
+	@failure.reports_failure(mark_broken=True)
+	def provision(self, agent_binary=""):
+		"""Run gateway.yml → OpenResty + Redis + Go agent. On success, mark Active and project
+		keys/routes. `agent_binary`: a dev deploy — a build on the control plane ships instead
+		of the pinned release (see roles/install_gateway_agent)."""
+		frappe.db.set_value("Gateway Server", self.name, "status", "Installing")
+		frappe.db.commit()
+
+		store = self.network_store
+		play_name, rc = self.run_playbook(
+			"gateway.yml",
+			extravars={
+				**self.get_agent_extravars(store, agent_binary),
+				**self.tls_variables,
+				**self.memory_variables,
+			},
+		)
+
+		# Derived at validate, so a zone set after the last save leaves it naming the old address.
+		self.set_admin_url()
+		frappe.db.set_value(
+			"Gateway Server",
+			self.name,
+			{"status": "Active" if rc == 0 else "Broken", "admin_url": self.admin_url},
+		)
+		self.record_agent_version(rc)
+		self.record_store(rc, store)
+		frappe.db.commit()
+
+		if rc == 0:
+			self.queue_vector()
+			self.sync_dns_records()
+		return play_name, rc

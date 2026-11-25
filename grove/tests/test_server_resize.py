@@ -10,11 +10,11 @@ from unittest.mock import Mock, patch
 import frappe
 import requests
 
-from grove import runner
-from grove.fleet import NamedHost
-from grove.grove.doctype.server_resize import server_resize as module
-from grove.grove.doctype.server_resize.server_resize import ServerResize
-from grove.runner import Status
+from grove.infrastructure import runner
+from grove.infrastructure.doctype.server_resize import server_resize as module
+from grove.infrastructure.doctype.server_resize.server_resize import ServerResize
+from grove.infrastructure.fleet import NamedHost
+from grove.infrastructure.runner import Status
 
 
 class FakeRow(SimpleNamespace):
