@@ -17,7 +17,7 @@ from grove.grove.doctype.grove_api_key.grove_api_key import GroveAPIKey
 from grove.grove.doctype.model_provider.test_model_provider import keyed_provider, our_model, vendor_model
 from grove.infrastructure.doctype.geography.test_geography import make_test_geography
 from grove.pathway.routes import utc_timestamp
-from grove.pathway.snapshot import effective_keys
+from grove.pathway.snapshot import effective_keys, effective_teams
 
 
 def team(name, **fields):
@@ -55,6 +55,15 @@ def projected(name):
 	return record
 
 
+def team_pushed(name):
+	[record] = effective_teams([name])
+	return record
+
+
+def team_limits_pushed(name):
+	return team_pushed(name)["limits"]
+
+
 class IntegrationTestGroveAPIKey(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
@@ -70,17 +79,18 @@ class IntegrationTestGroveAPIKey(IntegrationTestCase):
 		doc = key(team("key-probe-groups", model_groups=groups))
 		self.assertEqual(projected(doc.name)["group"], "key-probe-acme,key-probe-zeta")
 
-	def test_the_teams_flags_ride_on_the_key(self):
-		name = team("key-probe-flags", spend_limit=1)
+	def test_the_teams_flags_ride_its_record_and_the_key_names_the_team(self):
+		name = team("key-probe-flags", spend_limit=1, cap_message="trial over")
 		doc = frappe.get_doc({"doctype": "Grove API Key", "team": name, "cap": 1}).insert()
 		record = projected(doc.name)
+		self.assertEqual((record["team"], record["budget"]), (name, 1_000_000_000))
+		self.assertFalse({"limited", "log_payloads", "cap_message"} & set(record))
 		self.assertEqual(
-			(record["team"], record["budget"], record["limited"], record["log_payloads"]),
-			(name, 1_000_000_000, False, True),
+			team_pushed(name),
+			{"team": name, "limited": False, "log_payloads": True, "cap_message": "trial over", "limits": ""},
 		)
 		frappe.db.set_value("Grove Team", name, {"log_payloads": 0})
-		record = projected(doc.name)
-		self.assertEqual((record["budget"], record["log_payloads"]), (1_000_000_000, False))
+		self.assertIs(team_pushed(name)["log_payloads"], False)
 
 	def test_the_teams_key_cap_window_rides_on_the_key_as_the_budget_window(self):
 		name = team("key-probe-window", spend_limit=1)
@@ -233,10 +243,11 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 
 	def test_a_new_key_starts_under_the_default_limits_with_none_of_its_own(self):
 		doc = key("key-limit-default")
-		record = projected(doc.name)
 		self.assertEqual(
-			(record["limits"], record["key_limits"]), ("requests:1m:20,total_tokens:1m:100000", "")
+			(team_limits_pushed(doc.team), projected(doc.name)["key_limits"]),
+			("requests:1m:20,total_tokens:1m:100000", ""),
 		)
+		self.assertNotIn("limits", projected(doc.name))
 
 	def test_own_limits_reach_the_wire_sorted_with_the_model_last(self):
 		served = our_model("key-limit-dear").insert()
@@ -294,7 +305,7 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 		self.assertNotIn(name, limit_entries("Grove API Key"))
 		self.assertEqual(projected(name)["key_limits"], "")
 
-	def test_every_key_of_a_team_carries_its_tiers_rows_and_its_own_beside(self):
+	def test_a_team_carries_its_tiers_rows_and_a_key_its_own_beside(self):
 		tier = frappe.get_doc(
 			{
 				"doctype": "Tier",
@@ -314,16 +325,14 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 				"limits": [{"metric": "requests", "window": "1m", "value": 5}],
 			}
 		).insert()
+		own_rows = [projected(k.name)["key_limits"] for k in (inherits, pinned)]
 		self.assertEqual(
-			[(projected(k.name)["limits"], projected(k.name)["key_limits"]) for k in (inherits, pinned)],
-			[("requests:1h:600,requests:1m:60", ""), ("requests:1h:600,requests:1m:60", "requests:1m:5")],
+			(team_limits_pushed(name), own_rows), ("requests:1h:600,requests:1m:60", ["", "requests:1m:5"])
 		)
 		tier.limits = []
 		tier.save()
-		self.assertEqual(
-			[(projected(k.name)["limits"], projected(k.name)["key_limits"]) for k in (inherits, pinned)],
-			[("", ""), ("", "requests:1m:5")],
-		)
+		own_rows = [projected(k.name)["key_limits"] for k in (inherits, pinned)]
+		self.assertEqual((team_limits_pushed(name), own_rows), ("", ["", "requests:1m:5"]))
 		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 		untiered = frappe.get_doc(
 			{
@@ -333,7 +342,7 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 			}
 		).insert()
 		self.assertEqual(
-			(projected(untiered.name)["limits"], projected(untiered.name)["key_limits"]),
+			(team_limits_pushed(untiered.team), projected(untiered.name)["key_limits"]),
 			("requests:1m:20,total_tokens:1m:100000", "total_tokens:1d:7"),
 		)
 
@@ -363,7 +372,7 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 		dear = frappe.get_doc(
 			{"doctype": "Grove API Key", "team": team("key-limit-per-model", tier=tier.name)}
 		).insert()
-		self.assertEqual(projected(dear.name)["limits"], f"requests:1m:60,requests:1m:6:{served.model_key}")
+		self.assertEqual(team_limits_pushed(dear.team), f"requests:1m:60,requests:1m:6:{served.model_key}")
 		tier.append(
 			"limits", {"model_key": served.model_key, "metric": "requests", "window": "1m", "value": 7}
 		)

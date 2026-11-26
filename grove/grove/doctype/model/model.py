@@ -6,7 +6,6 @@ import requests
 from frappe.model.document import Document
 
 from grove import failure
-from grove.access import tiers_without_limit
 from grove.catalog import seed
 from grove.grove.doctype.model_provider.model_provider import self_hosted_provider
 
@@ -109,11 +108,6 @@ class Model(Document):
 		if not is_reachable(self.name, provider=self.provider):
 			frappe.throw(
 				f"{self.model_key} has nothing serving it: no Active replica, Running pod or vendor endpoint."
-			)
-		if missing := tiers_without_limit(self.model_key):
-			frappe.throw(
-				f"{self.model_key} has no rate limit row on {', '.join(missing)}. Every tier says what a "
-				"team on it may do with a model: add the rows to catalog.json first."
 			)
 
 	def set_model_key(self):

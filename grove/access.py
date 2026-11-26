@@ -123,15 +123,6 @@ def tier_limits(teams):
 	}
 
 
-def tiers_without_limit(model_key):
-	"""The Tiers with no limit row naming `model_key`. A model is published only once every tier
-	says what a team on it may do with it: the gate in `Model.validate_publishable`."""
-	named = frappe.get_all(
-		"Model Limit", filters={"parenttype": "Tier", "model_key": model_key}, pluck="parent"
-	)
-	return sorted(set(frappe.get_all("Tier", pluck="name")) - set(named))
-
-
 def sorted_limits(rows):
 	return sorted(
 		(

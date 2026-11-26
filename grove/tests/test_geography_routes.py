@@ -149,7 +149,6 @@ class TestEveryKeyCarriesItsPin(unittest.TestCase):
 		with (
 			patch.object(snapshot, "model_rows", return_value={}),
 			patch.object(snapshot, "group_rows", return_value={}),
-			patch.object(snapshot, "tier_limits", return_value={}),
 			patch.object(frappe, "get_all", side_effect=get_all),
 		):
 			return {key["prefix"]: key for key in snapshot.effective_keys()}
@@ -187,7 +186,7 @@ class TestOneSnapshotPerGeography(unittest.TestCase):
 		built, pushed = [], []
 		geographies = {"gw-in-1": "in", "gw-in-2": "in", "gw-in-3": "in", "gw-eu-1": "eu"}
 
-		def build(geography, _keys):
+		def build(geography, _teams, _keys):
 			built.append(geography)
 			return {"routes": {"table": geography, "hash": geography}}
 
@@ -204,6 +203,7 @@ class TestOneSnapshotPerGeography(unittest.TestCase):
 			patch.object(projection, "read_hashes", side_effect=lambda targets: {t: {} for t in targets}),
 			patch.object(frappe.utils, "now_datetime", lambda: datetime(2026, 8, 16, 0, 1)),
 			patch.object(snapshot, "gateway_geography", side_effect=geographies.get),
+			patch.object(snapshot, "teams_section", return_value={"buckets": {}}),
 			patch.object(snapshot, "keys_section", return_value={"buckets": {}}),
 			patch.object(snapshot, "gateway_snapshot", side_effect=build),
 			patch.object(Target, "resolve", side_effect=lambda kind, name: Target(kind, name, "u", "t")),

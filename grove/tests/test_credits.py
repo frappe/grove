@@ -228,11 +228,8 @@ class TestADrainIsBilledAtGrovesPrice(CreditsCase):
 		team, key = self.team(cap=1)
 		self.pull({key: self.hash(150_000)})
 		self.assertEqual(self.state(team), (D("1.5"), 0))
-		self.assertEqual(self.keys_pushed()[key]["limited"], False)
-
-	def keys_pushed(self):
-		section = snapshot.keys_section()
-		return {k["prefix"]: k for bucket in section["buckets"].values() for k in bucket["records"]}
+		[pushed] = snapshot.effective_teams([team])
+		self.assertEqual(pushed["limited"], False)
 
 
 class TestWhatTheGatewayDidNotCharge(CreditsCase):
@@ -570,18 +567,16 @@ class TestThePushCarriesTheCap(CreditsCase):
 		self.pull({key: self.hash(30_000)})
 		self.pull({key: self.hash(20_000)}, store=a_store("credits-store-2"))
 		pushed = self.keys()[key]
-		self.assertEqual((pushed["team"], pushed["budget"], pushed["limited"]), (team, 1_250_000_000, False))
+		self.assertEqual((pushed["team"], pushed["budget"]), (team, 1_250_000_000))
 
-	def test_a_suspended_teams_keys_are_pushed_limited(self):
+	def test_a_suspended_team_is_pushed_limited_once_for_every_key_of_it(self):
 		team, key = self.team(cap=0.5)
 		other = self.key(team, 0.5)
 		frappe.db.set_value("Grove Team", team, "suspended", 1)
+		[pushed] = snapshot.effective_teams([team])
 		keys = self.keys()
-		self.assertEqual(
-			(keys[key]["limited"], keys[other]["limited"]),
-			(True, True),
-			"the team is suspended: every key of it",
-		)
+		self.assertEqual((pushed["limited"], keys[key]["team"], keys[other]["team"]), (True, team, team))
+		self.assertNotIn("limited", keys[key])
 
 	def test_only_a_published_priced_model_is_routed_and_never_at_a_draft(self):
 		unpublished, _pricing = self.priced_model("credits-unpublished-7b", 5)

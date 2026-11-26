@@ -39,14 +39,12 @@ def effective_groups():
 
 
 def effective_keys(names=None):
-	"""Every LIVE API Key projected for the gateway, with the whole policy the gates read. `budget`
-	is its cap and `budget_window` what the box counts it over: the UTC month, or everything since
-	the mint (the team's Key Cap Window); the box refuses the key once that reaches the cap. What
-	is the team's rides on each key: `log_payloads`, `limited` — the team is suspended, which
-	refuses every key whatever its own cap says — the window, and `cap_message`, what the box's
-	402 says once the cap is spent (blank: the box's own text). `names` narrows it to those keys:
-	what a tick rebuilds. Revoked keys are not projected: absent from their bucket, the push
-	prunes them off every box."""
+	"""Every LIVE API Key projected for the gateway, with the policy the gates read off the key.
+	`budget` is its cap and `budget_window` what the box counts it over: the UTC month, or
+	everything since the mint (the team's Key Cap Window); the box refuses the key once that
+	reaches the cap. The team's verdicts, settings and rate limits ride its own record
+	(`effective_teams`). `names` narrows it to those keys: what a tick rebuilds. Revoked keys are
+	not projected: absent from their bucket, the push prunes them off every box."""
 	if names is not None and not names:
 		return []
 	filters = {"status": "active"}
@@ -63,7 +61,7 @@ def effective_keys(names=None):
 		for t in frappe.get_all(
 			"Grove Team",
 			filters=team_filter,
-			fields=["name", "log_payloads", "suspended", "tier", "key_cap_window", "cap_message"],
+			fields=["name", "key_cap_window"],
 		)
 	}
 	team_names = None if names is None else sorted(teams)
@@ -71,7 +69,6 @@ def effective_keys(names=None):
 	memberships = group_rows(team_names)
 	own_groups = group_rows(None if names is None else [k.name for k in keys], "Grove API Key")
 	where = group_geographies()
-	limits = tier_limits({name: t.tier for name, t in teams.items()})
 	own_limits = limit_entries("Grove API Key", None if names is None else [k.name for k in keys])
 	records = []
 	for k in sorted(keys, key=lambda k: k.key_hash or ""):
@@ -96,18 +93,41 @@ def effective_keys(names=None):
 				),
 				"allow": ",".join(reaching(own.get("allow", []), k.geography)),
 				"deny": ",".join(reaching(own.get("deny", []), k.geography)),
-				"limited": bool(team.suspended),
-				"log_payloads": bool(team.log_payloads),
 				"geography": k.geography or "",
 				"budget": nano(k.cap or 0),
 				"budget_window": "total" if team.key_cap_window == "Total" else "month",
-				"cap_message": team.cap_message or "",
-				# Blank when none: the box merges fields, so leaving one out would keep a removed limit in force.
-				"limits": wire_limits(limits.get(k.team, [])),
+				# Blank when none: the box merges fields, so leaving it out would keep a removed limit in force.
 				"key_limits": wire_limits(own_limits.get(k.name, [])),
 			}
 		)
 	return records
+
+
+def effective_teams(names=None):
+	"""Every Grove Team projected for the gateway, which reads the record beside each of the team's
+	keys: `limited` (suspended, which refuses every key whatever its own cap says), `log_payloads`,
+	`cap_message` (what the box's 402 says once a key's cap is spent; blank: the box's own text)
+	and `limits`, its tier's rate limit rows, counted per model for the team as a whole. `names`
+	narrows it to those teams: what a tick rebuilds."""
+	if names is not None and not names:
+		return []
+	teams = frappe.get_all(
+		"Grove Team",
+		filters=None if names is None else {"name": ("in", sorted(names))},
+		fields=["name", "suspended", "log_payloads", "cap_message", "tier"],
+	)
+	limits = tier_limits({team.name: team.tier for team in teams})
+	return [
+		{
+			"team": team.name,
+			"limited": bool(team.suspended),
+			"log_payloads": bool(team.log_payloads),
+			# Blank when none: the box merges fields, so leaving one out would keep what was removed in force.
+			"cap_message": team.cap_message or "",
+			"limits": wire_limits(limits[team.name]),
+		}
+		for team in sorted(teams, key=lambda team: team.name)
+	]
 
 
 def wire_limits(rows):
@@ -121,7 +141,7 @@ def wire_limits(rows):
 
 def dirty_buckets(since):
 	"""The key buckets a save after `since` moved: a saved key's own — revoked or not, a revoke
-	being what empties its slot — and a saved team's every live key's, its fields riding on each."""
+	being what empties its slot — and a saved team's every live key's, its grants riding on each."""
 	hashes = frappe.get_all("Grove API Key", filters={"modified": (">", since)}, pluck="key_hash")
 	teams = frappe.get_all("Grove Team", filters={"modified": (">", since)}, pluck="name")
 	if teams:
@@ -131,13 +151,17 @@ def dirty_buckets(since):
 	return {bucket_of(key_hash) for key_hash in hashes if key_hash}
 
 
-def needs_full(since):
-	"""Whether a save after `since` reached keys it does not name: a Tier's rows ride on every key
-	under it, and Grove Settings names the default tier."""
+def dirty_team_buckets(since):
+	"""The team buckets a save after `since` moved. None, every bucket, after a Tier or Grove
+	Settings save: a tier's rows ride on every team under it, and the settings name the default."""
 	settings = frappe.db.get_single_value("Grove Settings", "modified")
 	if settings and frappe.utils.get_datetime(settings) > since:
-		return True
-	return bool(frappe.db.exists("Tier", {"modified": (">", since)}))
+		return None
+	# ponytail: a changed tier row re-pushes every team under it; a tier record on the gateway once teams run to tens of thousands.
+	if frappe.db.exists("Tier", {"modified": (">", since)}):
+		return None
+	teams = frappe.get_all("Grove Team", filters={"modified": (">", since)}, pluck="name")
+	return {bucket_of(name) for name in teams}
 
 
 def bucket_names(labels):
@@ -153,6 +177,25 @@ def keys_section(labels=None):
 	only. A bucket left with no live key is absent; the delta prunes it."""
 	names = None if labels is None else bucket_names(labels)
 	return bucketed_section(effective_keys(names), "key_hash")
+
+
+def team_names(labels):
+	"""The teams of `labels`' buckets, picked by hashing every team's name."""
+	if not labels:
+		return []
+	return [name for name in frappe.get_all("Grove Team", pluck="name") if bucket_of(name) in labels]
+
+
+def teams_section(labels=None):
+	"""The `teams` section: every team when `labels` is None, else the teams of those buckets only."""
+	names = None if labels is None else team_names(labels)
+	return bucketed_section(effective_teams(names), "team")
+
+
+def holds_buckets(remote):
+	"""Whether a box's hashes name a bucket of each bucketed section; one naming none of a section
+	was never given it."""
+	return all(any(label.startswith(f"{section}:") for label in remote) for section in ("teams", "keys"))
 
 
 def bucket_of(record_id):
@@ -184,11 +227,12 @@ def bucketed_section(records, id_field):
 	}
 
 
-def gateway_snapshot(geography, keys):
+def gateway_snapshot(geography, teams, keys):
 	"""The same for every gateway in `geography` but the routes, so a run builds it once per
-	geography over the one `keys` section it built."""
+	geography over the one `teams` and one `keys` section it built."""
 	return {
 		"groups": flat_section({"records": effective_groups()}),
+		"teams": teams,
 		"keys": keys,
 		"routes": flat_section({"table": routes.gateway_routes(geography)}),
 	}
@@ -211,11 +255,12 @@ def ingress_snapshot(ingress):
 
 def snapshot_delta(snapshot, remote, labels=None):
 	"""The sections whose hash the box does not already hold. `labels` are the buckets a tick
-	rebuilt, when it did not rebuild them all."""
+	rebuilt of each bucketed section ({section: labels}), when it did not rebuild them all."""
 	delta = {}
 	for section, content in snapshot.items():
 		if "buckets" in content:
-			changed = bucket_delta(section, content["buckets"], remote, labels)
+			rebuilt = None if labels is None else labels[section]
+			changed = bucket_delta(section, content["buckets"], remote, rebuilt)
 			if changed:
 				delta[section] = {"buckets": changed}
 		elif remote.get(section) != content["hash"]:
@@ -250,7 +295,7 @@ def describe(delta, response):
 	"""Which sections went (bucket counts in brackets) and how many records the agent wrote."""
 	counts = (response or {}).get("counts") or {}
 	parts = []
-	for section in ("groups", "keys", "routes"):
+	for section in ("groups", "teams", "keys", "routes"):
 		if section not in delta:
 			continue
 		label = section_label(section, delta[section])

@@ -64,11 +64,11 @@ gateways cannot jointly overrun one replica.
 
 The agent's admin API is token-gated (`X-Grove-Admin-Token`) at
 `<box>/grove-admin/{state,state-hash,usage}`. The push is **desired state, whole, and absence
-prunes**: `POST state` carries any subset of the three sections (groups, keys, routes),
+prunes**: `POST state` carries any subset of the four sections (groups, teams, keys, routes),
 each stamped with a hash the agent stores in `grove:state_hash` and returns from `GET state-hash`.
 The tick pushes only sections whose hash the box does not already hold; a wiped Redis holds no
-hashes, so the next tick re-pushes everything — that IS the repair path. `keys` is
-split into 256 buckets (`pathway.snapshot.bucket_of`) hashed independently, so one key minted re-pushes
+hashes, so the next tick re-pushes everything — that IS the repair path. `teams` and `keys` are
+each split into 256 buckets (`pathway.snapshot.bucket_of`) hashed independently, so one key minted re-pushes
 one bucket, not the population. The full contract lives in `plan_agent_state_sync.md` at the
 repo root.
 
@@ -250,7 +250,7 @@ never overwrites what an operator set. Before a vendor or a model is added, walk
 
 | When | Job | Note |
 |---|---|---|
-| `*/1` | `pathway.projection.sync_projection` | stamp-bounded and hash-gated: rebuilds only the key buckets a save moved since the stores' `last_synced_at`, reads every box's hashes, pushes each box only what it does not already hold; a fleet in sync logs nothing and builds no key record. Also sends each store the spend adjustments it is owed (Pending `Gateway Spend Adjustment` rows) |
+| `*/1` | `pathway.projection.sync_projection` | stamp-bounded and hash-gated: rebuilds only the team and key buckets a save moved since the stores' `last_synced_at`, reads every box's hashes, pushes each box only what it does not already hold; a fleet in sync logs nothing and builds no key record. Also sends each store the spend adjustments it is owed (Pending `Gateway Spend Adjustment` rows) |
 | `*/2` | `cloud_provider.reconcile.sync_all` | the provider owns whether a pod is up; this closes the drift |
 | `0 */6` | `pathway.key_stats.pull_all` | one Provider Key Stats row per key per store: what it answered since the last pull, cleared on the gateway as it is read |
 | hourly | `pathway.usage.pull_all` | a store is drained once, through its first writer that answers; recorded, billed, then what landed is acked. A failed pull loses nothing: the box re-sends every unacked pair. Also Gateway Server → **Pull Usage**, Stuck Usage → **Pull Now**, and `api.usage.pull_usage(team)` for one team, which answers its `figures` afresh (2 an hour per team, counted in the site cache; the rest are not limited) |

@@ -72,25 +72,27 @@ class Projection(SyncRun):
 					break
 
 	def buckets_in_play(self, units):
-		"""The key buckets this tick rebuilds: those a save moved since the oldest stamp among the
-		gateway units that answered, less LOOKBACK. None — every bucket — under force, for a unit
-		with no stamp or no key hash, after a Tier or Grove Settings save, and past FULL_ABOVE.
-		Nothing when no gateway answered."""
+		"""{section: the team or key buckets this tick rebuilds}: those a save moved since the oldest
+		stamp among the gateway units that answered, less LOOKBACK. A section's None is all of it:
+		the teams after a Tier or Grove Settings save, either past FULL_ABOVE. None — every bucket
+		of both — under force and for a unit with no stamp or no hash of either. Nothing when no
+		gateway answered."""
 		if self.force:
 			return None
 		stamps = []
 		for unit, remote in self.answered_units(units):
 			stamp = frappe.db.get_value(*stamp_doc(unit), "last_synced_at")
-			if not stamp or not any(label.startswith("keys:") for label in remote):
+			if not stamp or not snapshot.holds_buckets(remote):
 				return None
 			stamps.append(frappe.utils.get_datetime(stamp))
 		if not stamps:
-			return set()
+			return {"teams": set(), "keys": set()}
 		since = min(stamps) - timedelta(seconds=LOOKBACK)
-		if snapshot.needs_full(since):
-			return None
-		labels = snapshot.dirty_buckets(since)
-		return None if len(labels) > FULL_ABOVE else labels
+		dirty = {"teams": snapshot.dirty_team_buckets(since), "keys": snapshot.dirty_buckets(since)}
+		return {
+			section: None if labels is None or len(labels) > FULL_ABOVE else labels
+			for section, labels in dirty.items()
+		}
 
 	def delta_for(self, target, desired):
 		"""What `target` is sent: the whole snapshot under force, even when its hashes could not be
@@ -133,18 +135,20 @@ def full_sync(proxies=None, trigger="Manual", ingresses=None, wait=60):
 
 
 def snapshots_for(targets, labels=None):
-	"""{target: its desired state} — a gateway snapshot once per geography over one `keys` section
-	(the buckets in `labels`, all when None), an ingress its own replica table."""
-	per_geography, snapshots, keys = {}, {}, None
+	"""{target: its desired state} — a gateway snapshot once per geography over one `teams` and one
+	`keys` section (the buckets `labels` names of each, all when None), an ingress its own replica
+	table."""
+	per_geography, snapshots, bucketed = {}, {}, None
 	for target in targets:
 		if target.server_type == "Ingress Server":
 			snapshots[target] = snapshot.ingress_snapshot(target.name)
 			continue
-		if keys is None:
-			keys = snapshot.keys_section(labels)
+		if bucketed is None:
+			rebuilt = labels or {"teams": None, "keys": None}
+			bucketed = (snapshot.teams_section(rebuilt["teams"]), snapshot.keys_section(rebuilt["keys"]))
 		geography = snapshot.gateway_geography(target.name)
 		if geography not in per_geography:
-			per_geography[geography] = snapshot.gateway_snapshot(geography, keys)
+			per_geography[geography] = snapshot.gateway_snapshot(geography, *bucketed)
 		snapshots[target] = per_geography[geography]
 	return snapshots
 

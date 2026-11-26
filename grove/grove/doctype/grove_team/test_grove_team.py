@@ -56,17 +56,14 @@ class IntegrationTestGroveTeam(IntegrationTestCase):
 		self.addCleanup(frappe.db.set_single_value, "Grove Settings", "default_tier", "")
 		self.assertEqual(team_limits(untiered.name).spend_limit, 5)
 
-	def test_suspend_keys_pushes_every_key_limited_until_resumed(self):
+	def test_suspend_keys_pushes_the_team_limited_until_resumed(self):
 		from grove.api import usage
 		from grove.pathway import snapshot
 
 		doc = team("team-probe-suspend")
-		names = [
-			frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert().name for _ in range(2)
-		]
 
 		def limited():
-			return {record["limited"] for record in snapshot.effective_keys(names)}
+			return {record["limited"] for record in snapshot.effective_teams([doc.name])}
 
 		doc.set_suspended_at_grove(True)
 		doc.reload()
