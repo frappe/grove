@@ -1,28 +1,12 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 """Project Grove state into each Gateway Server's local Redis, and the replica table into each
-Ingress Server. Grove is the source of truth.
-
-The push is desired state, gated by hashes the AGENT stores (`grove:state_hash`): a tick reads
-every box's hashes, then sends each box only the sections and key buckets it does not already
-hold. A box that loses its Redis loses its hashes with it, so the next tick rebuilds everything for
-it; no special path, it simply holds no key hash.
-
-What a tick builds is bounded by a stamp. Every Gateway Store, every gateway not yet on one and
-every Ingress Server carries `last_synced_at`: the read time of the last tick it took a push from
-or already held. A tick rebuilds only the key buckets a save moved since the oldest stamp among
-the gateway units that answered, less LOOKBACK; everything under force, for a unit with no stamp
-or no key hashes, after a Tier or Grove Settings save, and past FULL_ABOVE dirty buckets.
-
-What each plane is given is what keeps them apart: a GATEWAY takes the full snapshot with only its
-own Geography's routes, an INGRESS takes only the replica table for the boxes it owns.
-
-`sync_projection` is the cron tick and the ONLY automatic path: nothing pushes inline; state moves,
-and the next tick carries it. `full_sync` is the operator buttons: force-push, skipping the gate.
-
-The tick also carries each store the spend adjustments it is owed (a Gateway Spend Adjustment still
-Pending): not state, so not hashed — sent after it, every tick until the box answers, or until it
-says it no longer holds the key."""
+Ingress Server. Grove is the source of truth. The push is desired state, gated by hashes the AGENT
+stores (`grove:state_hash`): a tick sends each box only the sections and key buckets it does not
+already hold, and a box that loses its Redis loses its hashes with it, so the next tick rebuilds
+everything for it. A GATEWAY takes the full snapshot with only its own Geography's routes, an
+INGRESS takes only the replica table for the boxes it owns. `sync_projection` is the cron tick and
+the ONLY automatic path: nothing pushes inline; state moves, and the next tick carries it."""
 
 from datetime import timedelta
 
@@ -133,8 +117,8 @@ class Projection(SyncRun):
 
 
 def sync_projection(trigger="Scheduled", proxies=None, ingresses=None, force=False, wait=0):
-	"""The cron tick: bring every target box to the current desired state. The scheduler swallows
-	a job's exception and keeps no log of this one, so a failure lands in the Error Log here."""
+	"""The scheduler swallows a job's exception and keeps no log of this one, so a failure lands in
+	the Error Log here."""
 	try:
 		return Projection(trigger, proxies, ingresses, force, wait).run()
 	except Exception:

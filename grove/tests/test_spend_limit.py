@@ -3,8 +3,7 @@
 """The monthly spend limit holds against what the month's keys spent, not only their caps: each live
 key's cap or its month's spend, whichever is more, plus what revoked keys spent, with what the
 boxes count this moment where that is more (`pricing.committed` over `usage.peek_team`). So moving a spent cap
-to another key, or revoking and minting afresh, frees nothing. Site-backed; the boxes are a fake
-that answers whatever a test says they hold."""
+to another key, or revoking and minting afresh, frees nothing."""
 
 import unittest
 import unittest.mock

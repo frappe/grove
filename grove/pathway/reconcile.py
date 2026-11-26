@@ -1,10 +1,8 @@
-"""One team's share of a drain, landed: the records and the audit of the box's charge.
-
-Grove bills its own price: each pricing the gateway tagged a request with is priced here at that
-pricing's rates, and the team's figures are forgotten so the next read sees it. The gateway's own
-cost sits beside it; where the two differ beyond the gateway's truncation, a Cost Discrepancy
-says so. A model the gateway served without a pricing lands in the same record at no cost. A dead
-line's is decided here: the box counted none of it, so its counter is owed the whole price."""
+"""One team's share of a drain, landed: the records and the audit of the box's charge. Grove bills
+its own price: each pricing the gateway tagged a request with is priced here at that pricing's
+rates. The gateway's own cost sits beside it; where the two differ beyond the gateway's truncation,
+a Cost Discrepancy says so. A model the gateway served without a pricing lands in the same record
+at no cost."""
 
 from decimal import Decimal
 

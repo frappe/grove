@@ -1,5 +1,4 @@
 <script setup>
-// Every gateway with what the last push and the last usage pull did to it.
 import { useHost } from "@framework/ui/island";
 import { Badge } from "frappe-ui";
 import { List, ListCell, ListHeader, ListHeaderCell, ListRow, ListRows } from "frappe-ui/list";

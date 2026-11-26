@@ -39,8 +39,6 @@ class VllmEngine(Engine):
 
 	@property
 	def usable_vram_gb(self):
-		"""VRAM vLLM may allocate across the placement's GPUs. 0 when the per-GPU figure is
-		unknown."""
 		if not self.gpu_vram_gb:
 			return 0
 		return self.gpu_count * self.gpu_vram_gb * self.gpu_memory_utilization
@@ -60,8 +58,7 @@ class VllmEngine(Engine):
 
 	@property
 	def placement_errors(self):
-		"""Why this GPU split cannot start, empty when it can. Checked before a deploy so vLLM does
-		not fail minutes in, on the box. A blank Model field skips its check."""
+		"""A blank Model field skips its check."""
 		errors = []
 		# Layers need not divide by the pipeline size: get_pp_indices spreads the remainder.
 		if self.gpu_count % self.pipeline_parallel_size:
@@ -108,10 +105,7 @@ class VllmEngine(Engine):
 
 	@property
 	def warmup_request(self):
-		"""The smallest real inference this placement can serve, as {path, body} — proof of a
-		forward pass under the name the gateway routes on, which /v1/models does not give.
-
-		/v1/completions, not chat: chat needs a tokenizer template, and a base repo without one
+		"""/v1/completions, not chat: chat needs a tokenizer template, and a base repo without one
 		answers 400 on an engine that serves fine. Both paths run the same pipeline."""
 		if "transcription" in self.model.get("output_modalities", ()):
 			return {}
@@ -124,7 +118,6 @@ class VllmEngine(Engine):
 
 	@property
 	def args(self):
-		"""The flags only, without the positional repo (the run script supplies that)."""
 		args = [
 			"--served-model-name",
 			self.model_name,
@@ -199,8 +192,7 @@ class VllmEngine(Engine):
 		return shlex.join([self.repo, *self.args]) if self.repo else ""
 
 	def env(self, hf_home="", cache_root="", api_key="", hf_token="", streaming_env=None):
-		"""vLLM's own variables. Insertion order reproduces the on-prem env file line for line —
-		see Engine.env."""
+		"""Insertion order reproduces the on-prem env file line for line — see Engine.env."""
 		env = {
 			"VLLM_LOGGING_LEVEL": "INFO",
 			# Safe on every image: a plain env lookup in every hub version, unlike hf_transfer.

@@ -1,7 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""The counter table: what a row may say, and that the catalog seeds
-today's twelve. The arithmetic over a table is `grove.tests.test_pricing`."""
+"""The arithmetic over a counter table is `grove.tests.test_pricing`."""
 
 import frappe
 from frappe.tests import IntegrationTestCase

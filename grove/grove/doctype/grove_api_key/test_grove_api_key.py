@@ -1,9 +1,6 @@
 # Copyright (c) 2026, developers@frappe.io and Contributors
 # See license.txt
-"""A key carries its own rate limits, geography and cap; what it may call is its team's, sliced to
-the key's geography; the wire record the gateway reads is built from both.
-
-A team id per test: IntegrationTestCase rolls back once when the class is done, not between
+"""A team id per test: IntegrationTestCase rolls back once when the class is done, not between
 tests, so anything registered here is still there for the next one."""
 
 import unittest
@@ -124,15 +121,14 @@ class IntegrationTestGroveAPIKey(IntegrationTestCase):
 		self.assertEqual([k for k in effective_keys() if k["prefix"] == doc.name], [])
 
 	def test_the_desk_button_revokes_a_key_however_fresh(self):
-		"""The form posts the doc back as JSON; a key minted a moment ago goes at once, no age guard."""
+		"""The form posts the doc back as JSON."""
 		doc = key("key-probe-desk-revoke")
 		frappe.get_doc(frappe.parse_json(frappe.as_json(doc))).revoke()
 		self.assertEqual(frappe.db.get_value("Grove API Key", doc.name, "status"), "revoked")
 
 
 class IntegrationTestNewTeamsStartInTheDefaultGroups(IntegrationTestCase):
-	"""What a key may call is decided by its team's groups, not sent by whoever provisions it: a
-	new team is put in every geography's default, and a key takes the ones of its own geography."""
+	"""What a key may call is decided by its team's groups, not sent by whoever provisions it."""
 
 	@classmethod
 	def setUpClass(cls):
@@ -226,8 +222,6 @@ class IntegrationTestATeamsGrantsReachTheKeysOfTheirGeography(IntegrationTestCas
 
 
 class IntegrationTestRateLimits(IntegrationTestCase):
-	"""A key's limits are rows here and one sorted list on the wire."""
-
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -533,8 +527,6 @@ class TestTwoMintsAtTheLimitSerialize(unittest.TestCase):
 
 
 class IntegrationTestExpiry(IntegrationTestCase):
-	"""A key retires on its own: a rule at the mint, the moment it names on the key, the hourly sweep."""
-
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -583,7 +575,6 @@ class IntegrationTestExpiry(IntegrationTestCase):
 				frappe.throw("probe")
 			revoke(self)
 
-		# One refusal is logged and does not stop the sweep.
 		with (
 			unittest.mock.patch.object(GroveAPIKey, "revoke", revoke_unless_stuck),
 			unittest.mock.patch("frappe.log_error") as logged,
@@ -661,8 +652,7 @@ class IntegrationTestExpiry(IntegrationTestCase):
 
 
 class IntegrationTestTransfer(IntegrationTestCase):
-	"""A trial's key becomes the customer's at conversion: the same credential under the new team,
-	titled, calling what the customer's team may; cap, geography and limits as minted."""
+	"""A trial's key becomes the customer's at conversion: the same credential under the new team."""
 
 	@classmethod
 	def setUpClass(cls):
@@ -710,7 +700,6 @@ class IntegrationTestTransfer(IntegrationTestCase):
 		self.assertEqual(len(self.logged(doc.name)), 1)
 
 	def logged(self, name):
-		"""The Key Transfer rows of a key: (from team, to team, title before)."""
 		rows = frappe.get_all(
 			"Key Transfer",
 			filters={"api_key": name},

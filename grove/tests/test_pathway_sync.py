@@ -1,13 +1,10 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""What Grove pushes to a proxy: the routing table, and the three access records a request
-resolves through — group, then user, then key — plus the hash gate that decides whether a
-box is pushed at all. Pure — the docs are mocked, no site.
+"""What Grove pushes to a proxy. Pure — the docs are mocked, no site.
 
 Every field here is read by something that cannot be changed in the same deploy: the Go agent
-unmarshals it, and it lives in its own repo on a box that is updated separately — a released
-binary, not a tree this deploy compiles. So the shape is asserted rather than assumed. The
-contract is plan_agent_state_sync.md at the repo root.
+unmarshals it, and it lives in its own repo on a box that is updated separately. So the shape is
+asserted rather than assumed. The contract is plan_agent_state_sync.md at the repo root.
 """
 
 import unittest
@@ -52,12 +49,8 @@ def pod(name, model="qwen3-35b", max_num_seqs=0):
 
 class TestGatewayRoutes(unittest.TestCase):
 	def routes(self, replicas=(), pods=(), models=("qwen3-35b",), deployments=()):
-		"""gateway_routes against mocked docs. get_all is dispatched on doctype because the
-		function reads several of them, and get_doc only ever supplies the internal key.
-
-		No box here names an ingress, so every route is direct — the shape this whole suite was
-		written against, and the shape a fleet that has cut nothing over still has. The ingress
-		rows have their own file: test_gateway_routes."""
+		"""No box here names an ingress, so every route is direct. The ingress rows have their own
+		file: test_gateway_routes."""
 
 		def get_all(doctype, filters=None, **kwargs):
 			if doctype == "Model Replica":
@@ -196,8 +189,8 @@ class TestRouteModalities(unittest.TestCase):
 
 
 class TestEffectiveGroups(unittest.TestCase):
-	"""model_group:<name> — the record that made this split worth doing: one push per group, however
-	many keys its members hold. The gateway reads exactly these two fields."""
+	"""model_group:<name> — one push per group, however many keys its members hold. The gateway reads
+	exactly these two fields."""
 
 	def groups(self, groups=(), rows=()):
 		def get_all(doctype, **kwargs):
@@ -608,9 +601,7 @@ class TestDelta(unittest.TestCase):
 
 
 class TestSyncTarget(unittest.TestCase):
-	"""One box sent its delta, decided before the dial: skipped silently when there is none,
-	pushed and logged when there is, and classified — down vs rejected — when the push, or the
-	hash read before it, failed."""
+	"""One box sent its delta, decided before the dial."""
 
 	SNAPSHOT: ClassVar[dict] = {"groups": {"records": [], "catalog": "", "hash": "h1"}}
 
@@ -657,8 +648,6 @@ class TestSyncTarget(unittest.TestCase):
 
 
 class TestAPushCarriesOwedAdjustments(unittest.TestCase):
-	"""A store's pending spend adjustments go out after the state, each answer kept under its row."""
-
 	SNAPSHOT: ClassVar[dict] = {"groups": {"records": [], "catalog": "", "hash": "h1"}}
 	OWED: ClassVar[list] = [
 		{"user": "GU-1", "delta": -5, "id": "CD-1"},
@@ -1116,13 +1105,13 @@ if __name__ == "__main__":
 
 
 class TestCapacityResolvesThroughTheDeployment(unittest.TestCase):
-	"""`max_num_seqs` IS the gateway's admission cap, and it moved to the deployment with a
-	blank-means-inherit override left on the replica. So the route table has to resolve it.
+	"""`max_num_seqs` IS the gateway's admission cap, and it lives on the deployment with a
+	blank-means-inherit override on the replica. So the route table has to resolve it.
 
 	Unresolved, a blank replica would advertise `default_concurrency` while its engine actually
 	runs the deployment's number — the gateway would admit against a cap the engine never had, and
 	the ingress's authoritative per-replica gate would 429 traffic the gateway thought it had
-	room for. That is a silent wrong number, not a crash, which is why it is asserted here."""
+	room for. That is a silent wrong number, not a crash."""
 
 	def capacity(self, replicas, deployments):
 		routes = TestGatewayRoutes().routes(replicas, deployments=deployments)
@@ -1168,9 +1157,6 @@ class TestCapacityResolvesThroughTheDeployment(unittest.TestCase):
 
 
 class TestDial(unittest.TestCase):
-	"""One box dialled: what `work` raised becomes the row, and the fields a run expects are on
-	the row whether or not the box was ever reached."""
-
 	def test_a_bug_in_the_work_is_a_failed_row_with_its_reason(self):
 		def work(_row):
 			raise RuntimeError("bug")

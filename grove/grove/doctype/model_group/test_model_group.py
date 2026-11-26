@@ -9,8 +9,6 @@ from grove.infrastructure.doctype.geography.test_geography import make_test_geog
 
 
 class IntegrationTestModelGroup(IntegrationTestCase):
-	"""A group is one geography's: the vendor models it lists, and the default it can be."""
-
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()

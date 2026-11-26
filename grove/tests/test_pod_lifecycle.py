@@ -1,8 +1,3 @@
-"""Spawn retries, the due-time tick and the Pod Activity rows every lifecycle call leaves.
-
-Pure unit tests in the test_runpod style: a SimpleNamespace pod, a fake client, and the
-provisioner's own state writes captured."""
-
 import datetime
 import json
 import pathlib

@@ -1,6 +1,5 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""Ingress rules and security_group_ids parsing (pure), cidr_block auto-assignment (hits the DB)."""
 
 import unittest
 from types import SimpleNamespace

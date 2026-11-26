@@ -1,7 +1,5 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""One record per id, slugified once at insert; a Model links one and cannot name an id the site
-has no record of."""
 
 import frappe
 from frappe.tests import IntegrationTestCase

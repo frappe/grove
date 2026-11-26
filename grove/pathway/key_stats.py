@@ -1,11 +1,8 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 """Read every vendor key's counters off every gateway store into Provider Key Stats, every 6 hours.
-
-The gateway counts what each key answered in `pk:<key id>` and clears it when read. A pull asks
-each store — through its first writer that answers — for every key Grove holds and lands one row
-per key the store dialled since the last pull. Nothing is acknowledged: a pull that does not land
-is lost, which stats can afford."""
+The gateway counts what each key answered in `pk:<key id>` and clears it when read. Nothing is
+acknowledged: a pull that does not land is lost, which stats can afford."""
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -19,8 +16,6 @@ LAST = ("last_used", "last_rate_limited")
 
 
 class KeyStats(SyncRun):
-	"""Every gateway store read once, every key asked of each."""
-
 	sync_type = "Key Stats"
 	pause_field = "pause_usage_pull"
 
@@ -39,7 +34,6 @@ class KeyStats(SyncRun):
 		return in_turn(unit, lambda target: fetch_key_stats(target, list(self.keys)))
 
 	def settle(self, unit, result):
-		"""Landed the moment it arrives."""
 		outcome, rows = super().settle(unit, result)
 		for row in rows:
 			stats = row.pop("stats", None) or {}
@@ -51,7 +45,7 @@ class KeyStats(SyncRun):
 
 
 def pull_all(gateways=None, trigger="Scheduled", wait=0):
-	"""Scheduled: one Provider Key Stats row per key per store. Skips if a pull is in flight."""
+	"""Skips if a pull is in flight."""
 	return KeyStats(gateways, trigger, wait).run()
 
 
@@ -65,7 +59,6 @@ def fetch_key_stats(target, ids):
 
 
 def held_keys():
-	"""{key id: its Model Provider} for every vendor key Grove holds."""
 	rows = frappe.get_all("Model Provider Key", fields=["name", "model_provider"])
 	return {row.name: row.model_provider for row in rows}
 

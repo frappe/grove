@@ -1,8 +1,6 @@
 # Copyright (c) 2026, developers@frappe.io and Contributors
 # See license.txt
-"""One team per Central id, and a cap on how many keys it holds.
-
-An id per test: IntegrationTestCase rolls back once when the class is done, not between tests, so
+"""An id per test: IntegrationTestCase rolls back once when the class is done, not between tests, so
 anything registered here is still there for the next one."""
 
 import unittest.mock

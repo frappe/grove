@@ -39,7 +39,6 @@ class Geography(Document):
 
 	@property
 	def backup_environment(self):
-		"""Env for this geography's Gateway Store backups; empty until bucket and key are set."""
 		if not (self.backup_bucket and self.backup_access_key_id):
 			return {}
 		return {
@@ -50,7 +49,6 @@ class Geography(Document):
 		}
 
 	def get_backup_bucket_and_client(self):
-		"""(bucket, S3 client) for this geography's Gateway Store backups."""
 		from grove.grove.doctype.compile_cache.compile_cache import s3_client
 
 		env = self.backup_environment
@@ -91,7 +89,6 @@ class Geography(Document):
 			)
 
 	def gateways(self):
-		"""Every gateway still in this geography, by name."""
 		return frappe.get_all(
 			"Gateway Server", filters={"geography": self.name, "status": ("!=", "Terminated")}, pluck="name"
 		)

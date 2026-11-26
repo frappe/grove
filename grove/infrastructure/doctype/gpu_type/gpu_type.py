@@ -1,10 +1,8 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 """One record per card TYPE, and the resolver that maps whatever a source called it onto that
-record.
-
-Three sources name the same silicon three ways — `Tesla T4`, `T4`, `NVIDIA L40S` — and each writes
-its own VRAM, so one T4 read 15 GB and another 16. This is where they agree instead.
+record. Three sources name the same silicon three ways — `Tesla T4`, `T4`, `NVIDIA L40S` — and each
+writes its own VRAM, so one T4 read 15 GB and another 16.
 
 A MIG slice resolves to its OWN type, not its parent's: calling `…A100-SXM4-80GB MIG 1g.10gb` an
 A100 would offer a replica 80 GB that does not exist."""
@@ -38,8 +36,7 @@ class GPUType(Document):
 	def on_update(self):
 		"""Push this type's figures onto its cards. They are `fetch_from` here, and a fetch runs
 		only when the CARD is saved — a scan writes cards with `db.set_value`, so a figure
-		corrected after a card existed would never reach it. This is what makes "correct it here
-		and the fleet follows" true."""
+		corrected after a card existed would never reach it."""
 		frappe.db.sql(
 			"""update `tabGPU` set vram_gb = %(vram)s, compute_capability = %(capability)s
 			where gpu_type = %(type)s""",
@@ -53,12 +50,8 @@ class GPUType(Document):
 
 
 def type_name_from(reported):
-	"""`Tesla T4` → `T4`, `NVIDIA L40S` → `L40S`, `T4` → `T4`.
-
-	Nothing is slugified: the record's name IS how the card is shown, so a slug would put
-	`rtx-pro-6000-blackwell-server-edition` in every grid.
-
-	It cannot collapse everything — `NVIDIA H100 80GB HBM3` keeps its suffix, because nothing here
+	"""`Tesla T4` → `T4`, `NVIDIA L40S` → `L40S`, `T4` → `T4`. Nothing is slugified: the record's
+	name IS how the card is shown. `NVIDIA H100 80GB HBM3` keeps its suffix, because nothing here
 	can know that is a memory configuration rather than a different card. That is what the alias
 	table is for."""
 	words = re.split(r"\s+", (reported or "").strip())
@@ -70,7 +63,6 @@ def type_name_from(reported):
 def resolve(reported, vram_gb=None, compute_capability=None):
 	"""The `GPU Type` a source's model string means, creating it the first time the fleet meets a
 	card. Every spelling it resolves is recorded as an alias, so the table learns as it goes.
-
 	Never raises on an unknown card: a scan meeting new silicon has to record it and carry on, or
 	the box is left with no inventory at all."""
 	reported = (reported or "").strip()

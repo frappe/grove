@@ -26,8 +26,7 @@ def playbooks_root():
 
 
 def ansible_project_dir(doctype):
-	"""'Inference Server' → .../playbooks/inference_server. Playbooks at the top, roles in roles/
-	beside them."""
+	"""Playbooks at the top, roles in roles/ beside them."""
 	return os.path.join(playbooks_root(), doctype.lower().replace(" ", "_"))
 
 
@@ -50,10 +49,8 @@ def is_env_value(value):
 
 
 def is_label(name):
-	"""True when a name is one DNS-label-shaped token: letters, digits and '-'.
-
-	A server's short name IS its record under its Geography's zone (fleet.py `hostname`) and
-	lands in a systemd Environment= line as GROVE_GATEWAY_ID, so it must be both."""
+	"""A server's short name IS its record under its Geography's zone (fleet.py `hostname`) and
+	lands in a systemd Environment= line as GROVE_GATEWAY_ID, so it must fit both."""
 	return bool(re.fullmatch(r"[A-Za-z0-9-]+", name or ""))
 
 
@@ -69,7 +66,6 @@ def validate_label_name(doctype, name):
 
 
 def is_hostname(name):
-	"""True when `name` is labels joined by dots: no scheme, path or port."""
 	return bool(name) and all(is_label(label) for label in name.split("."))
 
 
@@ -91,6 +87,5 @@ def site_datetime(utc):
 
 
 def slugify(text):
-	"""'Qwen3.5 Coder_Next' → 'qwen3.5-coder-next'. Lowercased; runs of whitespace,
-	underscores and dashes collapse to one dash."""
+	"""'Qwen3.5 Coder_Next' → 'qwen3.5-coder-next'."""
 	return re.sub(r"[\s_-]+", "-", (text or "").strip().lower()).strip("-")

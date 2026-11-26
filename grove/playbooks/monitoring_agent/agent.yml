@@ -1,6 +1,6 @@
 ---
-# Install one fleet's vmagent and its own node_exporter (monitoring_agent.provision). extra-vars:
-# Monitoring Agent.ansible_variables (the monitoring_* and vmagent_* the vmagent role reads).
+# monitoring_agent.provision runs it. extra-vars: Monitoring Agent.ansible_variables (the
+# monitoring_* and vmagent_* the vmagent role reads).
 - name: Install the metrics agent
   hosts: all
   become: true

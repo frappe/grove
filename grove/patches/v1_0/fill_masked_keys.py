@@ -1,6 +1,5 @@
-"""Grove API Key's `masked` is new: every key from before it gets the prefix and four characters
-of its secret, read once here so no listing decrypts again. A key with no secret stored stays
-blank."""
+"""Every key from before `masked` gets the prefix and four characters of its secret, read once
+here so no listing decrypts again."""
 
 import frappe
 from frappe.utils.password import get_decrypted_password

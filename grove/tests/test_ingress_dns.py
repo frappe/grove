@@ -1,12 +1,9 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
 """The name an ingress is reached by. Pure — boto3 is replaced by a fake, so no site and no network.
-
 One record, and the absence of anything else is the point. An ingress is addressed by the gateway's
 route table, so it is never part of a set: a SetIdentifier here would silently make the second
-ingress REPLACE the first's row rather than sit beside it, and a routing policy on a record nothing
-resolves as a group is a way to be wrong for free.
-"""
+ingress REPLACE the first's row rather than sit beside it."""
 
 import unittest
 

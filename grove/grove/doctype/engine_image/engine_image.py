@@ -84,12 +84,10 @@ class EngineImage(Document):
 
 	@property
 	def is_docker_hub(self):
-		"""Whether this image's registry is Docker Hub, under any of the hosts that name it."""
 		return self.registry_host in DOCKER_HUB_HOSTS
 
 	@property
 	def api_registry_host(self):
-		"""The ref host for everyone except Docker Hub, whose API lives elsewhere."""
 		return DOCKER_HUB_REGISTRY if self.is_docker_hub else self.registry_host
 
 	@frappe.whitelist()
@@ -139,7 +137,6 @@ class EngineImage(Document):
 		return repository, reference
 
 	def get_manifest(self, registry, repository, reference):
-		"""One manifest off the registry, authenticated for a pull."""
 		response = requests.get(
 			f"https://{registry}/v2/{repository}/manifests/{reference}",
 			headers={

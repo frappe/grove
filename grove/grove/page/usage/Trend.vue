@@ -1,5 +1,4 @@
 <script setup>
-// Usage per UTC day: cost stacked by a dimension, requests and tokens summed over it.
 import { Select } from "frappe-ui";
 import { AreaChart, BarChart } from "frappe-ui/charts";
 import { computed, ref, watch } from "vue";

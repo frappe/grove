@@ -60,15 +60,12 @@ class GatewayServer(PathwayHost, Document):
 
 	def set_admin_token(self):
 		"""The credential the control plane authenticates every push with. Generated rather than
-		typed: the field is read-only, so there is no way to enter one.
-
-		In validate rather than before_insert, so it also heals docs that exist without one.
-		Clearing the field and saving is how it is rotated, which then needs a Deploy Agent —
-		the box holds the old value until agent.env is rewritten.
+		typed: the field is read-only. In validate rather than before_insert, so it also heals docs
+		that exist without one. Clearing the field and saving is how it is rotated, which then needs
+		a Deploy Agent — the box holds the old value until agent.env is rewritten.
 
 		Tested through get_password, NOT `if not self.admin_token`: a saved Password field reads
-		back as asterisks and stays truthy even when the __Auth row holding the real value is
-		gone, which is exactly the state this heals."""
+		back as asterisks and stays truthy even when the __Auth row holding the real value is gone."""
 		if not self.get_password("admin_token", raise_exception=False):
 			self.admin_token = frappe.generate_hash(length=48)
 
@@ -205,9 +202,8 @@ class GatewayServer(PathwayHost, Document):
 			self.db_set("health_check_id", "")
 
 	def remove_dns_records(self):
-		"""Two records, then the health check — in that order, because Route53 refuses to delete a check
-		a record still names. A record already gone is not worth blocking a deletion over, and only
-		InvalidChangeBatch is tolerated."""
+		"""Two records, then the health check. A record already gone is not worth blocking a deletion
+		over, and only InvalidChangeBatch is tolerated."""
 		if not self.has_dns_records:
 			return None
 		client = self.dns_client()
@@ -231,7 +227,6 @@ class GatewayServer(PathwayHost, Document):
 
 	@frappe.whitelist()
 	def deploy_agent(self):
-		"""Button: install the pinned release on an already-provisioned proxy."""
 		frappe.enqueue_doc(
 			self.doctype,
 			self.name,
@@ -247,15 +242,12 @@ class GatewayServer(PathwayHost, Document):
 	@failure.reports_failure(mark_broken=False)
 	def _deploy_agent(self, agent_binary="", **play):
 		"""Install the pinned agent release — or, for a dev deploy, the build `agent_binary` names
-		on the control plane — and rewrite both halves of its configuration. `play` names the doc
-		the play is run for, e.g. a Pathway Update.
+		on the control plane — and rewrite agent.env and config.json. `play` names the doc the play
+		is run for, e.g. a Pathway Update.
 
-		One button for binary AND config: agent.env names every listener, certificate and hostname,
-		and config.json holds the tunables. Written whole from the same extra-vars provision passes,
-		so a config-only run never blanks the admin token.
-
-		Stays on the Redis it is on: moving a live gateway onto a store drains it first, which a deploy
-		does not."""
+		Both are written whole from the same extra-vars provision passes, so a config-only run never
+		blanks the admin token. Stays on the Redis it is on: moving a live gateway onto a store
+		drains it first, which a deploy does not."""
 		store = self.gateway_store
 		play_name, rc = self.run_playbook(
 			"deploy_agent.yml", extravars=self.get_agent_extravars(store, agent_binary), **play
@@ -290,7 +282,6 @@ class GatewayServer(PathwayHost, Document):
 
 	@frappe.whitelist()
 	def setup(self):
-		"""Provision this proxy (OpenResty + Redis + Go agent) via gateway.yml."""
 		frappe.enqueue_doc(
 			self.doctype,
 			self.name,
@@ -302,9 +293,8 @@ class GatewayServer(PathwayHost, Document):
 
 	@failure.reports_failure(mark_broken=True)
 	def provision(self, agent_binary=""):
-		"""Run gateway.yml → OpenResty + Redis + Go agent. On success, mark Active and project
-		keys/routes. `agent_binary`: a dev deploy — a build on the control plane ships instead
-		of the pinned release (see roles/install_gateway_agent)."""
+		"""`agent_binary`: a dev deploy — a build on the control plane ships instead of the pinned
+		release (see roles/install_gateway_agent)."""
 		frappe.db.set_value("Gateway Server", self.name, "status", "Installing")
 		frappe.db.commit()
 

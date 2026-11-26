@@ -42,10 +42,7 @@ PROXY_TEMPLATES = environment(INFERENCE_ROLES / "engine_proxy/templates")
 def resolve(variables):
 	"""A default that references another default (grove_tls_cert → grove_tls_dir) is resolved lazily
 	by Ansible and not at all by plain Jinja. Without this the config renders with the braces still
-	in it and every path assertion passes against a string nginx could not use.
-
-	Lived in the gateway template tests until those went with the nginx they covered. The inference
-	box still runs one, so this came along."""
+	in it and every path assertion passes against a string nginx could not use."""
 	plain = Environment()
 	for _ in range(2):
 		variables = {
@@ -453,11 +450,8 @@ class TestCertificateLifetime(unittest.TestCase):
 
 class TestOneWebServerForTheFleet(unittest.TestCase):
 	"""Every inference box's engine proxy runs the same pinned build. Two versions on one request
-	path means two sets of defaults and two bug surfaces.
-
-	It used to cover the gateway too. The gateway serves its own TLS now and installs no web server
-	at all, so what is left to keep aligned is the inference fleet — and the check that the gateway
-	stays OUT of it lives in test_gateway_config.py."""
+	path means two sets of defaults and two bug surfaces. The gateway serves its own TLS and installs
+	no web server at all."""
 
 	def plays_using(self, role):
 		found = []

@@ -1,7 +1,7 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Scoring and the policy registry. Pure — a Candidate is a plain dataclass, so there is no site
-and nothing to mock, which is the whole point of keeping `grove/placement/` free of frappe."""
+"""Pure — a Candidate is a plain dataclass, so there is no site and nothing to mock, which is the
+whole point of keeping `grove/placement/` free of frappe."""
 
 import unittest
 from typing import ClassVar

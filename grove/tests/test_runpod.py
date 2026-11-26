@@ -16,8 +16,6 @@ from grove.serving.base import build_engine
 
 
 class FakeClient(RunPodClient):
-	"""Captures the request instead of sending it, and answers with a pod body."""
-
 	def __init__(self, response=None):
 		super().__init__("test-key")
 		self.calls = []
@@ -162,8 +160,7 @@ class TestListGpuTypes(unittest.TestCase):
 
 
 class FakeStream:
-	"""Stands in for a streaming Response: context manager + iter_lines. A line that is an
-	exception is raised from the iteration, the way a dropped connection would."""
+	"""A line that is an exception is raised from the iteration, the way a dropped connection would."""
 
 	def __init__(self, lines, ok=True, status_code=200, text=""):
 		self.lines, self.ok, self.status_code, self.text = lines, ok, status_code, text
@@ -183,7 +180,6 @@ class FakeStream:
 
 class TestStreamLogs(unittest.TestCase):
 	def stream(self, lines, **kwargs):
-		"""Run stream_logs against a canned SSE body; returns (events, request kwargs)."""
 		response = FakeStream(lines, **{k: v for k, v in kwargs.items() if k != "call"})
 		with patch.object(requests, "get", return_value=response) as get:
 			events = list(RunPodClient("test-key").stream_logs("pod1", **kwargs.get("call", {})))
@@ -364,8 +360,6 @@ class TestHealthPath(unittest.TestCase):
 
 
 class TestGatedStatus(unittest.TestCase):
-	"""What a gated pod's status is allowed to say, given the provider's own state."""
-
 	def gated(self, state, serving, **pod_kwargs):
 		from grove.infrastructure.cloud_provider import provisioner
 
@@ -484,7 +478,6 @@ class TestPodWarmup(unittest.TestCase):
 		return PodProvisioner(pod)
 
 	def post(self, response=None, error=None, **kwargs):
-		"""Run get_warmup_error against a stubbed POST; returns (reason, captured call)."""
 		with patch("grove.infrastructure.cloud_provider.provisioner.requests.post") as posted:
 			posted.side_effect = error
 			posted.return_value = response

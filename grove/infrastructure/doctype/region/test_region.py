@@ -8,9 +8,4 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []
 
 
 class IntegrationTestRegion(IntegrationTestCase):
-	"""
-	Integration tests for Region.
-	Use this class for testing interactions between multiple components.
-	"""
-
 	pass

@@ -1,18 +1,12 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""A short-lived note in Redis saying "someone is taking this card right now".
-
-Advisory only. `GPU.held_by` is what OWNS a card. A lease owns nothing and is safe to lose: on a
-flushed Redis (`allkeys-lru`, no persistence) placement falls back to the behaviour it had before
-leases existed — correct, just slower. That asymmetry is why ownership stays in the database.
-
-What it buys is the one thing no isolation level can give: visibility BEFORE commit. A claim is
-invisible to other transactions until it commits and InnoDB locks its index entry meanwhile, so a
-rival BLOCKS for as long as the winner's transaction stays open — and under REPEATABLE READ still
-cannot see the claim afterwards, because its snapshot predates it.
-
-A lease is written before the row and read outside any transaction, so a rival sees it immediately
-and skips the card."""
+"""A short-lived note in Redis saying "someone is taking this card right now". Advisory only:
+`GPU.held_by` is what OWNS a card, and a lease is safe to lose — on a flushed Redis (`allkeys-lru`,
+no persistence) placement is correct, just slower. What it buys is visibility BEFORE commit: a
+claim is invisible to other transactions until it commits and InnoDB locks its index entry
+meanwhile, so a rival BLOCKS — and under REPEATABLE READ still cannot see the claim afterwards,
+because its snapshot predates it. A lease is written before the row and read outside any
+transaction, so a rival sees it immediately and skips the card."""
 
 import frappe
 
@@ -24,17 +18,15 @@ def _key(gpu):
 
 
 def leased(gpus):
-	"""Which of these cards someone else is currently taking.
-
-	`get`, never `exists`: RedisWrapper leaves `set`/`get`/`delete` raw but OVERRIDES `exists` to
+	"""`get`, never `exists`: RedisWrapper leaves `set`/`get`/`delete` raw but OVERRIDES `exists` to
 	run the name through `make_key`, so the lookup would use a different key, always miss, and
 	silently report every card free."""
 	return {gpu for gpu in gpus if frappe.cache.get(_key(gpu)) is not None}
 
 
 def take(gpus, holder):
-	"""Announce that `holder` is taking these cards. True if every one was free. All or nothing: a
-	partial lease would leave a card marked busy that nobody goes on to claim."""
+	"""True if every one was free. All or nothing: a partial lease would leave a card marked busy
+	that nobody goes on to claim."""
 	taken = []
 	for gpu in gpus:
 		if frappe.cache.set(_key(gpu), holder, nx=True, ex=LEASE_TTL):

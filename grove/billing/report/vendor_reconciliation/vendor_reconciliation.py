@@ -1,8 +1,7 @@
 """What Grove charged users for a vendor's models against what the vendor billed Grove, per model or
-per UTC day and model: requests and tokens from both sides, what Grove charged, the vendor's
-subtotal and the margin. The vendor is read live (`billing/vendor.py`); the Grove side is one
-grouped query over the records' per-model detail. Yesterday is the latest day: today's figures still
-move on both sides. A prepared report: it runs in the background and the latest run is shown."""
+per UTC day and model. The vendor is read live (`billing/vendor.py`). Yesterday is the latest day:
+today's figures still move on both sides. A prepared report: it runs in the background and the
+latest run is shown."""
 
 import frappe
 from frappe.utils import getdate

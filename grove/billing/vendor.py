@@ -11,12 +11,11 @@ RANGE_DAYS = 90
 
 
 def vendor_figures(providers, from_date, to_date):
-	"""{(day, upstream model id): {requests, input_tokens, cached_tokens, output_tokens, billed}} for
-	every UTC day in [from_date, to_date] the vendor saw traffic under these Model Provider records'
-	keys, read with the ones used for Billing. The vendor bills per account, so the read is once per account: a key's Account, or
-	the key itself when it names none. Two keys of one account (a rotation) count once, two
-	accounts in one record both count, and the same key in two geography records counts once. The
-	model id is the vendor's own spelling, what `Model.upstream_model_id` holds."""
+	"""{(day, upstream model id): {requests, input_tokens, cached_tokens, output_tokens, billed}} per
+	UTC day, read with the keys used for Billing. The vendor bills per account, so the read is once
+	per account: a key's Account, or the key itself when it names none. Two keys of one account (a
+	rotation) count once, and the same key in two geography records counts once. The model id is
+	the vendor's own spelling, what `Model.upstream_model_id` holds."""
 	vendor = providers[0].provider_name
 	if vendor != "baseten":
 		frappe.throw(f"No billing read for {vendor} yet: only baseten is reconciled.")

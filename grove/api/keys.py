@@ -83,12 +83,11 @@ def update_key(
 @frappe.whitelist()
 @changes_keys
 def update_caps(team: str, caps: dict[str, float]):
-	"""Set several monthly caps of `team`'s live keys at once, {key: USD}. Lowered caps are saved
-	first, so moving a cap from one key to another fits the spend limit midway as well; any
-	refusal leaves every cap as it was. What the limit holds is this month's spend and the caps
-	together (`pricing.committed`), with what the boxes count read under the team row: a cap a key already
-	spent frees nothing when moved. Checked once for the batch; no save checks again, and a batch
-	that raises nothing sums nothing and asks no box. → the keys as `keys` lists them."""
+	"""`caps` is {key: USD}. Lowered caps are saved first, so moving a cap from one key to another
+	fits the spend limit midway as well; any refusal leaves every cap as it was. What the limit
+	holds is this month's spend and the caps together (`pricing.committed`), with what the boxes
+	count read under the team row: a cap a key already spent frees nothing when moved. Checked once
+	for the batch; no save checks again, and a batch that raises nothing asks no box."""
 	from grove.billing.pricing import committed, usd
 	from grove.pathway.usage import peek_team
 
@@ -138,14 +137,8 @@ def revoke_keys(team: str, keys: list[str]):
 @frappe.whitelist()
 @for_control_clients
 def transfer_key(team: str, key: str, to_team: str, title: str | None = None):
-	"""Hand a key of `team` to `to_team` — what Central sends when a trial converts, so the secret
-	the customer's server holds keeps working. The team and the title (`title`, when given) move,
-	the trial's rules go: its own groups and its expiry are lifted, and what it may call is `to_team`'s; cap,
-	geography and limit rows stay as minted. Counted against `to_team` like a mint: its key
-	count, and the cap within a Monthly team's spend limit. The box closes the old team's books at
-	the push. A key `to_team` already holds is answered as it is, so a lost reply is retried
-	safely; one between two teams of one cap window is refused, its spend would follow it. → the
-	key as `keys` lists it."""
+	"""What Central sends when a trial converts, so the secret the customer's server holds keeps
+	working."""
 	to_team = get_team(to_team)
 	# A retry after a lost reply finds the key moved already: answered as it is, nothing moves.
 	if frappe.db.get_value("Grove API Key", key or "", "team") == to_team:

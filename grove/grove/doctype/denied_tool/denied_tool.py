@@ -6,15 +6,12 @@ from frappe.model.document import Document
 
 
 class DeniedTool(Document):
-	"""A tool a vendor would run on its own side, which the gateway refuses to send it.
-
-	A vendor bills web search, web fetch, code execution or an MCP connector outside the token
-	counts, and nothing meters that. Each row is one such name for one vendor: a `tools[].type`
-	or a top-level request field. The rows ride every provider route row of the vendor as
-	`denied_tools`, and a request that names one is a 400 at the gateway before the dial. Delete
-	the row once the tool is priced, and it flows again. Keyed by Provider Name rather than a
-	Model Provider link because a vendor has one record per Geography and the list is the
-	vendor's, not the geography's."""
+	"""A tool a vendor would run on its own side, which the gateway refuses to send it: a vendor bills
+	web search, web fetch, code execution or an MCP connector outside the token counts, and nothing
+	meters that. Each row is one such name for one vendor: a `tools[].type` or a top-level request
+	field. The rows ride every provider route row of the vendor as `denied_tools`, and a request that
+	names one is a 400 at the gateway before the dial. Keyed by Provider Name rather than a Model
+	Provider link because a vendor has one record per Geography."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.

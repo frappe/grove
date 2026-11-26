@@ -1,5 +1,5 @@
 ---
-# Redis's own APT repository, and which of its packages `redis_version` allows. Needs gathered facts.
+# Needs gathered facts.
 - name: fetch the redis signing key
   ansible.builtin.get_url:
     url: https://packages.redis.io/gpg

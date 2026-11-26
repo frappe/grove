@@ -1,14 +1,11 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 """The desired state a box is pushed, and the hash gate that decides which sections travel.
-
 `groups` and `routes` travel whole. `keys` scale with customer count, so they split into 256
 buckets (`bucket_of`) hashed independently — one key minted re-pushes one bucket, not the
 population. Absence prunes: a deleted group or revoked key stops being named and the agent
-removes it.
-
-A tick rebuilds only the buckets a save moved since the boxes' stamps (`dirty_buckets`), finding
-their keys by hashing every live key's hash (`bucket_names`): nothing stores the bucket yet."""
+removes it. A tick rebuilds only the buckets a save moved since the boxes' stamps
+(`dirty_buckets`)."""
 
 import hashlib
 import json
@@ -42,19 +39,14 @@ def effective_groups():
 
 
 def effective_keys(names=None):
-	"""Every LIVE API Key projected for the gateway, with the whole policy the gates read: its
-	team's groups of its geography and its own, and the team's allow/deny that reach it (a model of ours reaches
-	every geography), its geography, its rate limits (its team's tier's, else the defaults,
-	with its own rows replacing the tier's on the metrics they name) and `budget` — its cap, with
-	`budget_window`, what the box counts it over: the UTC month, or everything since the mint (the
-	team's Key Cap Window); the box refuses the key once that reaches the cap. What is the team's
-	rides on each key: `log_payloads`, `limited` — the team is suspended, which refuses every key
-	whatever its own cap says — the window, and `cap_message`, what the box's 402 says once the
-	cap is spent (blank: the box's own text).
-
-	`names` narrows it to those keys, with their teams and rows: what a tick rebuilds. Revoked
-	keys are not projected: absent from their bucket, the push prunes them off every box. The row
-	stays in Grove as the record of a credential that existed."""
+	"""Every LIVE API Key projected for the gateway, with the whole policy the gates read. `budget`
+	is its cap and `budget_window` what the box counts it over: the UTC month, or everything since
+	the mint (the team's Key Cap Window); the box refuses the key once that reaches the cap. What
+	is the team's rides on each key: `log_payloads`, `limited` — the team is suspended, which
+	refuses every key whatever its own cap says — the window, and `cap_message`, what the box's
+	402 says once the cap is spent (blank: the box's own text). `names` narrows it to those keys:
+	what a tick rebuilds. Revoked keys are not projected: absent from their bucket, the push
+	prunes them off every box."""
 	if names is not None and not names:
 		return []
 	filters = {"status": "active"}
@@ -142,7 +134,6 @@ def needs_full(since):
 
 
 def bucket_names(labels):
-	"""The live keys of `labels`' buckets, picked by hashing every live key's hash."""
 	if not labels:
 		return []
 	# ponytail: a two-column scan of every live key; a `bucket` column set at mint makes it one indexed query.

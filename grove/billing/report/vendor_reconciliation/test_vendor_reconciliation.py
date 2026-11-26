@@ -1,8 +1,6 @@
-"""Vendor Reconciliation sets Grove's per-day, per-model figures beside the vendor's own, read off
-its billing API: a day that matches, a day the vendor saw more (another instance on the same key),
-a model only the vendor saw, and the same summed per model over the range. The filter names the
-vendor; every record of it is read, and one with no key, or with a key the fake Baseten has never
-seen, adds nothing."""
+"""The fixture: a day that matches, a day the vendor saw more (another instance on the same key),
+and a model only the vendor saw. The filter names the vendor; every record of it is read, and one
+with no key, or with a key the fake Baseten has never seen, adds nothing."""
 
 from datetime import timedelta
 from unittest.mock import Mock, patch

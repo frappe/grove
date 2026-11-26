@@ -1,6 +1,6 @@
 ---
-# Serve one model on a provisioned Inference Server (model_replica.deploy_model). extra-vars: the
-# vllm role's vllm_* variables, scrape_password_hash and the fleet TLS pair.
+# model_replica.deploy_model runs it. extra-vars: the vllm role's vllm_* variables,
+# scrape_password_hash and the fleet TLS pair.
 # engine_proxy stays in this play: the vllm role notifies its handlers.
 - name: Serve a model on a GPU inference host
   hosts: all

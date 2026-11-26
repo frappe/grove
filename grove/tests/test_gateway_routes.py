@@ -1,13 +1,9 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""The table a GATEWAY is given: one row per model, naming ingresses and direct engines.
-
-The point of the split is what is absent. A box behind an ingress contributes a row that names the
-ingress and never its own address, so replica topology stays inside its VPC and a pod restarting in
-one region is not an event a gateway in another ever sees. Several deployments behind one ingress
-fold into ONE row — otherwise the gateway would hold a row per replica again, which is the N x M
-table this whole design exists to remove.
-"""
+"""The table a GATEWAY is given: one row per model, naming ingresses and direct engines. A box behind
+an ingress contributes a row that names the ingress and never its own address, so replica topology
+stays inside its VPC. Several deployments behind one ingress fold into ONE row — otherwise the gateway
+would hold a row per replica again, which is the N x M table this whole design exists to remove."""
 
 import unittest
 from unittest.mock import patch

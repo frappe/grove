@@ -1,7 +1,5 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""Enabling a pricing retires its predecessor, and it is never edited after: the requests it
-charged are billed."""
 
 import frappe
 from frappe.tests import IntegrationTestCase

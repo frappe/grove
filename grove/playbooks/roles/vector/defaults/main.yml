@@ -24,9 +24,8 @@ vector_batch_timeout_seconds: 60
 vector_redis_password: ""
 vector_redis_exporter_url: "http://127.0.0.1:9121/metrics"
 
-# The box's doctype passes both (NamedHost.vector_variables): a pathway box its three logs, with Route53's
-# /healthz probes kept on the box; a store redis's log. An unshipped rule names a file, a key of its parsed
-# line and the values that match; such a line stays in the local log and never reaches datum.
+# The box's doctype passes both (NamedHost.vector_variables). An unshipped rule names a file, a key of its
+# parsed line and the values that match; such a line stays in the local log and never reaches datum.
 vector_log_files: []
 vector_unshipped_lines: []
 vector_log_max_line_bytes: 8388608

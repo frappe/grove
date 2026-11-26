@@ -1,9 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""A row names one tool for one vendor, under the vendor's Provider Name spelling, and only once.
-
-Site-backed: the name is the pair, and a second row of the same pair is the insert that refuses it.
-"""
+"""Site-backed: the name is the pair, and a second row of the same pair is the insert that refuses it."""
 
 import frappe
 from frappe.tests import IntegrationTestCase

@@ -4,9 +4,8 @@
 spawn spec and, for a serving pod, the vLLM config. Pods are NOT backed by a Machine — Machine +
 Inference Server + Model Replica are the on-prem path.
 
-PodProvisioner owns one Pod's provider side. The form's buttons reach it through the module-level
-functions at the bottom, which exist because frappe.enqueue resolves a dotted path to a module
-function, not to a method."""
+The module-level functions at the bottom exist because frappe.enqueue resolves a dotted path to a
+module function, not to a method."""
 
 import time
 
@@ -48,7 +47,6 @@ class PodProvisioner:
 
 	@property
 	def client(self):
-		"""The Pod's provider API client, built once per provisioner."""
 		if self._client is None:
 			self._client = self.build_client()
 		return self._client
@@ -78,11 +76,8 @@ class PodProvisioner:
 	@property
 	def env(self):
 		"""Whatever the engine needs, on the volume's paths so caches survive a restart, then the
-		Pod's own Env rows on top. PUBLIC_KEY is added by config_kwargs.
-
-		The paths are this placement's to choose and the names are the engine's. The attention
-		backend is NOT here — it rides the serve command, because vLLM 0.24 dropped
-		VLLM_ATTENTION_BACKEND."""
+		Pod's own Env rows on top. PUBLIC_KEY is added by config_kwargs. The attention backend is NOT
+		here — it rides the serve command, because vLLM 0.24 dropped VLLM_ATTENTION_BACKEND."""
 		pod = self.pod
 		mount = pod.volume_mount_path or VOLUME_MOUNT
 		env = self.engine.env(
@@ -143,11 +138,10 @@ class PodProvisioner:
 
 	@property
 	def engine_endpoint(self):
-		"""Where the gateway reaches this pod's engine, from the Ports row for the serve port.
-
-		An http row goes through the provider's HTTPS proxy: TLS terminates there and the address
-		is keyed on the pod id rather than a mapping that moves every restart. A tcp row keeps its
-		direct public_ip:external_port, which is plaintext and does move."""
+		"""Where the gateway reaches this pod's engine. An http row goes through the provider's HTTPS
+		proxy: TLS terminates there and the address is keyed on the pod id rather than a mapping that
+		moves every restart. A tcp row keeps its direct public_ip:external_port, which is plaintext
+		and does move."""
 		pod = self.pod
 		serve_port = int(pod.serve_port or 8080)
 		row = next((p for p in pod.ports if int(p.internal_port) == serve_port), None)
@@ -174,11 +168,9 @@ class PodProvisioner:
 		return bool(self.engine.warmup_request) and self.current_status == "Running"
 
 	def get_warmup_error(self):
-		"""Why this engine could not serve one real request, "" when it did. Posts what the Ansible
-		path posts, at the endpoint the gateway is about to be handed.
-
-		Carries the bearer /health never needed: an unauthenticated POST is a 401 on a perfectly
-		good engine running with VLLM_API_KEY."""
+		"""Why this engine could not serve one real request, "" when it did. Carries the bearer
+		/health never needed: an unauthenticated POST is a 401 on a perfectly good engine running
+		with VLLM_API_KEY."""
 		request = self.engine.warmup_request
 		if not request:
 			return ""
@@ -197,15 +189,12 @@ class PodProvisioner:
 		return f"{response.status_code} {response.text[:200]}"
 
 	def apply_provider_state(self, pod_api, running):
-		"""Write a pod's provider state onto the Pod doc: each Ports row's external port, the
-		public IP + SSH port, and status. For a gated pod, 'up' means the ENGINE answers, not just
-		SSH — so engine_url is set only when Running, and the gateway never routes to a
-		still-loading engine.
+		"""For a gated pod, 'up' means the ENGINE answers, not just SSH — so engine_url is set only
+		when Running, and the gateway never routes to a still-loading engine.
 
 		`running` is the caller's verdict on whether the container is up (a bring-up forces it,
 		since its snapshot predates the provider flipping to RUNNING). When it is not, the
 		provider's own state decides — a pod still coming up reads Provisioning, not Stopped.
-
 		Reloads first: the status writes around it go through db.set_value, which leaves the
 		loaded doc stale."""
 		self.pod = frappe.get_doc("Pod", self.pod.name)
@@ -248,8 +237,7 @@ class PodProvisioner:
 			self.apply_provider_state(pod_api, running=True)
 
 	def await_ready(self):
-		"""The tail every bring-up shares: wait for the provider to publish endpoints, write them
-		onto the Pod, then wait for a gated engine to answer and prove one forward pass."""
+		"""The tail every bring-up shares."""
 		ready = self.client.poll_pod_ready(self.pod.pod_id)
 		self.apply_provider_state(ready, running=True)
 		if self.health_path:
@@ -261,9 +249,8 @@ class PodProvisioner:
 		return ready
 
 	def sync_model_published(self):
-		"""On a serving Pod lifecycle transition: unpublish the Model when this pod was the last
-		thing serving it — a serving pod has no Model Replica to drive that. Never publishes.
-		No-op for a non-serving pod."""
+		"""Unpublish the Model when this pod was the last thing serving it — a serving pod has no
+		Model Replica to drive that. Never publishes."""
 		model = frappe.db.get_value("Pod", self.pod.name, "model")
 		if not model:
 			return
@@ -278,8 +265,6 @@ class PodProvisioner:
 		frappe.db.commit()
 
 	def spawn(self):
-		"""Create the pod on its provider from the Pod doc, record the provider id, and wait for
-		it to serve."""
 		spawn_kwargs = self.spawn_kwargs
 		started = frappe.utils.now_datetime()
 		self.set_state({"status": "Provisioning", "provision_attempts": 0})
@@ -313,13 +298,10 @@ class PodProvisioner:
 			return pod_api
 
 	def log(self, event, outcome, detail="", attempt=None, started=None):
-		"""One Pod Activity row for this call, carrying who triggered it."""
 		record(self.pod.name, event, outcome, detail, attempt=attempt, started=started, trigger=self.trigger)
 
 	def sync(self, wait=False):
-		"""Pull the pod's current provider state onto the Pod (external ports / IP / SSH /
-		status / engine_url) and recompute the Model's published flag. The route table follows
-		on the next projection tick."""
+		"""The route table follows on the next projection tick."""
 		self.require_pod_id("spawn it first")
 		try:
 			pod_api = (
@@ -337,13 +319,10 @@ class PodProvisioner:
 
 	def restart(self):
 		"""Apply edited config to the live pod IN PLACE: RunPod's update takes the container
-		start command, so the pod is PATCHed with the current serve_command, image, env and
-		disks, and resets to pick them up. The pod id and the volume survive, so the weights
-		under HF_HOME are not re-downloaded — the reason this is not a respawn.
-
-		Never destructive: an edit the update cannot deliver is refused (see restart_blocker)
-		rather than silently terminating a live pod. Re-checked here as well as at enqueue time,
-		since the pod's state can move while the job waits."""
+		start command, and the pod resets to pick it up. The pod id and the volume survive, so the
+		weights under HF_HOME are not re-downloaded — the reason this is not a respawn.
+		restart_blocker is re-checked here as well as at enqueue time, since the pod's state can
+		move while the job waits."""
 		if not self.pod.pod_id:
 			return self.spawn()
 		if reason := self.restart_blocker(self.client.get_pod(self.pod.pod_id)):
@@ -364,8 +343,7 @@ class PodProvisioner:
 		return {"status": self.current_status, "pod_id": self.pod.pod_id}
 
 	def stop(self):
-		"""Stop the provider pod: frees the GPU but keeps the pod and its volume (so weights
-		survive), clears its route target, and marks it Stopped. start() resumes it."""
+		"""Frees the GPU but keeps the pod and its volume, so weights survive."""
 		self.require_pod_id("nothing to stop")
 		try:
 			self.client.stop_pod(self.pod.pod_id)
@@ -377,8 +355,8 @@ class PodProvisioner:
 		return {"status": "Stopped"}
 
 	def start(self):
-		"""Resume a stopped pod, then re-read its endpoints — the provider re-maps ports on
-		start, so the old external ports are stale. For a serving pod, waits for vLLM to load."""
+		"""Endpoints are re-read: the provider re-maps ports on start, so the old external ports
+		are stale."""
 		self.require_pod_id("spawn it first")
 		started = frappe.utils.now_datetime()
 		try:
@@ -391,8 +369,7 @@ class PodProvisioner:
 		return {"status": self.current_status}
 
 	def terminate(self):
-		"""Terminate the provider pod (frees GPU/disk/billing), clear its id + engine_url, and
-		mark it Terminated. The tick prunes its route on the next pass."""
+		"""The tick prunes its route on the next pass."""
 		if not self.pod.pod_id:
 			return {"status": "error", "message": "No provider pod to terminate"}
 		try:
@@ -403,8 +380,7 @@ class PodProvisioner:
 		return {"status": "success"}
 
 	def mark_terminated(self, detail):
-		"""The one write for a pod that is gone, whoever removed it: no id, no route, and the
-		Model's published flag recomputed."""
+		"""The one write for a pod that is gone, whoever removed it."""
 		self.set_state({"pod_id": "", "status": "Terminated", "engine_url": ""})
 		self.sync_model_published()
 		self.log("Terminate", "Success", detail)
@@ -413,10 +389,9 @@ class PodProvisioner:
 		"""Why this Pod's config cannot be applied to its live provider pod, or None when it
 		can. `live` is the parsed provider pod (see RunPodClient._parse_pod).
 
-		Restart is deliberately non-destructive, so an edit RunPod's update cannot express is
-		refused with the way out instead of being turned into a terminate + spawn. Moving GPUs
-		is the case that matters: a respawn re-downloads the weights, which is too expensive to
-		do off a button labelled Restart, so it has to be an explicit Terminate then Spawn."""
+		Restart is deliberately non-destructive. Moving GPUs is the case that matters: a respawn
+		re-downloads the weights, which is too expensive to do off a button labelled Restart, so
+		it has to be an explicit Terminate then Spawn."""
 		move = (
 			"RunPod cannot move a pod's GPUs, so this needs an explicit Terminate, then "
 			"Spawn — which re-downloads the weights."
@@ -433,9 +408,8 @@ class PodProvisioner:
 		return None
 
 	def validate_restart(self):
-		"""Throw if Restart can't apply this Pod's config in place. Called before the job is
-		enqueued, so the operator gets the reason in the form instead of a failed background
-		job."""
+		"""Called before the job is enqueued, so the operator gets the reason in the form instead
+		of a failed background job."""
 		if not self.pod.pod_id:
 			return
 		live = self.client.get_pod(self.pod.pod_id)
@@ -443,7 +417,6 @@ class PodProvisioner:
 			frappe.throw(reason)
 
 	def require_pod_id(self, remedy):
-		"""Nothing to talk to the provider about without an id — say which action fixes it."""
 		if not self.pod.pod_id:
 			frappe.throw(f"Pod {self.pod.name} has no provider pod id — {remedy}.")
 
@@ -454,15 +427,13 @@ class PodProvisioner:
 		return frappe.db.get_value("Pod", self.pod.name, "status")
 
 	def fail(self, error, event, started=None):
-		"""A provider call died mid-lifecycle: hand the message back to the caller instead of
-		raising, since these run as background jobs. The terminal Pod Activity row for the call
-		is written here, so every failed lifecycle call leaves one whatever its path.
+		"""Hands the message back instead of raising, since these run as background jobs, and
+		writes the call's terminal Pod Activity row.
 
 		Only a lifecycle that never got a provider pod is parked Stopped. Once there is a pod id
-		the failure says nothing about the container — a bring-up that outran its poll, or an API
-		call that timed out, leaves a pod that is very likely still coming up. Calling that
-		Stopped drops its gateway route, so the status is left for the scheduled reconcile to
-		read off the provider."""
+		the failure says nothing about the container, which is very likely still coming up.
+		Calling that Stopped drops its gateway route, so the status is left for the scheduled
+		reconcile to read off the provider."""
 		title = f"Pod {event.lower()} failed {self.pod.name}"
 		if not frappe.db.get_value("Pod", self.pod.name, "pod_id"):
 			self.set_state({"status": "Stopped"})
@@ -474,9 +445,8 @@ class PodProvisioner:
 
 
 def _is_engine_serving(health_url, timeout=5):
-	"""True once the engine is actually serving: GET on its health path → 200. This — not
-	SSH-reachability — is real readiness; weights can take many minutes to download + load after
-	the pod is up. vLLM's /health needs no api-key."""
+	"""This — not SSH-reachability — is real readiness; weights can take many minutes to download
+	+ load after the pod is up. vLLM's /health needs no api-key."""
 	try:
 		return requests.get(health_url, timeout=timeout).status_code == 200
 	except requests.RequestException:
@@ -540,7 +510,6 @@ def pod_log_events(client, pod_id, tail=100):
 
 
 def stream_pod_logs(pod_name, tail=100):
-	"""Relay the provider's log stream to the Pod form until Stop (or the job times out)."""
 	pod = frappe.get_doc("Pod", pod_name)
 	client = PodProvisioner(pod).client
 	log_relay.relay(pod_log_events(client, pod.pod_id, tail), "Pod", pod_name)

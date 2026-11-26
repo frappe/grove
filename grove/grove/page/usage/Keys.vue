@@ -1,7 +1,5 @@
 <script setup>
-// The chosen team's keys (every one of them), else the window's costliest: each against its cap,
-// with its limits and when it was last served. Searched and paged on the client; the read is
-// at most KEY_LIMIT rows.
+// Searched and paged on the client; the read is at most KEY_LIMIT rows.
 import { useHost } from "@framework/ui/island";
 import { Badge, Button, dayjs } from "frappe-ui";
 import { List, ListCell, ListHeader, ListHeaderCell, ListRow, ListRows } from "frappe-ui/list";
@@ -114,7 +112,6 @@ const chips = (limits) =>
 		text: `${count(limit.value)} ${limit.metric} per ${limit.window}`,
 	}));
 
-// Every hand-over of a key, oldest first, one a line.
 const hops = (transfers) =>
 	transfers
 		.map((move) => `${move.from_team} → ${move.to_team}, ${day(move.creation)}`)

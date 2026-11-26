@@ -1,6 +1,5 @@
-"""The prepaid ledger is gone: Grove Credit, its allocations, and the Grove Team columns that
-carried a balance. The rows held no real money. A discrepancy resolved before `resolved_on`
-existed is dated by its last change (site time)."""
+"""The prepaid ledger is gone; its rows held no real money. A discrepancy resolved before
+`resolved_on` existed is dated by its last change (site time)."""
 
 import frappe
 

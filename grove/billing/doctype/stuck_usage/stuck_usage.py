@@ -39,7 +39,6 @@ class StuckUsage(Document):
 
 	@frappe.whitelist()
 	def pull_now(self):
-		"""Button: pull this team's keys from every store now instead of at the next hourly pull."""
 		frappe.only_for("System Manager")
 		frappe.enqueue(
 			"grove.pathway.usage.pull_all", queue="short", team=self.team, trigger="Manual", wait=60
@@ -48,7 +47,6 @@ class StuckUsage(Document):
 
 	@frappe.whitelist()
 	def mark_resolved(self):
-		"""Button: a dead line someone has dealt with. A user's row resolves itself when it lands."""
 		frappe.only_for("System Manager")
 		if not self.dead_line:
 			frappe.throw("A team's stuck usage resolves when a pull lands it — use Pull Now.")
@@ -103,8 +101,8 @@ def record_stuck(team, gateway_store, shares, dead_line=None):
 
 
 def resolve_stuck(team, gateway_store, shares):
-	"""The team's usage on `gateway_store` landed: close the open row, if there is one, listing the
-	Usage Records of `shares` — its drains and keys — so the row leads to what it was waiting for."""
+	"""Lists the Usage Records of `shares` — its drains and keys — on the row it closes, so the row
+	leads to what it was waiting for."""
 	name = frappe.db.get_value(
 		"Stuck Usage",
 		{"team": team, "gateway_store": gateway_store, "resolved": 0, "dead_line": ("is", "not set")},

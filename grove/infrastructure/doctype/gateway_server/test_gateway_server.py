@@ -12,20 +12,14 @@ DOCTYPE = pathlib.Path(__file__).parent / "gateway_server.json"
 
 
 class TestTheAdminTokenIsAlwaysThere(unittest.TestCase):
-	"""admin_token is the only credential the control plane has for a gateway.
-
-	It went missing for a while in the worst possible way: the field is read-only, so nobody could
-	enter one, and nothing generated one — a Gateway Server was simply created without a token.
-	Every push and every provision then raised "Password not found", and a provision does it after
-	building the binary, twenty minutes in.
-	"""
+	"""admin_token is the only credential the control plane has for a gateway. The field is
+	read-only, so nobody can enter one: with nothing generating it, every push and every provision
+	raised "Password not found", and a provision does it twenty minutes in."""
 
 	def token_for(self, existing=None, field=None):
 		"""`existing` is what get_password returns (the real secret); `field` is what the doc's own
 		column holds, which for a saved Password field is a row of asterisks rather than the value.
-
-		They are separate on purpose — the two disagreeing is the bug this guards.
-		"""
+		The two disagreeing is the bug this guards."""
 		doc = SimpleNamespace(
 			admin_token=field if field is not None else existing,
 			set_admin_url=lambda: None,

@@ -1,7 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""Server Resize: what it refuses, the rows it builds for a gateway and for a store, the steps that
-wait, and what a failure undoes. Pure: frappe is patched and servers, machines and rows are fakes."""
+"""Pure: frappe is patched and servers, machines and rows are fakes."""
 
 import unittest
 from types import SimpleNamespace

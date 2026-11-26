@@ -22,10 +22,8 @@ def doctype_json(name):
 
 
 def form_script_map():
-	"""The `SERVER_DOCTYPE` literal the Machine form routes by.
-
-	Read out of the script rather than restated here: a copy in this file would agree with itself
-	while the form drifted, which is the one thing this is meant to catch."""
+	"""The `SERVER_DOCTYPE` literal the Machine form routes by. Read out of the script rather than
+	restated here: a copy in this file would agree with itself while the form drifted."""
 	script = (DOCTYPES / "machine" / "machine.js").read_text()
 	literal = re.search(r"const SERVER_DOCTYPE = \{(.*?)\n\};", script, re.S).group(1)
 	return dict(re.findall(r'^\s*"?([\w ]+?)"?:\s*"([^"]+)"', literal, re.M))

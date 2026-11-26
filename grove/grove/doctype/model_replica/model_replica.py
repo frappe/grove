@@ -75,11 +75,9 @@ class ModelReplica(Document):
 		return self.deployment.engine_for(self)
 
 	def autoname(self):
-		"""`<model id>-<region>-<server>-<n>`, e.g. `qwen3-8b-ap-south-1-inf3-00007`.
-
-		Model and region are read directly because NEITHER field's `fetch_from` has run this
-		early — a replica created from a deployment would otherwise name itself with a blank model
-		and fail its own mandatory check."""
+		"""`<model id>-<region>-<server>-<n>`, e.g. `qwen3-8b-ap-south-1-inf3-00007`. Model and region are
+		read directly because NEITHER field's `fetch_from` has run this early — a replica created from a
+		deployment would otherwise name itself with a blank model and fail its own mandatory check."""
 		self.model, self.model_key = frappe.db.get_value(
 			"Model Deployment", self.model_deployment, ["model", "model_key"]
 		)
@@ -133,9 +131,7 @@ class ModelReplica(Document):
 		return min(levels) if levels else None
 
 	def _validate_gpus(self):
-		"""Reject duplicate or off-box cards, and rebuild the serve command preview.
-
-		The display columns are `fetch_from` the linked `GPU`, so they cannot drift. What still
+		"""The display columns are `fetch_from` the linked `GPU`, so they cannot drift. What still
 		has to be checked is that the card is on THIS replica's box: the Link field will accept
 		one from any machine in the fleet."""
 		seen = set()
@@ -162,11 +158,10 @@ class ModelReplica(Document):
 		self.serve_command = engine.command
 
 	def _validate_shape(self):
-		"""A replica has to take as many cards as its deployment declares — that is what makes
-		replicas interchangeable, so an autoscaler can divide by `replicas x capacity`, and what
-		lets the deployment's tensor parallel size be the only one there is.
-
-		Naming no GPUs at all is the unpinned single-GPU case and is left alone."""
+		"""A replica has to take as many cards as its deployment declares — that is what makes replicas
+		interchangeable, so an autoscaler can divide by `replicas x capacity`, and what lets the
+		deployment's tensor parallel size be the only one there is. Naming no GPUs at all is the unpinned
+		single-GPU case and is left alone."""
 		declared = self.deployment.gpus_per_replica
 		if self.gpus and declared and len(self.gpus) != declared:
 			frappe.throw(
@@ -176,24 +171,17 @@ class ModelReplica(Document):
 			)
 
 	def sync_gpu_claims(self):
-		"""Make the cards this replica holds match what its status says it should — the one place
-		the claim rule lives.
-
-		Called after every status transition rather than from `validate`, because status moves by
-		`db.set_value`, which never runs validate."""
+		"""Make the cards this replica holds match what its status says it should — the one place the claim
+		rule lives. Called after every status transition rather than from `validate`, because status moves
+		by `db.set_value`, which never runs validate."""
 		if self.status in CLAIM_HOLDING_STATUSES:
 			self.claim_gpus()
 		else:
 			self.release_gpus()
 
 	def claim_gpus(self):
-		"""Take each pinned card, or throw naming the one that was lost.
-
-		A compare-and-swap per card: `held_by` moves only if it was empty, so two replicas cannot
-		both win one. A card held by a replica no longer entitled to it is cleared first — that is
-		where a worker dying between a status flip and its release gets repaired.
-
-		All or nothing, or a replica would sit on cards it is not going to use."""
+		"""A compare-and-swap per card: `held_by` moves only if it was empty, so two replicas cannot both
+		win one. All or nothing, or a replica would sit on cards it is not going to use."""
 		taken = []
 		for gpu in self.gpu_records:
 			if gpu.held_by == self.name:
@@ -212,8 +200,8 @@ class ModelReplica(Document):
 			)
 
 	def release_gpus(self):
-		"""Give this replica's cards back. Stopping releases on purpose: a stopped container holds
-		no VRAM. Start re-takes them, and fails loudly if it cannot."""
+		"""Stopping releases on purpose: a stopped container holds no VRAM. Start re-takes the cards, and
+		fails loudly if it cannot."""
 		for name in frappe.get_all("GPU", filters={"held_by": self.name}, pluck="name"):
 			release(name, self.name)
 
@@ -235,14 +223,11 @@ class ModelReplica(Document):
 		return [cards[name] for name in names if name in cards]
 
 	def _assign_engine_port(self):
-		"""Lowest free port from ENGINE_PORT_BASE up, scoped to THIS Inference Server — a box is
-		multi-tenant, one port per deployment. Assigned once, then stable; teardown clears it so a
-		later redeploy reallocates.
-
-		Two replicas placed on one box at once would read the same siblings and pick the same
-		port, so the box's row is locked first: the rival waits until this insert commits. The
-		sibling read is a locking read as well — a plain SELECT answers from the transaction's
-		snapshot, taken before the winner committed, and would still miss its port."""
+		"""Assigned once, then stable; teardown clears it so a later redeploy reallocates. Two replicas
+		placed on one box at once would read the same siblings and pick the same port, so the box's row is
+		locked first: the rival waits until this insert commits. The sibling read is a locking read as well
+		— a plain SELECT answers from the transaction's snapshot, taken before the winner committed, and
+		would still miss its port."""
 		if self.engine_port or not self.inference_server:
 			return
 		frappe.db.get_value("Inference Server", self.inference_server, "name", for_update=True)
@@ -271,11 +256,7 @@ class ModelReplica(Document):
 	def derived_engine_url(self):
 		"""Where the gateway forwards: <box front>/e/<slug>, the front being a standalone box's fleet
 		name or its public IP. nginx fronts every engine, so a box exposes one TLS port however many
-		models it serves and engine_port stops being public.
-
-		The one owner of the formula. deploy_model and reconfigure_deployment persist it only
-		after a successful play, so a migrating deployment's URL never moves ahead of its
-		route."""
+		models it serves and engine_port stops being public. The one owner of the formula."""
 		return f"{self.server.front_url}/e/{_instance_slug(self.name)}"
 
 	def _derive_engine_url(self):
@@ -291,11 +272,9 @@ class ModelReplica(Document):
 			sync_published(self.model)
 
 	def after_insert(self):
-		"""Claim the cards as soon as the row exists, while still Draft. Not in `validate`: a claim
-		needs a name to hold the card with, and validate runs before there is one.
-
-		This is the moment that closes the race — before it, two placements reading the same free
-		list could both insert."""
+		"""Claim the cards as soon as the row exists, while still Draft. Not in `validate`: a claim needs a
+		name to hold the card with, and validate runs before there is one. This is the moment that closes
+		the race — before it, two placements reading the same free list could both insert."""
 		self.claim_gpus()
 
 	def on_trash(self):
@@ -306,8 +285,6 @@ class ModelReplica(Document):
 
 	@frappe.whitelist()
 	def setup(self):
-		"""Button: (re)serve this model via the inference_server vllm role, then wire the gateway
-		route."""
 		frappe.enqueue(
 			"grove.grove.doctype.model_replica.model_replica.deploy_model",
 			queue="long",
@@ -320,9 +297,6 @@ class ModelReplica(Document):
 
 	@frappe.whitelist()
 	def apply_engine_config(self):
-		"""Button: re-render the engine config and restart to apply edited per-box tuning. Fast
-		path — config + restart tasks and nothing else. Replaces the container, so it drops
-		in-flight requests."""
 		frappe.enqueue(
 			"grove.grove.doctype.model_replica.model_replica.reconfigure_deployment",
 			queue="long",
@@ -343,18 +317,15 @@ class ModelReplica(Document):
 
 	@frappe.whitelist()
 	def start(self):
-		"""Button: start the container Stop left on the box. → Active.
-
-		Cards are re-taken first: Inactive released them, so a sibling may hold them now. Nothing
+		"""Cards are re-taken first: Inactive released them, so a sibling may hold them now. Nothing
 		about `docker start` would notice — two engines on one card split its VRAM and both OOM
 		later — so the claim is taken here, where the refusal is readable."""
 		self.claim_gpus()
 		self.set_container_running(True)
 
 	def set_container_running(self, running):
-		"""Queue the container-state play. Played, not run inline: a lifecycle action that leaves
-		no Ansible Play is one nobody can read back. Enqueued because `docker stop` waits out the
-		engine's SIGTERM grace."""
+		"""Played, not run inline: a lifecycle action that leaves no Ansible Play is one nobody can read
+		back. Enqueued because `docker stop` waits out the engine's SIGTERM grace."""
 		self.server  # resolved here so a missing box fails on the button, not in a worker
 		frappe.enqueue(
 			"grove.grove.doctype.model_replica.model_replica.set_container_state",
@@ -371,8 +342,6 @@ class ModelReplica(Document):
 
 	@frappe.whitelist()
 	def teardown(self):
-		"""Stop + Remove THIS deployment's container, run script and key file. Shared
-		weights and the pulled image are left for other instances. → Terminated on success."""
 		frappe.enqueue(
 			"grove.grove.doctype.model_replica.model_replica.teardown_deployment",
 			queue="long",
@@ -426,7 +395,6 @@ class ModelReplica(Document):
 
 
 def stream_engine_logs(model_replica):
-	"""Job: follow the deployment's container log over SSH and relay it to its form."""
 	from grove import log_relay
 
 	md = frappe.get_doc("Model Replica", model_replica)
@@ -445,10 +413,9 @@ def _instance_slug(md_name):
 
 
 def _engine_env(md, engine, hf_token, streaming_env=None):
-	"""The engine's own vars first, the operator's rows on top — the Pod path's precedence.
-
-	No paths are handed over: on a box the run-script template writes the cache dirs and the role
-	resolves VLLM_API_KEY. Key order is the env file's line order; see Engine.env."""
+	"""The engine's own vars first, the operator's rows on top — the Pod path's precedence. No paths are
+	handed over: on a box the run-script template writes the cache dirs and the role resolves VLLM_API_KEY.
+	Key order is the env file's line order; see Engine.env."""
 	env = engine.env(hf_token=hf_token, streaming_env=streaming_env)
 	env.update({row.key: row.value or "" for row in md.deployment.engine_env_rows(md)})
 	return env
@@ -501,9 +468,8 @@ def _vllm_extravars(md, m, inf, key):
 
 @failure.reports_failure(mark_broken=True, doctype="Model Replica")
 def deploy_model(model_replica):
-	"""Serve a Model Replica via the inference_server vllm role. Every arg is passed as Ansible
-	extra-vars — the doctypes are the source of truth, not a hand-written group_vars. On success
-	→ Active + push the routing table."""
+	"""Every arg is passed as Ansible extra-vars — the doctypes are the source of truth, not a hand-written
+	group_vars."""
 	md = frappe.get_doc("Model Replica", model_replica)
 	m = frappe.get_doc("Model", md.model)
 	inf = md.server
@@ -543,15 +509,11 @@ def deploy_model(model_replica):
 
 @failure.reports_failure(mark_broken=True, doctype="Model Replica")
 def reconfigure_deployment(model_replica):
-	"""Re-render the engine config and restart it for an already-served deployment.
-
-	reconfigure.yml is the vllm role's config tasks and nothing else — no disk check, image pull,
-	predownload or proxy/TLS roles — so it assumes a deploy already saw to those. That is what
-	makes it runnable while a deploy sits on the health gate: a flag typo is fixed by
-	re-rendering and restarting, not by waiting the gate out.
-
-	Replaces the container when the rendered config moved, so it drops in-flight requests and is
-	button-triggered. Stays Active for the run; see the note below the extra-vars."""
+	"""reconfigure.yml is the vllm role's config tasks and nothing else — no disk check, image pull,
+	predownload or proxy/TLS roles — so it assumes a deploy already saw to those. That is what makes it
+	runnable while a deploy sits on the health gate: a flag typo is fixed by re-rendering and restarting,
+	not by waiting the gate out. Replaces the container when the rendered config moved, so it drops
+	in-flight requests and is button-triggered."""
 	md = frappe.get_doc("Model Replica", model_replica)
 	m = frappe.get_doc("Model", md.model)
 	inf = md.server
@@ -578,10 +540,9 @@ def reconfigure_deployment(model_replica):
 
 
 def _land_state(md, state):
-	"""Write what a play left on the doc, and settle what follows from its status. `db.set_value`
-	skips the controller, so the GPU claims and the published flag are settled here — the one
-	place a job lands a status. Status is carried over rather than reloaded: it was just written
-	from this same dict."""
+	"""`db.set_value` skips the controller, so the GPU claims and the published flag are settled here — the
+	one place a job lands a status. Status is carried over rather than reloaded: it was just written from
+	this same dict."""
 	from grove.grove.doctype.model.model import sync_published
 
 	frappe.db.set_value("Model Replica", md.name, state)
@@ -592,10 +553,9 @@ def _land_state(md, state):
 
 
 def _post_play_state(md, rc):
-	"""What a finished serve play leaves on the doc. engine_url moves only on success: a failed
-	play may not have written the box's nginx location, so the URL never moves ahead of the route
-	it names. Not md.save(): a full validate can throw on drift unrelated to this deploy, after
-	the play already succeeded."""
+	"""engine_url moves only on success: a failed play may not have written the box's nginx location, so the
+	URL never moves ahead of the route it names. Not md.save(): a full validate can throw on drift unrelated
+	to this deploy, after the play already succeeded."""
 	if rc != 0:
 		return {"status": "Broken"}
 	return {"status": "Active", "engine_url": md.derived_engine_url}
@@ -603,11 +563,9 @@ def _post_play_state(md, rc):
 
 @failure.reports_failure(mark_broken=False, doctype="Model Replica")
 def set_container_state(model_replica, running):
-	"""Job: start or stop ONE deployment's container. Not mark_broken: a stop that failed is an
-	engine still serving, which is what the doc already claims.
-
-	Only rc 0 moves the status, because `status` is what _gateway_routes routes on — writing it
-	ahead of the play would publish a stopped engine, or dark a running one."""
+	"""Not mark_broken: a stop that failed is an engine still serving, which is what the doc already claims.
+	Only rc 0 moves the status, because `status` is what _gateway_routes routes on — writing it ahead of the
+	play would publish a stopped engine, or dark a running one."""
 	md = frappe.get_doc("Model Replica", model_replica)
 	inf = md.server
 
@@ -629,8 +587,7 @@ def set_container_state(model_replica, running):
 @failure.reports_failure(mark_broken=False, doctype="Model Replica")
 def teardown_deployment(model_replica):
 	"""Stop + remove ONE deployment's container, the run script and env file that would restart
-	it, and its key file. Leaves the box-shared caches and the pulled image for other instances.
-	On success → Terminated."""
+	it, and its key file. Leaves the box-shared caches and the pulled image for other instances."""
 	md = frappe.get_doc("Model Replica", model_replica)
 	inf = md.server
 

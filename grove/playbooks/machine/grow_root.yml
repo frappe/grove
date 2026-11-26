@@ -1,6 +1,5 @@
 ---
-# Grow the root partition and filesystem onto a volume the provider already enlarged
-# (machine.grow_root). Online, idempotent.
+# The provider already enlarged the volume (machine.grow_root). Online, idempotent.
 - name: Grow the root filesystem
   hosts: all
   become: true

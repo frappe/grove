@@ -42,8 +42,7 @@ class RunPodClient:
 		self.api_key = api_key
 
 	def _request(self, method, path, json_body=None):
-		"""One REST call. Raises with the response body — RunPod's JSON error message is worth
-		surfacing."""
+		"""Raises with the response body — RunPod's JSON error message is worth surfacing."""
 		headers = {
 			"Authorization": f"Bearer {self.api_key}",
 			"Content-Type": "application/json",
@@ -61,10 +60,8 @@ class RunPodClient:
 	@staticmethod
 	def proxy_url(pod_id, internal_port):
 		"""RunPod terminates TLS with its own certificate, so the pod serves plain http and carries
-		none. Keyed on the pod id, so unlike a direct-tcp mapping it survives a restart.
-
-		Cloudflare fronts it with a 100s connection cap: a response still buffering at 100s
-		returns 524."""
+		none. Keyed on the pod id, so unlike a direct-tcp mapping it survives a restart. Cloudflare
+		fronts it with a 100s connection cap: a response still buffering at 100s returns 524."""
 		return f"https://{pod_id}-{int(internal_port)}.proxy.runpod.net"
 
 	def _container_config(
@@ -136,12 +133,10 @@ class RunPodClient:
 		return self._parse_pod(pod)
 
 	def update_pod(self, pod_id, **config):
-		"""Edit a live pod in place (same settings spawn_pod takes). RunPod resets the container
-		to pick the change up, but keeps the pod id and the volume — so a volume-backed HF_HOME
-		keeps its weights, unlike a terminate + create. PATCH is a partial update, so anything
-		omitted is left alone. The GPU shape and cloud type are create-only and cannot be
-		changed here. Returns the parsed pod — the reset clears the endpoints, so
-		poll_pod_ready() before reading them."""
+		"""Edit a live pod in place. RunPod resets the container to pick the change up, but keeps
+		the pod id and the volume — so a volume-backed HF_HOME keeps its weights, unlike a
+		terminate + create. The GPU shape and cloud type are create-only. The reset clears the
+		endpoints, so poll_pod_ready() before reading them."""
 		body = self._container_config(**config)
 		if not body:
 			raise RunPodError(f"update_pod {pod_id} called with nothing to change")
@@ -150,8 +145,8 @@ class RunPodClient:
 	def get_registry_auth_id(self, name, username, password):
 		"""Register pull credentials with RunPod → the id passed as the pod's `registry` (RunPod
 		takes no inline credentials). Names are unique per account, so an existing entry under
-		`name` is dropped and rewritten — RunPod owns this state, and re-registering keeps it
-		from drifting off the credentials Grove holds."""
+		`name` is dropped and rewritten — re-registering keeps it from drifting off the
+		credentials Grove holds."""
 		existing = self._request("GET", "/registries")
 		if isinstance(existing, dict):
 			existing = existing.get("registries") or []
@@ -166,16 +161,14 @@ class RunPodClient:
 		return auth["id"]
 
 	def get_pod(self, pod_id):
-		"""Fetch a pod → parsed (id, status, public_ip, ssh_port, port_map)."""
 		return self._parse_pod(self._request("GET", f"/pods/{pod_id}"))
 
 	@staticmethod
 	def _parse_pod(pod):
-		"""Extract reachable endpoints plus the GPU shape. v2 publishes the live port mapping
-		under `runtime`, which is null until the pod runs; each entry maps an internal port to
-		a random external one on a shared IP. The GPU fields are what the pod actually runs on —
-		update_pod cannot change them, so callers compare against them to decide between an
-		in-place edit and a respawn."""
+		"""v2 publishes the live port mapping under `runtime`, which is null until the pod runs;
+		each entry maps an internal port to a random external one on a shared IP. The GPU fields
+		are what the pod actually runs on — update_pod cannot change them, so callers compare
+		against them to decide between an in-place edit and a respawn."""
 		ports = ((pod.get("runtime") or {}).get("ports")) or []
 		# Keys are str so JSON round-trips cleanly (engine_url lookup uses str).
 		port_map = {
@@ -197,8 +190,7 @@ class RunPodClient:
 
 	def poll_pod_ready(self, pod_id, timeout_sec=300, poll_interval_sec=5):
 		"""Poll until the pod has a public IP and a mapped SSH port (so Ansible can
-		connect). Engine ports map at the same time; port_map carries them. Returns the
-		parsed pod dict."""
+		connect). Engine ports map at the same time; port_map carries them."""
 		start = time.time()
 		while time.time() - start < timeout_sec:
 			try:
@@ -248,25 +240,23 @@ class RunPodClient:
 				return  # idle or dropped mid-stream — the caller resumes from the last event id
 
 	def terminate_pod(self, pod_id):
-		"""Terminate a pod — frees GPU, disk and billing."""
 		self._request("DELETE", f"/pods/{pod_id}")
 		return True
 
 	def stop_pod(self, pod_id):
-		"""Stop a pod: releases the GPU (status → EXITED) but keeps the pod and its volume, so
-		it can be started again. Volume storage is still billed."""
+		"""Releases the GPU (status → EXITED) but keeps the pod and its volume, so it can be
+		started again. Volume storage is still billed."""
 		self._request("POST", f"/pods/{pod_id}/action", {"action": "stop"})
 		return True
 
 	def start_pod(self, pod_id):
-		"""Start/resume a stopped pod. Needs its GPU type to be free again, and the port
-		mapping is re-drawn — re-read endpoints after this."""
+		"""Needs its GPU type to be free again, and the port mapping is re-drawn — re-read
+		endpoints after this."""
 		self._request("POST", f"/pods/{pod_id}/action", {"action": "start"})
 		return True
 
 	def list_gpu_types(self):
-		"""Available GPU types: {id, displayName, memoryInGb, secureCloud, communityCloud}.
-		`id` is the exact string to put in a Pod's GPU Type ID. Grove's own key names — the
+		"""`id` is the exact string to put in a Pod's GPU Type ID. Grove's own key names — the
 		cached list is read by the Cloud Provider form and Pod.gpu_vram_gb."""
 		gpus = self._request("GET", "/catalog/gpus").get("gpus") or []
 		return [

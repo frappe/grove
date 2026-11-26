@@ -2,12 +2,10 @@
 # See license.txt
 """A model a third party serves, and what the gateway is told to ask it for.
 
-Two things are being pinned. A vendor-backed model gets a route with no engine behind it — there is
-nothing to deploy, so the provider record IS the placement. And `upstream_model` says what goes in
-the body: blank for everything we run, because an engine is started under the full Grove id and
-rewriting it would ask for a name no engine answers to.
-
-Pure — the rows are faked, no site.
+A vendor-backed model gets a route with no engine behind it — there is nothing to deploy, so the
+provider record IS the placement. And `upstream_model` says what goes in the body: blank for
+everything we run, because an engine is started under the full Grove id and rewriting it would
+ask for a name no engine answers to.
 """
 
 import unittest

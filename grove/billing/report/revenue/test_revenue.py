@@ -1,6 +1,3 @@
-"""Revenue is what each drain was charged, summed by the database over the records'
-per-model detail, cut by model, key, team or day."""
-
 from datetime import timedelta
 
 import frappe

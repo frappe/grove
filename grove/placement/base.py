@@ -1,10 +1,7 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Which box a new replica goes on. One Scorer per preference, composed in order by a named policy,
-and `placement_policy` is the one place that dispatch happens.
-
+"""Which box a new replica goes on. One Scorer per preference, composed in order by a named policy.
 Nothing here imports frappe, so every test in this package is pure: no site, no mocking.
-
 Scoring only ORDERS boxes that are already viable. What makes a box viable is decided by the caller
 and is deliberately not pluggable: a policy that could skip the architecture check would produce a
 container Docker pulls happily and fails at exec, deep inside a play, with nothing naming why."""
@@ -52,11 +49,9 @@ def sort_key(candidate, scorers):
 
 
 def placement_policy(policy):
-	"""The scorers a `placement_policy` runs, in order. Add a policy by adding one entry here;
-	`find_placement` never changes.
-
-	An unknown key raises rather than defaulting: a policy string that quietly became `balanced`
-	would place replicas somewhere nobody asked for and look like it worked."""
+	"""Add a policy by adding one entry here; `find_placement` never changes. An unknown key raises
+	rather than defaulting: a policy string that quietly became `balanced` would place replicas
+	somewhere nobody asked for and look like it worked."""
 	from grove.placement.scorers import BestFit, FewestReplicas, SpreadRegions, WarmCache, WorstFit
 
 	policies = {
@@ -71,14 +66,10 @@ def placement_policy(policy):
 
 
 def fitting_gpus(free_gpus, gpu_type="", min_vram_gb=0):
-	"""Which of a box's free cards meet a deployment's hard filters, as GPU docnames. `free_gpus`
-	is rows carrying `name`, `gpu_type` and `vram_gb`.
-
-	Returned in the order they were GIVEN: `cards_on` orders by CUDA index, which is what "take the
-	first N" should mean, and sorting docnames would order by a hash instead.
-
-	`gpu_type` is matched for EQUALITY, which only works because both sides now resolve to one
-	`GPU Type` — it was a substring test back when nvidia-smi said `Tesla T4` and AWS said `T4`."""
+	"""Which of a box's free cards meet a deployment's hard filters, as GPU docnames. Returned in
+	the order they were GIVEN: `cards_on` orders by CUDA index, which is what "take the first N"
+	should mean, and sorting docnames would order by a hash instead. `gpu_type` is matched for
+	EQUALITY, which only works because both sides resolve to one `GPU Type`."""
 	wanted = (gpu_type or "").strip()
 	matches = []
 	for gpu in free_gpus:

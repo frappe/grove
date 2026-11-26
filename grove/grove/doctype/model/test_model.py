@@ -1,7 +1,5 @@
 # Copyright (c) 2026, developers@frappe.io and Contributors
 # See license.txt
-"""Published is the operator's tick: it needs a pricing and something serving the model, and
-only ever comes off on its own."""
 
 from typing import ClassVar
 from unittest.mock import patch
@@ -146,9 +144,6 @@ class TestLoadPricing(IntegrationTestCase):
 
 
 class TestModalities(IntegrationTestCase):
-	"""What a model takes and gives: two lists of Modality records, Text when left blank, read
-	back as the lowercase words the gateway takes."""
-
 	counter = 0
 
 	def model(self, **lists):

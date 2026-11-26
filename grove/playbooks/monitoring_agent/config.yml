@@ -1,6 +1,5 @@
 ---
-# Re-render an installed agent's vmagent config and restart it (monitoring_agent.update_config,
-# Rotate Token). extra-vars: the same as agent.yml.
+# monitoring_agent.update_config and Rotate Token run it. extra-vars: the same as agent.yml.
 - name: Update the metrics agent config
   hosts: all
   become: true

@@ -1,5 +1,4 @@
 <script setup>
-// The window's figures beside the previous window's.
 import { NumberCard } from "frappe-ui/charts";
 import { computed, watch } from "vue";
 

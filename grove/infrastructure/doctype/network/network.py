@@ -67,7 +67,6 @@ class Network(Document):
 
 	@property
 	def next_available_cidr_block(self):
-		"""First /16 in 10.0.0.0/8 not already used by another Network."""
 		filters = {"name": ["!=", self.name]} if not self.is_new() else {}
 		used = {row for row in frappe.get_all("Network", pluck="cidr_block", filters=filters) if row}
 		for block in CIDR_POOL.subnets(new_prefix=CIDR_PREFIX):
@@ -87,17 +86,14 @@ class Network(Document):
 
 	@property
 	def proxy_security_group_id_list(self):
-		"""proxy_security_group_ids as a list, for a Gateway Server box."""
 		return parse_security_group_ids(self.proxy_security_group_ids)
 
 	@property
 	def inference_security_group_id_list(self):
-		"""inference_security_group_ids as a list, for an Inference Server box."""
 		return parse_security_group_ids(self.inference_security_group_ids)
 
 	@property
 	def store_security_group_id_list(self):
-		"""store_security_group_ids as a list, for a Gateway Store box."""
 		return parse_security_group_ids(self.store_security_group_ids)
 
 	@property
@@ -139,11 +135,9 @@ class Network(Document):
 
 	@frappe.whitelist()
 	def create_security_groups(self):
-		"""Button: create the Proxy and Inference security groups with their fixed ingress rules.
-		Skips a role whose field is already set, so re-clicking never creates a duplicate.
-
-		Only ever creates — what those groups allow on 443 is sync_inference_ingress's, not
-		fixed at creation."""
+		"""Skips a role whose field is already set, so re-clicking never creates a duplicate. Only
+		ever creates — what those groups allow on 443 is sync_inference_ingress's, not fixed at
+		creation."""
 		if not self.vpc_id:
 			frappe.throw(f"Set a VPC ID on Network {self.name} before creating security groups.")
 
@@ -174,17 +168,11 @@ class Network(Document):
 
 	@frappe.whitelist()
 	def sync_inference_ingress(self):
-		"""Button + scheduled tick: make the box's front ports reachable from this VPC, this
-		geography's gateways and the agents that scrape it, and from nowhere else.
-
-		Both 80 and 443, to the same sources — the box's nginx fronts every engine and both
-		exporters either way, so those ports stay on loopback and need no hole of their own.
-
-		RECONCILES rather than adds: a proxy back on a new address leaves its old /32 behind, and
-		a pre-existing 0.0.0.0/0 is closed here. Port 22 is deliberately untouched — Ansible
-		reaches these boxes from wherever bench runs.
-
-		A store's 6379 is reconciled the same way, to this Network's VPC."""
+		"""Button + scheduled tick. Both 80 and 443, to the same sources — the box's nginx fronts
+		every engine and both exporters, so those ports stay on loopback and need no hole of their
+		own. RECONCILES rather than adds: a proxy back on a new address leaves its old /32 behind,
+		and a pre-existing 0.0.0.0/0 is closed here. Port 22 is deliberately untouched — Ansible
+		reaches these boxes from wherever bench runs. A store's 6379 is reconciled the same way."""
 		if not (self.inference_security_group_ids or self.store_security_group_ids):
 			frappe.msgprint(f"Network {self.name} has no inference or gateway store security group.")
 			return None
@@ -243,7 +231,6 @@ class Network(Document):
 
 
 def reconcile_ingress(client, group_ids, ports, cidrs):
-	"""Make each port on these groups allow exactly `cidrs`, and say what moved."""
 	changes = [client.sync_ingress(group_id, port, cidrs) for group_id in group_ids for port in ports]
 	opened = sorted({cidr for change in changes for cidr in change["opened"]})
 	closed = sorted({cidr for change in changes for cidr in change["closed"]})
@@ -274,16 +261,13 @@ def _with_machine(rows):
 
 
 def inference_ingress_cidrs(gateways, agents, network):
-	"""Every address outside `network`'s VPC allowed to reach an inference box in it on its front
-	ports, as /32s. The control plane is not a caller — it reaches a box over SSH and a server at
-	its own admin URL.
+	"""Every address outside `network`'s VPC allowed to reach an inference box in it, as /32s. The
+	control plane is not a caller — it reaches a box over SSH and a server at its own admin URL.
 
-	Each contributes the address the box will actually SEE it arrive from. A gateway dials the
-	box's public IP, so even same-VPC traffic leaves through the internet gateway and arrives from
-	the public side: every gateway is listed, by its public address. An agent in this Network dials
-	privately and the VPC range already covers it, so only one outside it is listed.
-
-	A Terminated box is gone, and its address belongs to whoever AWS hands it to next."""
+	Each contributes the address the box will actually SEE it arrive from. A gateway dials the box's
+	public IP, so even same-VPC traffic arrives from the public side: every gateway is listed, by its
+	public address. An agent in this Network dials privately and the VPC range already covers it. A
+	Terminated box is gone, and its address belongs to whoever AWS hands it to next."""
 	live = lambda rows: [row for row in rows if row.get("status") != GONE_STATUS]  # noqa: E731
 	addresses = [gateway.get("public_ip") for gateway in live(gateways)]
 	addresses += [agent.get("public_ip") for agent in live(agents) if agent.get("network") != network]
@@ -291,5 +275,4 @@ def inference_ingress_cidrs(gateways, agents, network):
 
 
 def parse_security_group_ids(raw):
-	"""A comma-separated security_group_ids field into a list, blanks and whitespace stripped."""
 	return [group.strip() for group in (raw or "").split(",") if group.strip()]

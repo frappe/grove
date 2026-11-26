@@ -5,8 +5,6 @@ from frappe.model.document import Document
 
 
 class ModelModalityRow(Document):
-	"""One thing a Model takes or gives: a row of its Input or its Output Modalities."""
-
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 

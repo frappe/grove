@@ -17,8 +17,7 @@ TIMEOUT = 600
 
 
 def issue_fleet_certificate(geography):
-	"""Obtain the geography's wildcard, or renew it early if certbot already holds one. The Geography
-	button; the daily job calls renew_fleet_certificate instead."""
+	"""Obtain the geography's wildcard, or renew it early if certbot already holds one."""
 	settings = frappe.get_single("Grove Settings")
 	zone = require_zone(frappe.get_doc("Geography", geography))
 	# The zone itself too: a wildcard does not cover its own apex, and customers call the apex.
@@ -62,10 +61,9 @@ def renew_fleet_certificate():
 
 
 def push_to_proxies(geography):
-	"""One enqueued play per box in `geography`, so an unreachable one does not stop the rest.
-
-	Every box that serves the wildcard is here: one left off keeps its provisioning certificate
-	until it expires, and then every gateway dialling it fails verification at once."""
+	"""One enqueued play per box in `geography`, so an unreachable one does not stop the rest. Every
+	box that serves the wildcard is here: one left off keeps its provisioning certificate until it
+	expires, and then every gateway dialling it fails verification at once."""
 	for doctype, filters in (
 		("Gateway Server", {}),
 		("Ingress Server", {}),
@@ -77,9 +75,7 @@ def push_to_proxies(geography):
 
 
 def store_certificate(geography, zone):
-	"""Read what certbot has on disk onto the Geography. True when it CHANGED: re-pushing an
-	identical certificate would reload every box for nothing.
-
+	"""True when it CHANGED: re-pushing an identical certificate would reload every box for nothing.
 	Loads the doc itself rather than taking the caller's copy — run_certbot has committed the
 	last-run fields since then, and an older doc would write them back blank."""
 	doc = frappe.get_doc("Geography", geography)
@@ -140,13 +136,10 @@ def run_certbot(settings, arguments, geography):
 
 
 def record_run(geography, command, result):
-	"""What certbot just said, on the Geography, whether it worked or not.
-
-	Committed before the caller throws: an enqueued job rolls back on an exception, which would
+	"""Committed before the caller throws: an enqueued job rolls back on an exception, which would
 	take the record with it. Failures also reach the Error Log through that exception — what this
-	adds is a SUCCESSFUL run being visible at all, since nothing else moves but an expiry date.
-
-	The command is safe to store: the AWS credentials go in the environment, never in argv."""
+	adds is a SUCCESSFUL run being visible at all. The command is safe to store: the AWS credentials
+	go in the environment, never in argv."""
 	output = f"$ {' '.join(command)}\n\n{result.stdout}\n{result.stderr}".strip()
 	frappe.db.set_value(
 		"Geography",

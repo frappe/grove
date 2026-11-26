@@ -1,6 +1,4 @@
-"""Archive on the server doctypes, and what a new Inference Server takes from its Network.
-
-Pure unit tests: the doc is a SimpleNamespace and frappe's data calls are stubbed, so these pin the
+"""Pure unit tests: the doc is a SimpleNamespace and frappe's data calls are stubbed, so these pin the
 guards and the filters without a site."""
 
 import unittest

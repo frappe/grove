@@ -1,14 +1,10 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""A box the fleet names.
-
-Gateway Server and Ingress Server both stand on a Machine, answer to `<name>.<fleet zone>`, run the
-same Go agent and are reached at their own admin URL. A standalone Inference Server takes the name
-and the certificate, not the agent. What they share lives here; what differs — the playbook, the
-DNS records, what the agent is given — stays on the doctype.
-
-Deliberately a mixin rather than one doctype with a role flag: a doctype with no tenant fields
-cannot be talked into being pushed keys."""
+"""A box the fleet names. Gateway Server and Ingress Server both stand on a Machine, answer to
+`<name>.<fleet zone>`, run the same Go agent and are reached at their own admin URL. A standalone
+Inference Server takes the name and the certificate, not the agent. What differs — the playbook, the
+DNS records, what the agent is given — stays on the doctype. Deliberately a mixin rather than one
+doctype with a role flag: a doctype with no tenant fields cannot be talked into being pushed keys."""
 
 import time
 
@@ -27,16 +23,14 @@ INSTANCE_TYPES_TTL_SEC = 6 * 3600
 
 
 def instance_size(info):
-	"""'2 vCPU · 8 GiB' off a type's facts, as a form shows it."""
 	return f"{info['vcpus']} vCPU · {info['memory_mb'] / 1024:g} GiB"
 
 
 def gateway_agent_version():
-	"""The pathway release every box runs. A setting rather than a constant: the agent lives in its
-	own repo, so rolling one back is an edit and a Deploy Agent rather than a control-plane deploy.
-
-	Refused blank rather than defaulted — a Single that predates a field never applies its JSON
-	default, and an empty release tag 404s a play twenty minutes in."""
+	"""A setting rather than a constant: the agent lives in its own repo, so rolling one back is an
+	edit and a Deploy Agent rather than a control-plane deploy. Refused blank rather than defaulted —
+	a Single that predates a field never applies its JSON default, and an empty release tag 404s a
+	play twenty minutes in."""
 	version = frappe.db.get_single_value("Grove Settings", "pathway_release")
 	if not version:
 		frappe.throw("Set Pathway Release in Grove Settings — it names the release each box installs.")
@@ -67,13 +61,10 @@ class NamedHost(Server):
 
 	@property
 	def hostname(self):
-		"""The name that reaches THIS box: <short name>.<its geography's zone>, covered by that
-		geography's wildcard — the doc name itself for a box named with its domain. Blank with no
-		zone, and then the box has no name at all — it is reached by IP over plain HTTP, which is how
-		every proxy worked before TLS.
-
-		The short name is a DNS-legal label: validate_label_name allows letters, digits and '-'
-		only, on insert."""
+		"""<short name>.<its geography's zone>, covered by that geography's wildcard — the doc name
+		itself for a box named with its domain. Blank with no zone, and then the box has no name at
+		all — it is reached by IP over plain HTTP. The short name is a DNS-legal label:
+		validate_label_name allows letters, digits and '-' only, on insert."""
 		zone = self.fleet_zone
 		return f"{self.short_name}.{zone}" if zone else ""
 
@@ -85,12 +76,10 @@ class NamedHost(Server):
 
 	@property
 	def has_dns_records(self):
-		"""Whether this box ever got far enough to have records worth removing.
-
-		The removal paths ask first. dns_client throws when a record's ingredients are missing,
-		which is the right answer to "write my records" and the wrong one to "delete me": a server
-		that never reached a public IP has nothing in DNS, and refusing to delete it strands the
-		doc — and, through the link, the Machine underneath it."""
+		"""Whether this box ever got far enough to have records worth removing. The removal paths
+		ask first: dns_client throws when a record's ingredients are missing, and a server that never
+		reached a public IP has nothing in DNS — refusing to delete it strands the doc and, through
+		the link, the Machine underneath it."""
 		return all(self.get(field) for field in self.dns_fields)
 
 	def dns_client(self):
@@ -131,11 +120,9 @@ class NamedHost(Server):
 
 	@frappe.whitelist()
 	def resize_options(self):
-		"""What a Server Resize form shows: this box's type with its size, and the types it can
-		move to — same architecture, virtualised, current generation, offered in its zone, no GPUs
-		(a gateway or store has no use for one). The list is cached six hours per provider, region,
-		architecture and zone: 400-odd types over several pages, changing slower than a form opens.
-		The current type is read live. The insert check still has the last word."""
+		"""What a Server Resize form shows: this box's type, and the types it can move to — no GPUs
+		(a gateway or store has no use for one). The list is cached six hours: 400-odd types over
+		several pages, changing slower than a form opens. The insert check still has the last word."""
 		machine = frappe.get_doc("Machine", self.machine)
 		machine.require_instance()
 		client = machine.cloud_client
@@ -160,9 +147,8 @@ class NamedHost(Server):
 
 	@frappe.whitelist()
 	def resize(self, instance_type: str):
-		"""Button: a Server Resize that moves this box onto another instance type — drained,
-		stopped, retyped, started and checked, one step per job — ready to Start from its form.
-		Gateway Server and Gateway Store."""
+		"""Button: a Server Resize for this box, ready to Start from its form. Gateway Server and
+		Gateway Store."""
 		from grove.infrastructure.doctype.server_resize.server_resize import ServerResize
 
 		name = ServerResize.create(self, instance_type)
@@ -181,8 +167,6 @@ class NamedHost(Server):
 		frappe.msgprint(f"Installing Vector on {self.name} — watch its Ansible Plays.", alert=True)
 
 	def check_vector_ready(self):
-		"""Everything Vector needs before a play is queued, thrown together: the Region's endpoints
-		and Grove's Central credential."""
 		problems = frappe.get_doc("Region", self.region).vector_problems + datum.credential_problems()
 		if problems:
 			frappe.throw("<br>".join(problems), title=f"{self.name} is not ready for Vector")
@@ -201,10 +185,9 @@ class NamedHost(Server):
 
 	@failure.reports_failure(mark_broken=False)
 	def provision_vector(self):
-		"""Job: vector.yml with the Region's endpoints, a token minted now for the Central Region
-		that datum belongs to, and this box's labels — minted inside the job only, so the token
-		never sits in a Redis payload. Status is left alone: a box that cannot ship its logs still
-		serves. Readiness is checked here too: queued after Setup, this is the first thing that looks."""
+		"""The token is minted inside the job only, so it never sits in a Redis payload. Status is
+		left alone: a box that cannot ship its logs still serves. Readiness is checked here too:
+		queued after Setup, this is the first thing that looks."""
 		self.check_vector_ready()
 		region = frappe.get_doc("Region", self.region)
 		token, expires_at = datum.mint_token(region.central_region, f"grove:{self.machine}")
@@ -237,9 +220,9 @@ class FleetHost(NamedHost):
 		return frappe.get_doc("Geography", self.geography).tls_variables
 
 	def set_admin_url(self):
-		"""Where the control plane reaches this box's agent. Derived, never typed: it has to name
-		ONE box, and the shared names deliberately name several at once. Once it is https on a
-		name the fleet certificate covers, `requests` verifies it by default."""
+		"""Derived, never typed: it has to name ONE box, and the shared names deliberately name
+		several at once. Once it is https on a name the fleet certificate covers, `requests` verifies
+		it by default."""
 		if self.hostname:
 			self.admin_url = f"https://{self.hostname}/grove-admin"
 		elif self.public_ip:
@@ -247,7 +230,6 @@ class FleetHost(NamedHost):
 
 	@property
 	def health_url(self):
-		"""pathway's /healthz, on the same host and scheme as its admin API."""
 		return (self.admin_url or "").removesuffix("/grove-admin") + "/healthz"
 
 	@frappe.whitelist()
@@ -265,11 +247,9 @@ class FleetHost(NamedHost):
 		return response.status_code
 
 	def record_agent_version(self, rc):
-		"""Remember which agent release this box actually took, on the runs that installed one.
-
-		One repo made skew impossible; two makes it the thing to watch, and a finished play is the
-		only moment that knows the answer. Written with db.set_value, like the statuses around it,
-		so recording a version never fires on_update and re-syncs the fleet."""
+		"""Which agent release this box actually took: a finished play is the only moment that knows
+		the answer. Written with db.set_value, like the statuses around it, so recording a version
+		never fires on_update and re-syncs the fleet."""
 		if rc == 0:
 			frappe.db.set_value(self.doctype, self.name, "agent_version", gateway_agent_version())
 
@@ -297,9 +277,8 @@ class PathwayHost(FleetHost):
 
 	@property
 	def config_variables(self):
-		"""What config.json renders: the fleet's tuning, whether this box is in maintenance, and on a
-		gateway whether its caches are isolated. Every play that writes the file passes both, so a
-		deploy never flips either."""
+		"""What config.json renders. Every play that writes the file passes the maintenance and
+		cache isolation flags both, so a deploy never flips either."""
 		return {
 			**frappe.get_single("Grove Settings").gateway_variables,
 			"gateway_maintenance": bool(self.is_in_maintenance),

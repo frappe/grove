@@ -2,10 +2,9 @@
 - name: find the redis package to install
   ansible.builtin.include_tasks: repository.yml
 
-# A new store's Redis runs as store-redis: Grove's own unit, config and directories, as the service
-# account. The packages give the binary. Their /etc/redis, /var/lib/redis and /var/log/redis, which
-# every install chowns back to `redis`, are not used, and their `redis-server` unit is masked before
-# the install that would start it. A mask set by hand outlives every package upgrade.
+# The packages give only the binary: their /etc/redis, /var/lib/redis and /var/log/redis, which every
+# install chowns back to `redis`, are not used, and their `redis-server` unit is masked before the
+# install that would start it. A mask set by hand outlives every package upgrade.
 - name: mask the packaged redis
   ansible.builtin.systemd:
     name: redis-server

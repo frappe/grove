@@ -60,10 +60,8 @@ def root_volume_id(instance):
 
 def parse_gpus(instance_type_info):
 	"""One scanned card per GPU, seeding a box at provision time when there is no driver to ask.
-	Scan GPUs replaces this with the box's own answer.
-
-	AWS has no UUID to give, so `device_id` falls back to the CUDA index — the placeholder a real
-	scan overwrites."""
+	Scan GPUs replaces this with the box's own answer. AWS has no UUID to give, so `device_id`
+	falls back to the CUDA index."""
 	gpus = []
 	for entry in (instance_type_info.get("GpuInfo") or {}).get("Gpus") or []:
 		memory_mib = (entry.get("MemoryInfo") or {}).get("SizeInMiB") or 0
@@ -88,11 +86,8 @@ def normalize_architecture(aws_architecture):
 
 
 def parse_architecture(instance_type_info):
-	"""The architecture Grove will run this type as.
-
-	AWS returns a LIST, and not only for museum pieces — t2.micro answers ["i386", "x86_64"] to
-	this day, and taking the first entry picked a value the Machine's Select does not accept. So
-	the first entry Grove SUPPORTS wins and the list order is not trusted."""
+	"""AWS returns a LIST — t2.micro answers ["i386", "x86_64"] to this day — and its first entry
+	can be a value the Machine's Select does not accept. So the first entry Grove SUPPORTS wins."""
 	architectures = [
 		normalize_architecture(a)
 		for a in (instance_type_info.get("ProcessorInfo") or {}).get("SupportedArchitectures") or []
@@ -102,7 +97,6 @@ def parse_architecture(instance_type_info):
 
 
 def parse_instance_type(info):
-	"""One describe_instance_types entry in Grove's own shape."""
 	return {
 		"instance_type": info.get("InstanceType") or "",
 		"instance_store": parse_instance_store(info),
@@ -122,17 +116,14 @@ def machine_status(ec2_state):
 
 def cloud_config(public_keys):
 	"""user-data authorising Grove's own SSH keys for root, so Ansible can reach the box whatever
-	the EC2 key pair is.
-
-	`disable_root: false` is load-bearing: cloud-init writes the keys either way, but its default
-	wraps each in a forced command= that prints a message instead of giving a shell."""
+	the EC2 key pair is. `disable_root: false` is load-bearing: cloud-init writes the keys either way,
+	but its default wraps each in a forced command= that prints a message instead of giving a shell."""
 	keys = "\n".join(f"  - {key}" for key in public_keys.splitlines() if key.strip())
 	return f"#cloud-config\ndisable_root: false\nssh_authorized_keys:\n{keys}\n" if keys else ""
 
 
 def build_ip_permission(rule):
-	"""One ingress rule → a boto3 IpPermission. A rule names exactly one source: a CIDR, or a
-	same-VPC security group."""
+	"""A rule names exactly one source: a CIDR, or a same-VPC security group."""
 	permission = {
 		"IpProtocol": rule["protocol"],
 		"FromPort": rule["from_port"],
@@ -176,8 +167,7 @@ class EC2Client(CloudClient):
 		ssh_public_keys="",
 		termination_protection=False,
 	):
-		"""Launch one instance, tagged with the Machine's name. IPs may be absent until it runs,
-		so poll_instance_ready.
+		"""IPs may be absent until it runs, so poll_instance_ready.
 
 		ponytail: no second EBS volume — the gpu_host role's data-mount step always falls back to
 		root. Add a data_volume_gb param and a second BlockDeviceMappings entry if one is ever
@@ -225,8 +215,6 @@ class EC2Client(CloudClient):
 		}
 
 	def get_instance(self, instance_id):
-		"""Fetch one instance → parsed (status, public_ip, private_ip, instance_type, image_id,
-		root_volume_gb)."""
 		reservations = (
 			self._call(self.ec2.describe_instances, InstanceIds=[instance_id]).get("Reservations") or []
 		)
@@ -236,8 +224,6 @@ class EC2Client(CloudClient):
 		raise AWSError(f"Instance {instance_id} not found")
 
 	def get_instance_type_info(self, instance_type):
-		"""Local storage, GPUs, architecture, bare metal, vCPUs and RAM, in Grove's own shape — one
-		describe_instance_types call carries all of it."""
 		types = (
 			self._call(self.ec2.describe_instance_types, InstanceTypes=[instance_type]).get("InstanceTypes")
 			or []
@@ -247,8 +233,7 @@ class EC2Client(CloudClient):
 		return parse_instance_type(types[0])
 
 	def list_instance_types(self, cpu_architecture, availability_zone=""):
-		"""The types a Grove image moves onto: `cpu_architecture`, virtualised, current generation,
-		EBS-rooted, and offered in `availability_zone` when one is given. Smallest first."""
+		"""The types a Grove image moves onto, smallest first."""
 		filters = [
 			{
 				"Name": "processor-info.supported-architecture",
@@ -284,9 +269,7 @@ class EC2Client(CloudClient):
 				return
 
 	def poll_instance_ready(self, instance_id, timeout_sec=900, poll_interval_sec=10):
-		"""Poll until the instance is running, addressed, and past both of EC2's status checks.
-
-		Running is not reachable: a bare metal instance reports running with a public IP a minute
+		"""Running is not reachable: a bare metal instance reports running with a public IP a minute
 		in and then spends ten to twenty more in firmware POST. Every instance has the same gap;
 		metal only makes it wide enough to always lose."""
 		start = time.time()
@@ -305,7 +288,6 @@ class EC2Client(CloudClient):
 
 	def is_instance_reachable(self, instance_id):
 		"""Both status checks — the system one for the host under it, the instance one for the box.
-
 		IncludeAllInstances is load-bearing: without it the response silently omits an instance
 		that is not already running, and an empty list is indistinguishable from an answer."""
 		statuses = (
@@ -324,8 +306,7 @@ class EC2Client(CloudClient):
 		)
 
 	def allocate_static_ip(self, instance_id):
-		"""Allocate an Elastic IP and attach it. Releasing one needs the allocation id, never the
-		address."""
+		"""Releasing an Elastic IP needs the allocation id, never the address."""
 		address = self._call(
 			self.ec2.allocate_address,
 			Domain="vpc",
@@ -351,10 +332,9 @@ class EC2Client(CloudClient):
 		return True
 
 	def create_network(self, name, cidr_block, subnet_cidr_block, availability_zone=""):
-		"""Create a VPC with one public subnet: a route to an Internet Gateway and
-		auto-assigned public IPs, so a launched instance is reachable over SSH. Uses the VPC's
-		own default route table — Grove doesn't need a private subnet today. No AZ given → the
-		region's first available one, returned so the caller can record what it got."""
+		"""A VPC with one public subnet: a route to an Internet Gateway and auto-assigned public
+		IPs, so a launched instance is reachable over SSH. Uses the VPC's own default route table —
+		Grove doesn't need a private subnet today. No AZ given → the region's first available one."""
 		availability_zone = availability_zone or self.get_first_availability_zone()
 		vpc_id = self._call(
 			self.ec2.create_vpc, CidrBlock=cidr_block, TagSpecifications=[self._tags("vpc", name)]
@@ -396,8 +376,8 @@ class EC2Client(CloudClient):
 		}
 
 	def get_first_availability_zone(self):
-		"""An available AZ in this region. Any one will do — Grove launches a single public
-		subnet, and which letter it lands in is not a choice worth asking an operator to make."""
+		"""Any one will do — Grove launches a single public subnet, and which letter it lands in is
+		not a choice worth asking an operator to make."""
 		zones = (
 			self._call(
 				self.ec2.describe_availability_zones,
@@ -410,8 +390,6 @@ class EC2Client(CloudClient):
 		return zones[0]["ZoneName"]
 
 	def create_security_group(self, name, description, vpc_id):
-		"""Create a security group in this VPC, tagged so it's identifiable as Grove-managed.
-		Returns its id — freshly created, with no ingress rules yet."""
 		response = self._call(
 			self.ec2.create_security_group,
 			GroupName=name,
@@ -422,7 +400,6 @@ class EC2Client(CloudClient):
 		return response["GroupId"]
 
 	def authorize_ingress(self, security_group_id, rules):
-		"""Open the given ingress rules on an existing security group."""
 		self._call(
 			self.ec2.authorize_security_group_ingress,
 			GroupId=security_group_id,
@@ -430,7 +407,6 @@ class EC2Client(CloudClient):
 		)
 
 	def revoke_ingress(self, security_group_id, rules):
-		"""Close the given ingress rules on an existing security group."""
 		self._call(
 			self.ec2.revoke_security_group_ingress,
 			GroupId=security_group_id,
@@ -438,7 +414,6 @@ class EC2Client(CloudClient):
 		)
 
 	def get_ingress_permissions(self, security_group_id, port):
-		"""This group's ingress permissions for exactly this port, as AWS reports them."""
 		groups = (
 			self._call(self.ec2.describe_security_groups, GroupIds=[security_group_id]).get("SecurityGroups")
 			or []
@@ -452,14 +427,10 @@ class EC2Client(CloudClient):
 		]
 
 	def sync_ingress(self, security_group_id, port, cidrs):
-		"""Make this port's ingress exactly `cidrs`. Returns {opened, closed}.
-
-		Scoped to the one port: every other rule on the group is left alone. A diff that revoked
+		"""Make this port's ingress exactly `cidrs`. Scoped to the one port: a diff that revoked
 		everything it did not recognise would take 22 with it and lock Grove out of the box.
-
-		Security-group sources are revoked too, not just CIDRs that fell out of the set — the
-		desired state is a list of addresses, so any group-to-group rule on this port is by
-		definition not in it."""
+		Security-group sources are revoked too — the desired state is a list of addresses, so any
+		group-to-group rule on this port is by definition not in it."""
 		permissions = self.get_ingress_permissions(security_group_id, port)
 		current = {
 			ip_range["CidrIp"] for permission in permissions for ip_range in permission.get("IpRanges", [])
@@ -481,9 +452,7 @@ class EC2Client(CloudClient):
 		return {"opened": opened, "closed": closed + source_groups}
 
 	def resize_root_volume(self, instance_id, size_gb, timeout_sec=600, poll_interval_sec=10):
-		"""Grow the instance's root volume, waiting until the new size is visible to the OS.
-
-		EBS reports `optimizing` once the size is already usable — the rebalancing behind it can
+		"""EBS reports `optimizing` once the size is already usable — the rebalancing behind it can
 		run for hours and must not be waited out, so that state ends the poll the same as
 		`completed`. AWS refuses a second modification of the same volume for about six hours
 		after one; that arrives as a provider error code rather than a guard here."""
@@ -511,8 +480,8 @@ class EC2Client(CloudClient):
 		raise AWSError(f"Volume {volume_id} was still resizing after {timeout_sec}s")
 
 	def _root_volume_id(self, instance_id):
-		"""The instance's root EBS volume, off its own BlockDeviceMappings. get_instance returns
-		the parsed shape, which does not carry them, so this reads the raw instance."""
+		"""get_instance returns the parsed shape, which does not carry BlockDeviceMappings, so this
+		reads the raw instance."""
 		reservations = (
 			self._call(self.ec2.describe_instances, InstanceIds=[instance_id]).get("Reservations") or []
 		)
@@ -566,8 +535,7 @@ class EC2Client(CloudClient):
 
 	def _parse_instance(self, instance):
 		"""_ec2_state is this client's own — poll_instance_ready reads it to tell a genuine
-		terminal failure from "not running yet". status is the public field; it's already
-		mapped to Grove's vocabulary via machine_status."""
+		terminal failure from "not running yet"."""
 		state = (instance.get("State") or {}).get("Name")
 		return {
 			"instance_id": instance.get("InstanceId"),
@@ -582,7 +550,7 @@ class EC2Client(CloudClient):
 
 	def _root_volume_gb(self, instance):
 		"""The root EBS volume's size — not on the instance itself, so a second call against
-		the volume id root_volume_id finds in its BlockDeviceMappings."""
+		the volume id."""
 		volume_id = root_volume_id(instance)
 		if not volume_id:
 			return 0
@@ -591,8 +559,7 @@ class EC2Client(CloudClient):
 
 	@staticmethod
 	def _call(operation, **kwargs):
-		"""One EC2 call, with botocore's error turned into ours. The AWS message names the
-		exact parameter it rejected, so it is worth surfacing whole."""
+		"""The AWS message names the exact parameter it rejected, so it is worth surfacing whole."""
 		from botocore.exceptions import BotoCoreError, ClientError
 
 		try:

@@ -1,6 +1,4 @@
 <script setup>
-// Every team the window saw: tier, live keys, this month against its spend limit, last served,
-// and the window's usage.
 import { useHost } from "@framework/ui/island";
 import { Badge, Button } from "frappe-ui";
 import { List, ListCell, ListHeader, ListHeaderCell, ListRow, ListRows } from "frappe-ui/list";

@@ -114,7 +114,6 @@ class GatewayStore(NamedHost, Document):
 
 	@frappe.whitelist()
 	def setup(self):
-		"""Button: install Redis on this store's box."""
 		frappe.enqueue_doc(self.doctype, self.name, "provision", queue="long", timeout=1800)
 		frappe.msgprint(f"Provisioning {self.name} — watch its Ansible Plays.", alert=True)
 
@@ -195,8 +194,7 @@ def backup_key(store, at=None):
 
 
 def backup_all():
-	"""Every 5 minutes: each Active store's RDB to its geography's bucket, one after another. A
-	geography without a backup bucket is skipped. One store failing does not stop the next."""
+	"""Every 5 minutes: each Active store's RDB to its geography's bucket, one after another."""
 	geographies = frappe.get_all("Geography", filters={"backup_bucket": ("is", "set")}, pluck="name")
 	if not geographies:
 		return

@@ -1,7 +1,4 @@
 <script setup>
-// Each vendor key's counters over the window, as the gateways kept them since the previous
-// pull: a key the vendor refuses reads red, one it throttles reads amber. Above them, the
-// requests per UTC day of the pull, stacked by a split.
 import { useHost } from "@framework/ui/island";
 import { Badge, Button, Select } from "frappe-ui";
 import { BarChart } from "frappe-ui/charts";

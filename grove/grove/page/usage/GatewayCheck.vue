@@ -1,5 +1,4 @@
 <script setup>
-// On demand, for one team: what the boxes count this month beside what Grove's records hold.
 // Never on load; the boxes are dialled only when the button is pressed.
 import { useHost } from "@framework/ui/island";
 import { Badge, Button, Tooltip } from "frappe-ui";

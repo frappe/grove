@@ -21,8 +21,7 @@ def sync_all():
 
 
 def sync_pods():
-	"""Pods with a provider pod behind them. The routes a status change moves are projected by the
-	scheduled tick."""
+	"""The routes a status change moves are projected by the scheduled tick."""
 	for name in frappe.get_all(
 		"Pod",
 		filters={"pod_id": ("!=", ""), "status": ("!=", "Terminated")},
@@ -51,8 +50,7 @@ def sync_machines():
 
 
 def sync_networks():
-	"""Each Network's security groups, to the fleet as it now stands. AWS is read first and written
-	only where it differs, so a quiet tick changes nothing."""
+	"""AWS is read first and written only where it differs, so a quiet tick changes nothing."""
 	for name in frappe.get_all(
 		"Network",
 		or_filters={

@@ -148,40 +148,34 @@ class InferenceServer(FleetHost, Document):
 
 	@property
 	def hf_home(self):
-		"""The instance-store mount when opted in, the data volume otherwise."""
 		if self.use_instance_store_for_hf_cache:
 			return "/mnt/instance/hf"
 		return f"{self.data_path}/hf"
 
 	@property
 	def machine_doc(self):
-		"""The box this server runs on."""
 		if not self.machine:
 			frappe.throw(f"Inference Server {self.name} has no Machine to reach.")
 		return frappe.get_doc("Machine", self.machine)
 
 	@property
 	def gpus(self):
-		"""The cards on this box, in CUDA index order. `gpu_type` is the catalogue record every
-		source's spelling resolves to, and `vram_gb` is fetched off it."""
+		"""The cards on this box, in CUDA index order."""
 		if not self.machine:
 			return []
 		return cards_on([self.machine])
 
 	def run_command(self, command, timeout=60):
-		"""Run one argv on this server's box over SSH."""
 		return self.machine_doc.run_command(command, timeout=timeout)
 
 	def stream_command(self, command):
-		"""Follow one argv on this server's box, yielding its output line by line."""
 		return self.machine_doc.stream_command(command)
 
 	@frappe.whitelist()
 	def get_gpu_allocation(self):
-		"""The box's GPUs and which replica holds each. One query: the holder is a column on the
-		card, so this panel and the placement that refuses a taken card read the same row.
-
-		A blank `held_by` is genuinely free — a stopped replica released its cards on purpose."""
+		"""The holder is a column on the card, so this panel and the placement that refuses a taken
+		card read the same row. A blank `held_by` is genuinely free — a stopped replica released its
+		cards on purpose."""
 		gpus = self.gpus
 		for gpu in gpus:
 			gpu.deployments = (
@@ -194,9 +188,7 @@ class InferenceServer(FleetHost, Document):
 
 	@property
 	def free_gpus(self):
-		"""`get_gpu_allocation` read the other way round, and live for the same reason.
-
-		A replica pinning no cards claims none, so it does NOT show here: a box running one looks
+		"""A replica pinning no cards claims none, so it does NOT show here: a box running one looks
 		emptier than it is, which is why the scheduler declines such a box."""
 		return [gpu for gpu in self.get_gpu_allocation() if gpu.status == "Free"]
 
@@ -216,9 +208,8 @@ class InferenceServer(FleetHost, Document):
 
 	@frappe.whitelist()
 	def setup(self):
-		"""Button: one-time host bootstrap (NVIDIA driver + data volume) via the
-		gpu_host role. Run once per box before deploying models onto it — Model
-		Deployment.setup gates on is_provisioned."""
+		"""Run once per box before deploying models onto it — Model Deployment.setup gates on
+		is_provisioned."""
 		if not self.machine:
 			frappe.throw("Set a Machine before provisioning.")
 		if not (self.ingress or self.is_standalone):
@@ -238,12 +229,9 @@ class InferenceServer(FleetHost, Document):
 
 	@failure.reports_failure(mark_broken=True)
 	def provision(self):
-		"""One-time host bootstrap for an Inference Server: NVIDIA driver + data
-		volume + Docker (the gpu_host role), then its metrics exporters (node_exporter,
-		dcgm_exporter if the Machine has GPUs) — all in the one provision.yml play, so Setup
-		is a single Ansible run. Runs once per box — model serves (deploy_model) assume an
-		already-provisioned host and gate on is_provisioned. Mirrors deploy_agent on the
-		proxy side."""
+		"""NVIDIA driver + data volume + Docker (the gpu_host role), then its metrics exporters
+		(node_exporter, dcgm_exporter if the Machine has GPUs) — all in the one provision.yml play,
+		so Setup is a single Ansible run."""
 		frappe.db.set_value("Inference Server", self.name, "status", "Installing")
 		frappe.db.commit()
 

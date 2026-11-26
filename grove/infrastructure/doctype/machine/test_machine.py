@@ -1,6 +1,5 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""nvidia-smi parsing and the EC2 instance-type parsers. Pure — no site, box or AWS call."""
 
 import json
 import unittest
@@ -175,7 +174,6 @@ class TestScanWritesTheInterconnect(unittest.TestCase):
 	reconciles — one job, one writer."""
 
 	def scan(self, topo=None):
-		"""Runs the job against fakes. Returns what was written to the Machine."""
 		outputs = {
 			SCAN_TASK: {"stdout": "0, Tesla T4, 15360, GPU-a\n1, Tesla T4, 15360, GPU-b"},
 			TOPO_TASK: {} if topo is None else {"stdout": topo},
@@ -358,10 +356,9 @@ class TestCloudConfig(unittest.TestCase):
 
 
 class TestResizeRootVolume(unittest.TestCase):
-	"""A box's root volume holds the OS, the engine images and every weight, so growing it is
-	the alternative to relaunching and re-downloading all of it. EBS reports `optimizing` once
-	the new size is already usable, with rebalancing that can run for hours behind it — waiting
-	for `completed` would block the job on work the filesystem does not need."""
+	"""EBS reports `optimizing` once the new size is already usable, with rebalancing that can run
+	for hours behind it — waiting for `completed` would block the job on work the filesystem does
+	not need."""
 
 	def client(self, states):
 		"""An EC2Client whose volume modification reports `states` in order, one per poll."""
@@ -801,9 +798,6 @@ class TestSyncDependentServers(IntegrationTestCase):
 
 
 class TestNetworkResolution(IntegrationTestCase):
-	"""network_doc resolution, Network as the one owner of region, and Machine Image
-	resolution (Machine's own, else its Network's — no Cloud Provider fallback for either)."""
-
 	def setUp(self):
 		self.region_a = frappe.get_doc(
 			{
@@ -1059,16 +1053,12 @@ if __name__ == "__main__":
 
 
 class TestTerminatingABoxTakesItsServersWithIt(unittest.TestCase):
-	"""What a Machine going away does to the servers built on it.
-
-	The write has to go THROUGH the document. It used to be db.set_value, which skips validate and
-	on_update — so a Terminated gateway never ran remove_dns_records, and terminating a box left a
-	Route53 multivalue row pointing at an instance that no longer existed. Every client that
-	resolved to that region fell into it, and nothing in the fleet would ever have corrected it.
+	"""The write has to go THROUGH the document: db.set_value skips validate and on_update, so a
+	Terminated gateway never ran remove_dns_records, and terminating a box left a Route53 multivalue
+	row pointing at an instance that no longer existed.
 	"""
 
 	def cascade(self, status="Terminated", dependents=None, failing=None):
-		"""Runs the cascade against fakes. Returns (saved, logged, rollbacks)."""
 		dependents = dependents or {"Gateway Server": ["gw-1"]}
 		saved, logged, rollbacks = [], [], []
 

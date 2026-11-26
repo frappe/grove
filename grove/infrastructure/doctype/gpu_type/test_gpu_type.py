@@ -8,9 +8,4 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []
 
 
 class IntegrationTestGPUType(IntegrationTestCase):
-	"""
-	Integration tests for GPUType.
-	Use this class for testing interactions between multiple components.
-	"""
-
 	pass

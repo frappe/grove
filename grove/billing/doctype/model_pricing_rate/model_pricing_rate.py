@@ -2,8 +2,6 @@ from frappe.model.document import Document
 
 
 class ModelPricingRate(Document):
-	"""One counter's sell rate (child)."""
-
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 

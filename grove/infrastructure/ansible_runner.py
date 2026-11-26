@@ -4,8 +4,8 @@
 Ansible Play / Ansible Task docs.
 
 Modelled on Frappe Press's `press/runner.py`: Ansible in-process via `PlaybookExecutor` with a
-custom `CallbackBase`, rather than shelling out. The callback creates an Ansible Task per task and
-updates it live — `Ansible Task.on_update` publishes realtime to the parent play."""
+custom `CallbackBase`, rather than shelling out. `Ansible Task.on_update` publishes realtime to the
+parent play."""
 
 import json
 import os
@@ -114,11 +114,8 @@ class AnsibleCallback(CallbackBase):
 
 	def _stop_if_asked(self):
 		"""The Stop button writes Stopping from the web process; this is the worker seeing it.
-		Commit first, or the read is a snapshot from before the button.
-
-		Ansible swallows callback exceptions, so raising here would be ignored. terminate() is the
-		supported way out, and the linear strategy checks it both between tasks and while waiting
-		on the running one."""
+		Commit first, or the read is a snapshot from before the button. Ansible swallows callback
+		exceptions, so raising here would be ignored: terminate() is the supported way out."""
 		if self.stopped:
 			return
 		self._bind_frappe()
@@ -322,9 +319,7 @@ def run_play(
 	reference_doctype=None,
 	reference_docname=None,
 ):
-	"""Build a single-host inventory from the Machine and run <project_dir>/<playbook>. Returns
-	(ansible_play_name, rc), rc 0 = success. tags restricts the run, skip_tags excludes.
-	reference_doctype/docname link the Play to the triggering doc."""
+	"""Returns (ansible_play_name, rc), rc 0 = success."""
 	m = frappe.get_doc("Machine", machine_name)
 	if not m.public_ip:
 		frappe.throw(f"Machine {machine_name} has no public_ip")

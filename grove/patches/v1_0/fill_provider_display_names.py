@@ -1,5 +1,3 @@
-"""Model Provider has a Display Name now: the vendors the Select knows get theirs."""
-
 import frappe
 
 LABELS = {

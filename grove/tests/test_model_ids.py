@@ -1,14 +1,9 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""A model id is `<provider>/<name>`, and that is the only id served.
-
-The bare form is deliberately broken rather than kept as an alias: an id that does not say who serves
-it is one nobody can read, and two spellings for one model would have to be carried by the route
-table, the grant projection AND every engine's --served-model-name to stay consistent.
-
-The models that predated this were renamed in place on the one control-plane site, so there is no
-migration to test here — `autoname` runs at insert and is the whole rule.
-"""
+"""A model id is `<provider>/<name>`, and that is the only id served. The bare form is deliberately
+broken rather than kept as an alias: an id that does not say who serves it is one nobody can read, and
+two spellings for one model would have to be carried by the route table, the grant projection AND
+every engine's --served-model-name to stay consistent."""
 
 import unittest
 

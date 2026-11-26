@@ -8,9 +8,4 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []
 
 
 class IntegrationTestSSHKey(IntegrationTestCase):
-	"""
-	Integration tests for SSHKey.
-	Use this class for testing interactions between multiple components.
-	"""
-
 	pass

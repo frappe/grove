@@ -1,7 +1,5 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""Shared helpers. Pure — no site needed."""
-
 import unittest
 
 from grove.utils import (

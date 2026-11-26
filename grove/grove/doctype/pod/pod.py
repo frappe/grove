@@ -135,12 +135,10 @@ class Pod(Document):
 
 	@property
 	def resolved_image(self):
-		"""The Engine Image's ref, registry host included."""
 		return frappe.get_cached_doc("Engine Image", self.engine_image).full_image
 
 	@frappe.whitelist()
 	def spawn(self):
-		"""Spawn this pod on its provider (long job)."""
 		frappe.enqueue(
 			"grove.infrastructure.cloud_provider.provisioner.spawn_pod_doc",
 			# The poll and the engine gate fill 1800 s; the create retries add up on top.
@@ -152,8 +150,7 @@ class Pod(Document):
 
 	@frappe.whitelist()
 	def sync(self):
-		"""Pull the pod's state off the provider and update this Pod. Runs inline for immediate
-		feedback."""
+		"""Runs inline for immediate feedback."""
 		from grove.infrastructure.cloud_provider.provisioner import sync_pod
 
 		res = sync_pod(self.name)
@@ -162,7 +159,6 @@ class Pod(Document):
 
 	@frappe.whitelist()
 	def stop(self):
-		"""Free the GPU but keep the pod and its volume (weights survive); Start resumes it."""
 		frappe.enqueue(
 			"grove.infrastructure.cloud_provider.provisioner.stop_pod",
 			queue="short",
@@ -173,7 +169,6 @@ class Pod(Document):
 
 	@frappe.whitelist()
 	def start(self):
-		"""Resume a stopped pod and re-read its endpoints (the provider re-maps ports)."""
 		frappe.enqueue(
 			"grove.infrastructure.cloud_provider.provisioner.start_pod",
 			queue="long",
@@ -184,10 +179,9 @@ class Pod(Document):
 
 	@frappe.whitelist()
 	def restart(self):
-		"""Apply edited config in place: the provider pod is updated with the current
-		serve_command and resets, keeping its id and volume (so weights are not re-downloaded),
-		then endpoints are re-synced. Refused for an edit the provider can't apply to a live pod
-		— an edited GPU shape needs Terminate + Spawn. Long job."""
+		"""Apply edited config in place: the provider pod is updated with the current serve_command and
+		resets, keeping its id and volume (so weights are not re-downloaded). Refused for an edit the
+		provider can't apply to a live pod — an edited GPU shape needs Terminate + Spawn."""
 		from grove.infrastructure.cloud_provider.provisioner import PodProvisioner
 
 		PodProvisioner(self).validate_restart()
@@ -201,10 +195,9 @@ class Pod(Document):
 
 	@frappe.whitelist()
 	def stream_logs(self):
-		"""Follow the pod's container logs on the Logs tab: a background job relays the
-		provider's stream over realtime for as long as the form keeps pinging keep_streaming.
-		Deduplicated per pod, so a second Start (e.g. after a page reload) does not double up
-		the stream."""
+		"""Follow the pod's container logs on the Logs tab: a background job relays the provider's stream
+		over realtime for as long as the form keeps pinging keep_streaming. Deduplicated per pod, so a
+		second Start (e.g. after a page reload) does not double up the stream."""
 		from grove import log_relay
 
 		if not self.pod_id:
@@ -228,7 +221,6 @@ class Pod(Document):
 
 	@frappe.whitelist()
 	def terminate(self):
-		"""Terminate the provider pod (frees GPU/disk/billing) and mark this Pod Terminated."""
 		frappe.enqueue(
 			"grove.infrastructure.cloud_provider.provisioner.terminate_pod_doc",
 			queue="long",

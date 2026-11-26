@@ -187,8 +187,6 @@ class TestBackup(unittest.TestCase):
 
 
 class TestTheStorePlay(unittest.TestCase):
-	"""What store.yml is given, and what the doc keeps of what it installed."""
-
 	def test_it_gets_the_stores_bind_address_and_password(self):
 		store = SimpleNamespace(listen_ip="10.0.61.9", get_password=lambda field: "pw")
 		self.assertEqual(

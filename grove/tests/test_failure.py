@@ -1,14 +1,9 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""What happens when a background job fails.
-
-The bug these exist for: a Gateway Server provision set status to Installing, committed, then raised
-on a missing password. No Ansible Play was ever created, nothing was written to the doc, and the
-status stayed Installing forever — the only record was the RQ job's traceback, which someone had to
-know to go looking for.
-
-Pure. `frappe.local` and the three reporting calls are patched, so no site and no worker.
-"""
+"""What happens when a background job fails. The bug these exist for: a Gateway Server provision set
+status to Installing, committed, then raised on a missing password. The status stayed Installing
+forever — the only record was the RQ job's traceback. Pure: `frappe.local` and the three reporting
+calls are patched, so no site and no worker."""
 
 import unittest
 from types import SimpleNamespace

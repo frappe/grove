@@ -341,9 +341,9 @@ class FakeExecutor:
 
 
 class TestTheRunCodeComesFromAnsible(unittest.TestCase):
-	"""It used to be read back off the Ansible Play doc. Ansible swallows whatever a callback
-	raises, so a play that lost its DB connection wrote no result — and a finished play whose row
-	still said Running was reported as a failed deploy."""
+	"""Not read back off the Ansible Play doc: Ansible swallows whatever a callback raises, so a
+	play that lost its DB connection wrote no result — and a finished play whose row still said
+	Running was reported as a failed deploy."""
 
 	def rc_of(self, rc, stopped=False, play_status="Running"):
 		from grove.infrastructure.ansible_runner import Ansible

@@ -1,9 +1,8 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Scrape targets Grove hands to a Monitoring Agent.
-
-One vmagent scrapes many boxes, so nothing on a box knows what to scrape — the agent asks here and
-Grove answers out of the docs that already describe the fleet, with no playbook to re-run."""
+"""Scrape targets Grove hands to a Monitoring Agent. One vmagent scrapes many boxes, so nothing on
+a box knows what to scrape — the agent asks here and Grove answers out of the docs that already
+describe the fleet, with no playbook to re-run."""
 
 import hmac
 import json
@@ -25,10 +24,8 @@ GPU_METRICS_PATH = "/metrics/gpu"
 
 
 def run_exporters_play(server):
-	"""The exporters play — htpasswd, node, and DCGM when the Machine has GPU rows — as an Inference
-	Server's Update Scrape Auth button re-runs it. Gateway and Ingress Servers ship with Vector instead.
-
-	The exporters only LISTEN; nothing installed here is told which agent scrapes them."""
+	"""Gateway and Ingress Servers ship with Vector instead. The exporters only LISTEN; nothing
+	installed here is told which agent scrapes them."""
 	machine = frappe.get_doc("Machine", server.machine)
 	if not machine.public_ip:
 		frappe.throw(f"Machine {machine.name} has no public IP — nothing to connect to.")
@@ -44,15 +41,9 @@ def run_exporters_play(server):
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def targets(agent: str, kind: str = "engine", token: str = ""):
-	"""Prometheus http_sd list for one Monitoring Agent.
-
-	kind='host'   → the node and GPU exporters on every inference box that names this agent.
-	kind='engine' → the vLLM engines on those boxes, plus every pod that names it.
-
-	Two kinds because they are scraped at different intervals. A raw Response, not a return
-	value: http_sd wants a bare JSON array, and Frappe would otherwise wrap it in its
-	{"message": ...} envelope, which vmagent rejects.
-
+	"""Prometheus http_sd list for one Monitoring Agent. Two kinds because they are scraped at
+	different intervals. A raw Response, not a return value: http_sd wants a bare JSON array, and
+	Frappe would otherwise wrap it in its {"message": ...} envelope, which vmagent rejects.
 	Guest-whitelisted and authenticated on `token` instead: Frappe's validate_auth rejects any
 	Authorization header it cannot resolve to a user before a whitelisted method ever runs, so
 	an agent carrying a bare shared secret can only reach here through the query string."""
@@ -62,13 +53,10 @@ def targets(agent: str, kind: str = "engine", token: str = ""):
 
 
 def authenticate(token):
-	"""The Service Discovery Token from Grove Settings, compared in constant time.
-
-	This is the whole of what stands between the internet and the fleet's inventory, so an UNSET
-	token refuses rather than waving everyone through.
-
-	A signed-in user who may read the agent skips it — that is the form's Show Targets button, and
-	putting the shared secret in a browser URL would only spread it around."""
+	"""This is the whole of what stands between the internet and the fleet's inventory, so an UNSET
+	token refuses rather than waving everyone through. A signed-in user who may read the agent
+	skips it — that is the form's Show Targets button, and putting the shared secret in a browser
+	URL would only spread it around."""
 	if frappe.session.user != "Guest" and frappe.has_permission("Monitoring Agent", "read"):
 		return
 
@@ -80,8 +68,7 @@ def authenticate(token):
 
 
 def host_targets(agent):
-	"""Exporter targets for every inference box this agent owns, and its own. Gateway and Ingress
-	Servers are never here: they ship their host metrics with Vector."""
+	"""Gateway and Ingress Servers are never here: they ship their host metrics with Vector."""
 	return build_host_targets(inference_boxes(agent), agent_network(agent)) + agent_targets(agent)
 
 
@@ -93,15 +80,10 @@ def agent_network(agent):
 
 
 def agent_targets(agent):
-	"""The agent's own box — nothing else names it, and an agent that cannot see its own disk
-	filling is the blind spot that matters: vmagent's queue depth is how a broken pipeline
-	announces itself before anyone notices a gap in a dashboard.
-
-	Scraped over localhost, so nothing here needs a security group rule.
-
-	Not through a TLS front like the fleet's, and so not built by exporter_entry: this box
-	carries no Inference or Gateway Server doc, so nothing ever installs nginx on it. Plain http,
-	the default /metrics, and an address that is already unique per port."""
+	"""The agent's own box — nothing else names it, and vmagent's queue depth is how a broken
+	pipeline announces itself. Scraped over localhost, so nothing here needs a security group rule.
+	Not built by exporter_entry: this box carries no Inference or Gateway Server doc, so nothing
+	ever installs nginx on it — plain http and the default /metrics."""
 	box = frappe.db.get_value("Monitoring Agent", agent, ["machine", "region"], as_dict=True)
 	if not box:
 		return []
@@ -113,8 +95,7 @@ def agent_targets(agent):
 
 
 def engine_targets(agent):
-	"""Every Active deployment on this agent's boxes, and every Running pod that names it. Both at
-	their engine_url — the address the gateway already routes to."""
+	"""Deployments and pods both at their engine_url — the address the gateway already routes to."""
 	network = agent_network(agent)
 	boxes = {box["name"]: box for box in inference_boxes(agent)}
 	deployments = (
@@ -155,7 +136,6 @@ _GONE_STATUS = "Terminated"
 
 
 def inference_boxes(agent):
-	"""Inference Servers this agent scrapes, as plain rows: name, box, address, GPUs."""
 	servers = frappe.get_all(
 		"Inference Server",
 		filters={"monitoring_agent": agent, "status": ("!=", _GONE_STATUS)},
@@ -215,13 +195,11 @@ def build_host_targets(boxes, viewer_network=""):
 
 
 def exporter_entry(address, port, metrics_path, labels, instance_ip=None):
-	"""One exporter, scraped through its box's TLS front rather than on its own port.
-
-	`instance` is set explicitly because the address is now `<ip>:443` for every exporter on the
-	box — node and DCGM would collapse into one series name. It keeps the exporter's own port, and
-	the box's PUBLIC address even when scraped privately: the address is where to connect,
-	`instance` is which exporter this is, and a box gaining a private IP must not rename every
-	series it has ever reported."""
+	"""One exporter, scraped through its box's TLS front rather than on its own port. `instance` is
+	set explicitly because the address is `<ip>:443` for every exporter on the box — node and DCGM
+	would collapse into one series name. It keeps the exporter's own port, and the box's PUBLIC
+	address even when scraped privately: a box gaining a private IP must not rename every series
+	it has ever reported."""
 	return {
 		"targets": [f"{address}:{BOX_HTTPS_PORT}"],
 		"labels": {
@@ -234,14 +212,10 @@ def exporter_entry(address, port, metrics_path, labels, instance_ip=None):
 
 
 def engine_entry(engine_url, labels, address=None):
-	"""One entry for an engine, addressed where the gateway routes it unless `address` says to
-	reach it privately. None when there is no URL yet.
-
-	Derived from the URL rather than branched on the engine kind: a deployment sits behind its
-	box's front at `https://<ip>/e/<slug>` while a pod keeps `http://<host>:<port>`, and both fall
-	out of the same two lines.
-
-	Only the address moves. `engine` and `instance` stay the public URL — the join back to the
+	"""Addressed where the gateway routes it unless `address` says to reach it privately; None when
+	there is no URL yet. Derived from the URL rather than branched on the engine kind: a deployment
+	sits behind its box's front at `https://<ip>/e/<slug>` while a pod keeps `http://<host>:<port>`.
+	Only the address moves: `engine` and `instance` stay the public URL — the join back to the
 	route, and what tells two engines on one box apart."""
 	parsed = urlparse(engine_url or "")
 	if not parsed.hostname:

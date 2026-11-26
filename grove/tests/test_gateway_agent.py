@@ -1,16 +1,10 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
 """What the Deploy Agent button ships. Pure — the doc is a SimpleNamespace and run_playbook is
-recorded, so no site and no SSH.
-
-The play writes /etc/pathway/agent.env whole, from extra-vars. That file holds every listener,
-name, path and secret the gateway has, so a caller that omits one variable does not leave a stale
-value behind — it writes a BLANK one. Blank is fatal for the admin token and silently wrong for a
-hostname, which is why these pin that the button passes everything the file renders.
-
-The tunables are the other half, and they go to config.json instead. Both are asserted here because
-one button ships both.
-"""
+recorded, so no site and no SSH. The play writes /etc/pathway/agent.env whole, from extra-vars, so a
+caller that omits one variable does not leave a stale value behind — it writes a BLANK one. Blank is
+fatal for the admin token and silently wrong for a hostname. The tunables go to config.json instead;
+both are asserted here because one button ships both."""
 
 import re
 import unittest

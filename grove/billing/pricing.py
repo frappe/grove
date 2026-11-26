@@ -1,12 +1,8 @@
-"""Prices per counter, and what each key spent at them this month.
-
-One rate table, joined at evaluation and never snapshotted onto usage: SELL on `Model Pricing`.
-A drain is priced by the pricing id the gateway tagged each request with, so both sides price the
-same counters at the same rates.
-
-No spend is stored on a key or a team: `month_spent_by` sums this month off the records and the
-corrections; a landed drain, a key, the team or its tier saved forgets the team's figures
-(`forget_figures`)."""
+"""Prices per counter, and what each key spent at them this month. One rate table, joined at
+evaluation and never snapshotted onto usage: SELL on `Model Pricing`. A drain is priced by the
+pricing id the gateway tagged each request with, so both sides price the same counters at the same
+rates. No spend is stored on a key or a team: `month_spent_by` sums this month off the records and
+the corrections."""
 
 from decimal import Decimal
 
@@ -22,10 +18,9 @@ FIGURES_SECONDS = 30 * 60
 
 
 class CounterTable:
-	"""Every Usage Counter the site holds: roots first, each group in catalog order. Built from rows (`name` or `counter_name`, `unit`, `part_of`, `base_counter`,
-	`min_prompt_tokens`), so the catalog's rows serve the pure tests. Each pricing is pushed with its
-	own rows (`get_priced`); `parts` of a derived counter are the variants of its base's parts at
-	the same threshold, which is what `validate` guarantees exist."""
+	"""Every Usage Counter the site holds: roots first, each group in catalog order. Built from rows
+	(`name` or `counter_name`), so the catalog's rows serve the pure tests. Each pricing is pushed
+	with its own rows (`get_priced`)."""
 
 	FIELDS = ("name", "label", "unit", "part_of", "base_counter", "min_prompt_tokens")
 
@@ -182,7 +177,6 @@ class PriceBook:
 		return {counter: nano(rate) for counter, rate in self.pricing(pricing_id).rates.items()}
 
 	def pricing_cost(self, pricing_id, counts):
-		"""USD for `{counter: amount}` charged at `pricing_id`."""
 		return cost(counts, self.pricing(pricing_id).rates, self.counters)
 
 
@@ -202,13 +196,12 @@ def usd(amount):
 def committed(team, caps=None, lock=True, box_spent=None):
 	"""USD of the team's spend limit the month has spoken for: each live key's cap or what it spent
 	this month, whichever is more, plus what its revoked keys spent — a revoke frees a cap, never
-	the spend. `caps` are proposed caps by key name, over the live keys' own; one for a key with no
-	row yet counts as given. `box_spent` is what the boxes count for each key this month
-	(`usage.peek_team`): a key's month is that or the records, whichever is more — the records lag
-	the boxes by up to an hour, the boxes lose what a restore or a dead spool line left behind, and
-	everything recorded was counted on a box first, so a sum would double. `lock` reads the keys
-	FOR UPDATE, so two raises serialized on the team row see each other's caps rather than the
-	snapshot taken before the lock."""
+	the spend. `caps` are proposed caps by key name; one for a key with no row yet counts as given.
+	A key's month is `box_spent` (`usage.peek_team`) or the records, whichever is more — the
+	records lag the boxes by up to an hour, the boxes lose what a restore or a dead spool line left
+	behind, and everything recorded was counted on a box first, so a sum would double. `lock` reads
+	the keys FOR UPDATE, so two raises serialized on the team row see each other's caps rather than
+	the snapshot taken before the lock."""
 	keys = frappe.db.sql(
 		"select name, cap, status from `tabGrove API Key` where team = %s" + (" for update" if lock else ""),
 		[team],
@@ -230,8 +223,7 @@ def month_spent_by(field, names):
 	on a day of this UTC month — the gateway's own day, so the month its `spent:<month>` counts —
 	the corrections Grove made on one among them. A revoked key counts: what it spent is still
 	the team's. A key's sum is its records under the team holding it now: what a handed-over key
-	spent as a trial's stays the trial team's (`GroveAPIKey.transfer`). One grouped query
-	however many names."""
+	spent as a trial's stays the trial team's (`GroveAPIKey.transfer`)."""
 	if field not in MONTH_SPENT_BY:
 		raise ValueError(f"month_spent_by sums by one of {MONTH_SPENT_BY}, not {field!r}")
 	if not names:
@@ -247,7 +239,6 @@ def month_spent_by(field, names):
 
 
 def validate_price_rows(rows, key):
-	"""No blank or negative rate; no two rows `key` reads the same. 0 is a price: free."""
 	seen = set()
 	for row in rows:
 		if row.rate is None:

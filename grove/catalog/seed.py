@@ -1,5 +1,5 @@
-"""What a site starts with: usage counters, modalities, geographies, cloud accounts, regions,
-tiers, providers, vendor models and model groups, read from `catalog.json`. Not Frappe fixtures: those delete and re-insert on every migrate, secrets included."""
+"""What a site starts with, read from `catalog.json`. Not Frappe fixtures: those delete and
+re-insert on every migrate, secrets included."""
 
 import json
 from pathlib import Path
@@ -53,7 +53,6 @@ def insert_missing(path=None):
 
 
 def insert_named(doctype, entry, ignore_mandatory=False):
-	"""A doc the catalog names outright, skipped when the site holds one of that name."""
 	if frappe.db.exists(doctype, entry["name"]):
 		return
 	doc = frappe.get_doc({"doctype": doctype, **entry})
@@ -90,10 +89,8 @@ def insert_model(model, geography):
 
 def insert_model_group(group, docs):
 	"""A group the site lacks, in the geography its models landed in — `docs` is their doc per
-	key. One the site holds gains the rows it lacks. That geography's default only when it has
-	none."""
+	key. That geography's default only when it has none."""
 	if frappe.db.exists("Model Group", group["name"]):
-		# dont touch the group if it already exists
 		return
 
 	rows = [{"model": docs[key]} for key in group["models"]]
@@ -122,12 +119,10 @@ def default_geography():
 
 
 def get_model_key(model):
-	"""The entry's model key."""
 	return f"{model['provider']}/{model['model_id']}"
 
 
 def get_rates(model_key, path=None):
-	"""The catalog's rate rows for a model key, [] when it prices none."""
 	for model in read(path)["models"]:
 		if get_model_key(model) == model_key:
 			return model.get("rates") or []

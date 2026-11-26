@@ -1,15 +1,7 @@
-"""What the gateway plays put on a box.
-
-Replaces the nginx-template tests. Those asserted which *server block* a location landed under,
-because nginx would not tell you — every wrong arrangement parses. There is no nginx now, so what is
-left to get wrong is the configuration itself, and it splits in two:
-
-  agent.env    identity, secrets, sockets, paths — a restart to change
-  config.json  tunables — re-read on SIGUSR1
-
-The rule worth a test is that those two stay DISJOINT. A value in both is the bug this split exists
-to prevent, and nothing in the binary would report it — whichever half lost would simply be ignored.
-"""
+"""What the gateway plays put on a box. The configuration splits in two: agent.env (identity, secrets,
+sockets, paths — a restart to change) and config.json (tunables — re-read on SIGUSR1). The rule worth
+a test is that those two stay DISJOINT: nothing in the binary would report a value in both — whichever
+half lost would simply be ignored."""
 
 import json
 import pathlib
@@ -115,12 +107,9 @@ class TestTheTwoHalvesStayDisjoint(unittest.TestCase):
 
 
 class TestAgentEnvIsWrittenWhole(unittest.TestCase):
-	"""Every play writes the file complete, never a fragment.
-
-	A partial write is the failure that matters: agent.env is `copy`, not `lineinfile`, so a play
+	"""A partial write is the failure that matters: agent.env is `copy`, not `lineinfile`, so a play
 	that omitted a variable would silently drop it — and a gateway missing GROVE_SELF_HOST serves
-	its admin plane on no name at all.
-	"""
+	its admin plane on no name at all."""
 
 	REQUIRED: ClassVar[dict] = {
 		"GROVE_ADMIN_TOKEN",
@@ -176,12 +165,9 @@ class TestAgentEnvIsWrittenWhole(unittest.TestCase):
 class TestDeployingIsNotATrafficEvent(unittest.TestCase):
 	def test_a_new_binary_reloads_rather_than_restarts(self):
 		"""SIGHUP hands the listening sockets to a child that serves immediately; a restart would cut
-		every stream in flight, and a stream here runs for minutes.
-
-		reload-or-restart rather than the systemd module's `state: reloaded`, which fails outright on
-		a unit that is not active — and a box whose gateway is down is exactly the one someone is
-		shipping a new binary to. That refusal turned a fixable box into a deploy that could not run.
-		"""
+		every stream in flight, and a stream here runs for minutes. reload-or-restart rather than the
+		systemd module's `state: reloaded`, which fails outright on a unit that is not active — and a
+		box whose gateway is down is exactly the one someone is shipping a new binary to."""
 		for name in ("gateway_server/deploy_agent.yml", "ingress_server/deploy_agent.yml"):
 			with self.subTest(name):
 				binary = next(t for t in tasks(name) if t.get("name") == "install pathway binary")
@@ -215,18 +201,11 @@ class TestDeployingIsNotATrafficEvent(unittest.TestCase):
 
 
 class TestUsageSurvivesTheBoxRestarting(unittest.TestCase):
-	"""Redis persistence has to be true of the RUNNING server, not just the config file.
-
-	Usage counters are the only thing a gateway originates — keys, users, groups and routes are
-	projections the control plane can push again, but a token count that is lost is money. They live
-	in Redis until the control plane drains them every five minutes, so a Redis without AOF loses up
-	to five minutes of billing on any restart.
-
-	It had silently diverged on a live box: the config block was present and correct, its
-	`notify: restart redis` had never fired, and every run since reported the file unchanged — so it
-	never notified again and Redis ran on the defaults for the life of the box. A gateway with no AOF
-	looks exactly like one with AOF until it restarts, which is why nothing surfaced it.
-	"""
+	"""Redis persistence has to be true of the RUNNING server, not just the config file. Usage
+	counters are the only thing a gateway originates, and they live in Redis until the control plane
+	drains them every five minutes, so a Redis without AOF loses up to five minutes of billing on any
+	restart. It had silently diverged on a live box: the config block was correct, its
+	`notify: restart redis` had never fired, and every run since reported the file unchanged."""
 
 	def setUp(self):
 		self.tasks = yaml.safe_load((PLAYBOOKS / "roles/redis/tasks/main.yml").read_text())
@@ -289,11 +268,8 @@ class TestOpenRestyIsGoneFromTheseBoxes(unittest.TestCase):
 
 
 def directives(unit_text):
-	"""The unit's actual settings, comments excluded.
-
-	Substring matching against the whole file is what let an earlier version of this pass against a
-	COMMENT that said "no Type=notify" — the assertion read as prose and no one noticed.
-	"""
+	"""The unit's actual settings, comments excluded: substring matching against the whole file
+	passes against a COMMENT that says "no Type=notify"."""
 	settings = {}
 	for line in unit_text.splitlines():
 		line = line.strip()
@@ -310,13 +286,10 @@ class TestTheUnitCanSurviveAnUpgrade(unittest.TestCase):
 		self.settings = directives(self.unit)
 
 	def test_systemd_follows_the_child_pid(self):
-		"""An upgrade replaces the process, and systemd has to be told which one took over.
-
-		The PID file does it: systemd re-reads it when the main process exits and adopts whatever
-		pid is in it. That is tableflip's documented integration and it was verified against systemd
-		directly — three consecutive upgrades, MainPID tracking the file each time — which is why
-		there is no sd_notify handshake here to go wrong.
-		"""
+		"""An upgrade replaces the process, and systemd has to be told which one took over. The PID
+		file does it: systemd re-reads it when the main process exits and adopts whatever pid is in
+		it. That is tableflip's documented integration, which is why there is no sd_notify handshake
+		here to go wrong."""
 		self.assertEqual("/run/pathway/pathway.pid", self.settings["PIDFile"])
 		self.assertNotIn("Type", self.settings)
 		self.assertNotIn("NotifyAccess", self.settings)

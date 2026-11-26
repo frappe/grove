@@ -1,22 +1,7 @@
-"""Announce a background failure instead of leaving it in the RQ job.
-
-Grove's work happens in workers: a button enqueues, the caller gets "queued, watch its Ansible
-Plays", and the browser moves on. Until this existed, a failure after that point was invisible —
-no toast, no notification, and often nothing on the doc either. The whole record was the job's
-traceback, which you have to know to go looking for.
-
-Three things go wrong, and they surface differently:
-
-- **The job raises.** The doc keeps whatever transitional status it was set to on the way in.
-  `reports_failure` covers this.
-- **A playbook returns non-zero.** `run_play` returns `(name, 1)` and never raises, and six callers
-  discard the code entirely. `AnsiblePlay.on_update` covers every caller at once.
-- **A provider call dies mid-lifecycle.** `PodProvisioner.fail` swallows and returns; it calls
-  `report` directly.
-
-What it does NOT do is decide anything. Reporting is not error handling: `reports_failure` re-raises
-so the worker still fails the job and Frappe still writes its Error Log.
-"""
+"""Announce a background failure instead of leaving it in the RQ job: a toast and a notification,
+since work runs in workers and the caller has moved on. `reports_failure` covers a job that raises,
+`AnsiblePlay.on_update` a playbook that returns non-zero, and `PodProvisioner.fail` calls `report`
+itself. Reporting decides nothing: `reports_failure` re-raises, so the job still fails."""
 
 import functools
 
@@ -27,12 +12,8 @@ IN_PROGRESS = ("Installing", "Provisioning")
 
 
 def report(doctype, name, title, detail, *, mark_broken=False):
-	"""Put a failure where someone will see it.
-
-	Two audiences, because they miss each other: the toast reaches whoever is still on the page,
-	the notification reaches them after they have closed it. Neither is durable — what is there
-	next week is the Error Log and the doc's own Ansible Plays.
-	"""
+	"""A toast reaches whoever is still on the page, a notification whoever has left it. Neither is
+	durable: next week it is the Error Log and the doc's Ansible Plays."""
 	if not doctype or not name:
 		return
 	frappe.local.grove_failure_reported = True
@@ -45,12 +26,8 @@ def report(doctype, name, title, detail, *, mark_broken=False):
 
 
 def reports_failure(mark_broken=False, doctype=None):
-	"""Decorator for something that runs in a worker. Reports, then RE-RAISES: this is a reporting
-	layer, not a rescue, so the worker still fails the job and Frappe still writes the Error Log.
-
-	Wraps both shapes Grove enqueues — a bound method finds the doc on `self`, a module-level job
-	takes the docname first and names its doctype here.
-	"""
+	"""Reports, then RE-RAISES. A bound method finds the doc on `self`; a module-level job takes the
+	docname first and names its doctype here."""
 
 	def decorate(method):
 		@functools.wraps(method)
@@ -75,13 +52,9 @@ def reports_failure(mark_broken=False, doctype=None):
 
 
 def _mark_broken(doctype, name):
-	"""Stop the doc claiming it is still mid-install: a Gateway Server sat at Installing
-	indefinitely, looking like a slow provision rather than a dead one.
-
-	Only from a transitional status. Written with db.set_value to match every other status write on
-	these paths, which stay outside the document lifecycle so a provision does not re-trigger a
-	sync.
-	"""
+	"""Only from a transitional status, so a dead provision stops looking like a slow one. Written
+	with db.set_value to match every other status write on these paths, which stay outside the
+	document lifecycle so a provision does not re-trigger a sync."""
 	meta = frappe.get_meta(doctype)
 	status_field = meta.get_field("status")
 	if not status_field or "Broken" not in (status_field.options or "").split("\n"):
@@ -93,12 +66,8 @@ def _mark_broken(doctype, name):
 
 
 def _toast(doctype, name, title, detail):
-	"""The half that arrives while someone is still looking.
-
-	execute_job sets the session to whoever enqueued the job, so this lands on the person who
-	clicked the button with no room or subscription to arrange. Fire-and-forget by nature — if they
-	navigated away it is gone, which is what the notification below is for.
-	"""
+	"""execute_job sets the session to whoever enqueued the job, so this lands on the person who
+	clicked the button with no room or subscription to arrange."""
 	try:
 		frappe.msgprint(
 			f"{name}: {detail}" if detail else name,
@@ -112,15 +81,10 @@ def _toast(doctype, name, title, detail):
 
 
 def _notify(doctype, name, title, detail):
-	"""The half that survives a closed tab.
-
-	type="Alert" is load-bearing: make_notification_logs drops a notification whose recipient is
+	"""type="Alert" is load-bearing: make_notification_logs drops a notification whose recipient is
 	also its sender for every other type, and someone provisioning their own box is exactly that.
-
 	Administrator is skipped by the framework, so a job with no real session — the scheduler —
-	produces no notification here. That is a different audience needing a different channel, and it
-	is why the scheduled syncs are not wired into this.
-	"""
+	produces no notification here: it is why the scheduled syncs are not wired into this."""
 	user = frappe.session.user
 	if not user or user == "Guest":
 		return
@@ -142,5 +106,4 @@ def _notify(doctype, name, title, detail):
 
 
 def _label(method):
-	"""'_deploy_agent' → 'Deploy agent'. What the operator pressed, near enough."""
 	return method.__name__.lstrip("_").replace("_", " ").capitalize()

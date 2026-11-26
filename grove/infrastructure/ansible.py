@@ -21,9 +21,8 @@ class AnsibleHost:
 		return self.machine
 
 	def run_playbook(self, playbook, project=None, extravars=None, **kwargs):
-		"""Run one playbook against this doc's box, tracked as an Ansible Play. `project` names
-		another doctype's folder when the play is shared — exporters.yml belongs to Monitoring
-		Agent but runs against Inference and Gateway Server boxes."""
+		"""`project` names another doctype's folder when the play is shared — exporters.yml belongs
+		to Monitoring Agent but runs against Inference and Gateway Server boxes."""
 		ansible = Ansible(project_root=ansible_project_dir(project or self.doctype))
 		return ansible.run_playbook(
 			playbook_name=playbook,
@@ -36,34 +35,13 @@ class AnsibleHost:
 
 
 class Ansible:
-	"""Wrapper around ansible_runner. Knows the default project directory
-	(playbooks/) and provides clean API for running playbooks.
-
-	Two usage styles:
+	"""Two usage styles:
 
 	1. Direct (ad-hoc): Ansible(playbook="site.yml", server="10.0.0.1", user="root", variables={...}).run()
 	2. Doctype-integrated: Ansible(project_root=...).run_playbook(playbook_name=..., server_type=..., ...)
 	"""
 
 	def __init__(self, playbook=None, project_root=None, server=None, user=None, port=None, variables=None):
-		"""Initialize Ansible. Two modes:
-
-		Ad-hoc mode (direct server):
-			Ansible(playbook="site.yml", server="10.0.0.1", user="root", variables={...})
-			  → run() executes immediately
-
-		Doctype-integrated mode (no immediate run):
-			Ansible(project_root="/path/to/ansible")
-			  → run_playbook(...) runs with Frappe-tracked Ansible Play/Task
-
-		Args:
-			playbook: Playbook name for ad-hoc mode
-			project_root: Custom Ansible project root (defaults to playbooks/)
-			server: Server IP/hostname for ad-hoc mode
-			user: SSH user for ad-hoc mode (default: root)
-			port: SSH port for ad-hoc mode (default: 22)
-			variables: Dict of Ansible variables for ad-hoc mode
-		"""
 		self.playbook = playbook
 		self.server = server
 		self.user = user or "root"
@@ -76,8 +54,7 @@ class Ansible:
 			self.project_root = playbooks_root()
 
 	def run(self):
-		"""Execute playbook in ad-hoc mode (direct server connection, no Frappe tracking).
-		Requires self.playbook, self.server to be set."""
+		"""Ad-hoc mode: direct server connection, no Frappe tracking."""
 		if not self.playbook or not self.server:
 			raise ValueError("Ad-hoc mode requires playbook= and server= arguments")
 
@@ -108,11 +85,6 @@ class Ansible:
 		return rc
 
 	def _resolve_playbook_path(self, playbook_name):
-		"""Resolve playbook name to full path. Searches:
-		1. playbooks/{name}
-		2. {name}
-		3. {name}.yml
-		Returns the path if found, else raises error."""
 		candidates = [
 			os.path.join(self.project_root, "playbooks", playbook_name),
 			os.path.join(self.project_root, playbook_name),
@@ -141,22 +113,9 @@ class Ansible:
 		reference_doctype=None,
 		reference_docname=None,
 	):
-		"""Run a playbook via ansible_runner with Frappe tracking (Ansible Play/Task docs).
-		Doctype-integrated mode — requires server_type + server_name for Frappe tracking.
-
-		Args:
-			playbook_name: Name of the playbook (e.g. "bootstrap.yml", "inference-host")
-			server_type: DocType of the server (Machine, Gateway Server, etc.)
-			server_name: Name of the server doc
-			machine_name: Name of the Machine doc (same as server_name for Machine, different for role servers)
-			extravars: Optional dict of extra variables to pass to Ansible
-			skip_tags: Optional list of tags to skip (e.g. ["heavy"])
-			reference_doctype: Optional DocType that triggered this play (defaults to server_type)
-			reference_docname: Optional doc name that triggered this play (defaults to server_name)
-
-		Returns:
-			(play_name, rc): Ansible Play doc name and return code (0 = success)
-		"""
+		"""Doctype-integrated mode, tracked as Ansible Play/Task docs. `machine_name` is the Machine
+		doc: same as `server_name` for Machine, different for role servers. Returns (play_name, rc),
+		rc 0 = success."""
 		playbook_path = self._resolve_playbook_path(playbook_name)
 
 		kwargs = {
@@ -191,7 +150,6 @@ def task_result(play_name, task_name):
 
 
 def get_ansible(project_root=None):
-	"""Get or create the default Ansible instance."""
 	global _ansible_instance
 	if _ansible_instance is None:
 		_ansible_instance = Ansible(project_root)

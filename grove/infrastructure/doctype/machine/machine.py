@@ -104,7 +104,6 @@ class Machine(GeneratedName, AnsibleHost, Document):
 
 	@frappe.whitelist()
 	def scan_gpus(self):
-		"""Button: read the box's real inventory off nvidia-smi and rewrite the GPU table."""
 		if not self.public_ip:
 			frappe.throw(f"Machine {self.name} has no public IP — nothing to connect to.")
 		frappe.enqueue(
@@ -117,16 +116,15 @@ class Machine(GeneratedName, AnsibleHost, Document):
 
 	@frappe.whitelist()
 	def get_gpus(self):
-		"""This box's cards, with whatever holds each. Read live off the `GPU` records rather than
-		a stored summary, so the panel cannot drift from what placement sees."""
+		"""Read live off the `GPU` records rather than a stored summary, so the panel cannot drift
+		from what placement sees."""
 		from grove.infrastructure.doctype.gpu.gpu import cards_on
 
 		return cards_on([self.name])
 
 	@frappe.whitelist()
 	def gpu_memory(self):
-		"""Button: what each GPU is using right now. Nothing is stored — the numbers are stale the
-		moment they arrive."""
+		"""Nothing is stored — the numbers are stale the moment they arrive."""
 		if not self.public_ip:
 			frappe.throw(f"Machine {self.name} has no public IP — nothing to connect to.")
 		# ponytail: runs Ansible in the request (~10s) because the dialog needs the answer,
@@ -174,17 +172,14 @@ class Machine(GeneratedName, AnsibleHost, Document):
 
 	@property
 	def network_doc(self):
-		"""This Machine's Network. None for on-prem, or an AWS box with no Network linked."""
 		return frappe.get_cached_doc("Network", self.network) if self.network else None
 
 	def get_security_group_ids(self, network):
-		"""The Network's proxy or inference list, by Machine Type. Empty when there's no Network.
-
-		Ingress takes the proxy list: it needs the same 80/443 open, to gateways that sit in no
+		"""Ingress takes the proxy list: it needs the same 80/443 open, to gateways that sit in no
 		Network of their own and to Route53 health checkers whose addresses are AWS's to change.
 		A Monitoring Agent takes the inference list — vmagent and node_exporter both bind
-		127.0.0.1 and everything else is outbound, so the proxy list would open 80/443 for
-		nothing. A Gateway Store takes its own: 6379 to the Network's VPC."""
+		127.0.0.1 and everything else is outbound. A Gateway Store takes its own: 6379 to the
+		Network's VPC."""
 		if not network:
 			return []
 		if not self.machine_type:
@@ -203,7 +198,6 @@ class Machine(GeneratedName, AnsibleHost, Document):
 
 	@frappe.whitelist()
 	def provision(self):
-		"""Button: launch this box on EC2."""
 		self.validate_launchable()
 		frappe.enqueue_doc(self.doctype, self.name, "launch", queue="long", timeout=3000)
 		frappe.msgprint(f"Provisioning {self.name} — reload when it reports Active.", alert=True)
@@ -234,10 +228,8 @@ class Machine(GeneratedName, AnsibleHost, Document):
 
 	@failure.reports_failure(mark_broken=False)
 	def launch(self):
-		"""Job: run the instance, wait for it to be reachable, record what AWS gave back and seed
-		the GPU table from the instance type. A failure before instance_id is set resets status to
-		Draft rather than stranding the Machine at Pending — the UI only offers Provision again once
-		it's back."""
+		"""A failure before instance_id is set resets status to Draft rather than stranding the
+		Machine at Pending — the UI only offers Provision again once it's back."""
 		self.db_set("status", "Pending", commit=True)
 		try:
 			client = self.cloud_client
@@ -302,7 +294,6 @@ class Machine(GeneratedName, AnsibleHost, Document):
 
 	@frappe.whitelist()
 	def set_termination_protection(self, enabled: int):
-		"""Button: lock or unlock this box against terminate, at the provider itself."""
 		self.require_instance()
 		self.cloud_client.set_termination_protection(self.instance_id, bool(enabled))
 		self.db_set("termination_protection", int(enabled), commit=True)
@@ -336,8 +327,8 @@ class Machine(GeneratedName, AnsibleHost, Document):
 		self.sync_instance_type(client)
 
 	def sync_dependent_servers(self):
-		"""Reflect this Machine no longer serving onto every server doc built on it. Terminated
-		propagates as Terminated, Stopped/Pending as Broken (Start can still bring those back)."""
+		"""Terminated propagates as Terminated, Stopped/Pending as Broken (Start can still bring
+		those back)."""
 		if self.status not in ("Terminated", "Stopped", "Pending"):
 			return
 		dependent_status = "Terminated" if self.status == "Terminated" else "Broken"
@@ -356,11 +347,8 @@ class Machine(GeneratedName, AnsibleHost, Document):
 	def mark_dependent(self, doctype, name, status):
 		"""Write the status THROUGH the document, not with db.set_value: the consequences live in
 		on_update — a Terminated gateway gives up its DNS records and comes out of the inference
-		security groups. Skipping that left a Route53 multivalue row pointing at a box that no
-		longer existed, a black hole for everything resolving to it.
-
-		Guarded per document: save() runs validate, so one dependent failing for an unrelated
-		reason would otherwise abort the termination halfway. Rolled back to before it and logged."""
+		security groups. Guarded per document: save() runs validate, so one dependent failing for
+		an unrelated reason would otherwise abort the termination halfway."""
 		frappe.db.savepoint("mark_dependent")
 		try:
 			doc = frappe.get_doc(doctype, name)
@@ -373,12 +361,10 @@ class Machine(GeneratedName, AnsibleHost, Document):
 			)
 
 	def sync_instance_type(self, client):
-		"""What this instance type is and ships: architecture, bare metal, ephemeral NVMe, GPUs.
-		Reads the type and never the instance, so it runs at preflight too and the architecture
-		and boot timeout are known before anything needs them.
-
-		GPUs are seeded only when the box has NONE: a scanned card is nvidia-smi's answer and is
-		never overwritten by the provider's coarser one."""
+		"""Reads the type and never the instance, so it runs at preflight too and the architecture
+		and boot timeout are known before anything needs them. GPUs are seeded only when the box
+		has NONE: a scanned card is nvidia-smi's answer and is never overwritten by the provider's
+		coarser one."""
 		if not self.instance_type:
 			return
 		info = client.get_instance_type_info(self.instance_type)
@@ -400,8 +386,8 @@ class Machine(GeneratedName, AnsibleHost, Document):
 
 	@frappe.whitelist()
 	def stop(self):
-		"""Button: stop the instance. The root volume (images and weights) survives, and so does
-		the address when it's an Elastic IP — a dynamic one is gone the moment it stops."""
+		"""The root volume (images and weights) survives, and so does the address when it's an
+		Elastic IP — a dynamic one is gone the moment it stops."""
 		self.require_instance()
 		self.cloud_client.stop_instance(self.instance_id)
 		self.db_set({"status": "Pending", "public_ip": self.public_ip if self.is_static_ip else ""})
@@ -410,8 +396,8 @@ class Machine(GeneratedName, AnsibleHost, Document):
 
 	@frappe.whitelist()
 	def start(self):
-		"""Button: start a stopped instance. AWS re-issues the public IP, so this polls for the
-		new one rather than leaving a now-wrong address on the doc."""
+		"""AWS re-issues the public IP, so this polls for the new one rather than leaving a
+		now-wrong address on the doc."""
 		self.require_instance()
 		self.cloud_client
 		frappe.enqueue_doc(self.doctype, self.name, "resume", queue="long", timeout=3000)
@@ -419,8 +405,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 
 	@failure.reports_failure(mark_broken=False)
 	def resume(self):
-		"""Job: start the instance and record the address AWS gives it this time. A start costs
-		the same firmware POST a launch does."""
+		"""A start costs the same firmware POST a launch does."""
 		client = self.cloud_client
 		client.start_instance(self.instance_id)
 		ready = client.poll_instance_ready(self.instance_id, timeout_sec=self.boot_timeout_sec)
@@ -434,8 +419,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 		)
 
 	def set_instance_type(self, instance_type):
-		"""Change the instance's type at the provider — Stopped only, AWS refuses it on a running
-		box. The type's facts (architecture, bare metal, local disks) are re-read after."""
+		"""Stopped only, AWS refuses it on a running box."""
 		self.require_instance()
 		if self.status != "Stopped":
 			frappe.throw(f"{self.name} is {self.status} — an instance type changes only while Stopped.")
@@ -462,8 +446,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 
 	@failure.reports_failure(mark_broken=False)
 	def grow_root(self, size_gb):
-		"""Job: enlarge the volume at the provider, then grow the partition and filesystem on the
-		box. root_volume_gb is written only once the box reports the space."""
+		"""root_volume_gb is written only once the box reports the space."""
 		self.cloud_client.resize_root_volume(self.instance_id, size_gb)
 		play_name, rc = self.run_playbook("grow_root.yml")
 		if rc != 0:
@@ -475,8 +458,8 @@ class Machine(GeneratedName, AnsibleHost, Document):
 
 	@frappe.whitelist()
 	def terminate(self):
-		"""Button: destroy the instance. The root volume goes with it — weights and all. A
-		bare-metal box has no provider to destroy it at, so only its rows are retired."""
+		"""The root volume goes with it — weights and all. A bare-metal box has no provider to
+		destroy it at, so only its rows are retired."""
 		if self.cloud_provider:
 			self.destroy_instance()
 		self.mark_terminated()
@@ -505,9 +488,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 			frappe.throw(f"Machine {self.name} has no EC2 instance — provision it first.")
 
 	def get_ssh_argv(self, command, tty=False):
-		"""The local `ssh` argv that runs one remote argv on this box.
-
-		Quoted word by word, so a unit name or a slug cannot become a second command on the far
+		"""Quoted word by word, so a unit name or a slug cannot become a second command on the far
 		side. Not root → sudo -n, which fails loudly rather than hanging on a password prompt.
 		`tty` forces a pty: without one, killing the local ssh leaves the remote command running
 		(sshd only hangs it up when it next writes)."""
@@ -533,18 +514,15 @@ class Machine(GeneratedName, AnsibleHost, Document):
 		]
 
 	def run_command(self, command, timeout=60):
-		"""Run one argv over SSH and return stdout + stderr. For reads not worth a playbook, where
-		an Ansible Play doc per call would be noise. Anything that CHANGES the box belongs in a
-		role."""
+		"""Returns stdout + stderr. For reads not worth a playbook, where an Ansible Play doc per
+		call would be noise. Anything that CHANGES the box belongs in a role."""
 		result = subprocess.run(self.get_ssh_argv(command), capture_output=True, text=True, timeout=timeout)
 		return (result.stdout + result.stderr).strip()
 
 	def stream_command(self, command, idle_tick=5):
-		"""The follow-mode twin of run_command. Yields None after each idle_tick seconds of
-		silence, so a caller can stop or flush without waiting for the next line.
-
-		Runs on a pty (see get_ssh_argv) so killing the local ssh hangs the remote command up too:
-		a caller that stops consuming must not leave a `docker logs -f` on the box."""
+		"""Yields None after each idle_tick seconds of silence, so a caller can stop or flush
+		without waiting for the next line. Runs on a pty (see get_ssh_argv): a caller that stops
+		consuming must not leave a `docker logs -f` on the box."""
 		process = subprocess.Popen(
 			self.get_ssh_argv(command, tty=True),
 			stdout=subprocess.PIPE,
@@ -568,8 +546,6 @@ class Machine(GeneratedName, AnsibleHost, Document):
 
 
 def scan_machine_gpus(machine_name):
-	"""Job: run scan_gpus.yml and reconcile this Machine's `GPU` records against it. nvidia-smi is
-	the truth about which cards exist."""
 	machine = frappe.get_doc("Machine", machine_name)
 	play_name, rc = machine.run_playbook("scan_gpus.yml")
 	result = _scan_result(play_name)
@@ -599,18 +575,14 @@ def is_placeholder_device_id(device_id):
 
 
 def plan_reconcile(existing, scanned, slot_is_identity=False):
-	"""What the scan means for the cards already on record: `(upgrades, inserts, stale)`. Pure, so
-	the rule can be pinned without a site — worth pinning, because getting it wrong deletes a row
-	a running replica's claim lives on.
+	"""`(upgrades, inserts, stale)`. Getting it wrong deletes a row a running replica's claim lives on.
 
-	Two passes. A real `device_id` matches only itself, so two cards that swapped slots keep their
-	own rows. A PLACEHOLDER matches by slot instead: it was never an identity, so upgrading it in
-	place keeps its `held_by` and the replica rows pointing at it.
-
-	`slot_is_identity` widens that second pass to every card, for a box whose hardware is rented:
-	an EC2 stop/start migrates the instance to another host, so the same index answers with a
-	different physical card. On bare metal the opposite holds — a card that stops answering was
-	pulled — which is why this is a property of the box and not a global rule."""
+	A real `device_id` matches only itself, so two cards that swapped slots keep their own rows. A
+	PLACEHOLDER matches by slot instead: it was never an identity, so upgrading it in place keeps
+	its `held_by` and the replica rows pointing at it. `slot_is_identity` widens that second pass to
+	every card, for a box whose hardware is rented: an EC2 stop/start migrates the instance to
+	another host, so the same index answers with a different physical card. On bare metal the
+	opposite holds — a card that stops answering was pulled."""
 	by_device = {card.device_id: card for card in existing}
 	upgrades, inserts, unmatched = [], [], []
 	claimed = set()
@@ -640,9 +612,7 @@ def plan_reconcile(existing, scanned, slot_is_identity=False):
 
 
 def reconcile_gpus(machine, scanned):
-	"""Upsert one `GPU` per scanned card and prune what the box no longer reports.
-
-	Upserted, not replaced: a card still there keeps its row and therefore its `held_by`, so a
+	"""Upserted, not replaced: a card still there keeps its row and therefore its `held_by`, so a
 	re-scan of a busy box does not disturb a running replica."""
 	from grove.infrastructure.doctype.gpu.gpu import cards_on
 
@@ -704,12 +674,9 @@ def _refresh_from_types(machine):
 
 
 def _mirror_onto_machine(machine):
-	"""Rewrite the Machine's GPU grid to match its cards. The grid is a read-only mirror —
-	`GPU.machine` says where a card is — rewritten by the same function that reconciles the cards,
-	so there is one writer.
-
-	Everything but the link is `fetch_from` the GPU, so a card re-typed later shows through
-	without this running again."""
+	"""The grid is a read-only mirror — `GPU.machine` says where a card is — rewritten by the same
+	function that reconciles the cards, so there is one writer. Everything but the link is
+	`fetch_from` the GPU, so a card re-typed later shows through without this running again."""
 	from grove.infrastructure.doctype.gpu.gpu import cards_on
 
 	doc = frappe.get_doc("Machine", machine)

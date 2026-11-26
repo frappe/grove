@@ -59,8 +59,7 @@ class TestVllmPlacementErrors(unittest.TestCase):
 class TestWhatTheCardCanRun(unittest.TestCase):
 	"""Capability, not capacity. A T4 has room for a small model and still cannot represent it:
 	vLLM does not quietly fall back to float16, it raises `Bfloat16 is only supported on GPUs with
-	compute capability of at least 8.0` and exits — minutes into a play, on the box. Every other
-	hard filter is checked before a deploy; this is the one that was not."""
+	compute capability of at least 8.0` and exits — minutes into a play, on the box."""
 
 	BF16: ClassVar[dict] = dict(CHAT_MODEL, torch_dtype="bfloat16")
 
@@ -273,8 +272,6 @@ class TestAttentionBackend(unittest.TestCase):
 
 
 class TestVllmEnv(unittest.TestCase):
-	"""What the engine needs in its environment, and where the placement's paths go."""
-
 	def test_the_on_prem_env_carries_every_variable_the_box_needs(self):
 		env = serve(allow_long_max_model_len=True).env(hf_token="hf_secret")
 		for key in (
