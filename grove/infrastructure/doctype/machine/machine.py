@@ -16,6 +16,14 @@ from grove.naming import GeneratedName, next_machine_name
 from grove.utils import vram_gb_from_mib
 
 # Task names in scan_gpus.yml.
+# Every kind of server that stands on a Machine and fetches its addresses off it.
+DEPENDENT_SERVERS = (
+	"Gateway Server",
+	"Ingress Server",
+	"Inference Server",
+	"Monitoring Agent",
+	"Gateway Store",
+)
 SCAN_TASK = "query nvidia-smi"
 TOPO_TASK = "query nvidia-smi topo"
 
@@ -287,6 +295,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 			commit=True,
 		)
 		self.sync_static_ip()
+		self.refresh_dependent_servers()
 
 	@frappe.whitelist()
 	def release_static_ip(self):
@@ -321,6 +330,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 			self.mark_terminated()
 			frappe.msgprint(f"{self.name} no longer exists on AWS — marked Terminated.")
 			return
+		before = self.public_ip
 		self.db_set(
 			{
 				"status": instance["status"],
@@ -333,6 +343,8 @@ class Machine(GeneratedName, AnsibleHost, Document):
 			}
 		)
 		self.sync_dependent_servers()
+		if self.public_ip != before:
+			self.refresh_dependent_servers()
 		self.sync_instance_type(client)
 
 	def sync_dependent_servers(self):
@@ -341,36 +353,39 @@ class Machine(GeneratedName, AnsibleHost, Document):
 		if self.status not in ("Terminated", "Stopped", "Pending"):
 			return
 		dependent_status = "Terminated" if self.status == "Terminated" else "Broken"
-		for doctype in (
-			"Gateway Server",
-			"Ingress Server",
-			"Inference Server",
-			"Monitoring Agent",
-			"Gateway Store",
-		):
+		for doctype in DEPENDENT_SERVERS:
 			for name in frappe.get_all(
 				doctype, filters={"machine": self.name, "status": "Active"}, pluck="name"
 			):
 				self.mark_dependent(doctype, name, dependent_status)
 
-	def mark_dependent(self, doctype, name, status):
-		"""Write the status THROUGH the document, not with db.set_value: the consequences live in
-		on_update — a Terminated gateway gives up its DNS records and comes out of the inference
-		security groups. Skipping that left a Route53 multivalue row pointing at a box that no
-		longer existed, a black hole for everything resolving to it.
+	def refresh_dependent_servers(self):
+		"""This Machine's address moved: save every live server built on it, so each refetches the
+		address off this row and its own on_update moves what follows it, an Active box's DNS."""
+		for doctype in DEPENDENT_SERVERS:
+			for name in frappe.get_all(
+				doctype, filters={"machine": self.name, "status": ("!=", "Terminated")}, pluck="name"
+			):
+				self.mark_dependent(doctype, name)
+
+	def mark_dependent(self, doctype, name, status=None):
+		"""Save a server THROUGH its document, with `status` when one is given, not with
+		db.set_value: the consequences live in on_update — a Terminated gateway gives up its DNS
+		records and comes out of the inference security groups, an Active box on a new address has
+		its records rewritten. Skipping that left a Route53 multivalue row pointing at a box that
+		no longer existed, a black hole for everything resolving to it.
 
 		Guarded per document: save() runs validate, so one dependent failing for an unrelated
 		reason would otherwise abort the termination halfway. Rolled back to before it and logged."""
 		frappe.db.savepoint("mark_dependent")
 		try:
 			doc = frappe.get_doc(doctype, name)
-			doc.status = status
+			doc.status = status or doc.status
 			doc.save(ignore_permissions=True)
 		except Exception:
 			frappe.db.rollback(save_point="mark_dependent")
-			frappe.log_error(
-				title=f"Could not mark {doctype} {name} {status.lower()} after {self.name} went {self.status.lower()}"
-			)
+			what = f"mark {doctype} {name} {status.lower()}" if status else f"refresh {doctype} {name}"
+			frappe.log_error(title=f"Could not {what} after {self.name} went {self.status.lower()}")
 
 	def sync_instance_type(self, client):
 		"""What this instance type is and ships: architecture, bare metal, ephemeral NVMe, GPUs.

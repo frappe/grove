@@ -49,10 +49,6 @@ class IngressServer(PathwayHost, Document):
 	def validate(self):
 		self.set_admin_url()
 
-	def on_update(self):
-		if self.has_value_changed("status") and self.status == "Terminated":
-			self.remove_dns_records()
-
 	def on_trash(self):
 		self.remove_dns_records()
 
