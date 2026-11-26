@@ -14,8 +14,8 @@ from grove.infrastructure.fleet import NamedHost
 
 REDIS_PORT = 6379
 RDB_MAGIC = b"REDIS"
-# The password is read on the box from requirepass, so it never lands in argv or a log. A store not
-# yet moved onto store-redis (the store play, run on it again) still has only the packaged ones.
+# The password is read on the box from requirepass, so it never lands in argv or a log. A store set
+# up before store-redis still runs the packaged redis, and has only its conf and log directory.
 CONFS = "/etc/store-redis/redis.conf /etc/redis/redis.conf"
 LOGS = ["/var/log/store-redis/*.log", "/var/log/redis/*.log"]
 DUMP = (

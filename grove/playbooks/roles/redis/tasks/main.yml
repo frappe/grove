@@ -2,28 +2,10 @@
 - name: find the redis package to install
   ansible.builtin.include_tasks: repository.yml
 
-# Redis runs as store-redis: Grove's own unit, config and directories, as the service account. The
-# packages give the binary. Their `redis-server` unit stays masked, and their /etc/redis,
-# /var/lib/redis and /var/log/redis, which every install chowns back to `redis`, are not used.
-- name: look for a store-redis set up earlier
-  ansible.builtin.stat:
-    path: /etc/systemd/system/store-redis.service
-  register: redis_own_unit
-
-# The move off whatever ran as redis-server, once: stopped here so that its files are whole when
-# they are copied below.
-- name: stop the redis-server unit for the move
-  ansible.builtin.shell: |
-    set -eu
-    if systemctl is-active --quiet redis-server; then
-      systemctl stop redis-server
-      echo stopped
-    fi
-  register: redis_packaged
-  changed_when: redis_packaged.stdout | trim == "stopped"
-  when: not redis_own_unit.stat.exists
-
-# Before the install, which would start it. A mask set by hand outlives every package upgrade.
+# A new store's Redis runs as store-redis: Grove's own unit, config and directories, as the service
+# account. The packages give the binary. Their /etc/redis, /var/lib/redis and /var/log/redis, which
+# every install chowns back to `redis`, are not used, and their `redis-server` unit is masked before
+# the install that would start it. A mask set by hand outlives every package upgrade.
 - name: mask the packaged redis
   ansible.builtin.systemd:
     name: redis-server
@@ -48,23 +30,6 @@
     - /etc/store-redis
     - /var/lib/store-redis
     - /var/log/store-redis
-
-# Into an empty directory of ours. The packaged one is left as it was, which is the way back.
-- name: adopt the data the stopped redis held
-  ansible.builtin.shell: |
-    set -eu
-    if [ -z "$(ls -A "$OURS")" ] && [ -n "$(ls -A "$THEIRS" 2>/dev/null)" ]; then
-      cp -a "$THEIRS/." "$OURS/"
-      chown -R "$OWNER:$OWNER" "$OURS"
-      echo adopted
-    fi
-  environment:
-    OURS: /var/lib/store-redis
-    THEIRS: /var/lib/redis
-    OWNER: "{{ redis_user }}"
-  register: redis_adopted
-  changed_when: redis_adopted.stdout | trim == "adopted"
-  when: not redis_own_unit.stat.exists
 
 - name: redis config
   ansible.builtin.template:

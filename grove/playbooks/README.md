@@ -135,18 +135,12 @@ hand outlives package upgrades. Their `/etc/redis`, `/var/lib/redis` and `/var/l
 the install scripts chown those back to `redis` every time. A config or unit that changed restarts
 Redis; persistence is checked on the running server as well.
 
-A store set up before this ran Redis as `redis-server`. The role moves it the first time it runs there,
-once: that Redis is stopped, its data copied into `/var/lib/store-redis`, and `store-redis` started. The
-directory copied from is left as it was, which is the way back: an older Redis cannot read what a newer
-one wrote (6.0 starts empty with no error, 7.0 refuses after the first AOF rewrite), so start nothing on
-it, and delete it once the store has soaked. The store is down for the move.
-
-Only Setup (`store.yml`) runs the role, and Setup is offered on a Pending or Broken store. There is no
-button that moves an Active store or takes a later release on its line: that is `store.yml` run against
-the store again, with its gateways in maintenance and usage pulled first. Until a store has moved, its
-backups and log shipping still read the packaged paths (`CONFS`, `LOGS` in `gateway_store.py` name both),
-and `stop.yml`, which Server Resize runs, finds no `store-redis` to stop: move a store before resizing
-it. After the move, Update Vector on the store so that its log ships from the new directory.
+Only Setup (`store.yml`) runs the role, so this is what a new store gets. A store set up before it keeps
+the packaged Redis: nothing moves it, and Setup is offered on a Pending or Broken store alone. The role
+is not for such a store. It copies no data, and with the packaged Redis still holding port 6379
+`store-redis` fails to start. For those stores the backups and log shipping still read the packaged
+paths (`CONFS`, `LOGS` in `gateway_store.py` name both), while `stop.yml`, which Server Resize runs,
+names `store-redis` and finds nothing to stop there.
 
 ## Monitoring
 
