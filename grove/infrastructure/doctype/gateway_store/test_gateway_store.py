@@ -186,63 +186,26 @@ class TestBackup(unittest.TestCase):
 		self.assertEqual((backed, reported), (["store2"], ["store1"]))
 
 
-class TestUpgradeRedis(unittest.TestCase):
-	"""An Active store is moved onto the newest Redis the role allows; the doc keeps what the box
-	then reports."""
+class TestTheStorePlay(unittest.TestCase):
+	"""What store.yml is given, and what the doc keeps of what it installed."""
 
-	def test_a_stores_plays_get_its_bind_address_and_password(self):
+	def test_it_gets_the_stores_bind_address_and_password(self):
 		store = SimpleNamespace(listen_ip="10.0.61.9", get_password=lambda field: "pw")
 		self.assertEqual(
 			GatewayStore.play_variables.fget(store), {"redis_bind_ip": "10.0.61.9", "redis_password": "pw"}
 		)
 
-	def test_only_an_active_store_is_upgraded(self):
-		store = SimpleNamespace(name="store1", doctype="Gateway Store", status="Broken")
-		with patch.object(frappe, "throw", side_effect=Refused), self.assertRaises(Refused):
-			GatewayStore.upgrade_redis(store)
-
-	def upgrade(self, rc=0, bucket="b"):
-		calls, written = [], {}
-		store = SimpleNamespace(
-			name="store1",
-			doctype="Gateway Store",
-			geography="in",
-			play_variables={"redis_bind_ip": "10.0.61.9", "redis_password": "pw"},
-			backup=lambda: calls.append("backup"),
-			run_playbook=lambda playbook, extravars: calls.append((playbook, extravars)) or ("play-1", rc),
-		)
-		store.record_redis_version = lambda play: GatewayStore.record_redis_version(store, play)
-		db = SimpleNamespace(
-			get_value=lambda doctype, name, field: bucket,
-			set_value=lambda doctype, name, field, value: written.update({field: value}),
-		)
+	def test_the_doc_keeps_the_release_the_box_reported(self):
+		written = {}
+		store = SimpleNamespace(name="store1", doctype="Gateway Store")
 		results = {("play-1", gateway_store.VERSION_TASK): {"stdout": "8.12.2\n"}}
+		db = SimpleNamespace(set_value=lambda doctype, name, field, value: written.update({field: value}))
 		with (
 			patch.object(frappe, "db", db),
 			patch.object(gateway_store, "task_result", lambda play, task: results[(play, task)]),
-			patch.object(frappe, "local", SimpleNamespace(grove_failure_reported=True)),
-			patch.object(frappe, "throw", side_effect=Refused),
 		):
-			try:
-				GatewayStore.run_redis_upgrade(store)
-			except Refused:
-				calls.append("refused")
-		return calls, written
-
-	def test_an_upgrade_snapshots_first_and_records_what_the_box_runs(self):
-		calls, written = self.upgrade()
-		play = ("upgrade_redis.yml", {"redis_bind_ip": "10.0.61.9", "redis_password": "pw"})
-		self.assertEqual(calls, ["backup", play])
+			GatewayStore.record_redis_version(store, "play-1")
 		self.assertEqual(written, {"redis_version": "8.12.2"})
-
-	def test_a_geography_with_no_bucket_upgrades_without_a_snapshot(self):
-		calls, _ = self.upgrade(bucket=None)
-		self.assertEqual([call[0] for call in calls], ["upgrade_redis.yml"])
-
-	def test_a_failed_play_throws_and_records_nothing(self):
-		calls, written = self.upgrade(rc=2)
-		self.assertEqual(calls[-1], "refused")
-		self.assertEqual(written, {})
 
 
 if __name__ == "__main__":
