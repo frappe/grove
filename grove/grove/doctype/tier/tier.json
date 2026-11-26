@@ -8,7 +8,9 @@
  "engine": "InnoDB",
  "field_order": [
   "spend_limit",
-  "limits"
+  "limit_scope",
+  "limits",
+  "key_limits"
  ],
  "fields": [
   {
@@ -21,10 +23,27 @@
    "precision": "9"
   },
   {
-   "description": "Counted on the gateway per team and model, per Gateway Store, however many keys the team holds; a window resets on the UTC clock. One row per model, metric and window: a blank model is every model, a named one stands in for it there. No rows: the tier's teams are uncapped. The rows are the catalog's \u2014 catalog.json rewrites them on every migrate \u2014 and reach every key of every team on the tier at the next sync.",
+   "depends_on": "eval:doc.limit_scope != \"Key\"",
+   "description": "Counted on the gateway per team and model, per Gateway Store, however many keys the team holds; a window resets on the UTC clock. One row per model, metric and window: a blank model is every model, a named one stands in for it there. No rows: the tier's teams are uncapped. The rows are the catalog's while this is the table in force \u2014 catalog.json rewrites them on every migrate \u2014 and reach every key of every team on the tier at the next sync. A value of 0 is no limit on that row's model, metric and window. A team's own rows are laid over these.",
    "fieldname": "limits",
    "fieldtype": "Table",
    "label": "Limits",
+   "options": "Model Limit"
+  },
+  {
+   "default": "Team",
+   "description": "Who the rate limits are counted for, one or the other: Team, the team as a whole on each model however many keys it holds, or Key, each of its keys on its own (a trial tier, where every key is another customer). Each has its own table of rows; only the one picked is shown and in force.",
+   "fieldname": "limit_scope",
+   "fieldtype": "Select",
+   "label": "Limits Count Per",
+   "options": "Team\nKey"
+  },
+  {
+   "depends_on": "eval:doc.limit_scope == \"Key\"",
+   "description": "Counted on the gateway under each key of the tier's teams on its own, per model and Gateway Store. Rows as in Limits: a blank model is every model, a named one stands in for it there, a value of 0 is no limit. No rows: uncapped. The rows are the catalog's while this is the table in force. A team's own rows are laid over these.",
+   "fieldname": "key_limits",
+   "fieldtype": "Table",
+   "label": "Limits Per Key",
    "options": "Model Limit"
   }
  ],
@@ -35,7 +54,7 @@
    "link_fieldname": "tier"
   }
  ],
- "modified": "2026-11-07 12:00:00.000000",
+ "modified": "2026-11-27 21:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Tier",

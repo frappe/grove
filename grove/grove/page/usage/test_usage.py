@@ -180,7 +180,6 @@ class TestUsagePage(IntegrationTestCase):
 			(live["status"], live["last_used"], live["team"]), ("active", str(self.today), self.team)
 		)
 		self.assertEqual(live["cap_pct"], round(live["month_spent"] / 10 * 100, 1))
-		self.assertEqual(live["limits"], [], "the key's own rows, not its tier's")
 		self.assertEqual((revoked["status"], revoked["cap_pct"]), ("revoked", None))
 		self.assertEqual([row["status"] for row in usage.keys(self.filters())], ["active", "revoked"])
 		self.assertEqual(usage.keys(self.filters(geography=self.other_geography)), [])

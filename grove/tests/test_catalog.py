@@ -288,8 +288,36 @@ class TestTheShippedFile(unittest.TestCase):
 
 
 class TestTheCatalogOwnsTierRows(CatalogCase):
-	"""A tier the file names is inserted once; its limit rows follow the file on every load, its
-	spend limit never does once the tier exists."""
+	"""A tier the file names is inserted once; its limit rows follow the file on every load, in the
+	table its scope counts with; its spend limit never does once the tier exists."""
+
+	def test_a_per_key_tiers_rows_follow_the_file_in_its_per_key_table(self):
+		entry = {"name": "catalog-tier-key", "spend_limit": 10, "limit_scope": "Key"}
+		for value in (60, 6):
+			self.load(tiers=[{**entry, "limits": [{"metric": "requests", "window": "1m", "value": value}]}])
+			doc = frappe.get_doc("Tier", "catalog-tier-key")
+			self.assertEqual(([row.value for row in doc.key_limits], doc.limits), ([value], []))
+
+	def test_the_move_patch_leaves_a_tier_counting_per_key_and_the_file_writes_there(self):
+		"""What the limits were before a tier could say: the patch moves the rows, a load after it
+		finds them where it writes and rewrites nothing."""
+		from grove.patches.v1_0.move_tier_limits_per_key import execute
+
+		tiers = [
+			{
+				"name": "catalog-tier-moved",
+				"spend_limit": 10,
+				"limits": [{"metric": "requests", "window": "1m", "value": 60}],
+			}
+		]
+		self.load(tiers=tiers)
+		execute()
+		doc = frappe.get_doc("Tier", "catalog-tier-moved")
+		self.assertEqual(
+			(doc.limit_scope, [row.value for row in doc.key_limits], doc.limits), ("Key", [60], [])
+		)
+		self.load(tiers=tiers)
+		self.assertEqual(frappe.db.get_value("Tier", "catalog-tier-moved", "modified"), doc.modified)
 
 	def test_rows_follow_the_file_and_the_spend_limit_stays(self):
 		make_test_geography()

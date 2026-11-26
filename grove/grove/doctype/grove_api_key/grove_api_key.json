@@ -18,9 +18,7 @@
   "api_secret",
   "masked",
   "section_access",
-  "model_groups",
-  "section_limits",
-  "limits"
+  "model_groups"
  ],
  "fields": [
   {
@@ -131,18 +129,6 @@
    "fieldtype": "Table MultiSelect",
    "label": "Model Groups",
    "options": "Model Group Row"
-  },
-  {
-   "fieldname": "section_limits",
-   "fieldtype": "Section Break",
-   "label": "Own rate limits"
-  },
-  {
-   "description": "The key's own, counted on the gateway per model under its team's tier rows: whichever is lower refuses first. Blank: the team's alone. A row naming a model holds there alone, a blank one on every model. The team sets these from its console.",
-   "fieldname": "limits",
-   "fieldtype": "Table",
-   "label": "Own rate limits",
-   "options": "Model Limit"
   }
  ],
  "links": [
@@ -162,7 +148,7 @@
    "link_fieldname": "api_key"
   }
  ],
- "modified": "2026-11-26 12:00:00.000000",
+ "modified": "2026-11-27 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove API Key",

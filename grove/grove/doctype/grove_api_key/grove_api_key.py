@@ -8,7 +8,7 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import add_days, flt, get_datetime, now_datetime
 
-from grove.access import model_reaching, team_limits, validate_limit_rows
+from grove.access import team_limits
 from grove.billing.pricing import committed, forget_figures, lock_team, usd
 
 KEY_PREFIX = "gr_"
@@ -31,7 +31,6 @@ class GroveAPIKey(Document):
 		from frappe.types import DF
 
 		from grove.grove.doctype.model_group_row.model_group_row import ModelGroupRow
-		from grove.grove.doctype.model_limit.model_limit import ModelLimit
 
 		api_secret: DF.Password | None
 		cap: DF.Currency
@@ -40,7 +39,6 @@ class GroveAPIKey(Document):
 		expiry_from_first_use: DF.Check
 		geography: DF.Link
 		key_hash: DF.Data | None
-		limits: DF.Table[ModelLimit]
 		masked: DF.Data | None
 		model_groups: DF.TableMultiSelect[ModelGroupRow]
 		status: DF.Literal["active", "revoked"]
@@ -69,20 +67,7 @@ class GroveAPIKey(Document):
 	def on_update(self):
 		forget_figures(self.team)
 
-	def link_limit_models(self):
-		"""A row a control client names by model key is linked to the doc of that key this key
-		reaches: its geography's, or one of ours."""
-		for row in self.limits:
-			if row.model_key and not row.model:
-				row.model = model_reaching(row.model_key, self.geography)
-				if not row.model:
-					frappe.throw(
-						f"Limit row {row.idx}: no model has the key {row.model_key!r} in {self.geography}."
-					)
-
 	def validate(self):
-		self.link_limit_models()
-		validate_limit_rows(self.limits, self.geography)
 		self.validate_groups()
 		if flt(self.cap) < 0:
 			frappe.throw("A cap cannot be negative.")
@@ -160,9 +145,9 @@ class GroveAPIKey(Document):
 
 	def transfer(self, to_team: str, title: str | None = None):
 		"""The trial's rules go with the trial: its own groups are cleared and its expiry lifted, so
-		what it may call is the new team's; cap, geography and limit rows stay. Counted against the new
-		team like a mint. The next tick re-pushes team, window and limits — the push at which the box
-		closes the old team's books. Refused between two teams of one cap window: the box keeps a key's
+		what it may call is the new team's; cap and geography stay. Counted against the new team like
+		a mint. The next tick re-pushes team and window — the push at which the box closes the old
+		team's books. Refused between two teams of one cap window: the box keeps a key's
 		spend under one field per window, so it would follow the key."""
 		if to_team == self.team:
 			return

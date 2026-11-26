@@ -15,12 +15,12 @@ import frappe
 from grove.access import (
 	group_geographies,
 	group_rows,
-	limit_entries,
+	limit_scopes,
+	limits_in_force,
 	limits_reaching,
 	model_rows,
 	reaching,
 	team_grants,
-	tier_limits,
 )
 from grove.billing.pricing import nano
 from grove.pathway import routes
@@ -70,7 +70,6 @@ def effective_keys(names=None):
 	memberships = group_rows(team_names)
 	own_groups = group_rows(None if names is None else [k.name for k in keys], "Grove API Key")
 	where = group_geographies()
-	own_limits = limit_entries("Grove API Key", None if names is None else [k.name for k in keys])
 	records = []
 	for k in sorted(keys, key=lambda k: k.key_hash or ""):
 		team = teams.get(k.team)
@@ -97,8 +96,6 @@ def effective_keys(names=None):
 				"geography": k.geography or "",
 				"budget": nano(k.cap or 0),
 				"budget_window": "total" if team.key_cap_window == "Total" else "month",
-				# Blank when none: the box merges fields, so leaving it out would keep a removed limit in force.
-				"key_limits": wire_limits(limits_reaching(own_limits.get(k.name, []), k.geography)),
 			}
 		)
 	return records
@@ -108,8 +105,10 @@ def effective_teams(names=None, geography=""):
 	"""Every Grove Team projected for a gateway of `geography`, which reads the record beside each
 	of the team's keys: `limited` (suspended, which refuses every key whatever its own cap says),
 	`log_payloads`, `cap_message` (what the box's 402 says once a key's cap is spent; blank: the
-	box's own text) and `limits`, its tier's rate limit rows that hold in that geography, counted
-	per model for the team as a whole. `names` narrows it to those teams: what a tick rebuilds."""
+	box's own text) and its rate limit rows that hold in that geography, its tier's with its own
+	laid over them (`access.limits_in_force`): as `limits`, counted per model for the team as a
+	whole, or as `key_limits`, counted under each of its keys on its own, by its tier's `limit_scope`.
+	`names` narrows it to those teams: what a tick rebuilds."""
 	if names is not None and not names:
 		return []
 	teams = frappe.get_all(
@@ -117,18 +116,24 @@ def effective_teams(names=None, geography=""):
 		filters=None if names is None else {"name": ("in", sorted(names))},
 		fields=["name", "suspended", "log_payloads", "cap_message", "tier"],
 	)
-	limits = tier_limits({team.name: team.tier for team in teams})
-	return [
-		{
-			"team": team.name,
-			"limited": bool(team.suspended),
-			"log_payloads": bool(team.log_payloads),
-			# Blank when none: the box merges fields, so leaving one out would keep what was removed in force.
-			"cap_message": team.cap_message or "",
-			"limits": wire_limits(limits_reaching(limits[team.name], geography)),
-		}
-		for team in sorted(teams, key=lambda team: team.name)
-	]
+	tiers = {team.name: team.tier for team in teams}
+	limits, scopes = limits_in_force(tiers), limit_scopes(tiers)
+	records = []
+	for team in sorted(teams, key=lambda team: team.name):
+		rows = wire_limits(limits_reaching(limits[team.name], geography))
+		is_per_key = scopes[team.name] == "Key"
+		records.append(
+			{
+				"team": team.name,
+				"limited": bool(team.suspended),
+				"log_payloads": bool(team.log_payloads),
+				# Blank when none: the box merges fields, so leaving one out would keep what was removed in force.
+				"cap_message": team.cap_message or "",
+				"limits": "" if is_per_key else rows,
+				"key_limits": rows if is_per_key else "",
+			}
+		)
+	return records
 
 
 def wire_limits(rows):

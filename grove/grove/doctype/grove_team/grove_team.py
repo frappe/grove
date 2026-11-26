@@ -4,6 +4,7 @@
 import frappe
 from frappe.model.document import Document
 
+from grove.access import LIMIT_TABLES, limit_scopes, validate_limit_rows
 from grove.billing.pricing import forget_figures
 
 
@@ -11,7 +12,8 @@ class GroveTeam(Document):
 	"""A control client's team — Central's (`TEAM-00520`) or Press's (`Press Team`) — named by the
 	client's id for it. What its keys may call is decided here, not on the key: a key is revoked and
 	minted again at will, the team is not. A Model Group and a vendor model are one geography's and
-	reach only the keys there; a model of ours reaches every key."""
+	reach only the keys there; a model of ours reaches every key. Its own limit rows are
+	laid over its tier's, row by row, in the table the tier's `limit_scope` names."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -23,18 +25,27 @@ class GroveTeam(Document):
 
 		from grove.grove.doctype.grove_model_row.grove_model_row import GroveModelRow
 		from grove.grove.doctype.model_group_row.model_group_row import ModelGroupRow
+		from grove.grove.doctype.model_limit.model_limit import ModelLimit
 
 		allow: DF.TableMultiSelect[GroveModelRow]
 		cap_message: DF.SmallText | None
 		deny: DF.TableMultiSelect[GroveModelRow]
 		key_cap_window: DF.Literal["Monthly", "Total"]
+		key_limits: DF.Table[ModelLimit]
 		last_reported_at: DF.Datetime | None
+		limit_scope: DF.Data | None
+		limits: DF.Table[ModelLimit]
 		log_payloads: DF.Check
 		model_groups: DF.TableMultiSelect[ModelGroupRow]
 		suspended: DF.Check
 		suspended_at_grove: DF.Check
 		tier: DF.Link | None
 	# end: auto-generated types
+
+	@property
+	def limit_scope(self):
+		"""Who its tier counts rate limits for; picks which of its override tables is in force."""
+		return limit_scopes({self.name: self.tier})[self.name]
 
 	def before_insert(self):
 		"""A Total team is an operator's to make: the control role inserts teams too."""
@@ -57,6 +68,8 @@ class GroveTeam(Document):
 		# Central's sync writes `suspended` as it sees the team; Grove's hold outranks it.
 		if self.suspended_at_grove:
 			self.suspended = 1
+		for table in LIMIT_TABLES.values():
+			validate_limit_rows(self.get(table))
 
 	def on_update(self):
 		forget_figures(self.name)

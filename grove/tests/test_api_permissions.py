@@ -17,7 +17,7 @@ from frappe.auth import LoginAttemptTracker
 from frappe.tests import IntegrationTestCase
 
 from grove import auth
-from grove.access import tier_limits
+from grove.access import limits_in_force
 from grove.api import catalog, control, keys, teams, usage
 from grove.billing.pricing import forget_figures
 from grove.grove.doctype.grove_api_key.grove_api_key import KEY_PREFIX, hash_secret
@@ -209,17 +209,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			},
 		)
 
-	def test_a_keys_rate_limits_are_readable(self):
-		team = "probe-limits"
-		teams.provision_team(team)
-		name = keys.provision_key(team, limits=[{"metric": "requests", "window": "1m", "value": 200}])["name"]
-		self.assertEqual(
-			keys.limits(team, name),
-			[{"model_key": "", "geography": "", "metric": "requests", "window": "1m", "value": 200}],
-		)
-		with self.assertRaises(frappe.DoesNotExistError):
-			keys.limits("nobody-limits", name)
-
 	def test_the_fleet_stays_out_of_reach(self):
 		for doctype in WITHHELD:
 			with self.assertRaises(frappe.PermissionError, msg=doctype):
@@ -339,37 +328,26 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		frappe.db.set_value("Grove API Key", newer, "status", "revoked")
 		self.assertEqual([row.name for row in keys.key_rows([older, newer])], [older, newer])
 
-	def test_a_teams_tier_sets_its_limits_and_a_keys_own_ride_beside(self):
+	def test_a_teams_tier_sets_its_limits_and_its_own_rows_stand_in(self):
 		team = "probe-tier"
 		teams.provision_team(team)
 		self.addCleanup(forget_figures, team)
-		unpinned = keys.provision_key(team, title="inherits")["name"]
-		pinned = keys.provision_key(
-			team, title="pinned", limits=[{"metric": "requests", "window": "1m", "value": 5}]
-		)["name"]
 		defaults = [
 			{"model_key": "", "geography": "", "metric": "requests", "window": "1m", "value": 20},
 			{"model_key": "", "geography": "", "metric": "total_tokens", "window": "1m", "value": 100_000},
 		]
 		self.assertEqual(usage.figures(team)["spend"]["limits"], defaults)
-		self.assertEqual(
-			(keys.limits(team, unpinned), keys.limits(team, pinned)),
-			([], [{"model_key": "", "geography": "", "metric": "requests", "window": "1m", "value": 5}]),
-		)
 		growth = [{"model_key": "", "geography": "", "metric": "requests", "window": "1m", "value": 60}]
 		tier("probe-growth", spend_limit=50, limits=[dict(r) for r in growth])
 		limits = teams.update_team(team, tier="probe-growth")
 		self.assertEqual((limits["tier"], limits["spend_limit"]), ("probe-growth", 50))
-		figures = usage.figures(team)
-		listed = {row.name: row.limits for row in figures["keys"]}
-		self.assertEqual(
-			(figures["spend"]["limits"], listed[unpinned], listed[pinned]),
-			(
-				growth,
-				[],
-				[{"model_key": "", "geography": "", "metric": "requests", "window": "1m", "value": 5}],
-			),
-		)
+		self.assertEqual(usage.figures(team)["spend"]["limits"], growth)
+		doc = frappe.get_doc("Grove Team", team)
+		doc.append("limits", {"metric": "requests", "window": "1m", "value": 5})
+		doc.save()
+		self.assertEqual(usage.figures(team)["spend"]["limits"], [{**growth[0], "value": 5}])
+		doc.set("limits", [])
+		doc.save()
 		frappe.db.set_single_value("Grove Settings", "default_tier", "probe-growth")
 		self.addCleanup(frappe.db.set_single_value, "Grove Settings", "default_tier", "")
 		self.assertEqual(teams.update_team(team, tier="probe-unseen")["spend_limit"], 50)
@@ -408,7 +386,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			(listed.geography, listed.gateway_url, listed.cap, listed.month_spent),
 			(minted["geography"], minted["gateway_url"], 0, 0),
 		)
-		self.assertEqual(listed.limits, [])
 		self.assertEqual(listed.masked, minted["api_key"][:7] + "…")
 		self.assertNotIn(minted["api_key"], str(listed))
 		with self.assertRaises(frappe.ValidationError):
@@ -665,7 +642,8 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("Grove Team", team, "tier"), "probe-ren-b")
 		self.assertFalse(frappe.db.exists("Tier", "probe-ren-a"))
 		self.assertEqual(
-			(teams.update_team(team)["tier"], tier_limits({team: "probe-ren-b"})[team]), ("probe-ren-b", rows)
+			(teams.update_team(team)["tier"], limits_in_force({team: "probe-ren-b"})[team]),
+			("probe-ren-b", rows),
 		)
 		self.assertIsNone(teams.rename_tier("probe-ren-unseen", "probe-ren-c"))
 		self.assertFalse(frappe.db.exists("Tier", "probe-ren-c"))
@@ -695,7 +673,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			"provision_key": lambda: keys.provision_key(team, title="more"),
 			"update_key": lambda: keys.update_key(team, key, cap=2),
 			"update_caps": lambda: keys.update_caps(team, {key: 2}),
-			"limits": lambda: keys.limits(team, key),
 			"revoke_key": lambda: keys.revoke_key(team, key),
 			"revoke_keys": lambda: keys.revoke_keys(team, [key]),
 			"transfer_key": lambda: keys.transfer_key(team, key, f"{team}-to"),
@@ -826,7 +803,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			unittest.mock.patch("frappe.only_for"),
 			unittest.mock.patch("grove.pathway.usage.peek_team") as peek_team,
 		):
-			self.assertEqual(keys.limits(team, key), [], "read is enough to read")
 			for call in refused:
 				with self.assertRaises(frappe.PermissionError):
 					call()

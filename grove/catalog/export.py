@@ -6,7 +6,7 @@ from pathlib import Path
 
 import frappe
 
-from grove.access import limit_entries, model_rows
+from grove.access import LIMIT_TABLES, limit_entries, model_rows
 from grove.billing.pricing import CounterTable
 from grove.catalog.seed import CATALOG, get_model_key
 from grove.grove.doctype.model.model import get_modality_names
@@ -44,12 +44,15 @@ def write(path=None):
 
 def get_tiers():
 	rows = limit_entries("Tier")
-	tiers = frappe.get_all("Tier", fields=["name", "spend_limit"], order_by="name")
+	tiers = frappe.get_all("Tier", fields=["name", "spend_limit", "limit_scope"], order_by="name")
 	return [
 		{
 			"name": t.name,
 			"spend_limit": t.spend_limit,
-			"limits": [tier_row(row) for row in rows.get(t.name, [])],
+			"limit_scope": t.limit_scope or "Team",
+			"limits": [
+				tier_row(row) for row in rows.get((t.name, LIMIT_TABLES[t.limit_scope or "Team"]), [])
+			],
 		}
 		for t in tiers
 	]

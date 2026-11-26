@@ -6,6 +6,7 @@ from pathlib import Path
 
 import frappe
 
+from grove.access import LIMIT_TABLES
 from grove.grove.doctype.model_id.model_id import ensure_model_id
 
 CATALOG = Path(__file__).with_name("catalog.json")
@@ -77,18 +78,21 @@ def row_ids(rows):
 
 
 def sync_tier(entry):
-	"""A tier the catalog names: inserted when the site lacks it, else its `limits` rows rewritten
-	from the file when they differ. The rows are the catalog's; `spend_limit` is the operator's
-	once the tier exists. After the models, so a row's model can be linked."""
+	"""A tier the catalog names: inserted when the site lacks it, else its rows rewritten from the
+	file when they differ, in the table its `limit_scope` counts with. The rows are the catalog's;
+	`spend_limit` and the scope are the operator's once the tier exists. After the models, so a
+	row's model can be linked."""
 	rows = tier_rows(entry)
 	try:
 		doc = frappe.get_doc("Tier", entry["name"])
 	except frappe.DoesNotExistError:
 		frappe.clear_last_message()
-		frappe.get_doc({"doctype": "Tier", **entry, "limits": rows}).insert()
+		table = LIMIT_TABLES[entry.get("limit_scope") or "Team"]
+		frappe.get_doc({"doctype": "Tier", **entry, "limits": [], table: rows}).insert()
 		return
-	if row_ids(doc.limits) != row_ids(rows):
-		doc.set("limits", rows)
+	table = LIMIT_TABLES[doc.limit_scope or "Team"]
+	if row_ids(doc.get(table)) != row_ids(rows):
+		doc.set(table, rows)
 		doc.save()
 
 

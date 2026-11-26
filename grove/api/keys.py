@@ -42,7 +42,6 @@ def provision_key(
 	title: str | None = None,
 	geography: str | None = None,
 	cap: float | None = None,
-	limits: list[dict] | None = None,
 	expiry: str | None = None,
 	model_groups: list[str] | None = None,
 ):
@@ -53,7 +52,8 @@ def provision_key(
 	if expiry:
 		key.expiry = expiry
 	key.set("model_groups", [{"model_group": group} for group in model_groups or []])
-	set_key_policy(key, cap, limits)
+	if cap is not None:
+		key.cap = cap
 	key.insert()
 	gateway_url = get_gateway_url(key.geography)
 	if not gateway_url:
@@ -68,14 +68,10 @@ def provision_key(
 
 @frappe.whitelist()
 @changes_keys
-def update_key(
-	team: str,
-	key: str,
-	cap: float | None = None,
-	limits: list[dict] | None = None,
-):
+def update_key(team: str, key: str, cap: float | None = None):
 	doc = get_api_key(team, key)
-	set_key_policy(doc, cap, limits)
+	if cap is not None:
+		doc.cap = cap
 	doc.save()
 	return key_rows([doc.name])[0]
 
@@ -110,12 +106,6 @@ def update_caps(team: str, caps: dict[str, float]):
 		doc.flags.cap_checked = True
 		doc.save()
 	return key_rows([doc.name for doc in docs])
-
-
-@frappe.whitelist()
-@for_control_clients
-def limits(team: str, key: str):
-	return limit_rows_of([get_api_key(team, key, "read").name]).get(key, [])
 
 
 @frappe.whitelist()
@@ -160,13 +150,6 @@ def get_api_key(team, key, ptype="write"):
 	return frappe.get_doc("Grove API Key", names[0], check_permission=ptype)
 
 
-def set_key_policy(doc, cap=None, limits=None):
-	if cap is not None:
-		doc.cap = cap
-	if limits is not None:
-		doc.set("limits", limits)
-
-
 def key_rows(names):
 	from grove.billing.pricing import month_spent_by
 	from grove.pathway.routes import utc_timestamp
@@ -176,19 +159,11 @@ def key_rows(names):
 	rows = frappe.get_list(
 		"Grove API Key", filters={"name": ("in", names)}, fields=KEY_FIELDS, order_by="creation desc"
 	)
-	limits = limit_rows_of(names)
 	month = month_spent_by("api_key", names)
 	for row in rows:
 		row["gateway_url"] = get_gateway_url(row.geography)
-		row["limits"] = limits.get(row.name, [])
 		row["month_spent"] = flt(month.get(row.name, 0), 9)
 		row["expires_at"] = utc_timestamp(row.expires_at) if row.expires_at else None
 		row["expiry_from_first_use"] = bool(row.expiry_from_first_use)
 	rows.sort(key=lambda row: row.status == "revoked")
 	return rows
-
-
-def limit_rows_of(names):
-	from grove.access import limit_entries
-
-	return limit_entries("Grove API Key", names)

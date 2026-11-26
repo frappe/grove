@@ -105,7 +105,8 @@ fleet gets re-pushed over row order. Order means nothing on the wire; it exists 
 
 | Redis key | Written by | Holds |
 |---|---|---|
-| `key:<sha256(secret)>` | state push (keys) + the agent | the whole policy: `team`, `group` (comma list: its team's groups of its geography, and its own), `allow`/`deny` (its team's rows that reach its geography; a model of ours reaches every geography), `geography`, `limits` (its team's Tier's rows, else the default tier's, else the defaults, counted per model for the team as a whole), `key_limits` (its own, a second gate beneath), `budget` (its monthly cap), `limited`, `log_payloads`; the agent's own `spent:<YYYY-MM>`, this month's spend |
+| `key:<sha256(secret)>` | state push (keys) + the agent | the whole policy: `team`, `group` (comma list: its team's groups of its geography, and its own), `allow`/`deny` (its team's rows that reach its geography; a model of ours reaches every geography), `geography`, `budget` (its cap) and `budget_window`; the agent's own `spent:<YYYY-MM>`, this month's spend |
+| `team:<Grove Team>` | state push (teams) | what is the team's, read beside each of its keys: `limited`, `log_payloads`, `cap_message`, and its rate limit rows (its Tier's, else the default tier's, else the defaults, with the team's own laid over them; a row at 0 is no limit there) as `limits`, counted per model for the team as a whole, or as `key_limits`, counted under each of its keys on its own, by its Tier's Limits Count Per (each scope has its own table of rows) |
 | `model_group:<name>` | state push (groups) | the model grant for everyone in it |
 | `deploy:<model>` | state push (routes) | every placement of one model |
 | `grove:state_hash` | state push | per-section/bucket hashes of what the box holds |
@@ -222,7 +223,9 @@ never overwrites what an operator set. Before a vendor or a model is added, walk
   named for, a provider the site has no record named for in any geography, and a `Denied Tool`
   pair the site lacks. It never deletes, and updates one thing: a catalog tier's limit rows
   (`sync_tier`, after the models so a row's model key can be checked) are the file's, rewritten
-  when they differ; a tier's `spend_limit` stays the operator's once the tier exists.
+  when they differ in the table the tier's Limits Count Per counts with; a tier's `spend_limit`
+  and that scope stay the operator's once the tier exists (the file's `limit_scope` is read when
+  a tier is first inserted).
 - `denied_tools` is what a vendor bills outside the token counts, and only that: Anthropic's web
   search ($10 per 1,000 searches) and code execution (container hours), OpenAI's `web_search_options`
   and the Responses API's priced hosted tools (web search, file search, code interpreter, image

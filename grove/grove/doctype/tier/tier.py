@@ -5,15 +5,16 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import flt
 
-from grove.access import DEFAULT_LIMITS, default_tier, validate_limit_rows
+from grove.access import DEFAULT_LIMITS, LIMIT_TABLES, default_tier, validate_limit_rows
 from grove.billing.pricing import forget_figures
 
 
 class Tier(Document):
 	"""What a team on it may do, named by Central's trust tier label (`Growth`): monthly spend
 	across its keys' caps, and the rate limits the team runs under per model (a blank row is every
-	model, one linking a model that model alone, in its geography; no rows: uncapped). A tier a team
-	names cannot be deleted."""
+	model, one linking a model that model alone, in its geography; no rows: uncapped), counted for
+	the team or for each of its keys by `limit_scope`, each with its own table. A tier a team names
+	cannot be deleted."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -25,6 +26,8 @@ class Tier(Document):
 
 		from grove.grove.doctype.model_limit.model_limit import ModelLimit
 
+		key_limits: DF.Table[ModelLimit]
+		limit_scope: DF.Literal["Team", "Key"]
 		limits: DF.Table[ModelLimit]
 		spend_limit: DF.Currency
 	# end: auto-generated types
@@ -32,7 +35,8 @@ class Tier(Document):
 	def validate(self):
 		if flt(self.spend_limit) < 0:
 			frappe.throw("A spend limit cannot be negative.")
-		validate_limit_rows(self.limits)
+		for table in LIMIT_TABLES.values():
+			validate_limit_rows(self.get(table))
 
 	def on_update(self):
 		"""Every team on the tier shows its new limits at once: the ones naming it, and the ones
@@ -43,6 +47,10 @@ class Tier(Document):
 			forget_figures(team)
 
 
+def copied(rows):
+	return [{field: row.get(field) for field in ("model", "metric", "window", "value")} for row in rows]
+
+
 def ensure(name):
 	"""`name`, inserted as a copy of the default tier when Grove has not seen it: Central names a
 	team's tier and the sync never refuses one; the operator tunes the new tier in Desk."""
@@ -50,22 +58,16 @@ def ensure(name):
 		source = (
 			frappe.get_doc("Tier", default)
 			if (default := default_tier())
-			else frappe._dict(limits=DEFAULT_LIMITS)
+			else frappe._dict(limits=DEFAULT_LIMITS, key_limits=[])
 		)
 		frappe.get_doc(
 			{
 				"doctype": "Tier",
 				"__newname": name,
 				"spend_limit": flt(source.get("spend_limit")),
-				"limits": [
-					{
-						"model": r.get("model"),
-						"metric": r.get("metric"),
-						"window": r.get("window"),
-						"value": r.get("value"),
-					}
-					for r in source.limits
-				],
+				"limit_scope": source.get("limit_scope") or "Team",
+				"limits": copied(source.limits),
+				"key_limits": copied(source.key_limits),
 			}
 		).insert()
 	return name

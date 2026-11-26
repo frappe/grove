@@ -239,7 +239,6 @@ class TestEffectiveKeys(unittest.TestCase):
 		keys=(),
 		rows=(),
 		groups=(),
-		limits=(),
 		teams=None,
 		default_tier=None,
 		names=None,
@@ -271,10 +270,6 @@ class TestEffectiveKeys(unittest.TestCase):
 				return list(models)
 			if doctype == "Model Group":
 				return list(group_docs)
-			if doctype == "Model Limit":
-				return [
-					row for row in limits if row.get("parenttype", "Grove API Key") == filters["parenttype"]
-				]
 			raise AssertionError(f"unexpected get_all({doctype})")
 
 		with (
@@ -321,7 +316,6 @@ class TestEffectiveKeys(unittest.TestCase):
 				"geography": "in",
 				"budget": 0,
 				"budget_window": "total",
-				"key_limits": "",
 			},
 		)
 
@@ -364,7 +358,8 @@ class TestEffectiveKeys(unittest.TestCase):
 	def test_a_key_that_grants_nothing_is_still_pushed_as_blank(self):
 		[key] = self.keys([self.key()])
 		self.assertEqual((key["group"], key["allow"], key["deny"]), ("", "", ""))
-		self.assertEqual((key["budget_window"], key["key_limits"]), ("month", ""))
+		self.assertEqual(key["budget_window"], "month")
+		self.assertFalse({"limits", "key_limits"} & set(key), "limits ride the team's record")
 
 	def test_one_row_query_covers_every_key(self):
 		keys = self.keys(
@@ -389,7 +384,6 @@ class TestEffectiveKeys(unittest.TestCase):
 				"Grove Model Row": 1,
 				"Model Group Row": 2,
 				"Model Group": 1,
-				"Model Limit": 1,
 			},
 		)
 
@@ -421,41 +415,9 @@ class TestEffectiveKeys(unittest.TestCase):
 			[("acme", "frappe/qwen3-4b,openai/gpt-5", ""), ("europa", "frappe/qwen3-4b", "openai/gpt-5-eu")],
 		)
 
-	def test_limits_are_one_sorted_comma_list_with_the_model_last(self):
-		"""pathway, internal/domain/limit.go `ParseLimits`: metric:window:value[:model], comma-joined;
-		the model last so a key holding a colon still splits there."""
-		[key] = self.keys(
-			[self.key()],
-			limits=[
-				frappe._dict(parent="KEY-1", metric="total_tokens", window="1h", value=50000),
-				frappe._dict(
-					parent="KEY-1", model_key="openai/gpt-6-luna", metric="requests", window="1m", value=10
-				),
-				frappe._dict(parent="KEY-1", metric="requests", window="1m", value=200),
-			],
-		)
-		self.assertEqual(
-			key["key_limits"], "requests:1m:200,total_tokens:1h:50000,requests:1m:10:openai/gpt-6-luna"
-		)
-
-	def test_a_limit_edit_rehashes_only_that_keys_bucket(self):
-		keys = [self.key("KEY-1", "abc"), self.key("KEY-2", "abd")]
-		limit = frappe._dict(parent="KEY-1", metric="requests", window="1m", value=5)
-		before = snapshot.bucketed_section(self.keys(keys), "key_hash")["buckets"]
-		after = snapshot.bucketed_section(self.keys(keys, limits=[limit]), "key_hash")["buckets"]
-		changed = {label for label in before if before[label]["hash"] != after[label]["hash"]}
-		self.assertEqual(changed, {snapshot.bucket_of("abc")})
-
 	def test_a_key_carries_its_cap_in_nano_usd(self):
 		[key] = self.keys([self.key(cap=Decimal("7.5"))])
 		self.assertEqual(key["budget"], 7_500_000_000)
-
-	def test_a_keys_own_rows_ride_it_and_its_tiers_do_not(self):
-		tier_row = frappe._dict(parenttype="Tier", parent="Growth", metric="requests", window="1m", value=60)
-		own_row = frappe._dict(parent="KEY-2", metric="requests", window="1m", value=5)
-		keys = self.keys([self.key("KEY-1", "abc"), self.key("KEY-2", "abd")], limits=[own_row, tier_row])
-		self.assertEqual([key["key_limits"] for key in keys], ["", "requests:1m:5"])
-		self.assertNotIn("limits", keys[0])
 
 	def test_every_key_carries_its_pin(self):
 		keys = self.keys([self.key("KEY-1", "abc", geography="eu"), self.key("KEY-2", "abd", geography=None)])
@@ -490,13 +452,16 @@ class TestEffectiveTeams(unittest.TestCase):
 	"""team:<name> — what is the team's and read beside each of its keys: its suspension, payload
 	logging, cap message and its tier's rate limit rows, once per team however many keys it holds."""
 
-	def teams(self, teams, limits=(), default_tier=None, names=None, models=(), geography=""):
-		"""`models` are the docs the limit rows link, each with its geography."""
+	def teams(self, teams, limits=(), tiers=(), default_tier=None, names=None, models=(), geography=""):
+		"""`models` are the docs the limit rows link, each with its geography; `tiers` the
+		(name, limit scope) of each tier counting per key."""
 		self.filters = {}
-		answers = {"Grove Team": teams, "Model Limit": limits, "Model": models}
+		answers = {"Grove Team": teams, "Model": models, "Tier": tiers}
 
 		def get_all(doctype, filters=None, **kwargs):
 			self.filters[doctype] = filters
+			if doctype == "Model Limit":
+				return [row for row in limits if row.get("parenttype", "Tier") == filters["parenttype"]]
 			return list(answers[doctype])
 
 		with (
@@ -510,11 +475,12 @@ class TestEffectiveTeams(unittest.TestCase):
 		return frappe._dict({"name": name, **fields})
 
 	def tier_row(self, tier="Growth", **fields):
-		return frappe._dict({"parent": tier, "metric": "requests", "window": "1m", "value": 60, **fields})
+		row = {"parent": tier, "parentfield": "limits", "metric": "requests", "window": "1m", "value": 60}
+		return frappe._dict({**row, **fields})
 
 	def test_a_team_carries_its_verdicts_and_its_tiers_rows_sorted_by_name(self):
 		"""pathway, internal/transport/http/admin.go `adminTeam`: team, limited, log_payloads,
-		cap_message, limits. It refuses a field it does not know."""
+		cap_message, limits, key_limits. It refuses a field it does not know."""
 		trial = self.team("T-1", suspended=1, log_payloads=1, cap_message="trial over")
 		teams = self.teams(
 			[self.team("T-2", tier="Growth"), trial],
@@ -529,6 +495,7 @@ class TestEffectiveTeams(unittest.TestCase):
 					"log_payloads": True,
 					"cap_message": "trial over",
 					"limits": "requests:1m:20,total_tokens:1m:100000",
+					"key_limits": "",
 				},
 				{
 					"team": "T-2",
@@ -536,8 +503,61 @@ class TestEffectiveTeams(unittest.TestCase):
 					"log_payloads": False,
 					"cap_message": "",
 					"limits": "requests:1m:60,requests:1m:6:openai/gpt-6-luna",
+					"key_limits": "",
 				},
 			],
+		)
+
+	def test_limits_are_one_sorted_comma_list_with_the_model_last(self):
+		"""pathway, internal/domain/limit.go `ParseLimits`: metric:window:value[:model], comma-joined;
+		the model last so a key holding a colon still splits there."""
+		[team] = self.teams(
+			[self.team(tier="Growth")],
+			limits=[
+				self.tier_row(metric="total_tokens", window="1h", value=50000),
+				self.tier_row(model_key="openai/gpt-6-luna", value=10),
+				self.tier_row(value=200),
+			],
+		)
+		self.assertEqual(
+			team["limits"], "requests:1m:200,total_tokens:1h:50000,requests:1m:10:openai/gpt-6-luna"
+		)
+
+	def test_a_teams_own_rows_are_laid_over_its_tiers_row_by_row(self):
+		"""A team row stands in for the tier's on its model, metric and window and the tier's other
+		rows hold; a row at 0 goes out as it is: no limit there."""
+		own = [
+			self.tier_row("T-1", parenttype="Grove Team", value=9),
+			self.tier_row("T-1", parenttype="Grove Team", model_key="openai/gpt-6-luna", value=0),
+		]
+		teams = self.teams(
+			[self.team("T-1", tier="Growth"), self.team("T-2", tier="Growth")],
+			limits=[self.tier_row(), self.tier_row(window="1h", value=600), *own],
+		)
+		self.assertEqual(
+			[team["limits"] for team in teams],
+			[
+				"requests:1h:600,requests:1m:9,requests:1m:0:openai/gpt-6-luna",
+				"requests:1h:600,requests:1m:60",
+			],
+		)
+
+	def test_a_tier_counting_per_key_sends_its_per_key_table_as_key_limits_alone(self):
+		rows = [
+			self.tier_row(),
+			self.tier_row("Trial"),
+			self.tier_row("Trial", parentfield="key_limits", value=6),
+			self.tier_row("T-2", parenttype="Grove Team", value=9),
+			self.tier_row("T-2", parenttype="Grove Team", parentfield="key_limits", window="1h", value=2),
+		]
+		teams = self.teams(
+			[self.team("T-1", tier="Growth"), self.team("T-2", tier="Trial"), self.team("T-3", tier="Trial")],
+			limits=rows,
+			tiers=[("Growth", "Team"), ("Trial", "Key")],
+		)
+		self.assertEqual(
+			[(team["limits"], team["key_limits"]) for team in teams],
+			[("requests:1m:60", ""), ("", "requests:1h:2,requests:1m:6"), ("", "requests:1m:6")],
 		)
 
 	def test_a_team_with_no_tier_runs_under_the_default_tier(self):

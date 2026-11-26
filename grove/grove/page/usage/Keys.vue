@@ -14,7 +14,6 @@ import {
 	NEAR_CAP,
 	NUM,
 	barClass,
-	compact,
 	count,
 	day,
 	percent,
@@ -95,26 +94,11 @@ const COLUMNS = [
 	"minmax(0,1.4fr)",
 	"minmax(0,1fr)",
 	"minmax(0,1.2fr)",
-	"9rem",
 	"5rem",
 	"6rem",
 	"6rem",
 	"2.5rem",
 ];
-const METRIC = { requests: "R", total_tokens: "T" };
-const WINDOW = { "1m": "PM", "1h": "PH", "1d": "PD", "1M": "PMo" };
-// The key's own rows; a row naming a model shows the model's id.
-const chips = (limits) =>
-	(limits || []).map((limit) => ({
-		key: `${limit.model_key}:${limit.metric}:${limit.window}`,
-		label: `${compact(limit.value)} ${METRIC[limit.metric] || limit.metric}${
-			WINDOW[limit.window] || ""
-		}${limit.model_key ? ` ${limit.model_key.split("/").pop()}` : ""}`,
-		text: `${count(limit.value)} ${limit.metric} per ${limit.window} on ${
-			limit.model_key || "every model"
-		}`,
-	}));
-
 const hops = (transfers) =>
 	transfers
 		.map((move) => `${move.from_team} → ${move.to_team}, ${day(move.creation)}`)
@@ -157,7 +141,6 @@ const open = (row) => host.navigate?.(["Form", "Grove API Key", row.name]);
 						<ListHeaderCell>Key</ListHeaderCell>
 						<ListHeaderCell>Team</ListHeaderCell>
 						<ListHeaderCell>Cap</ListHeaderCell>
-						<ListHeaderCell>Limits</ListHeaderCell>
 						<ListHeaderCell>Last used</ListHeaderCell>
 						<ListHeaderCell class="justify-end">Requests</ListHeaderCell>
 						<ListHeaderCell class="justify-end">Cost</ListHeaderCell>
@@ -246,17 +229,6 @@ const open = (row) => host.navigate?.(["Form", "Grove API Key", row.name]);
 										:class="barClass(item.cap_pct)"
 										:style="{ width: `${Math.min(100, item.cap_pct)}%` }"
 									/>
-								</span>
-							</ListCell>
-							<ListCell
-								class="flex-wrap gap-x-2 text-sm tabular-nums text-ink-gray-7"
-							>
-								<span
-									v-for="limit in chips(item.limits)"
-									:key="limit.key"
-									:title="limit.text"
-								>
-									{{ limit.label }}
 								</span>
 							</ListCell>
 							<ListCell :class="CELL">{{ day(item.last_used) }}</ListCell>
