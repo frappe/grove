@@ -1,0 +1,88 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-26 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "api_key",
+  "from_title",
+  "column_break_teams",
+  "from_team",
+  "to_team"
+ ],
+ "fields": [
+  {
+   "fieldname": "api_key",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "API Key",
+   "options": "Grove API Key",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The key's label before the move. A trial key's is Central's AI Trial Key id.",
+   "fieldname": "from_title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title Before",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_teams",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "from_team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "From Team",
+   "options": "Grove Team",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "to_team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "To Team",
+   "options": "Grove Team",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  }
+ ],
+ "in_create": 1,
+ "links": [],
+ "modified": "2026-11-26 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Grove",
+ "name": "Key Transfer",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1
+  },
+  {
+   "create": 1,
+   "role": "Grove Control"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

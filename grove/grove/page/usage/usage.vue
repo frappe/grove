@@ -82,7 +82,9 @@ const geographyOptions = computed(() => [
 const keyOptions = computed(() => [
 	{ label: "All keys", value: "" },
 	...(choices.value.keys || []).map((key) => ({
-		label: `${key.title || key.masked}${key.status === "revoked" ? " (revoked)" : ""}`,
+		label: `${key.title || key.masked}${key.status === "revoked" ? " (revoked)" : ""}${
+			key.moved_to ? ` (transferred to ${key.moved_to})` : ""
+		}`,
 		value: key.name,
 	})),
 ]);
@@ -101,12 +103,15 @@ const providerOptions = computed(() => [
 	...(choices.value.providers || []).map((name) => ({ label: name, value: name })),
 ]);
 
+// Sync, so a filter that names a team and its key (`apply`) drops the old key before the new
+// one is set, not after.
 watch(
 	() => filters.team,
 	(team, before) => {
 		if (before !== undefined && filters.api_key) filters.api_key = "";
 		options.load({ team: team || null });
-	}
+	},
+	{ flush: "sync" }
 );
 
 const refresh = () => version.value++;

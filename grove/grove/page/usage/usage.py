@@ -14,6 +14,7 @@ from grove.api.keys import key_rows
 from grove.api.usage import usage_window
 from grove.billing.doctype.usage_record.usage_record import money_rows
 from grove.billing.pricing import committed, month_spent_by
+from grove.grove.doctype.key_transfer.key_transfer import transfers_of
 from grove.pathway.key_stats import COUNTS, LAST
 from grove.pathway.routes import utc_timestamp
 from grove.utils import site_datetime, utc_today
@@ -292,7 +293,8 @@ def last_used(field, names):
 @frappe.whitelist()
 def keys(filters: dict | str | None = None) -> list[dict]:
 	"""The keys of the window as `api.keys.key_rows` lists them, plus their team, model groups,
-	the window's usage, the last day served and how much of the cap the month took. Every key
+	the window's usage, the last day served, how much of the cap the month took and the
+	hand-overs that brought them to their team (`transfers`, oldest first). Every key
 	of the filtered team; else the window's costliest, KEY_LIMIT of them. Live keys first."""
 	operator()
 	window = Window(filters)
@@ -315,7 +317,7 @@ def keys(filters: dict | str | None = None) -> list[dict]:
 			"Grove API Key", filters={"name": ("in", names)}, fields=["name", "team"], as_list=True
 		)
 	)
-	groups, used = model_groups_of(names), last_used("api_key", names)
+	groups, used, moves = model_groups_of(names), last_used("api_key", names), transfers_of(names)
 	rows = []
 	for row in key_rows(names):
 		row.pop("key_hash", None)
@@ -327,6 +329,7 @@ def keys(filters: dict | str | None = None) -> list[dict]:
 				"model_groups": groups.get(row.name, []),
 				"cap_pct": round(row.month_spent / cap * 100, 1) if cap else None,
 				"last_used": used.get(row.name),
+				"transfers": moves.get(row.name, []),
 				**usage_of(usage.get(row.name)),
 			}
 		)
@@ -499,17 +502,6 @@ def filter_options(team: str | None = None) -> dict:
 	"""What the filter row offers: the teams, geographies, models and vendor names, and the keys
 	of `team` once one is picked (a key filter without a team is every key, too many to list)."""
 	operator()
-	keys = (
-		frappe.get_list(
-			"Grove API Key",
-			filters={"team": team},
-			fields=["name", "title", "masked", "status"],
-			order_by="creation desc",
-			limit=OPTION_LIMIT,
-		)
-		if team
-		else []
-	)
 	return {
 		"teams": frappe.get_list("Grove Team", pluck="name", order_by="name", limit=OPTION_LIMIT),
 		"geographies": frappe.get_list("Geography", fields=["name", "label"], order_by="name"),
@@ -519,8 +511,25 @@ def filter_options(team: str | None = None) -> dict:
 		"providers": frappe.get_list(
 			"Model Provider", pluck="provider_name", distinct=True, order_by="provider_name"
 		),
-		"keys": keys,
+		"keys": team_keys(team) if team else [],
 	}
+
+
+def team_keys(team):
+	"""The keys `team` holds and the ones it handed over, those with `moved_to`: their team now.
+	Its usage of a key it handed over stays under it, so the picker still offers the key."""
+	moved = frappe.get_list("Key Transfer", filters={"from_team": team}, pluck="api_key")
+	keys = frappe.get_list(
+		"Grove API Key",
+		or_filters={"team": team, "name": ("in", moved)},
+		fields=["name", "title", "masked", "status", "team"],
+		order_by="creation desc",
+		limit=OPTION_LIMIT,
+	)
+	for key in keys:
+		holder = key.pop("team")
+		key["moved_to"] = None if holder == team else holder
+	return keys
 
 
 @frappe.whitelist()
