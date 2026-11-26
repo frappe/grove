@@ -11,7 +11,7 @@ playbooks/
   inference_server/   provision.yml  serve.yml  reconfigure.yml  container_state.yml  teardown.yml  deploy_tls.yml
   machine/            ping.yml  grow_root.yml  scan_gpus.yml     — box-level, no role layered on yet
   monitoring_agent/   agent.yml  config.yml  exporters.yml  push_targets.yml  vector.yml
-  gateway_store/      store.yml  upgrade_redis.yml  stop.yml  ping.yml     — Redis only, shared by a Network's gateways
+  gateway_store/      store.yml  stop.yml  ping.yml     — Redis only, shared by a Network's gateways
   roles/              grove_user  remove_cloud_user  auditd  dcgm_exporter  node_exporter  fleet_tls  grove_https  install_gateway_agent  openresty  redis  redis_exporter  pathway_memory  vector
 ```
 
@@ -110,7 +110,7 @@ on boot; `gateway_store/ping.yml` is the wait for redis to answer, `redis-cli pi
 Pathway holds no usage to flush: each request lands in the store as it ends, or on the box's disk
 spool when the store refuses.
 
-## A store's Redis, and upgrading it
+## A store's Redis
 
 `roles/redis` installs Redis from Redis's own APT repository (`packages.redis.io`), not Ubuntu's.
 `redis_version` in its defaults is pip's `~=`: `~=8.12.0` takes the newest 8.12.x the repository has,
@@ -135,32 +135,12 @@ hand outlives package upgrades. Their `/etc/redis`, `/var/lib/redis` and `/var/l
 the install scripts chown those back to `redis` every time. A config or unit that changed restarts
 Redis; persistence is checked on the running server as well.
 
-A store set up before this ran Redis as `redis-server`. Its first run of the role (Upgrade Redis) moves
-it, once: that Redis is stopped, its data copied into `/var/lib/store-redis`, and `store-redis` started.
-The directory copied from is left as it was, which is the way back: start nothing on it until it is no
-longer needed. Until a store has moved, its backups and log shipping still read the packaged paths
-(`CONFS`, `LOGS` in `gateway_store.py` name both), and `stop.yml`, which Server Resize runs, finds no
-`store-redis` to stop: move a store before resizing it. After the move, Update Vector on the store so
-that its log ships from the new directory.
-
-The play ends by clearing what an earlier version of the role left on a store (`tasks/leftovers.yml`: a
-drop-in on the unit and dpkg stat overrides on the packaged paths). It removes no data directory.
-
-**Upgrade Redis** on a Gateway Store runs `gateway_store/upgrade_redis.yml`. With nothing newer than
-what is installed, and the store already on `store-redis`, it stops nothing. For a new package it stops
-Redis, copies the data dir to `/var/lib/store-redis.before-<release>` (refused, before the stop, when
-that copy exists) and runs the role; a step that fails starts Redis again. The store is down for that
-stretch, and for the move, and its gateways refuse requests, so:
-
-1. Start Maintenance on each of its gateways; wait for in-flight 0.
-2. Pull Usage.
-3. Upgrade Redis. The doc's Redis Version changes when it is done.
-4. End Maintenance.
-
-The copy, or at the move the directory copied from, is the only way back: an older Redis cannot read what
-a newer one wrote (6.0 starts empty with no error, 7.0 refuses after the first AOF rewrite). Taken
-after the pull with the gateways drained, it holds no unbilled usage. Delete it once the new release
-has soaked. A patch release on the same line needs no bracket beyond a quiet minute.
+Only Setup (`store.yml`) runs the role, so this is what a new store gets. A store set up before it keeps
+the packaged Redis: nothing moves it, and Setup is offered on a Pending or Broken store alone. The role
+is not for such a store. It copies no data, and with the packaged Redis still holding port 6379
+`store-redis` fails to start. For those stores the backups and log shipping still read the packaged
+paths (`CONFS`, `LOGS` in `gateway_store.py` name both), while `stop.yml`, which Server Resize runs,
+names `store-redis` and finds nothing to stop there.
 
 ## Monitoring
 

@@ -14,8 +14,8 @@ from grove.infrastructure.fleet import NamedHost
 
 REDIS_PORT = 6379
 RDB_MAGIC = b"REDIS"
-# The password is read on the box from requirepass, so it never lands in argv or a log. A store not
-# yet moved onto store-redis (Upgrade Redis) still has only the packaged conf and log directory.
+# The password is read on the box from requirepass, so it never lands in argv or a log. A store set
+# up before store-redis still runs the packaged redis, and has only its conf and log directory.
 CONFS = "/etc/store-redis/redis.conf /etc/redis/redis.conf"
 LOGS = ["/var/log/store-redis/*.log", "/var/log/redis/*.log"]
 DUMP = (
@@ -99,7 +99,7 @@ class GatewayStore(NamedHost, Document):
 
 	@property
 	def play_variables(self):
-		"""What this store's own plays are passed. Carries the password, so resolve it inside a job."""
+		"""What store.yml is passed. Carries the password, so resolve it inside a job."""
 		return {"redis_bind_ip": self.listen_ip, "redis_password": self.get_password("redis_password")}
 
 	@property
@@ -132,37 +132,9 @@ class GatewayStore(NamedHost, Document):
 			self.sync_dns_records()
 		return play_name, rc
 
-	@frappe.whitelist(methods=["POST"])
-	def upgrade_redis(self):
-		"""Button: move this store onto the newest Redis the role's `redis_version` allows, as
-		store-redis. The store is down while the play swaps it; nothing is stopped when it is
-		already both."""
-		if self.status != "Active":
-			frappe.throw(f"{self.name} is {self.status}: only an Active store's Redis is upgraded.")
-		frappe.enqueue_doc(
-			self.doctype,
-			self.name,
-			"run_redis_upgrade",
-			queue="long",
-			timeout=1800,
-			enqueue_after_commit=True,
-		)
-		frappe.msgprint(f"Upgrading Redis on {self.name} — watch its Ansible Plays.", alert=True)
-
-	@failure.reports_failure()
-	def run_redis_upgrade(self):
-		"""Worker: a snapshot off the box first, where the geography has a bucket, then the play."""
-		if frappe.db.get_value("Geography", self.geography, "backup_bucket"):
-			self.backup()
-		play_name, rc = self.run_playbook("upgrade_redis.yml", extravars=self.play_variables)
-		if rc != 0:
-			frappe.throw(f"Upgrade play {play_name} exited {rc}.")
-		self.record_redis_version(play_name)
-		return play_name, rc
-
 	def record_redis_version(self, play_name):
-		"""What the box reports after a play, not the role's `~=` setting: stores take patch
-		releases on different days."""
+		"""What the box reports after Setup, not the role's `~=` setting: stores set up on
+		different days take different patch releases."""
 		version = task_result(play_name, VERSION_TASK).get("stdout", "").strip()
 		frappe.db.set_value(self.doctype, self.name, "redis_version", version)
 

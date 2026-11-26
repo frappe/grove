@@ -35,21 +35,6 @@ frappe.ui.form.on("Gateway Store", {
 					)
 			);
 		}
-		if (frm.doc.status === "Active") {
-			frm.add_custom_button(
-				__("Upgrade Redis"),
-				() =>
-					grove.confirm_call(
-						frm,
-						__(
-							"Upgrade Redis on {0}? The store is down while the play swaps it and its gateways refuse requests meanwhile: put them in maintenance and pull usage first. Nothing is stopped when it already runs the newest release as store-redis.",
-							[frm.doc.name]
-						),
-						"upgrade_redis"
-					),
-				__("Danger")
-			);
-		}
 		if (frm.doc.status !== "Terminated") {
 			frm.add_custom_button(
 				__("Resize Server"),
