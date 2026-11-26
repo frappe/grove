@@ -24,3 +24,4 @@ grove.patches.v1_0.swap_key_title_index
 grove.patches.v1_0.move_provider_keys_out
 grove.patches.v1_0.link_provider_key_stats
 grove.patches.v1_0.mark_provider_key_uses
+grove.patches.v1_0.log_past_key_transfers

@@ -82,7 +82,9 @@ const geographyOptions = computed(() => [
 const keyOptions = computed(() => [
 	{ label: "All keys", value: "" },
 	...(choices.value.keys || []).map((key) => ({
-		label: `${key.title || key.masked}${key.status === "revoked" ? " (revoked)" : ""}`,
+		label: `${key.title || key.masked}${key.status === "revoked" ? " (revoked)" : ""}${
+			key.moved_to ? ` (transferred to ${key.moved_to})` : ""
+		}`,
 		value: key.name,
 	})),
 ]);

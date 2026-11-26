@@ -101,7 +101,7 @@ class TestUsagePage(IntegrationTestCase):
 		)
 
 	@classmethod
-	def record(cls, key, day, model, cost, requests, gateway_cost):
+	def record(cls, key, day, model, cost, requests, gateway_cost, team=None):
 		entry = {
 			"model": model,
 			"pricing": None,
@@ -113,7 +113,7 @@ class TestUsagePage(IntegrationTestCase):
 			{
 				"doctype": "Usage Record",
 				"api_key": key,
-				"team": cls.team,
+				"team": team or cls.team,
 				"day": day,
 				"drain_id": f"usage-{key}-{day}-{model}",
 				"request_count": requests,
@@ -244,6 +244,34 @@ class TestUsagePage(IntegrationTestCase):
 		self.assertIn((MODEL_A, self.model_doc), {(m["model_key"], m["name"]) for m in options["models"]})
 		self.assertIn(VENDOR, options["providers"])
 		self.assertEqual(usage.filter_options()["keys"], [])
+
+	def test_a_handed_over_key_stays_findable_under_the_team_it_left(self):
+		trial, customer = (
+			frappe.get_doc({"doctype": "Grove Team", "__newname": name, **fields})
+			.insert(ignore_permissions=True)
+			.name
+			for name, fields in (
+				("_T-usage-trial", {"key_cap_window": "Total"}),
+				("_T-usage-customer", {"tier": self.tier}),
+			)
+		)
+		doc = frappe.get_doc({"doctype": "Grove API Key", "team": trial, "title": "AITK-00012"}).insert()
+		yesterday = self.today - timedelta(days=1)
+		self.record(doc.name, yesterday, MODEL_A, cost=0.42, requests=1, gateway_cost=0, team=trial)
+		doc.transfer(customer, title="site.example.test")
+		self.record(doc.name, self.today, MODEL_A, cost=3.1, requests=2, gateway_cost=0, team=customer)
+
+		[row] = usage.keys({**WEEK, "team": trial})
+		self.assertEqual((row["name"], row["team"], row["cost"]), (doc.name, customer, 0.42))
+		self.assertEqual(
+			[(move["from_team"], move["to_team"]) for move in row["transfers"]], [(trial, customer)]
+		)
+		[offered] = usage.filter_options(team=trial)["keys"]
+		self.assertEqual((offered["name"], offered["moved_to"]), (doc.name, customer))
+		[held] = usage.filter_options(team=customer)["keys"]
+		self.assertEqual((held["name"], held["moved_to"]), (doc.name, None))
+		under_trial = usage.overview({**WEEK, "team": trial, "api_key": doc.name})
+		self.assertEqual(under_trial["totals"]["cost"], 0.42)
 
 	def test_only_a_system_manager_reads(self):
 		self.addCleanup(frappe.set_user, "Administrator")

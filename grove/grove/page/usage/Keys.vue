@@ -49,6 +49,7 @@ const CHIPS = [
 			(!row.last_used || dayjs().diff(dayjs(row.last_used), "day") >= 30),
 	},
 	{ key: "revoked", label: "Revoked", test: (row) => row.status === "revoked" },
+	{ key: "transferred", label: "Transferred", test: (row) => row.transfers.length > 0 },
 ];
 const PAGE_SIZE = 10;
 const chip = ref("");
@@ -70,7 +71,13 @@ const rows = computed(() => {
 						.includes(needle)
 				)
 		)
-		.map((row) => ({ ...row, id: row.name }));
+		.map((row) => ({
+			...row,
+			id: row.name,
+			moved: row.transfers.at(-1),
+			// Listed under a team that handed it over: the usage is that team's, the cap is not.
+			away: Boolean(props.params?.team) && row.team !== props.params.team,
+		}));
 });
 const pageCount = computed(() => Math.max(1, Math.ceil(rows.value.length / PAGE_SIZE)));
 const paged = computed(() =>
@@ -106,6 +113,12 @@ const chips = (limits) =>
 		}`,
 		text: `${count(limit.value)} ${limit.metric} per ${limit.window}`,
 	}));
+
+// Every hand-over of a key, oldest first, one a line.
+const hops = (transfers) =>
+	transfers
+		.map((move) => `${move.from_team} → ${move.to_team}, ${day(move.creation)}`)
+		.join("\n");
 
 const open = (row) => host.navigate?.(["Form", "Grove API Key", row.name]);
 </script>
@@ -170,14 +183,20 @@ const open = (row) => host.navigate?.(["Form", "Grove API Key", row.name]);
 									>
 										{{ item.title || item.masked }}
 									</button>
-									<Badge v-if="item.status === 'revoked'" label="Revoked" />
+									<Badge
+										v-if="item.away"
+										theme="blue"
+										label="Transferred"
+										:title="`Now ${item.team}'s`"
+									/>
+									<Badge v-else-if="item.status === 'revoked'" label="Revoked" />
 									<Badge v-else-if="!item.cap" theme="amber" label="No cap" />
 								</span>
 								<span class="font-mono text-xs text-ink-gray-5">{{
 									item.masked
 								}}</span>
 							</ListCell>
-							<ListCell>
+							<ListCell class="flex-col !items-start justify-center">
 								<button
 									type="button"
 									:class="LINK"
@@ -186,9 +205,26 @@ const open = (row) => host.navigate?.(["Form", "Grove API Key", row.name]);
 								>
 									{{ item.team }}
 								</button>
+								<button
+									v-if="item.moved"
+									type="button"
+									:class="`${MUTED} max-w-full truncate text-left underline-offset-2 hover:underline`"
+									:title="`Show this key under ${item.moved.from_team}\n${hops(
+										item.transfers
+									)}`"
+									@click="
+										emit('filter', {
+											team: item.moved.from_team,
+											api_key: item.name,
+										})
+									"
+								>
+									from {{ item.moved.from_team }} · {{ day(item.moved.creation) }}
+								</button>
 							</ListCell>
 							<ListCell class="flex-col !items-start justify-center gap-1">
 								<span
+									v-if="!item.away"
 									class="flex w-full justify-between gap-2 text-sm tabular-nums text-ink-gray-5"
 								>
 									<span>
@@ -202,7 +238,7 @@ const open = (row) => host.navigate?.(["Form", "Grove API Key", row.name]);
 									}}</span>
 								</span>
 								<span
-									v-if="item.cap && item.status === 'active'"
+									v-if="!item.away && item.cap && item.status === 'active'"
 									class="block h-1 w-full overflow-hidden rounded-full bg-surface-gray-3"
 								>
 									<span

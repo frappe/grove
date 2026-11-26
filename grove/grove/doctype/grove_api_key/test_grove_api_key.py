@@ -681,7 +681,7 @@ class IntegrationTestTransfer(IntegrationTestCase):
 		groups = [{"model_group": self.trial_group}]
 		return key(team(team_name, key_cap_window="Total"), model_groups=groups, **fields)
 
-	def test_team_and_title_move_and_the_trials_rules_go_in_one_save_the_version_and_the_wire_record(self):
+	def test_team_and_title_move_and_the_trials_rules_go_in_one_save_the_log_and_the_wire_record(self):
 		customer = team("key-handover-customer", spend_limit=10)
 		doc = self.trial_key("key-handover-trial", cap=2, expiry="30 Days", expiry_from_first_use=1)
 		grove_api_key.start_expiry([doc.name])
@@ -702,16 +702,44 @@ class IntegrationTestTransfer(IntegrationTestCase):
 			(record["team"], record["budget_window"], record["budget"], record["group"]),
 			(customer, "month", 2_000_000_000, self.default),
 		)
-		[version] = frappe.get_all(
-			"Version", filters={"ref_doctype": "Grove API Key", "docname": doc.name}, pluck="data"
-		)
-		self.assertIn(["team", trial, customer], frappe.parse_json(version)["changed"])
-		comment = {"reference_doctype": "Grove API Key", "reference_name": doc.name}
-		self.assertTrue(frappe.db.exists("Comment", {**comment, "content": f"Handed over from {trial}."}))
+		self.assertEqual(self.logged(doc.name), [(trial, customer, None)])
 		# Already there: nothing moves, the title asked for is not taken.
 		row = keys.transfer_key(trial, doc.name, customer, title="other")
 		self.assertEqual(row.title, "site.example.test")
 		self.assertEqual(frappe.db.get_value("Grove API Key", doc.name, "modified"), doc.modified)
+		self.assertEqual(len(self.logged(doc.name)), 1)
+
+	def logged(self, name):
+		"""The Key Transfer rows of a key: (from team, to team, title before)."""
+		rows = frappe.get_all(
+			"Key Transfer",
+			filters={"api_key": name},
+			fields=["from_team", "to_team", "from_title"],
+			order_by="creation",
+		)
+		return [(row.from_team, row.to_team, row.from_title) for row in rows]
+
+	def test_a_move_from_before_the_log_is_filled_in_from_the_version_it_left(self):
+		from grove.patches.v1_0 import log_past_key_transfers
+
+		trial = team("key-handover-past-trial", key_cap_window="Total")
+		doc = key(team("key-handover-backfilled"), title="past.example.test")
+		changed = [["title", "AITK-00012", doc.title], ["team", trial, doc.team]]
+		version = frappe.get_doc(
+			{
+				"doctype": "Version",
+				"ref_doctype": "Grove API Key",
+				"docname": doc.name,
+				"data": frappe.as_json({"changed": changed}),
+			}
+		).insert()
+		version.db_set("creation", "2026-10-20 10:00:00", update_modified=False)
+
+		log_past_key_transfers.execute()
+
+		self.assertEqual(self.logged(doc.name), [(trial, doc.team, "AITK-00012")])
+		moved_at = frappe.db.get_value("Key Transfer", {"api_key": doc.name}, "creation")
+		self.assertEqual(str(moved_at), "2026-10-20 10:00:00")
 
 	def test_a_full_team_a_title_twin_same_window_and_a_revoked_key_are_refused_and_nothing_moves(self):
 		full = team("key-handover-full", max_keys=1)
@@ -735,6 +763,7 @@ class IntegrationTestTransfer(IntegrationTestCase):
 		gone.reload()
 		with self.assertRaisesRegex(frappe.ValidationError, "stays revoked"):
 			gone.transfer(taken)
+		self.assertEqual(self.logged(doc.name) + self.logged(gone.name), [])
 
 	def test_a_titled_key_meets_the_title_twin_check_though_no_new_title_is_asked(self):
 		taken = team("key-handover-taken-quiet")

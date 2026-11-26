@@ -172,8 +172,8 @@ class GroveAPIKey(Document):
 		long as they keep it), so what it may call is the new team's; cap, geography and limit rows stay. Counted
 		against the new team like a mint: its key count, and the cap within the spend limit of a
 		Monthly team (that check reads the team's boxes, as a mint does; nothing is drained). One
-		save, versioned even under test, so the Version holds the move and the next tick re-pushes
-		team, window and limits — the push at which the box closes the old team's books. A key
+		save and one Key Transfer row, which holds the move (teams, title before); the next tick
+		re-pushes team, window and limits — the push at which the box closes the old team's books. A key
 		already here is left as it is. Refused between two teams of one cap window: the box keeps a key's
 		spend under one field per window, so it would follow the key."""
 		if to_team == self.team:
@@ -187,7 +187,8 @@ class GroveAPIKey(Document):
 				"would follow it. Mint a new one."
 			)
 		title = title or self.title
-		old_team, self.team = self.team, to_team
+		old_team, old_title = self.team, self.title
+		self.team = to_team
 		self.check_key_count()
 		if window != "Total":
 			self.validate_cap()
@@ -195,8 +196,16 @@ class GroveAPIKey(Document):
 		self.expiry, self.expiry_from_first_use, self.expires_at = "Never", 0, None
 		self.set("model_groups", [])
 		self.flags.transfer = True
-		self.save(ignore_version=False)
-		self.add_comment("Info", f"Handed over from {old_team}.")
+		self.save()
+		frappe.get_doc(
+			{
+				"doctype": "Key Transfer",
+				"api_key": self.name,
+				"from_team": old_team,
+				"to_team": to_team,
+				"from_title": old_title,
+			}
+		).insert()
 		forget_figures(old_team)
 
 	def extend_expiry(self, days: int):
