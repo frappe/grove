@@ -196,6 +196,11 @@ class TestUpgradeRedis(unittest.TestCase):
 			GatewayStore.play_variables.fget(store), {"redis_bind_ip": "10.0.61.9", "redis_password": "pw"}
 		)
 
+	def test_the_button_takes_a_post_only(self):
+		"""It stops the store's Redis: a link, which is a GET and skips the CSRF check, must not."""
+		methods = frappe.allowed_http_methods_for_whitelisted_func[GatewayStore.upgrade_redis]
+		self.assertEqual(list(methods), ["POST"])
+
 	def test_only_an_active_store_is_upgraded(self):
 		store = SimpleNamespace(name="store1", doctype="Gateway Store", status="Broken")
 		with patch.object(frappe, "throw", side_effect=Refused), self.assertRaises(Refused):

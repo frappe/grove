@@ -132,14 +132,21 @@ class GatewayStore(NamedHost, Document):
 			self.sync_dns_records()
 		return play_name, rc
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def upgrade_redis(self):
 		"""Button: move this store onto the newest Redis the role's `redis_version` allows, as
 		store-redis. The store is down while the play swaps it; nothing is stopped when it is
 		already both."""
 		if self.status != "Active":
 			frappe.throw(f"{self.name} is {self.status}: only an Active store's Redis is upgraded.")
-		frappe.enqueue_doc(self.doctype, self.name, "run_redis_upgrade", queue="long", timeout=1800)
+		frappe.enqueue_doc(
+			self.doctype,
+			self.name,
+			"run_redis_upgrade",
+			queue="long",
+			timeout=1800,
+			enqueue_after_commit=True,
+		)
 		frappe.msgprint(f"Upgrading Redis on {self.name} — watch its Ansible Plays.", alert=True)
 
 	@failure.reports_failure()
