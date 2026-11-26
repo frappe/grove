@@ -41,13 +41,10 @@ class GPU(Document):
 
 
 def claim(gpu, replica):
-	"""Take this card for `replica`. True if it was free and is now ours.
-
-	One statement decides it. `UPDATE` takes a CURRENT read rather than the transaction's snapshot,
-	so this is atomic under REPEATABLE READ — a `SELECT` then `UPDATE` would not be, because the
-	select would report a card free that someone committed a claim on a moment ago.
-
-	The read-back says WHO holds the card, which `_cursor.rowcount` would not."""
+	"""True if it was free and is now ours. One statement decides it: `UPDATE` takes a CURRENT read
+	rather than the transaction's snapshot, so this is atomic under REPEATABLE READ — a `SELECT`
+	then `UPDATE` would not be, because the select would report a card free that someone committed
+	a claim on a moment ago. The read-back says WHO holds the card, which `_cursor.rowcount` would not."""
 	frappe.db.sql(
 		"""update `tabGPU` set held_by = %(replica)s, modified = now()
 		where name = %(gpu)s and (held_by is null or held_by = '')""",
@@ -57,8 +54,7 @@ def claim(gpu, replica):
 
 
 def release(gpu, replica):
-	"""Give a card back, but only one this replica actually holds. Guarded on the holder: releasing
-	someone else's card is how two engines end up on one GPU."""
+	"""Guarded on the holder: releasing someone else's card is how two engines end up on one GPU."""
 	frappe.db.sql(
 		"""update `tabGPU` set held_by = null, modified = now()
 		where name = %(gpu)s and held_by = %(replica)s""",
@@ -69,11 +65,8 @@ def release(gpu, replica):
 def release_if_stale(gpu):
 	"""Free a card whose holder is no longer entitled to it, and say whether it went. A worker dying
 	between a status flip and its release leaves a card held by a replica that stopped, and nothing
-	else would ever free it.
-
-	Repaired at the point of contention rather than by a sweep, because that is the only moment
-	anyone cares. The claim that follows still arbitrates, so two callers clearing the same stale
-	holder is safe."""
+	else would ever free it. Repaired at the point of contention rather than by a sweep. The claim
+	that follows still arbitrates, so two callers clearing the same stale holder is safe."""
 	from grove.grove.doctype.model_replica.model_replica import CLAIM_HOLDING_STATUSES
 
 	holder = frappe.db.get_value("GPU", gpu, "held_by")
@@ -86,9 +79,8 @@ def release_if_stale(gpu):
 
 
 def cards_on(machines, fields=None):
-	"""Every card on these machines, holder included — one query for the whole fleet. The allocation
-	panel and the scheduler both read cards this way, so they cannot disagree about what is
-	free."""
+	"""One query for the whole fleet. The allocation panel and the scheduler both read cards this
+	way, so they cannot disagree about what is free."""
 	if not machines:
 		return []
 	return frappe.get_all(

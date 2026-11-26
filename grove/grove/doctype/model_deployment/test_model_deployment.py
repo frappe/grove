@@ -1,13 +1,10 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""What a replica of a deployment actually runs. Pure — the deployment and the replica are passed in
-as plain mappings and the two site reads (the image's kind, the Model's launch config) are stubbed,
-so none of this needs a site.
-
-The rule under test is one line of policy with a lot resting on it: blank or 0 on a replica means
-inherit. Get it wrong in the lenient direction and a replica silently runs the engine's defaults
-instead of the tuning its deployment was given; get it wrong in the strict direction and no replica
-can ever differ from its deployment."""
+"""Pure — the deployment and the replica are passed in as plain mappings and the two site reads
+(the image's kind, the Model's launch config) are stubbed. The rule under test: blank or 0 on a
+replica means inherit. Get it wrong in the lenient direction and a replica silently runs the
+engine's defaults instead of the tuning its deployment was given; get it wrong in the strict
+direction and no replica can ever differ from its deployment."""
 
 import unittest
 from unittest.mock import patch
@@ -107,8 +104,8 @@ class TestBlankMeansInherit(unittest.TestCase):
 
 
 class TestExtraServeArgsAreAppendedNotReplaced(unittest.TestCase):
-	"""The one field a replica ADDS to rather than overrides. Replacing would mean retyping the
-	deployment's whole flag list — often a --speculative-config blob — to add a single flag."""
+	"""Replacing would mean retyping the deployment's whole flag list — often a
+	--speculative-config blob — to add a single flag."""
 
 	def args(self, replica_args):
 		return resolved(rep=replica(extra_serve_args=replica_args))["extra_serve_args"]
@@ -181,10 +178,9 @@ class TestGpuIndexes(unittest.TestCase):
 
 
 class TestNaming(unittest.TestCase):
-	"""`MD-{#####}`, counted, carrying neither the model nor the shape. `gpus_per_replica` is
-	editable and a name is not, so a name saying `4xh100` would go stale the first time someone
-	re-shaped the deployment; the region is out for the same reason a deployment is not scoped
-	to one."""
+	"""`gpus_per_replica` is editable and a name is not, so a name saying `4xh100` would go stale
+	the first time someone re-shaped the deployment; the region is out for the same reason a
+	deployment is not scoped to one."""
 
 	def name(self, model, number="00014"):
 		with patch(f"{MODULE}.next_deployment_name", side_effect=lambda: f"MD-{number}"):
@@ -203,7 +199,6 @@ class TestNaming(unittest.TestCase):
 
 
 def claim(free=(), unpinned=0, replicas=0, vram=80, capability=9.0):
-	"""What one box reports: its unheld cards, and what is already running on it."""
 	cards = [{"name": f"gpu-{i}", "gpu_index": i, "gpu_type": "h100", "vram_gb": vram} for i in free]
 	return frappe._dict(
 		free_gpus=cards,

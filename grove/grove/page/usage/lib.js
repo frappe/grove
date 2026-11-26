@@ -1,5 +1,3 @@
-// What every panel of the Usage page shares: the call to its backend, a loading state around it,
-// the number formats, and the classes the cards and list cells agree on.
 import { dayjs, frappeRequest } from "frappe-ui";
 import { ref } from "vue";
 

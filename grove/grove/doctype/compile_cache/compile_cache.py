@@ -69,7 +69,6 @@ def bucket_and_client():
 
 
 def s3_client(env):
-	"""An S3 client on an AWS_* env dict."""
 	import boto3
 
 	return boto3.client(
@@ -88,7 +87,7 @@ def list_keys(client, bucket, prefix):
 
 
 def entries_from_keys(objects):
-	"""One entry per cache key. A key that does not parse is skipped, not guessed at."""
+	"""A key that does not parse is skipped, not guessed at."""
 	entries = {}
 	for obj in objects:
 		parts = obj["Key"].split("/")
@@ -106,8 +105,7 @@ def entries_from_keys(objects):
 
 @frappe.whitelist()
 def sync_from_bucket():
-	"""Button (list view): mirror compile-cache/ into rows — upsert what the bucket holds,
-	prune what it no longer does."""
+	"""Button (list view)."""
 	bucket, client = bucket_and_client()
 	entries = entries_from_keys(
 		[{"Key": key, "Size": size} for key, size in _keys_with_sizes(client, bucket)]

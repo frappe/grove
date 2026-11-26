@@ -16,7 +16,6 @@ REGIONAL_URL = "http://ap-south-1.example.com/v1/write"
 
 class TestRemoteWriteUrl(IntegrationTestCase):
 	def agent(self, name, remote_write_url):
-		"""An agent on a box in its own Region, which may or may not name an endpoint."""
 		region = frappe.get_doc(
 			{
 				"doctype": "Region",

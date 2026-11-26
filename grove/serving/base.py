@@ -45,11 +45,8 @@ def _to_int(text, typed):
 
 
 class Engine(ABC):
-	"""One placement of one Model: what starts it, what environment it needs, what proves it
-	serves, and what the routing side may hold it to.
-
-	A Pod and a Model Replica carry the same knobs, so the constructor takes them all and an engine
-	ignores the ones it has no use for."""
+	"""One placement of one Model. A Pod and a Model Replica carry the same knobs, so the
+	constructor takes them all and an engine ignores the ones it has no use for."""
 
 	# A class attribute, not a property: the projection reads it off the class.
 	default_concurrency: int

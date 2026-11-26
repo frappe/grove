@@ -8,9 +8,4 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []
 
 
 class IntegrationTestCompileCache(IntegrationTestCase):
-	"""
-	Integration tests for CompileCache.
-	Use this class for testing interactions between multiple components.
-	"""
-
 	pass

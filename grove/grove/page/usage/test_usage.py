@@ -1,8 +1,5 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""The Usage page reads what the control API serves, fleet-wide and for System Managers alone: the
-window's totals and trend, who spends, each key against its cap, what is stuck, each vendor key's
-counters, and — on demand — the boxes' counters beside Grove's."""
 
 import json
 import unittest.mock

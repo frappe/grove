@@ -1,15 +1,10 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""The table one ingress is given: every Active replica it OWNS, dialled privately.
-
-Ownership is explicit — an Inference Server names its ingress — and that is what keeps the
-capacity gate honest. `inflight:<engine>` lives in each box's own Redis, so a replica counted by
-two ingresses is admitted to twice its --max-num-seqs and vLLM starts queueing, silently.
-
-The other rule that matters is what happens to a replica with no private address. It is left OUT,
-not dialled publicly, or customer traffic quietly crosses the internet to a box that was supposed
-to be private. `test-aws-1` is that case on the fleet today: private_ip blank.
-"""
+"""The table one ingress is given: every Active replica it OWNS, dialled privately. Ownership is
+explicit — an Inference Server names its ingress. `inflight:<engine>` lives in each box's own Redis,
+so a replica counted by two ingresses is admitted to twice its --max-num-seqs and vLLM starts
+queueing, silently. A replica with no private address is left OUT, not dialled publicly, or customer
+traffic quietly crosses the internet to a box that was supposed to be private."""
 
 import unittest
 from unittest.mock import patch

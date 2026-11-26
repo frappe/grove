@@ -30,8 +30,6 @@ class CloudProvider(Document):
 
 	@frappe.whitelist()
 	def fetch_gpu_types(self):
-		"""Refresh the cached GPU-type list in the background; the form's HTML field renders it on
-		reload. RunPod only."""
 		if self.provider_type != "runpod":
 			frappe.throw("GPU type listing is only available for RunPod providers.")
 

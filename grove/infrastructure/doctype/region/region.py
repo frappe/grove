@@ -72,7 +72,6 @@ class Region(Document):
 		return token
 
 	def gateways(self, exclude=None):
-		"""Every gateway still in this region, by name."""
 		filters = {"region": self.name, "status": ("!=", "Terminated")}
 		if exclude:
 			filters["name"] = ("!=", exclude)

@@ -1,8 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""What bounds a projection tick: the stamp each store carries, the key buckets a save after it
-moved, the keys those buckets hold, and when the stamp is written. Pure — the docs are mocked,
-no site."""
+"""What bounds a projection tick. Pure — the docs are mocked, no site."""
 
 import unittest
 import unittest.mock
@@ -188,8 +186,6 @@ class TestBucketsInPlay(unittest.TestCase):
 
 
 class TestStamp(unittest.TestCase):
-	"""Where a unit's stamp lives and when it is written."""
-
 	def stamp(self, unit, outcome):
 		writes = []
 		db = frappe._dict(set_value=lambda *args, **kwargs: writes.append((args, kwargs)))

@@ -105,7 +105,6 @@ def _webhook_user() -> str:
 
 
 def is_signed_with(secret: str) -> bool:
-	"""Whether the Webhook header is the base64 HMAC-SHA256 of the raw body under `secret`."""
 	digest = hmac.new(secret.encode(), frappe.request.get_data(), hashlib.sha256).digest()
 	signature = base64.b64encode(digest).decode()
 	return hmac.compare_digest(signature, str(frappe.get_request_header(WEBHOOK_SECRET_HEADER)))

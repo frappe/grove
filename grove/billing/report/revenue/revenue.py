@@ -1,6 +1,5 @@
 """Revenue per model, API key, team or day: what each drain was charged — Grove's price at the
-pricing the gateway charged — plus the corrections Grove made, summed in one grouped query
-over `money_rows`."""
+pricing the gateway charged — plus the corrections Grove made."""
 
 import frappe
 

@@ -8,9 +8,4 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []
 
 
 class IntegrationTestPod(IntegrationTestCase):
-	"""
-	Integration tests for Pod.
-	Use this class for testing interactions between multiple components.
-	"""
-
 	pass

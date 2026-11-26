@@ -28,18 +28,12 @@ REPLICA_FIELDS = [
 
 
 def ingress_targets(geography):
-	"""{Inference Server name: the ingress row its engines fold into, or None}.
-
-	None means the box is owned by an ingress the gateway cannot use right now. Those engines are
-	dropped, NOT dialled directly: a box that names an ingress is reached through it or not at all.
-	The fallback would work today and become a black hole the moment phase 4 deletes the box's own
-	front.
-
-	One row per (model, ingress) rather than per replica is the point: the gateway learns that
-	Mumbai has two ingresses, never which boxes are behind them.
-
-	No Fleet Zone is a different condition — no box has a name yet, the pre-TLS setup where
-	everything is dialled by IP — so ownership is ignored rather than taking the fleet dark."""
+	"""{Inference Server name: the ingress row its engines fold into, or None}. None means the box
+	is owned by an ingress the gateway cannot use right now. Those engines are dropped, NOT dialled
+	directly: a box that names an ingress is reached through it or not at all. One row per (model,
+	ingress) rather than per replica: the gateway learns that Mumbai has two ingresses, never
+	which boxes are behind them. No Fleet Zone is the pre-TLS setup where everything is dialled by
+	IP, so ownership is ignored rather than taking the fleet dark."""
 	zone = frappe.db.get_value("Geography", geography, "fleet_zone")
 	if not zone:
 		return {}
@@ -85,7 +79,6 @@ def engine_kinds():
 
 
 def deployments():
-	"""Resolved once per snapshot, for the same reason as `engine_kinds`."""
 	return {
 		deployment["name"]: deployment
 		for deployment in frappe.get_all("Model Deployment", fields=["name", "engine_image", "max_num_seqs"])
@@ -93,13 +86,10 @@ def deployments():
 
 
 def resolve_deployment(replica, by_name):
-	"""A replica's effective image and admission cap. The image lives on its deployment; the cap may
-	be overridden per replica, where blank means inherit.
-
-	Not cosmetic — `max_num_seqs` IS the gateway's admission cap. A blank left unresolved would
-	advertise `engine_class.default_concurrency` while the engine actually runs the deployment's
-	number, and the gateway would admit against a cap the engine never had; the ingress's
-	authoritative per-replica gate would then 429 traffic the gateway thought it had room for."""
+	"""The image lives on its deployment; the cap may be overridden per replica, where blank means
+	inherit. `max_num_seqs` IS the gateway's admission cap: a blank left unresolved would advertise
+	`engine_class.default_concurrency` while the engine actually runs the deployment's number, and
+	the ingress's per-replica gate would then 429 traffic the gateway thought it had room for."""
 	deployment = by_name.get(replica.get("model_deployment")) or {}
 	replica["engine_image"] = deployment.get("engine_image")
 	replica["max_num_seqs"] = replica.get("max_num_seqs") or deployment.get("max_num_seqs")
@@ -115,9 +105,9 @@ def capacity(row, kinds):
 
 
 def active_replicas(**filters):
-	"""Every Active Model Replica matching `filters`, its cap resolved through its deployment, and
-	the engine kinds to read that cap by. → (replicas, kinds). Both planes build from this, so they
-	can never disagree about one engine's cap: the gateway's is advisory, the ingress's is the gate."""
+	"""→ (replicas, kinds), each cap resolved through its deployment. Both planes build from this, so
+	they can never disagree about one engine's cap: the gateway's is advisory, the ingress's is the
+	gate."""
 	kinds = engine_kinds()
 	by_name = deployments()
 	replicas = [
@@ -277,21 +267,20 @@ def utc_timestamp(value):
 
 
 def upstream_model(model, is_vendor):
-	"""What the upstream is asked for, or "" to send the id the caller used.
-
-	An override always wins — the one thing that reaches a container image advertising its own
-	name. A vendor otherwise gets the bare id, since our namespace is not its; anything we run
-	ourselves gets "", because an engine is started under the full Grove id."""
+	"""What the upstream is asked for, or "" to send the id the caller used. An override always
+	wins — the one thing that reaches a container image advertising its own name. A vendor
+	otherwise gets the bare id, since our namespace is not its; anything we run ourselves gets "",
+	because an engine is started under the full Grove id."""
 	if model.upstream_model_id:
 		return model.upstream_model_id
 	return model.model_id if is_vendor else ""
 
 
 def vendor_endpoints(geography):
-	"""Every third party in `geography` we can actually dial, by provider name: a Model is served by
-	whichever record of its provider sits in the geography. A provider is dialable as a whole — an
-	address without a key is not a route. Every enabled key for API calls goes, under its own id: the gateway
-	picks one per request, swaps it on a per-key refusal, and counts what each answered."""
+	"""Every third party in `geography` we can actually dial, by provider name. A provider is
+	dialable as a whole — an address without a key is not a route. Every enabled key for API calls
+	goes, under its own id: the gateway picks one per request, swaps it on a per-key refusal, and
+	counts what each answered."""
 	out = {}
 	denied = denied_tools()
 	for name in frappe.get_all("Model Provider", filters={"geography": geography}, pluck="name"):
@@ -388,12 +377,9 @@ def add_vendor_routes(routes, models, vendors, upstream):
 
 
 def owned_boxes(ingress_name):
-	"""{Inference Server name: private ip} for the boxes that name this ingress.
-
-	Ownership is explicit rather than derived from the Network, which is what keeps the capacity
-	gate honest: `inflight:<engine>` lives in each box's own Redis, so a replica counted by two
-	ingresses is silently admitted to twice its --max-num-seqs.
-
+	"""{Inference Server name: private ip} for the boxes that name this ingress. Ownership is
+	explicit rather than derived from the Network: `inflight:<engine>` lives in each box's own
+	Redis, so a replica counted by two ingresses is silently admitted to twice its --max-num-seqs.
 	A box with no private address is left out, not dialled publicly — fail closed, rather than
 	customer traffic quietly crossing the internet to a box meant to be private."""
 	servers = frappe.get_all(
@@ -419,14 +405,11 @@ def owned_boxes(ingress_name):
 
 
 def replicas_for_ingress(ingress_name):
-	"""deploy:<model> for ONE ingress: every Active replica it owns, dialled privately.
-
-	The same shape the gateway's table has, so the agent's handler is reused whole — only the
-	scope narrows. An ingress is told about its own boxes and no others, so replica topology never
-	leaves its own Network.
-
-	The payload is the whole table, so anything it does not name is pruned and /pick answers 503.
-	Pods are absent by construction: no Machine, so no ingress."""
+	"""deploy:<model> for ONE ingress: every Active replica it owns, dialled privately. The same
+	shape the gateway's table has, so the agent's handler is reused whole. An ingress is told about
+	its own boxes and no others, so replica topology never leaves its own Network. The payload is
+	the whole table, so anything it does not name is pruned and /pick answers 503. Pods are absent
+	by construction: no Machine, so no ingress."""
 	owned = owned_boxes(ingress_name)
 	routes = {}
 	if not owned:

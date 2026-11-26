@@ -1,7 +1,5 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""Log Settings purges records past the retention a chunk at a time and keeps the ones a Credit
-Discrepancy names, and the ones that landed within it however old their day."""
 
 import unittest.mock
 

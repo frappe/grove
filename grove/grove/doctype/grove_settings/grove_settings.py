@@ -76,18 +76,11 @@ class GroveSettings(Document):
 			)
 
 	def set_scrape_password_hash(self):
-		"""The hash each box writes into its htpasswd file, derived here so the password never
-		reaches a box or an Ansible argv.
-
-		bcrypt because three things verify this one file — the gateway's Go process, the nginx
-		fronting every inference box, and anything else reading an htpasswd — and it is the only
-		format all three accept.
-
-		Recomputed only when the password CHANGES: bcrypt salts randomly, so hashing every save
-		would rewrite the file on every box and reload nginx for nothing.
-
-		Refused past 72 bytes rather than truncated, which is what bcrypt does silently and would
-		make two different long passwords interchangeable."""
+		"""The hash each box writes into its htpasswd file, derived here so the password never reaches a
+		box or an Ansible argv. bcrypt because three things verify this one file — the gateway's Go
+		process, the nginx fronting every inference box, and anything else reading an htpasswd — and
+		it is the only format all three accept. Recomputed only when the password CHANGES: bcrypt salts
+		randomly, so hashing every save would rewrite the file on every box and reload nginx for nothing."""
 		password = self.get_password("scrape_password", raise_exception=False) or ""
 		if len(password.encode()) > 72:
 			frappe.throw("Scrape Password must be at most 72 bytes — bcrypt ignores anything beyond it.")
@@ -112,12 +105,10 @@ class GroveSettings(Document):
 	@property
 	def gateway_variables(self):
 		"""Ansible vars for the gateway's config.json — the half that is re-read on a signal rather
-		than requiring a restart.
-
-		Tuning only. Identity and secrets go to agent.env instead, and nothing appears in both: a
-		value that lives in one is not overridable from the other, so there is never a question of
-		which won. `synthetic_session_ttl` is stored as a bare "0" here, which Go reads as a zero
-		duration. `usage_retention` blank keeps the gateway's own default."""
+		than requiring a restart. Tuning only. Identity and secrets go to agent.env instead, and
+		nothing appears in both, so there is never a question of which won. `synthetic_session_ttl`
+		is stored as a bare "0" here, which Go reads as a zero duration. `usage_retention` blank keeps
+		the gateway's own default."""
 		return {
 			"synthetic_session_ttl": self.synthetic_session_ttl or "0",
 			"usage_retention": self.usage_retention or "",
@@ -156,11 +147,8 @@ class GroveSettings(Document):
 	@property
 	def scrape_auth_variables(self):
 		"""Ansible vars every BOX needs to put its exporters behind basic auth. The hash, never
-		the password: a box verifies a credential, it never presents one.
-
-		No username here. It is a constant on both sides — `scrape_username` in the grove_https
-		role writes the htpasswd, `monitoring_scrape_username` in the vmagent role presents it —
-		and a settable one only added a way for the two to disagree. It did, immediately: this
-		Single doc predates the field, so its JSON default never applied and the htpasswd would
-		have rendered with a blank user."""
+		the password: a box verifies a credential, it never presents one. No username here. It is a
+		constant on both sides — `scrape_username` in the grove_https role writes the htpasswd,
+		`monitoring_scrape_username` in the vmagent role presents it — and a settable one only added
+		a way for the two to disagree."""
 		return {"scrape_password_hash": self.scrape_password_hash or ""}

@@ -1,5 +1,4 @@
 ---
-# Read the box's GPU inventory off nvidia-smi (machine.scan_gpus parses the task output). Read-only.
 - name: Scan GPUs
   hosts: all
   become: true

@@ -7,8 +7,7 @@ from grove.serving.base import Engine
 
 
 class CustomEngine(Engine):
-	"""Almost every answer here is the absence of one, and those absences are what the four
-	`is_custom_engine` branches used to say."""
+	"""Almost every answer here is the absence of one."""
 
 	# Not 0, the honest number: that would move the route table for every custom placement running.
 	default_concurrency = 1024

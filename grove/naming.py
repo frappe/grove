@@ -21,13 +21,9 @@ class GeneratedName:
 
 
 def next_machine_name(prefix, region, zone="", counter=None):
-	"""The next `<prefix><n>-<region>[.<zone>]` for a box of this kind in this region.
-
-	`counter` is injectable because the real one is a row no test rollback undoes, so a test could
-	never assert the same number twice.
-
-	The series only ever climbs and never reuses a number, even when the doc that took it is
-	deleted: a retired name may still have a DNS record or a log history behind it."""
+	"""The next `<prefix><n>-<region>[.<zone>]`. `counter` is injectable because the real one is a
+	row no test rollback undoes. The series never reuses a number, even when the doc that took it
+	is deleted: a retired name may still have a DNS record or a log history behind it."""
 	counter = counter or getseries
 	region = slugify(region)
 	number = counter(f"{prefix}-{region}-" if region else f"{prefix}-", 1)
@@ -36,8 +32,7 @@ def next_machine_name(prefix, region, zone="", counter=None):
 
 
 def short_name(name):
-	"""`gw1-ap-south-1.<zone>` → `gw1-ap-south-1`: the one label a box is known by inside its zone.
-	A name with no domain is already short."""
+	"""`gw1-ap-south-1.<zone>` → `gw1-ap-south-1`: the one label a box is known by inside its zone."""
 	return (name or "").partition(".")[0]
 
 
@@ -52,29 +47,19 @@ def abbreviate_server(server):
 
 
 def next_replica_name(model, server, region, counter=None):
-	"""A replica's name: `<model id>-<region>-<server>-<n>`, e.g.
-	`qwen3-8b-ap-south-1-inf3-00007`.
-
-	Says what it serves, where, and off which box, without opening the doc. The region goes in as
-	the Region doc names it — every provider codes its regions differently (`ap-south-1`,
-	`asia-south1`, `southeastasia`), and a shortening rule fitted to one of them mangles the rest.
-	The number is what keeps the name unique — two replicas of one model on one box are a
-	legitimate thing to have — and comes from `tabSeries` for the same reason server names do: two
-	inserts racing cannot land on it twice. `counter` is injectable, as `next_machine_name`'s is."""
+	"""`<model id>-<region>-<server>-<n>`, e.g. `qwen3-8b-ap-south-1-inf3-00007`. The region goes in
+	as the Region doc names it — every provider codes its regions differently, and a shortening
+	rule fitted to one of them mangles the rest. The number is what keeps the name unique — two
+	replicas of one model on one box are a legitimate thing to have — and comes from `tabSeries`:
+	two inserts racing cannot land on it twice."""
 	counter = counter or getseries
 	parts = [slugify((model or "").split("/")[-1]), slugify(region), abbreviate_server(server)]
 	return "-".join([part for part in parts if part] + [counter(MD_SERIES, 5)])
 
 
 def next_deployment_name(counter=None):
-	"""A deployment's name: `MD-{#####}`, e.g. `MD-00014`.
-
-	Numbered out of `tabSeries` rather than by `append_number_if_name_exists`, because several
-	deployments of one model are a normal thing to have — a second shape, or a rollout running the
-	old one and the new one side by side — and that helper reads the taken names and then picks
-	the next, which two inserts racing can both do before either writes.
-
-	Neither the model nor the shape is in the name. `gpus_per_replica` is editable and a name is
-	not, so `4xh100` would go stale the first time someone re-shaped this; the model is one field
-	away and the list view carries both, where they stay true."""
+	"""`MD-{#####}`, e.g. `MD-00014`. Numbered out of `tabSeries` rather than by
+	`append_number_if_name_exists`: that helper reads the taken names and then picks the next,
+	which two inserts racing can both do before either writes. Neither the model nor the shape is
+	in the name: `gpus_per_replica` is editable and a name is not, so `4xh100` would go stale."""
 	return f"{MD_SERIES}{(counter or getseries)(MD_SERIES, 5)}"

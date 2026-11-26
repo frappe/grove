@@ -1,7 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""The memory cap on pathway's unit: what the drop-in renders, which plays write it, and what the
-Update Memory Limit button runs and records. Pure — no site and no SSH."""
+"""The memory cap on pathway's unit. Pure — no site and no SSH."""
 
 import unittest
 from pathlib import Path

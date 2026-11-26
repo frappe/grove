@@ -19,7 +19,6 @@ class Window:
 		self.up_from, self.down_from = as_time(up_from), as_time(down_from)
 
 	def contains(self, moment):
-		"""Whether the clock time of `moment` falls inside the window."""
 		now = moment.time()
 		if self.up_from < self.down_from:
 			return self.up_from <= now < self.down_from
@@ -41,7 +40,6 @@ def as_time(value):
 
 
 def run_due_pods():
-	"""Scheduled entry point: every pod with a window, reconciled to the clock."""
 	now = frappe.utils.now_datetime()
 	pods = frappe.get_all(
 		"Pod",
@@ -57,7 +55,6 @@ def run_due_pods():
 
 
 def reconcile(pod, now):
-	"""Spawn once per window while inside it and unprovisioned; terminate while outside and live."""
 	window = Window(pod.provision_at, pod.terminate_at)
 	if window.contains(now):
 		if pod.pod_id or pod.scheduled_for == window.started_on(now):

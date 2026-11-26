@@ -3,9 +3,8 @@ from frappe.model.document import Document
 
 
 class UsageCounter(Document):
-	"""One counter usage is counted and priced under. A root counter is a bucket the gateway fills
-	from the response (`prompt_tokens`, `cached_tokens`, `web_search_requests`); a derived one is a
-	root plus a condition — counted instead of its base when the request's prompt exceeds
+	"""A root counter is a bucket the gateway fills from the response; a derived one is a root plus
+	a condition — counted instead of its base when the request's prompt exceeds
 	`min_prompt_tokens`, billed at its base's rate when a pricing holds none of its own.
 	The table is pushed to the gateways inside each pricing, so the two sides count alike. Rows ship
 	in the catalog and never change after insert: a wrong one is deleted and made again."""

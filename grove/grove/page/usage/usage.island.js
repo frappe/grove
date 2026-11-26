@@ -1,4 +1,4 @@
-// The island entry for the Usage page. Desk imports this module and calls `mount`.
+// Desk imports this module and calls `mount`.
 import { mountVueIsland } from "@framework/ui/island";
 
 import Page from "./usage.vue";

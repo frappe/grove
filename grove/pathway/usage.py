@@ -1,30 +1,14 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 """Pull usage from each gateway Redis into one Usage Record per key per drain per day, and bill it.
-
 The gateway accumulates each key's deltas in `usage:<prefix>:<YYYY-MM-DD>`, one bucket per UTC day
-it served the key, named off the clock that names the key's `spent:<month>`. A pull GETs /usage: the
-box sets each live bucket aside under a new drain id and returns it together with every bucket it
-set aside earlier that Grove has not acknowledged, as {drain id: {key: {day: hash}}}. Grove records
-each hash on its day — so a day and a month here are the gateway's own, however late the pull —
-commits, then acknowledges the (drain id, key, day) counters it recorded; the box re-sends every
-other one next pull. A pull that fails before the commit gets the same counters again, and one
-landed twice records nothing twice (unique drain id + key + day).
-
-Each touched team is landed in one step: its records, priced by Grove at the pricing the gateway
-tagged each request with, a Cost Discrepancy per pricing the gateway charged differently, and
-the verdict. A team whose step fails is rolled back alone, left unacknowledged,
-and logged as Stuck Usage until a later pull lands it. One bad team never holds anyone else's
-usage back.
-
-A pull for one team sends only its keys: the box sets aside and returns just those.
-
-The box also hands over its dead lines: usage it spooled while its store was down and then could
-not replay. Grove lands each like any other usage, under the drain id `dead:<request id>`; one it
-cannot read, or whose key it does not hold, is kept as a Stuck Usage row. Either way the box is told
-to drop it.
-
-Gateway Redises are drained one at a time and each drain is recorded the moment it arrives."""
+it served the key: a day and a month here are the gateway's own, however late the pull. GET /usage
+sets each live bucket aside under a new drain id and returns it with every earlier one Grove has
+not acknowledged; Grove records, commits, then acknowledges, so a pull that fails before the commit
+gets the same counters again. A team whose step fails is rolled back alone, left unacknowledged,
+and logged as Stuck Usage: one bad team never holds anyone else's usage back. A dead line is usage
+the box spooled while its store was down and then could not replay: it lands like any other, under
+the drain id `dead:<request id>`."""
 
 import hashlib
 import json
@@ -112,9 +96,7 @@ class Peek(Usage):
 
 
 def pull_all(gateways=None, trigger="Scheduled", wait=30, team=None):
-	"""Scheduled: pull + drain every gateway Redis. Named `gateways` are pulled themselves; a `team`
-	is pulled alone. Waits up to `wait` seconds for a run in flight — one team's manual pull —
-	then skips."""
+	"""Waits up to `wait` seconds for a run in flight — one team's manual pull — then skips."""
 	return Usage(gateways, trigger, wait, team).run()
 
 
@@ -169,8 +151,7 @@ def landed_pairs(drain_ids):
 
 
 def record_drain(outcome, rows, gateway_store=None):
-	"""Land what a group drained, as soon as it arrives, and acknowledge what landed.
-	A drain that cannot be recorded at all is rolled back and acknowledges nothing, so the box sends
+	"""A drain that cannot be recorded at all is rolled back and acknowledges nothing, so the box sends
 	it again. `gateway_store` is the store drained, or None for a gateway dialled by name."""
 	for row in rows:
 		drains, dead = row.pop("drains", None) or {}, row.pop("dead", None) or []
@@ -196,8 +177,8 @@ def record_drain(outcome, rows, gateway_store=None):
 
 
 def acknowledge(gateway, acks, dead_acks):
-	"""Tell the box which pairs and dead lines are recorded. A failed ack loses nothing: the box
-	re-sends them and every record is already there. → a note for the row."""
+	"""A failed ack loses nothing: the box re-sends them and every record is already there. → a
+	note for the row."""
 	try:
 		Target.resolve("Gateway Server", gateway).post(
 			"usage/ack", {"acks": acks, "dead": dead_acks}, timeout=DRAIN_TIMEOUT
@@ -208,7 +189,6 @@ def acknowledge(gateway, acks, dead_acks):
 
 
 def store_of(gateway):
-	"""The store a gateway drains. One with none has not been set up, and has nothing to drain."""
 	store = snapshot.gateway_store(gateway)
 	if not store:
 		frappe.throw(f"{gateway} is on no Gateway Store — set it up before pulling its usage.")
@@ -259,8 +239,7 @@ def record_drains(proxy_name, drains, dead=(), gateway_store=None):
 
 
 def teams_of_keys(drains):
-	"""{key: its team} for every key the drains name: one read however many. A key Grove does not
-	hold is absent."""
+	"""{key: its team}. A key Grove does not hold is absent."""
 	prefixes = {prefix for keys in drains.values() for prefix in keys}
 	if not prefixes:
 		return {}

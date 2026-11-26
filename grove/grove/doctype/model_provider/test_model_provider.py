@@ -1,10 +1,7 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""One provider is ours — the one flagged Self Hosted — and every other one is a vendor.
-
-Site-backed — the flag decides whether a model under a provider can be published or deployed at
-all, and that is a real insert and a real db write.
-"""
+"""Site-backed — the flag decides whether a model under a provider can be published or deployed at
+all, and that is a real insert and a real db write."""
 
 from unittest.mock import Mock, patch
 
@@ -24,13 +21,11 @@ def provider(provider_name, **fields):
 
 
 def add_key(provider, api_key="k", title="key", **fields):
-	"""One more key of an inserted provider record."""
 	key = {"model_provider": provider.name, "title": title, "api_key": api_key, **fields}
 	return frappe.get_doc({"doctype": "Model Provider Key", **key}).insert()
 
 
 def keyed_provider(provider_name, api_key="k", **fields):
-	"""An inserted provider with one key — the single-key spelling most tests want."""
 	doc = provider(provider_name, **fields).insert()
 	add_key(doc, api_key)
 	return doc
@@ -223,9 +218,6 @@ class TestWithNoSelfHostedProvider(IntegrationTestCase):
 
 
 class TestFetchModels(IntegrationTestCase):
-	"""The list comes off the vendor's own `/v1/models`; Grove splits it against what the record
-	holds and turns the picked ids into Models."""
-
 	def fetch(self, vendor, answers):
 		"""`answers`: {url: one body, or the bodies of successive pages}. Returns (result, calls)."""
 		calls = []

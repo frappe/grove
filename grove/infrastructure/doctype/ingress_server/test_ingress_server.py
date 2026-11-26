@@ -2,10 +2,9 @@
 # See license.txt
 """What an Ingress Server is allowed to hold. Pure — reads the doctype JSON, no site.
 
-Risk 2 of the two-plane split: one binary runs both planes, and the tenant/infra boundary is
-enforced by what each side is GIVEN rather than by the code. The doctype carrying no tenant field
-is what keeps the control plane from ever pushing keys to an ingress — the moment one grows an
-`api_key` or a `grove_user` Link, somebody's keys push will find it.
+One binary runs both planes, and the tenant/infra boundary is enforced by what each side is GIVEN
+rather than by the code. The doctype carrying no tenant field is what keeps the control plane from
+ever pushing keys to an ingress.
 """
 
 import json

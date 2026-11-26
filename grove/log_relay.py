@@ -1,16 +1,10 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 """Relay a live log stream onto a document's form over realtime, for as long as someone is
-watching.
-
-Both followers share this — a Pod reads its provider's SSE stream, a Model Replica reads
-`docker logs --follow` over SSH — so each passes an iterator of lines, with `None` for a tick so a
-quiet stream still reaches the liveness check on time.
-
-A stream runs while a viewer keeps saying so: the form pings keep_streaming, which re-sets one
-redis key with a short TTL, and the relay stops as soon as it is gone. The job holds a background
-worker for its whole life and a site has only a few, so a stream nobody is watching has to end on
-its own rather than wait out the job timeout."""
+watching. A follower passes an iterator of lines, with `None` for a tick so a quiet stream still
+reaches the liveness check on time. The form pings keep_streaming, which re-sets one redis key with
+a short TTL, and the relay stops as soon as it is gone: the job holds a background worker for its
+whole life and a site has only a few, so a stream nobody is watching has to end on its own."""
 
 import time
 
@@ -27,12 +21,10 @@ def alive_key(doctype, docname):
 
 
 def keep_alive(doctype, docname):
-	"""Mark a stream as still watched. Called to start one, then again on every ping."""
 	frappe.cache.set_value(alive_key(doctype, docname), 1, expires_in_sec=ALIVE_TTL)
 
 
 def end(doctype, docname):
-	"""Stop a running stream — the relay notices the key is gone at its next check."""
 	frappe.cache.delete_value(alive_key(doctype, docname))
 
 
@@ -44,14 +36,13 @@ def is_alive(doctype, docname):
 
 @frappe.whitelist()
 def keep_streaming(doctype: str, docname: str):
-	"""The viewer's ping. Permission-checked: this is reachable for any doctype."""
+	"""Permission-checked: this is reachable for any doctype."""
 	frappe.has_permission(doctype, doc=docname, throw=True)
 	keep_alive(doctype, docname)
 
 
 def relay(events, doctype, docname):
-	"""Publish while a viewer is watching, or until the iterator ends. Abandoning the iterator here
-	is what shuts the source down."""
+	"""Abandoning the iterator here is what shuts the source down."""
 	lines, flushed_at = [], 0.0
 
 	def publish(payload):

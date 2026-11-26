@@ -43,7 +43,6 @@ def mint_token(region: str, resource_id: str) -> tuple[str, datetime]:
 
 
 def credential_problems() -> list[str]:
-	"""Each blank Central credential in Grove Settings, named."""
 	settings = frappe.get_single("Grove Settings")
 	values = {
 		field: settings.get_password(field, raise_exception=False)
@@ -89,8 +88,6 @@ def vector_machines() -> set[str]:
 
 
 def push_roster():
-	"""Tick, every minute: each Region with a datum gets its Machines. One Region's refusal is
-	logged and the next still gets its roster."""
 	for name in frappe.get_all("Region", filters={"metrics_url": ("is", "set")}, pluck="name"):
 		try:
 			post_roster(frappe.get_doc("Region", name))
@@ -102,8 +99,8 @@ def post_roster(region):
 	"""Every Machine of `region` as `grove_machine_info{machine, status, vector} 1` under
 	`grove:region-<region>`. Reader rule: a Machine whose latest row reads Active with vector 1 must have
 	rows of its own (grove:<machine>) within a few minutes, or it is dead; any other latest row
-	means its silence is expected. Thrown on refusal, naming datum's answer; a 401 also drops the
-	kept token, so the next minute asks Central for a new one."""
+	means its silence is expected. A 401 also drops the kept token, so the next minute asks Central
+	for a new one."""
 	machines = frappe.get_all("Machine", filters={"region": region.name}, fields=["name", "status"])
 	if not machines:
 		return

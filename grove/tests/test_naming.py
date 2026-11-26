@@ -1,11 +1,7 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""How a server names itself. Pure — the region lookup and the counter are both injected.
-
-The name is not a label, it is infrastructure: a Gateway Server's and an Ingress Server's name IS
-its record under the fleet zone. So what is pinned here is that it stays one DNS label, that each region counts on its own, and that
-the counter is asked for a number rather than derived from what already exists.
-"""
+"""The name is not a label, it is infrastructure: a Gateway Server's and an Ingress Server's name IS
+its record under the fleet zone, so it has to stay one DNS label."""
 
 import unittest
 from types import SimpleNamespace

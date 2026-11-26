@@ -22,6 +22,5 @@ class Modality(Document):
 	# end: auto-generated types
 
 	def before_naming(self):
-		"""A capital first letter, however the name was typed."""
 		if self.name:
 			self.name = self.name[0].upper() + self.name[1:]

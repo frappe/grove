@@ -10,8 +10,7 @@ RETENTION_DAYS = 60
 
 
 class PathwaySync(Document):
-	"""One row per sync run. The work lives in grove.pathway (projection, usage), which builds
-	these docs, take the lock, run, then insert and finalize.
+	"""One row per sync run. The work lives in grove.pathway (projection, usage).
 
 	The advisory lock is named by `sync_type`, so runs of the same type serialize — a slow one
 	cannot land a stale write after a newer one — while Projection and Usage run independently."""

@@ -73,12 +73,8 @@ class IngressServer(PathwayHost, Document):
 
 	@frappe.whitelist()
 	def sync_replicas(self):
-		"""Button: push this ingress's replica table now — every Active replica it owns, dialled
-		privately.
-
-		Through full_sync rather than straight at the agent, so the push lands on a Pathway Sync
-		doc like every other. A button that reports "queued" and then leaves no record of whether
-		it worked is the one you end up debugging by ssh."""
+		"""Through full_sync rather than straight at the agent, so the push lands on a Pathway Sync
+		doc like every other."""
 		frappe.enqueue(
 			"grove.pathway.projection.full_sync",
 			queue="short",
@@ -90,14 +86,13 @@ class IngressServer(PathwayHost, Document):
 
 	@frappe.whitelist()
 	def setup(self):
-		"""Provision this ingress (OpenResty + Redis + the agent) via ingress.yml."""
 		frappe.enqueue_doc(self.doctype, self.name, "provision", queue="long", timeout=1800)
 		frappe.msgprint(f"Provisioning {self.name} — watch its Ansible Plays.", alert=True)
 
 	@failure.reports_failure(mark_broken=True)
 	def provision(self):
-		"""Run ingress.yml against this box's Machine. On success, mark Active and put it in DNS —
-		nothing resolves either of its names until that runs."""
+		"""On success, mark Active and put it in DNS — nothing resolves either of its names until
+		that runs."""
 		frappe.db.set_value("Ingress Server", self.name, "status", "Installing")
 		frappe.db.commit()
 
@@ -119,8 +114,8 @@ class IngressServer(PathwayHost, Document):
 
 	@property
 	def provision_variables(self):
-		"""Everything ingress.yml needs. No tenant variables of any kind pass through here, and
-		that absence is the point — see test_ingress_server."""
+		"""No tenant variables of any kind pass through here, and that absence is the point — see
+		test_ingress_server."""
 		return {
 			"admin_token": self.get_password("admin_token"),
 			"data_token": self.get_password("data_token"),
@@ -134,8 +129,6 @@ class IngressServer(PathwayHost, Document):
 
 	@frappe.whitelist()
 	def deploy_agent(self):
-		"""Button: install the pinned agent release and deploy just it (copy + service restart) to
-		this already-provisioned ingress."""
 		frappe.enqueue_doc(self.doctype, self.name, "_deploy_agent", queue="long", timeout=1200)
 		frappe.msgprint(
 			f"Deploying agent {gateway_agent_version()} to {self.name} — watch its Ansible Plays.",
@@ -144,8 +137,7 @@ class IngressServer(PathwayHost, Document):
 
 	@failure.reports_failure(mark_broken=False)
 	def _deploy_agent(self, **play):
-		"""Install the pinned agent release on the box and rewrite both halves of its configuration.
-		`play` names the doc the play is run for, e.g. a Pathway Update.
+		"""`play` names the doc the play is run for, e.g. a Pathway Update.
 
 		Resolved here rather than at enqueue: the certificate key would otherwise be serialised into
 		the job payload and sit in Redis. Dropped entirely — agent.env names the certificate's PATH,

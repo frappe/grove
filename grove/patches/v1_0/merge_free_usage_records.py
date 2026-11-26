@@ -26,7 +26,6 @@ def execute():
 
 
 def merged(rows):
-	"""The one record `rows` make: the totals summed, the per-model entries of every row kept."""
 	entries = [entry for row in rows for entry in frappe.parse_json(row.usage or "[]")]
 	return {
 		"request_count": sum(row.request_count or 0 for row in rows),

@@ -121,7 +121,7 @@ def pull_usage(team: str):
 
 
 def _count_pull(team):
-	"""Refuse past PULLS_PER_HOUR on-demand pulls of one team. The hour starts at the first."""
+	"""The hour starts at the first pull."""
 	key = frappe.cache.make_key(f"usage_pull:{team}")
 	count = frappe.cache.incr(key)
 	# Checked every call, not only on the first: a counter left without a TTL would block forever.

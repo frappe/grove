@@ -1,6 +1,6 @@
 ---
-# Tear down one vLLM instance: container, run script, env file, key, proxy location; the shared
-# caches and the image stay (model_replica.teardown_deployment). extra-vars: vllm_instance, vllm_home.
+# The shared caches and the image stay (model_replica.teardown_deployment).
+# extra-vars: vllm_instance, vllm_home.
 - name: Tear down a vLLM instance
   hosts: all
   become: true

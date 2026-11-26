@@ -627,12 +627,9 @@ class TestPushedTargets(unittest.TestCase):
 
 class TestTheAgentsOwnTuningReachesItsBox(unittest.TestCase):
 	"""What the doc passes to Ansible, rendered the way Ansible resolves it — role defaults
-	underneath, extra-vars on top.
-
-	Push Targets re-renders scrape.yml, which carries the intervals as well as the target lists.
-	It used to be handed the three target variables alone, so every interval fell back to
-	defaults/main.yml and the doc's value was silently written over on a box that was already
-	running it."""
+	underneath, extra-vars on top. Push Targets re-renders scrape.yml, which carries the intervals as
+	well as the target lists: handed the three target variables alone, every interval falls back to
+	defaults/main.yml and the doc's value is silently written over on a box already running it."""
 
 	VMAGENT_DEFAULTS = yaml.safe_load((VMAGENT_ROLE / "defaults/main.yml").read_text())
 

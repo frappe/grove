@@ -35,8 +35,7 @@ class ModelID(Document):
 
 
 def ensure_model_id(model_id, display_name=None):
-	"""The record's name for an id, inserted when the site lacks it. A display name given fills a
-	blank one and never replaces what an operator set."""
+	"""A display name given fills a blank one and never replaces what an operator set."""
 	name = slugify(model_id)
 	if not frappe.db.exists("Model ID", name):
 		record = {"doctype": "Model ID", "model_id": model_id, "display_name": display_name}

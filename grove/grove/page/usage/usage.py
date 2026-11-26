@@ -1,8 +1,7 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""The Usage page: fleet-wide usage of teams, keys and models for operators, off the helpers the
-control API reads, plus what needs a human (stuck usage, disputed costs), the last syncs, and
-each vendor key's counters. Every read is System Manager's; `peek` alone dials the gateways."""
+"""The Usage page: fleet-wide usage of teams, keys and models for operators, off the helpers the control API
+reads. Every read is System Manager's; `peek` alone dials the gateways."""
 
 from collections import Counter
 
@@ -96,7 +95,6 @@ class Window:
 
 	@property
 	def previous(self):
-		"""The window of equal length ending the day before this one."""
 		days = (self.to_date - self.from_date).days + 1
 		return add_days(self.from_date, -days), add_days(self.from_date, -1)
 
@@ -127,7 +125,6 @@ def operator():
 
 @frappe.whitelist()
 def overview(filters: dict | str | None = None) -> dict:
-	"""The window's totals beside the previous window's."""
 	operator()
 	window = Window(filters)
 	return {
@@ -158,7 +155,6 @@ def totals(window, from_date, to_date):
 
 
 def usage_of(row):
-	"""requests, tokens, cost of one summed row; zeros for none."""
 	if not row:
 		return dict.fromkeys(USAGE_FIELDS, 0)
 	return {"requests": cint(row["requests"]), "tokens": cint(row["tokens"]), "cost": flt(row["cost"], 9)}
@@ -184,7 +180,6 @@ def trend(filters: dict | str | None = None, dimension: str = "model") -> list[d
 
 @frappe.whitelist()
 def leaders(filters: dict | str | None = None) -> dict:
-	"""The costliest teams, keys and models of the window, TOP of each."""
 	operator()
 	table, params = Window(filters).table()
 	keys = grouped(table, params, "x.api_key", TOP)
@@ -199,7 +194,6 @@ def leaders(filters: dict | str | None = None) -> dict:
 
 
 def grouped(table, params, expression, limit=None):
-	"""The window's usage summed by `expression`, costliest first, as rows with `name`."""
 	tail = f" limit {int(limit)}" if limit else ""
 	rows = frappe.db.sql(
 		f"select {expression} as name, {SUMS} from {table} group by name order by cost desc, requests desc{tail}",
@@ -234,8 +228,7 @@ def key_titles(names):
 
 @frappe.whitelist()
 def teams(filters: dict | str | None = None) -> list[dict]:
-	"""One row per team with usage in the window (the filtered team always): its tier's limits,
-	live keys, this month's spend and what its caps commit, the last day it was served."""
+	"""One row per team with usage in the window (the filtered team always)."""
 	operator()
 	window = Window(filters)
 	table, params = window.table()
@@ -291,11 +284,9 @@ def last_used(field, names):
 
 @frappe.whitelist()
 def keys(filters: dict | str | None = None) -> list[dict]:
-	"""The keys of the window as `api.keys.key_rows` lists them, plus their team, model groups,
-	the window's usage, the last day served, how much of the cap the month took and the
-	hand-overs that brought them to their team (`transfers`, oldest first). Every key
-	the filtered team holds or handed over; else the window's costliest, KEY_LIMIT of them. Live
-	keys first."""
+	"""The keys of the window as `api.keys.key_rows` lists them, with the hand-overs that brought them to
+	their team (`transfers`, oldest first). Every key the filtered team holds or handed over; else the
+	window's costliest, KEY_LIMIT of them."""
 	operator()
 	window = Window(filters)
 	table, params = window.table()
@@ -352,7 +343,6 @@ def model_groups_of(names):
 
 @frappe.whitelist()
 def gateways() -> dict:
-	"""Every gateway with its row of the last push and of the last usage pull, and the pause flags."""
 	operator()
 	settings = frappe.get_cached_doc("Grove Settings")
 	pushes, pulls = rows_by_server("Projection"), rows_by_server("Usage")
@@ -382,13 +372,11 @@ def gateways() -> dict:
 
 
 def rows_by_server(sync_type):
-	"""{server: its row of the newest Pathway Sync of `sync_type`, stamped with the run's time}."""
 	run = last_sync(sync_type, with_rows=True)
 	return {row.server: {**row, "run_at": run.get("run_at")} for row in run.get("rows", [])}
 
 
 def last_sync(sync_type, with_rows=False):
-	"""The newest Pathway Sync of `sync_type`, its rows when asked; the type alone when none ran."""
 	runs = frappe.get_list(
 		"Pathway Sync",
 		filters={"sync_type": sync_type},
@@ -448,8 +436,6 @@ def key_stats(filters: dict | str | None = None) -> dict:
 
 
 def stats_scope(filters):
-	"""The where clause and params, over STATS_TABLES, of the Provider Key Stats rows pulled in
-	the window; `provider` and `geography` narrow."""
 	given = frappe._dict(frappe.parse_json(filters) or {})
 	window = Window(filters)
 	conditions = ["s.creation >= %(since)s", "s.creation < %(until)s"]
@@ -524,8 +510,7 @@ def team_scope(team):
 
 
 def team_keys(team):
-	"""The keys `team` holds and the ones it handed over, those with `moved_to`: their team now.
-	Its usage of a key it handed over stays under it, so the picker still offers the key."""
+	"""The keys `team` holds and the ones it handed over, those with `moved_to`: their team now."""
 	keys = frappe.get_list(
 		"Grove API Key",
 		or_filters=team_scope(team),

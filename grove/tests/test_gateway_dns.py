@@ -1,15 +1,11 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
 """The multivalue set a gateway is reached through, and the two URLs Grove derives from it. Pure —
-boto3 is replaced by a fake and the docs are SimpleNamespaces, so no site and no network.
-
-Every shape here is worth pinning because Route53 punishes each of them differently. One record is
-one IP with one health check, so the unhealthy ones drop out of the answer. A wrong SetIdentifier
+boto3 is replaced by a fake and the docs are SimpleNamespaces, so no site and no network. One record
+is one IP with one health check, so the unhealthy ones drop out of the answer. A wrong SetIdentifier
 silently replaces another row instead of adding one; a DELETE that does not repeat the record exactly
-as written leaves it in place, a black hole for whatever share of customers resolve to a box that is
-gone; and a health check is refused deletion while a record still names it, which is why teardown
-order is asserted here rather than discovered live.
-"""
+as written leaves it in place, a black hole for customers resolving to a box that is gone; and a
+health check is refused deletion while a record still names it, hence the teardown order."""
 
 import unittest
 from types import SimpleNamespace

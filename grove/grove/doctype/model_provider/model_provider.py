@@ -18,20 +18,13 @@ BILLING_USES = ("Billing", "API Calls and Billing")
 
 
 class ModelProvider(Document):
-	"""Who serves a model: the one flagged Self Hosted for our own engines, a vendor for a
-	third-party API.
-
-	Provider Name is the namespace every Model under it is named in, set once: it is already inside
-	every route key and every usage bucket a customer was billed against. A Select of the vendors
-	pathway knows (its `vendor.known`) and `frappe` for ours: a push naming any other is refused
-	there, so a new vendor ships in pathway first. A vendor has one record per Geography under the
-	same name, so the model id is the same everywhere; Display Name (`OpenAI`) is the name's too,
-	kept the same on every record, and what a customer's dashboard shows.
-
-	Self Hosted names ours: a Model with no provider is named under it, and only its models can be
-	deployed. Every other provider is a vendor: a published Model there routes straight to it and no
-	engine is ever started. The URL fields are the dialect declaration — one per front the vendor
-	runs (OpenAI-compatible, Anthropic-compatible), either or both."""
+	"""Who serves a model: the one flagged Self Hosted for our own engines, a vendor for a third-party
+	API. Provider Name is the namespace every Model under it is named in, set once: it is already
+	inside every route key and every usage bucket a customer was billed against. A Select of the
+	vendors pathway knows (its `vendor.known`) and `frappe` for ours: a push naming any other is
+	refused there, so a new vendor ships in pathway first. A vendor has one record per Geography
+	under the same name, so the model id is the same everywhere. The URL fields are the dialect
+	declaration — one per front the vendor runs, either or both."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -97,8 +90,8 @@ class ModelProvider(Document):
 			self.display_name = self.display_name or sibling.display_name
 
 	def validate_extra_headers(self):
-		"""Header names with one-line values, each name once. The credential is the gateway's: it
-		rotates keys per request, so a fixed one here would be overwritten, or worse, win."""
+		"""The credential is the gateway's: it rotates keys per request, so a fixed one here would
+		be overwritten, or worse, win."""
 		names = [row.header.lower() for row in self.extra_headers]
 		for row in self.extra_headers:
 			if not HEADER_NAME.fullmatch(row.header) or "\n" in row.value or "\r" in row.value:
@@ -115,8 +108,7 @@ class ModelProvider(Document):
 
 	@property
 	def enabled_keys(self):
-		"""This record's keys that are not Disabled, oldest first. Read live: a key saves on its
-		own, so the cached provider doc would not see it."""
+		"""Read live: a key saves on its own, so the cached provider doc would not see it."""
 		names = frappe.get_all(
 			"Model Provider Key",
 			filters={"model_provider": self.name, "disabled": 0},
@@ -127,12 +119,10 @@ class ModelProvider(Document):
 
 	@property
 	def gateway_keys(self):
-		"""The enabled keys a gateway may dial: every one not held for billing alone."""
 		return [key for key in self.enabled_keys if key.used_for != "Billing"]
 
 	@property
 	def billing_keys(self):
-		"""The enabled keys the vendor's billing API is read with."""
 		return [key for key in self.enabled_keys if key.used_for in BILLING_USES]
 
 	def on_update(self):
@@ -151,10 +141,9 @@ class ModelProvider(Document):
 
 	@frappe.whitelist()
 	def fetch_models(self):
-		"""Button: what the vendor serves, read off its `/v1/models`, split into the ids this record
-		already holds and the ones it could add. One front is asked — the fronts are dialects of one
-		vendor and list the same models, and an Anthropic shim beside an OpenAI front (DeepSeek's)
-		has no list at all."""
+		"""Button: what the vendor serves, split into the ids this record already holds and the ones
+		it could add. One front is asked — the fronts are dialects of one vendor and list the same
+		models, and an Anthropic shim beside an OpenAI front (DeepSeek's) has no list at all."""
 		frappe.only_for("System Manager")
 		enabled = self.gateway_keys
 		secret = enabled[0].get_password("api_key") if enabled else None
@@ -217,5 +206,4 @@ def on_doctype_update():
 
 
 def self_hosted_provider():
-	"""The one provider our own engines serve under, None until one is flagged."""
 	return frappe.db.get_value("Model Provider", {"is_self_hosted": 1}, "name")

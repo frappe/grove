@@ -1,7 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""One class per placement preference. Lower wins, and a policy composes them in order. Each reads
-the Candidate and nothing else — no queries, no doctypes."""
+"""Each scorer reads the Candidate and nothing else — no queries, no doctypes."""
 
 from grove.placement.base import Candidate, Scorer
 

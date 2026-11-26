@@ -98,8 +98,7 @@ class TestContextLength(unittest.TestCase):
 
 
 class TestCustomEngine(unittest.TestCase):
-	"""An image that serves itself. Every answer is an absence, and those absences are exactly what
-	the `is_custom_engine` branches used to say."""
+	"""An image that serves itself. Every answer is an absence."""
 
 	def engine(self, **tuning):
 		tuning.setdefault("port", 8080)

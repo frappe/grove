@@ -1,15 +1,10 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""The gpu_host role's data-disk selection. Pure — evaluates the role's own expressions
-against captured lsblk output, no site and no box.
-
-This is the one place in the repo that runs mkfs. Picking a disk that is in use destroys
-it, so the predicate is asserted here rather than on a box: the expressions and their vars
-are read out of tasks/main.yml, so the role and this file cannot drift apart.
-
-The fixtures are shaped like real `lsblk --sort SIZE` output, which is FLAT — partitions
-arrive as siblings of their disk, not nested under it, and only `pkname` ties them back.
-"""
+"""The gpu_host role's data-disk selection, the one place in the repo that runs mkfs. Pure — the
+expressions and their vars are read out of tasks/main.yml and evaluated against captured lsblk output,
+so the role and this file cannot drift apart. The fixtures are shaped like real `lsblk --sort SIZE`
+output, which is FLAT — partitions arrive as siblings of their disk, not nested under it, and only
+`pkname` ties them back."""
 
 import ast
 import json

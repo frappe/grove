@@ -1,5 +1,5 @@
 """A standalone Inference Server: fronted by its own nginx on the fleet name, or refused at Setup
-when it has neither that nor an ingress. Pure unit tests over a SimpleNamespace doc."""
+when it has neither that nor an ingress."""
 
 import unittest
 from pathlib import Path

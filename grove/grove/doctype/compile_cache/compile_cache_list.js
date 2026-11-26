@@ -1,4 +1,3 @@
-// Rows mirror the bucket — Sync pulls the truth, deleting a row deletes its artifacts.
 frappe.listview_settings["Compile Cache"] = {
 	onload(listview) {
 		listview.page.add_inner_button(__("Sync From Bucket"), () =>

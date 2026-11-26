@@ -74,7 +74,6 @@ class Model(Document):
 
 	@property
 	def has_catalog_pricing(self):
-		"""The catalog prices this model and no Model Pricing names it yet."""
 		return bool(seed.get_rates(self.model_key)) and not frappe.db.exists(
 			"Model Pricing", {"model": self.name}
 		)
@@ -101,8 +100,7 @@ class Model(Document):
 		return frappe.get_doc(pricing).insert().name
 
 	def validate_publishable(self):
-		"""Publishing is the operator's call, and only a priced, served model can take it. Not an
-		access gate — access is granted per team via Model Group or its own Allow."""
+		"""Not an access gate — access is granted per team via Model Group or its own Allow."""
 		if not frappe.db.exists("Model Pricing", {"model": self.name, "status": "Enabled"}):
 			frappe.throw(
 				f"{self.model_key} has no Enabled Model Pricing. Enable one first — zero rates serve it free."
@@ -115,8 +113,7 @@ class Model(Document):
 	def set_model_key(self):
 		"""`<provider name>/<model id>`, set once and then frozen — the key is inside every route,
 		grant and usage bucket, so an edit would rename a live model out from under its callers.
-		The id is a Model ID record's name; the provider link may still move between records of
-		the same name."""
+		The provider link may still move between records of the same name."""
 		if not self.model_id:
 			frappe.throw("No Model ID set")
 		self.provider = self.provider or self_hosted_provider()
@@ -134,8 +131,7 @@ class Model(Document):
 		self.model_key = expected
 
 	def set_modalities(self):
-		"""What the model takes and what it gives. A blank list is text — a chat model — and a
-		word goes only in the list its Modality is for."""
+		"""A blank list is text — a chat model — and a word goes only in the list its Modality is for."""
 		for fieldname, flag in MODALITY_FIELDS.items():
 			if not self.get(fieldname):
 				self.append(fieldname, {"modality": "Text"})
@@ -163,7 +159,6 @@ class Model(Document):
 
 	@property
 	def provider_name(self):
-		"""The provider's name, read off the linked record: it prefixes this model's key."""
 		return frappe.db.get_value("Model Provider", self.provider, "provider_name")
 
 	@property
@@ -174,19 +169,16 @@ class Model(Document):
 
 	@property
 	def gguf_quant(self):
-		"""The quantization named after the colon, blank for a safetensors repo."""
 		return (self.hf_repo or "").partition(":")[2]
 
 	@property
 	def is_self_hosted(self):
-		"""Our own engines serve it — the provider is the flagged one. Read off the provider rather
-		than the mirror, so the two cannot disagree."""
+		"""Read off the provider rather than the mirror, so the two cannot disagree."""
 		return bool(self.provider and frappe.db.get_value("Model Provider", self.provider, "is_self_hosted"))
 
 	def reject_if_vendor_served(self, what):
-		"""Refuse a self-hosting operation on a model we do not host. The form hides these, but a
-		whitelisted method is reachable without the button — and the errors underneath name a
-		missing repo, which is true and no help at all."""
+		"""The form hides these, but a whitelisted method is reachable without the button — and the
+		errors underneath name a missing repo, which is true and no help at all."""
 		if not self.is_self_hosted:
 			frappe.throw(f"{self.model_key} is served by {self.provider_name}. {what}, and there is none.")
 
@@ -218,8 +210,7 @@ class Model(Document):
 
 	@frappe.whitelist()
 	def mirror_weights(self):
-		"""Button: copy the safetensors off a box that serves this model into the weights bucket,
-		then set Weights S3 URI so the next deploy streams them."""
+		"""Button: copy the safetensors off a box that serves this model into the weights bucket."""
 		self.reject_if_vendor_served("Weights are mirrored off a box that serves the model")
 		settings = frappe.get_single("Grove Settings")
 		if not settings.weights_s3_write_environment:
@@ -243,17 +234,12 @@ class Model(Document):
 		)
 
 	def get_hf_config(self):
-		"""The repo's config.json — its architecture."""
 		return self._hf_json(HF_CONFIG_URL)
 
 	def get_weights_gb(self):
-		"""Size of the weights in GB — decimal, to match how GPU VRAM is quoted. The top-level
-		safetensors shards as they are on disk, or the single GGUF file.
-
-		Measured, not costed out from parameter counts: a packed quantization reports its
-		CONTAINER type, so GLM-5.2-AWQ-INT4 comes back as 726 billion I32 and prices at 2959 GB
-		against a real 474. Subfolders are skipped because that is where a repo keeps other
-		quantizations of the same weights."""
+		"""Size of the weights in GB — decimal, to match how GPU VRAM is quoted. Measured, not costed
+		out from parameter counts: a packed quantization reports its CONTAINER type, so
+		GLM-5.2-AWQ-INT4 comes back as 726 billion I32 and prices at 2959 GB against a real 474."""
 		suffix = f"{self.gguf_quant}.gguf" if self.gguf_quant else ".safetensors"
 		total_bytes = sum(
 			entry.get("size") or 0
@@ -288,8 +274,7 @@ def get_modalities(models=None):
 
 def get_modality_names(models=None):
 	"""{Model doc: {"input_modalities": [...], "output_modalities": [...]}}: the Modality records
-	of each list in the order written, for `models` or for every Model. Both lists are there for
-	every doc named."""
+	of each list in the order written. Both lists are there for every doc named."""
 	filters = {"parenttype": "Model"}
 	if models is not None:
 		filters["parent"] = ("in", list(models))
@@ -323,8 +308,7 @@ def mirror_server(model):
 
 @failure.reports_failure(doctype="Model")
 def mirror_weights_to_s3(model):
-	"""Worker: run mirror_weights.yml on the box, then stamp weights_s3_uri on success so new
-	deploys pick the mirror up."""
+	"""Worker: stamp weights_s3_uri on success so new deploys pick the mirror up."""
 	doc = frappe.get_doc("Model", model)
 	settings = frappe.get_single("Grove Settings")
 	inf = frappe.get_doc("Inference Server", mirror_server(model))
@@ -348,10 +332,7 @@ def mirror_weights_to_s3(model):
 
 
 def is_reachable(model, exclude=None, provider=None):
-	"""True if a request for `model` (a doc) has somewhere to go: an Active Model Replica, a
-	Running Pod, or a front on its own provider record.
-
-	`exclude` drops one name, for on_trash where the row still exists during delete. `provider`
+	"""`exclude` drops one name, for on_trash where the row still exists during delete. `provider`
 	is passed by a doc still being inserted: its row is not in the database yet."""
 	filters = {"model": model, "status": "Active"}
 	if exclude:
@@ -388,11 +369,10 @@ LAUNCH_FIELDS = (
 
 
 def config_dtype(config, shape=None):
-	"""What vLLM will serve these weights in when nothing overrides it.
-
-	Two spellings and two places: transformers renamed `torch_dtype` to `dtype` in 4.57, and a
-	multimodal repo states it on the LANGUAGE model — Qwen3.5-4B has `text_config.dtype` and
-	nothing above it. Missing it reads as "unknown" and silently skips the capability check."""
+	"""What vLLM will serve these weights in when nothing overrides it. Two spellings and two
+	places: transformers renamed `torch_dtype` to `dtype` in 4.57, and a multimodal repo states it
+	on the LANGUAGE model — Qwen3.5-4B has `text_config.dtype` and nothing above it. Missing it
+	reads as "unknown" and silently skips the capability check."""
 	for source in (shape or {}, config):
 		if dtype := (source.get("torch_dtype") or source.get("dtype") or ""):
 			return dtype
@@ -400,8 +380,7 @@ def config_dtype(config, shape=None):
 
 
 def launch_config(model):
-	"""This Model's intrinsic launch config as a plain mapping. Lives here rather than in
-	grove/serving so that package stays frappe-free."""
+	"""Lives here rather than in grove/serving so that package stays frappe-free."""
 	if not model:
 		return {}
 	config = frappe.db.get_value("Model", model, LAUNCH_FIELDS, as_dict=True)

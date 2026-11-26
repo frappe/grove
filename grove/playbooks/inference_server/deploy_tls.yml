@@ -1,6 +1,5 @@
 ---
-# Push the fleet wildcard onto one standalone Inference Server and reload nginx (grove.infrastructure.tls).
-# extra-vars: fleet_tls_cert, fleet_tls_key.
+# grove.infrastructure.tls runs it. extra-vars: fleet_tls_cert, fleet_tls_key.
 - name: Install the fleet certificate on a standalone Inference Server
   hosts: all
   become: true

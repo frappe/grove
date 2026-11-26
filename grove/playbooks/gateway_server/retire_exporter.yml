@@ -1,7 +1,6 @@
 ---
-# Retire what the pre-Vector gateway and ingress plays installed: node_exporter and the scrape
-# htpasswd. Migrate to Vector runs it after vector.yml has landed. A box that never had them is
-# left as it is.
+# Retire what the pre-Vector gateway and ingress plays installed. Migrate to Vector runs it after
+# vector.yml has landed.
 - hosts: all
   become: true
   gather_facts: false

@@ -1,5 +1,4 @@
 ---
-# Connectivity check for any box.
 - hosts: all
   gather_facts: false
   tasks:

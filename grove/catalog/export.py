@@ -43,7 +43,6 @@ def write(path=None):
 
 
 def get_tiers():
-	"""Every tier, its caps and its rows, so a site's ladder ships with the catalog."""
 	rows = limit_entries("Tier")
 	tiers = frappe.get_all("Tier", fields=["name", "max_keys", "spend_limit"], order_by="name")
 	return [
@@ -109,14 +108,12 @@ def get_extra_headers(provider):
 
 
 def get_denied_tools():
-	"""Every tool a vendor would run on its own side, by vendor then tool."""
 	return frappe.get_all("Denied Tool", fields=["provider_name", "tool"], order_by="provider_name, tool")
 
 
 def get_models():
-	"""Vendor models only, one entry per key, each with what it takes and gives, its Model ID's
-	display name and the rows of its Enabled pricing. Never `published`. A key held in several geographies exports once: the default geography's doc,
-	else whichever sorts first."""
+	"""Vendor models only, one entry per key. Never `published`. A key held in several geographies
+	exports once: the default geography's doc, else whichever sorts first."""
 	rows = frappe.get_all(
 		"Model",
 		filters={"provider_is_self_hosted": 0},

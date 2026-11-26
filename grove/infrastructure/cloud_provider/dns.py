@@ -1,19 +1,13 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Route53 records for a named fleet box. Pure boto3 — the doctype assembles the arguments.
-
-Customer traffic resolves through ONE multivalue set:
-
-	api.<zone>    A, multivalue answer, one row per GATEWAY, each with its own health check
-
-One record per IP is what escapes "one health check per record": a row carries a single value and a
-single check, and up to eight healthy ones are returned. With every row unhealthy Route53 still answers
-with up to eight of them, so the last gateway is never dropped from DNS. Each box also gets a plain A
-record at its own name.
+"""Route53 records for a named fleet box. Customer traffic resolves through ONE multivalue A set at
+`api.<zone>`: one row per GATEWAY, each a single value with its own health check, and up to eight
+healthy ones are returned. With every row unhealthy Route53 still answers, so the last gateway is never
+dropped from DNS. Each box also gets a plain A record at its own name.
 
 An ingress gets only its own name — it is addressed by the gateway's route table, not by DNS, and a
-gateway ejects one that stops answering. DNS cannot make that call: it cannot tell a broken ingress
-from a model with nowhere to go behind it.
+gateway ejects one that stops answering: DNS cannot tell a broken ingress from a model with nowhere to
+go behind it.
 
 Deliberately NOT a CloudClient: that contract is one account in one REGION, and Route53 is global."""
 
@@ -91,10 +85,10 @@ class Route53Client:
 		)
 
 	def get_other_policy_deletes(self, zone, gateway_host, identifier, row):
-		"""This box's row at the shared name under another routing policy — a latency row from before
-		the multivalue set — as DELETEs, because Route53 will not UPSERT one policy into another.
-		Verbatim as listed, and in the write's own batch: a batch of their own would leave the name
-		empty in between, and resolvers cache that NXDOMAIN for the zone's negative TTL."""
+		"""This box's row at the shared name under another routing policy, as DELETEs, because
+		Route53 will not UPSERT one policy into another. Verbatim as listed, and in the write's own
+		batch: a batch of their own would leave the name empty in between, and resolvers cache that
+		NXDOMAIN for the zone's negative TTL."""
 		return [
 			{"Action": "DELETE", "ResourceRecordSet": record}
 			for record in self.find_record_sets(zone, gateway_host)
@@ -104,8 +98,7 @@ class Route53Client:
 		]
 
 	def upsert_ingress_records(self, zone, hostname, public_ip, identifier):
-		"""The one record an ingress needs: the name that reaches this box. UPSERT, so a box that
-		came back on a new address is corrected by running it again."""
+		"""UPSERT, so a box that came back on a new address is corrected by running it again."""
 		return self._submit(
 			zone,
 			f"Grove UPSERT {identifier}",
@@ -113,7 +106,6 @@ class Route53Client:
 		)
 
 	def delete_ingress_records(self, zone, hostname, public_ip, identifier):
-		"""The same record on the way out, repeating what the upsert wrote."""
 		return self._submit(
 			zone,
 			f"Grove DELETE {identifier}",
@@ -121,8 +113,7 @@ class Route53Client:
 		)
 
 	def find_record_sets(self, zone, name):
-		"""Every record set at exactly this name. The listing starts there and is sorted, so one
-		page holds them all."""
+		"""The listing starts at this name and is sorted, so one page holds them all."""
 		response = self._call(
 			self.route53.list_resource_record_sets,
 			HostedZoneId=self.get_hosted_zone_id(zone),
@@ -136,7 +127,6 @@ class Route53Client:
 		]
 
 	def _submit(self, zone, comment, changes):
-		"""One change batch — a whole box's records, so nothing is half written."""
 		response = self._call(
 			self.route53.change_resource_record_sets,
 			HostedZoneId=self.get_hosted_zone_id(zone),
@@ -160,8 +150,8 @@ class Route53Client:
 		return self._create_health_check(caller_reference, config)
 
 	def update_health_check_ip(self, health_check_id, public_ip):
-		"""Point an existing check at the box's current address. A box back from a stop on a new IP
-		keeps its check, which would otherwise go on probing the old one."""
+		"""A box back from a stop on a new IP keeps its check, which would otherwise go on probing
+		the old one."""
 		self._call(self.route53.update_health_check, HealthCheckId=health_check_id, IPAddress=public_ip)
 
 	def delete_health_check(self, health_check_id):
@@ -198,8 +188,7 @@ class Route53Client:
 
 	@staticmethod
 	def _call(operation, **kwargs):
-		"""botocore's error turned into ours. AWS names the exact record it rejected, so the
-		message is worth surfacing whole."""
+		"""AWS names the exact record it rejected, so the message is worth surfacing whole."""
 		from botocore.exceptions import BotoCoreError, ClientError
 
 		try:
@@ -219,7 +208,6 @@ def same_routing_policy(record, row):
 
 
 def a_record(name, public_ip):
-	"""A plain address record — one box's own name, and the base of every row below."""
 	return {"Name": name, "Type": "A", "TTL": NAME_TTL, "ResourceRecords": [{"Value": public_ip}]}
 
 

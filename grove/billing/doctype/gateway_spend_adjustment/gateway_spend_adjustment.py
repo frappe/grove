@@ -9,8 +9,7 @@ class GatewaySpendAdjustment(Document):
 	spend counter for the key on that store is owed, sent by the projection tick until the box
 	answers, then the counter it reported. Written by `CostDiscrepancy.adjust_gateway`, moved to
 	Applied by `mark_corrected` (with no counter when the store no longer holds the key: revoked
-	since, nothing left to lift), never edited by hand. The decision stays on the Cost Discrepancy,
-	and Grove's own money never moves on this side."""
+	since, nothing left to lift), never edited by hand. Grove's own money never moves on this side."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.

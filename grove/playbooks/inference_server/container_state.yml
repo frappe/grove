@@ -1,6 +1,5 @@
 ---
-# Start or stop one vLLM instance's container, keeping everything else (model_replica.set_container_state).
-# extra-vars: vllm_instance, vllm_container_running.
+# model_replica.set_container_state runs it. extra-vars: vllm_instance, vllm_container_running.
 # docker start/stop, not the run script: the script stops, removes and re-runs, which is a replace.
 - name: Set a vLLM instance's container state
   hosts: all

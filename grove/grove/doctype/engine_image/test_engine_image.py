@@ -1,7 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""Splitting an image ref into what the registry API addresses a manifest by, and checking the
-warmup body an image carries. Pure — both read fields off the doc, so no registry call."""
+"""Pure — the split and the warmup check read fields off the doc, so no registry call."""
 
 import unittest
 from types import SimpleNamespace
@@ -12,8 +11,7 @@ from grove.grove.doctype.engine_image.engine_image import DOCKER_HUB_HOSTS, Engi
 
 
 def image(image_path, registry_host=""):
-	"""A stand-in Engine Image carrying just what the split reads — the two properties are
-	shadowed here, since the real ones reach for the Engine Image Provider."""
+	"""The two properties are shadowed here, since the real ones reach for the Engine Image Provider."""
 	return SimpleNamespace(
 		image_path=image_path,
 		registry_host=registry_host,

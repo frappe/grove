@@ -2,7 +2,6 @@
 # For license information, please see license.txt
 """What every Pathway Sync run shares: one box's admin API, the units a run dials, and the rows that
 land on the run doc. Every path that reaches a box goes through here.
-
 Runs of one type serialize on the Pathway Sync doc's advisory lock, so a slow run cannot land a
 stale write after a newer one. Boxes are dialled one at a time, a store's writers in turn, and rows
 land in the order asked."""
@@ -110,7 +109,7 @@ class Unit:
 def sync_targets(geography=None):
 	"""Where a run reaches each gateway Redis, as (store, gateways) groups: a gateway on its own
 	Redis alone, then each store through its Active writers in the order they are tried. A store
-	whose Active gateways include no writer is a group of none. `geography` keeps it to one."""
+	whose Active gateways include no writer is a group of none."""
 	alone, stores = [], {}
 	filters = {"status": "Active"}
 	if geography:
@@ -167,7 +166,6 @@ def in_turn(unit, work):
 
 
 def guarded(work, unit):
-	"""`work(unit)`, or the exception it raised as its result."""
 	try:
 		return work(unit)
 	except Exception as e:

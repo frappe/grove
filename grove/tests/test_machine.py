@@ -1,13 +1,10 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 """What a Machine reads off its instance type and its AMI, and when it calls a box ready. Pure —
-boto3 is replaced by a fake that answers from canned responses, so no site and no network.
-
-Slow boots are the reason this file exists. A bare metal instance reports `running` with a public
-IP about a minute into a boot that takes another ten to twenty, so a poll that trusts the state
-hands Ansible a box that refuses the connection, and a reboot on Ansible's default timeout fails
-the play midway through provisioning.
-"""
+boto3 is replaced by a fake that answers from canned responses, so no site and no network. A bare
+metal instance reports `running` with a public IP about a minute into a boot that takes another ten
+to twenty, so a poll that trusts the state hands Ansible a box that refuses the connection, and a
+reboot on Ansible's default timeout fails the play midway through provisioning."""
 
 import unittest
 from pathlib import Path
@@ -205,8 +202,6 @@ class TestImageInfo(unittest.TestCase):
 
 @patch("time.sleep")
 class TestPollInstanceReady(unittest.TestCase):
-	"""The bare metal bug and its fix."""
-
 	def test_running_with_an_ip_is_not_ready_while_a_status_check_is_initializing(self, _sleep):
 		ec2 = client(instances=[instance()], statuses=[status(system="initializing")])
 		with self.assertRaises(AWSError) as caught:

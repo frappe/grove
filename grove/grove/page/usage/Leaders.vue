@@ -1,5 +1,4 @@
 <script setup>
-// The costliest teams, keys and models of the window; a name narrows the page to itself.
 import { List, ListCell, ListHeader, ListHeaderCell, ListRow, ListRows } from "frappe-ui/list";
 import { computed, watch } from "vue";
 

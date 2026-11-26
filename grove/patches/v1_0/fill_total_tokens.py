@@ -1,5 +1,5 @@
-"""Usage Record's `total_tokens` is new: every record from before it is summed off its own `usage`
-JSON, by the rule `tokens_expression` reads with. A record with no entries stays 0."""
+"""Every record from before `total_tokens` is summed off its own `usage` JSON. A record with no
+entries stays 0."""
 
 import frappe
 

@@ -39,8 +39,7 @@ class GroveTeam(Document):
 	# end: auto-generated types
 
 	def before_insert(self):
-		"""A new team starts in every geography's default Model Group unless the insert names its
-		own groups. A Total team is an operator's to make: the control role inserts teams too."""
+		"""A Total team is an operator's to make: the control role inserts teams too."""
 		if self.key_cap_window == "Total" and "System Manager" not in frappe.get_roles():
 			frappe.throw(
 				"Only an operator at Grove makes a team whose key caps count in Total.",
@@ -69,14 +68,12 @@ class GroveTeam(Document):
 	@frappe.whitelist()
 	def set_suspended_at_grove(self, suspended: bool):
 		"""Desk's Suspend Keys / Resume Keys: suspends the team as Central would, marked as Grove's
-		own so Central's sync cannot lift it; the next tick has the gateways refuse every key, cap or
-		no cap, and nothing is revoked. Resume clears both — Central puts its own back on its next
-		sync if the invoice is still unpaid."""
+		own so Central's sync cannot lift it; nothing is revoked. Resume clears both — Central puts
+		its own back on its next sync if the invoice is still unpaid."""
 		self.suspended_at_grove = self.suspended = suspended
 		self.save()
 
 	def revoke_keys(self):
-		"""Every live key of the team revoked: what closing it takes. → the names revoked."""
 		names = frappe.get_list(
 			"Grove API Key", filters={"team": self.name, "status": "active"}, pluck="name"
 		)

@@ -1,7 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""Vector on a gateway box: what the role renders for datum, the play that carries it, what the Install
-Vector button, the Setup chain and the hourly token refresh run. Pure — no site, no SSH, no Central."""
+"""Vector on a gateway box. Pure — no site, no SSH, no Central."""
 
 import re
 import unittest

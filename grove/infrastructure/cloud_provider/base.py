@@ -122,13 +122,11 @@ class CloudClient(ABC):
 	@abstractmethod
 	def sync_ingress(self, security_group_id, port, cidrs):
 		"""Make this port's ingress on the group exactly `cidrs`, leaving every other port
-		untouched. Returns {opened, closed} — the sources that changed, so a caller can say what
-		it did without describing the group itself."""
+		untouched. Returns {opened, closed} — the sources that changed."""
 
 
 def build_cloud_client(provider_type, access_key_id, secret_access_key, region):
-	"""The CloudClient for a Cloud Provider's provider_type. Add a provider by adding one
-	entry here — Machine and Network never change."""
+	"""Add a provider by adding one entry here — Machine and Network never change."""
 	from grove.infrastructure.cloud_provider.aws import EC2Client
 
 	clients = {"aws": EC2Client}

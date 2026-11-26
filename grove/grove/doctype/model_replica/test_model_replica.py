@@ -1,7 +1,7 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""Engine env assembly and box-local port allocation. Pure — the deployment is passed in and
-the sibling lookup is stubbed with a small table, so no site needed."""
+"""Pure — the deployment is passed in and the sibling lookup is stubbed with a small table, so no site
+needed."""
 
 import json
 import re
@@ -33,10 +33,9 @@ MODULE = "grove.grove.doctype.model_replica.model_replica"
 
 
 def deployment(env=None, health_path=None, engine_image="img"):
-	"""The Model Deployment a replica reads through. Only what `_engine_env` and
-	`_vllm_extravars` actually reach for — these tests are about what the REPLICA contributes on
-	top, and `engine_env_rows` is the layering that matters: deployment rows first, replica rows
-	over them, so a replica adds to the deployment rather than replacing its list."""
+	"""Only what `_engine_env` and `_vllm_extravars` actually reach for — these tests are about what the
+	REPLICA contributes on top, and `engine_env_rows` is the layering that matters: deployment rows first,
+	replica rows over them, so a replica adds to the deployment rather than replacing its list."""
 	rows = [SimpleNamespace(key=key, value=value) for key, value in (env or {}).items()]
 	return SimpleNamespace(
 		engine_image=engine_image,
@@ -114,7 +113,6 @@ class TestEnginePortAllocation(unittest.TestCase):
 	back out — and never one an engine is still bound to, Broken included."""
 
 	def allocate(self, siblings):
-		"""The port a new deployment on `box` would take, given its siblings there."""
 		self.locked = []
 
 		def fake_get_values(doctype, filters, fieldname, for_update=False, pluck=False):
@@ -167,7 +165,6 @@ class TestGpuClaims(unittest.TestCase):
 	swap loses is the database's job — see `gpu.claim`."""
 
 	def acted(self, status):
-		"""Which way sync_gpu_claims went for a replica in this status."""
 		doc = SimpleNamespace(status=status, calls=[])
 		doc.claim_gpus = lambda: doc.calls.append("claim")
 		doc.release_gpus = lambda: doc.calls.append("release")
@@ -205,12 +202,8 @@ class TestGpuClaims(unittest.TestCase):
 
 
 class TestGpuInventory(unittest.TestCase):
-	"""A pinned card has to be on THIS replica's box.
-
-	The display columns look after themselves now — `gpu_index`, `gpu_type` and `vram_gb` are
-	`fetch_from` the linked GPU, so validation no longer copies them and they cannot drift. What
-	validation still owes is the check a Link field will not make: the picker offers every card in
-	the fleet, and only this box's are legal."""
+	"""A pinned card has to be on THIS replica's box: the check a Link field will not make. The picker
+	offers every card in the fleet, and only this box's are legal."""
 
 	def validated(self, pinned, on_machine, max_model_len=None):
 		doc = SimpleNamespace(
@@ -254,8 +247,6 @@ class TestGpuInventory(unittest.TestCase):
 
 
 class TestPostPlayState(unittest.TestCase):
-	"""What a finished serve play writes: the URL moves only on success."""
-
 	def test_success_is_active_with_its_url(self):
 		md = SimpleNamespace(derived_engine_url="https://10.0.0.9/e/md-1")
 		self.assertEqual(_post_play_state(md, 0), {"status": "Active", "engine_url": md.derived_engine_url})
@@ -265,17 +256,13 @@ class TestPostPlayState(unittest.TestCase):
 
 
 class TestReconfigureKeepsTheModelRoutable(unittest.TestCase):
-	"""Update Engine Config must not take the model out of the gateway while it runs.
-
-	`status` is read as "is this engine serving?" — `_gateway_routes` routes only Active — and
+	"""`status` is read as "is this engine serving?" — `_gateway_routes` routes only Active — and
 	the scheduler pushes the WHOLE route table every two minutes. So a status written before the
 	play is a guaranteed multi-minute outage, for a run that replaces the container only when the
 	rendered config actually moved. This cost a live 503 on qwen3.5-4b once; the test is here so
 	it cannot come back quietly."""
 
 	def record_play(self, rc):
-		"""A run_playbook that remembers which play it was handed."""
-
 		def run_playbook(playbook, **kwargs):
 			self.played = playbook
 			return ("PLAY-1", rc)
@@ -283,7 +270,6 @@ class TestReconfigureKeepsTheModelRoutable(unittest.TestCase):
 		return run_playbook
 
 	def writes_during(self, rc):
-		"""Every db.set_value payload a reconfigure emits, in order."""
 		claims = []
 		md = SimpleNamespace(
 			name="MD-00007",
@@ -397,7 +383,6 @@ class TestStartRetakesTheCards(unittest.TestCase):
 	play, and refuses on the button when it cannot."""
 
 	def start(self, claimed):
-		"""What Start queued, given cards a sibling did or did not take while this was stopped."""
 		queued = []
 
 		def claim_gpus():
@@ -423,15 +408,12 @@ class TestStartRetakesTheCards(unittest.TestCase):
 
 
 class TestStopAndStartRunAsAPlay(unittest.TestCase):
-	"""Stop and Start change the box, so they go through a play like every other lifecycle
-	button — `run_command` is for reads, and a run that leaves no Ansible Play leaves nobody
-	able to see what docker actually did.
-
-	The status write is the dangerous half: `status` is what _gateway_routes routes on, so it
+	"""Stop and Start change the box, so they go through a play like every other lifecycle button —
+	`run_command` is for reads, and a run that leaves no Ansible Play leaves nobody able to see what docker
+	actually did. The status write is the dangerous half: `status` is what _gateway_routes routes on, so it
 	must follow the play, never lead it."""
 
 	def run_state(self, running, rc):
-		"""Every db.set_value a Stop/Start emits, plus the play it ran and its extra-vars."""
 		written = []
 		md = SimpleNamespace(
 			name="MD-00007",
@@ -484,7 +466,6 @@ class TestTeardownFreesTheCards(unittest.TestCase):
 	the panel shows a free GPU as taken until a placement collides with it."""
 
 	def teardown(self, rc):
-		"""Every db.set_value a teardown emits, and the claim settlement, in order."""
 		written = []
 		md = SimpleNamespace(
 			name="MD-00007",

@@ -9,11 +9,10 @@ from grove.utils import utc_today
 class CostDiscrepancy(Document):
 	"""The gateway charged a drain differently from Grove's price of the same counters at the same
 	pricing. Logged by the pull: a person decides which side is wrong and corrects that side's
-	spend, which brings the two balances back together. The one the pull decides itself is a dead
-	line's, charged by the box at nothing (`Reconciler.audit`). The row keeps the two figures and
-	the decision; the money is a record of its own — a Usage Record naming this row when Grove was
-	wrong, a Gateway Spend Adjustment when the gateway was — so the Usage Record it audited is never
-	changed."""
+	spend; the one the pull decides itself is a dead line's, charged by the box at nothing
+	(`Reconciler.audit`). The money is a record of its own — a Usage Record naming this row when
+	Grove was wrong, a Gateway Spend Adjustment when the gateway was — so the Usage Record it
+	audited is never changed."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -66,15 +65,13 @@ class CostDiscrepancy(Document):
 
 	@frappe.whitelist()
 	def correct_gateway(self):
-		"""The gateway charged it wrong."""
 		self.check_open()
 		self.adjust_gateway()
 
 	def adjust_gateway(self):
-		"""The gateway's spend counter for the key on that store is owed minus the delta. Only
-		recorded here, as a Pending Gateway Spend Adjustment — the next projection tick sends it, and
-		every tick after until the box answers. Grove's side does not move. The pull calls this for
-		a dead line under whoever pulled, so the row is written past permissions."""
+		"""Only recorded here, as a Pending Gateway Spend Adjustment — the next projection tick sends
+		it, and every tick after until the box answers. Grove's side does not move. The pull calls
+		this for a dead line under whoever pulled, so the row is written past permissions."""
 		if not self.gateway_store:
 			frappe.throw("This drain names no store, so there is nothing to send the correction through.")
 		frappe.get_doc(

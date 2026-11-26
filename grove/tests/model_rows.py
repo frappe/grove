@@ -22,7 +22,6 @@ def model_row(name, provider_name="frappe", geography=None, **fields):
 
 
 def modality_rows(models):
-	"""The Model Modality Row rows behind `models`' two lists."""
 	return [
 		{"parent": model["name"], "parentfield": fieldname, "modality": word.capitalize()}
 		for model in models

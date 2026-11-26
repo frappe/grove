@@ -1,8 +1,7 @@
 frappe.provide("grove");
 
-// Resize Server on a Gateway Server or Gateway Store form: asks for the instance type out of the
-// ones the box can move to — its architecture is fixed by its image — then opens the Server
-// Resize made for it, where Start runs it.
+// Asks for the instance type out of the ones the box can move to — its architecture is fixed by
+// its image — then opens the Server Resize made for it, where Start runs it.
 grove.prompt_resize = function (frm) {
 	frm.call("resize_options").then(({ message: { current, options } }) => {
 		frappe.prompt(

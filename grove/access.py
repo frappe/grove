@@ -3,9 +3,7 @@
 """Who may call which Model. The policy is the team's: every group it is in grants, its Allow
 adds, its Deny removes, and nothing else is reachable. What is one geography's — a Model Group, a
 vendor's model doc — reaches only the team's keys in that geography; a model of ours reaches them
-all.
-
-The precedence is NOT applied here: Grove pushes each group and each key as separate Redis
+all. The precedence is NOT applied here: Grove pushes each group and each key as separate Redis
 records, and the GATEWAY resolves the two at request time. That is what stops a one-row edit on a
 group from invalidating every key beneath it."""
 
@@ -19,17 +17,15 @@ DEFAULT_LIMITS = (
 
 
 def default_tier():
-	"""The Tier a team with none runs under, and the one an unseen name is cloned from; None when
-	Grove Settings names none."""
+	"""The Tier a team with none runs under, and the one an unseen name is cloned from."""
 	return frappe.db.get_single_value("Grove Settings", "default_tier") or None
 
 
 def team_limits(team, for_update=False):
-	"""What gates `team`'s keys: `suspended`, `log_payloads`, `key_cap_window` (what each cap
-	counts: the month, or everything since the mint), its `tier`, and the tier's `max_keys` /
-	`spend_limit` (the default tier's when it has none; without either, 0 and 0: no key limit, and
-	no cap can be set). `max_keys` is the team's own under Override Max Keys. `for_update` locks
-	the team row for a cap check. The tier comes off the doc cache: a save clears it."""
+	"""What gates `team`'s keys: `key_cap_window` (what each cap counts: the month, or everything
+	since the mint) and the tier's `max_keys` / `spend_limit` (the default tier's when it has none;
+	without either, 0 and 0: no key limit, and no cap can be set). `max_keys` is the team's own
+	under Override Max Keys. The tier comes off the doc cache: a save clears it."""
 	fields = ["suspended", "log_payloads", "key_cap_window", "tier", "override_max_keys", "max_keys"]
 	row = (
 		frappe.db.get_value("Grove Team", team, fields, as_dict=True, for_update=for_update) or frappe._dict()
@@ -73,7 +69,6 @@ def group_rows(parents=None, parenttype="Grove Team"):
 
 
 def group_geographies():
-	"""{group: its geography}: which of a team's keys the group reaches."""
 	return {g.name: g.geography for g in frappe.get_all("Model Group", fields=["name", "geography"])}
 
 
@@ -107,8 +102,7 @@ def reaching(rows, geography):
 
 
 def limit_entries(parenttype, parents=None):
-	"""{parent: [{metric, window, value}, ...]} of the Model Limit rows on every `parenttype` doc, or
-	on `parents`, each list sorted by metric and window."""
+	"""{parent: [{metric, window, value}, ...]}, each list sorted by metric and window."""
 	filters = {"parenttype": parenttype}
 	if parents is not None:
 		filters["parent"] = ("in", list(parents))
@@ -150,7 +144,7 @@ def sorted_limits(rows):
 
 def validate_limit_rows(rows):
 	"""One limit per metric and window, each above zero; the gateway refuses a push carrying one it
-	cannot read. The same rule on a key's own rows and on a Tier's."""
+	cannot read."""
 	seen = set()
 	for row in rows:
 		if (row.value or 0) <= 0:

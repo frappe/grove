@@ -39,12 +39,11 @@ class UsageRecord(Document):
 
 	@staticmethod
 	def clear_old_logs(days=RETENTION_DAYS):
-		"""Log Settings: records served more than `days` UTC days ago, and landed that long ago too, a
-		chunk at a time. One a Cost Discrepancy names stays: it is that correction's evidence. One
-		that landed late stays as long: Central invoices by when a record landed, and a drain not yet
-		acknowledged must find the record it left. No money read needs a record this old — the month
-		is this month's, an invoice is a landing window — so what goes is
-		history: the usage API and the Revenue report stop at the retention."""
+		"""Log Settings: records served more than `days` UTC days ago, and landed that long ago too.
+		One a Cost Discrepancy names stays: it is that correction's evidence. One that landed late
+		stays as long: Central invoices by when a record landed, and a drain not yet acknowledged
+		must find the record it left. What goes is history: the usage API and the Revenue report
+		stop at the retention."""
 		cutoff = add_days(utc_today(), -cint(days))
 		while names := frappe.db.sql_list(
 			"""select name from `tabUsage Record` where day < %(cutoff)s and creation < %(cutoff)s
@@ -69,7 +68,6 @@ def on_doctype_update():
 
 
 def tokens_expression(alias="u"):
-	"""The SQL for one model entry's whole tokens, `CounterTable.whole` summed."""
 	from grove.billing.pricing import CounterTable
 
 	return " + ".join(f"{alias}.{counter}" for counter in CounterTable.load().whole) or "0"
@@ -79,10 +77,8 @@ def money_rows(filters, from_date=None, to_date=None, since=None, until=None):
 	"""The derived table `x` every money read sums over: one row per model entry of a record
 	(team, api_key, model, day, pulled_at, requests, tokens, cost). A Grove correction is a record
 	too — its delta alone, under its model key, on the day it was resolved — so it counts wherever
-	usage does, and no record is ever changed. Narrowed by `filters` ({team, api_key, model}: a
-	value or a list; None is skipped) and either a UTC day range or a landing window on when a
-	record was pulled or a correction landed (site-time datetimes, `until` exclusive). → (sql,
-	params)."""
+	usage does. Narrowed by `filters` (a value or a list; None is skipped) and either a UTC day
+	range or a landing window (site-time datetimes, `until` exclusive). → (sql, params)."""
 	given = {field: value for field, value in filters.items() if value is not None}
 	where = [
 		f"{RECORD_COLUMNS[f]} {'in' if isinstance(v, list | tuple) else '='} %({f})s"
