@@ -261,15 +261,26 @@ class TestUsagePage(IntegrationTestCase):
 		doc.transfer(customer, title="site.example.test")
 		self.record(doc.name, self.today, MODEL_A, cost=3.1, requests=2, gateway_cost=0, team=customer)
 
-		[row] = usage.keys({**WEEK, "team": trial})
-		self.assertEqual((row["name"], row["team"], row["cost"]), (doc.name, customer, 0.42))
+		# Handed over with no usage at all: still listed under the team it left.
+		idle = frappe.get_doc({"doctype": "Grove API Key", "team": trial, "title": "AITK-00013"}).insert()
+		idle.transfer(customer, title="idle.example.test")
+		both = {doc.name, idle.name}
+
+		rows = {row["name"]: row for row in usage.keys({**WEEK, "team": trial})}
+		self.assertEqual(set(rows), both)
+		row = rows[doc.name]
+		self.assertEqual((row["team"], row["cost"]), (customer, 0.42))
+		self.assertEqual((rows[idle.name]["team"], rows[idle.name]["requests"]), (customer, 0))
+		in_geography = {**WEEK, "team": trial, "geography": doc.geography}
+		self.assertEqual({row["name"] for row in usage.keys(in_geography)}, both)
+		self.assertEqual(usage.overview(in_geography)["totals"]["cost"], 0.42)
 		self.assertEqual(
 			[(move["from_team"], move["to_team"]) for move in row["transfers"]], [(trial, customer)]
 		)
-		[offered] = usage.filter_options(team=trial)["keys"]
-		self.assertEqual((offered["name"], offered["moved_to"]), (doc.name, customer))
-		[held] = usage.filter_options(team=customer)["keys"]
-		self.assertEqual((held["name"], held["moved_to"]), (doc.name, None))
+		offered = {key["name"]: key["moved_to"] for key in usage.filter_options(team=trial)["keys"]}
+		self.assertEqual(offered, dict.fromkeys(both, customer))
+		held = {key["name"]: key["moved_to"] for key in usage.filter_options(team=customer)["keys"]}
+		self.assertEqual(held, dict.fromkeys(both))
 		under_trial = usage.overview({**WEEK, "team": trial, "api_key": doc.name})
 		self.assertEqual(under_trial["totals"]["cost"], 0.42)
 
