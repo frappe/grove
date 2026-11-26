@@ -518,12 +518,16 @@ class TestPodWarmup(unittest.TestCase):
 		self.assertIn("connection refused", reason)
 
 	def test_a_custom_engine_has_no_payload_to_prove(self):
-		with patch("grove.infrastructure.cloud_provider.provisioner.PodProvisioner.current_status", "Running"):
+		with patch(
+			"grove.infrastructure.cloud_provider.provisioner.PodProvisioner.current_status", "Running"
+		):
 			self.assertFalse(self.provisioner(engine_kind="custom").is_warmup_due)
 			self.assertTrue(self.provisioner().is_warmup_due)
 
 	def test_a_pod_that_never_served_is_not_warmed(self):
-		with patch("grove.infrastructure.cloud_provider.provisioner.PodProvisioner.current_status", "Loading"):
+		with patch(
+			"grove.infrastructure.cloud_provider.provisioner.PodProvisioner.current_status", "Loading"
+		):
 			self.assertFalse(self.provisioner().is_warmup_due)
 
 

@@ -355,7 +355,9 @@ class TestTheRunCodeComesFromAnsible(unittest.TestCase):
 		run.callback = SimpleNamespace(thread_db=None, stopped=stopped)
 		play = SimpleNamespace(name="PLAY-1", status=play_status)
 		with (
-			unittest.mock.patch("grove.infrastructure.ansible_runner.PlaybookExecutor", lambda **kw: FakeExecutor(rc)),
+			unittest.mock.patch(
+				"grove.infrastructure.ansible_runner.PlaybookExecutor", lambda **kw: FakeExecutor(rc)
+			),
 			unittest.mock.patch("frappe.get_doc", lambda *args, **kwargs: play),
 		):
 			return run.run()[1]

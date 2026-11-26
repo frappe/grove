@@ -8,18 +8,7 @@ import { BarChart } from "frappe-ui/charts";
 import { List, ListCell, ListHeader, ListHeaderCell, ListRow, ListRows } from "frappe-ui/list";
 import { computed, ref, watch } from "vue";
 
-import {
-	CARD,
-	CARD_TITLE,
-	CELL,
-	MUTED,
-	NUM,
-	ago,
-	compact,
-	count,
-	useCall,
-	when,
-} from "./lib.js";
+import { CARD, CARD_TITLE, CELL, MUTED, NUM, ago, compact, count, useCall, when } from "./lib.js";
 
 const props = defineProps({ params: Object, version: Number });
 const host = useHost();
@@ -142,7 +131,9 @@ const tone = (field, value) => {
 					<ListRows :items="rows" v-slot="{ item, value }">
 						<ListRow :value="value">
 							<ListCell class="flex-col !items-start justify-center">
-								<span :class="CELL">{{ item.provider || item.provider_name }}</span>
+								<span :class="CELL">{{
+									item.provider || item.provider_name
+								}}</span>
 								<span :class="MUTED">{{ item.geography }}</span>
 							</ListCell>
 							<ListCell class="flex-col !items-start justify-center">
