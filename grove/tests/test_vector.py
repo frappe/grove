@@ -326,7 +326,7 @@ class TestTheButton(unittest.TestCase):
 		extravars = doc.run_playbook.call_args.kwargs["extravars"]
 		self.assertEqual("pw", extravars["vector_redis_password"])
 		self.assertEqual(
-			["/var/log/redis-server/*.log", "/var/log/redis/*.log"], extravars["vector_log_files"]
+			["/var/log/store-redis/*.log", "/var/log/redis/*.log"], extravars["vector_log_files"]
 		)
 		self.assertEqual([], extravars["vector_unshipped_lines"])
 

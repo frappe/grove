@@ -3,29 +3,17 @@
   ansible.builtin.include_tasks: repository.yml
   when: redis_package is not defined
 
-# Redis runs as the service account from Grove's own unit, config and directories. The packages'
-# unit of the same name is never read, and their /etc/redis, /var/lib/redis and /var/log/redis,
-# which every install chowns back to `redis`, are not used.
-- name: look for our own redis unit
+# Redis runs as store-redis: Grove's own unit, config and directories, as the service account. The
+# packages give the binary. Their `redis-server` unit stays masked, and their /etc/redis,
+# /var/lib/redis and /var/log/redis, which every install chowns back to `redis`, are not used.
+- name: look for a store-redis set up earlier
   ansible.builtin.stat:
-    path: /etc/systemd/system/redis-server.service
+    path: /etc/systemd/system/store-redis.service
   register: redis_own_unit
 
-- name: redis's own directories
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    owner: "{{ redis_user }}"
-    group: "{{ redis_user }}"
-    mode: "0750"
-  loop:
-    - /etc/redis-server
-    - /var/lib/redis-server
-    - /var/log/redis-server
-
-# The move off the packaged redis, once: stopped so that its files are whole, then copied. Its own
-# directory is left as it was, which is the way back.
-- name: stop the packaged redis for the move
+# The move off whatever ran as redis-server, once: stopped here so that its files are whole when
+# they are copied below.
+- name: stop the redis-server unit for the move
   ansible.builtin.shell: |
     set -eu
     if systemctl is-active --quiet redis-server; then
@@ -36,26 +24,71 @@
   changed_when: redis_packaged.stdout | trim == "stopped"
   when: not redis_own_unit.stat.exists
 
-- name: adopt the data the packaged redis held
+- name: look at what holds the packaged unit's name in /etc
+  ansible.builtin.stat:
+    path: /etc/systemd/system/redis-server.service
+  register: redis_packaged_name
+
+# An earlier version of this role wrote its own unit under that name; a mask is a link, not a file.
+- name: remove a unit file an earlier role put under the packaged name
+  ansible.builtin.file:
+    path: /etc/systemd/system/redis-server.service
+    state: absent
+  when: redis_packaged_name.stat.exists and not redis_packaged_name.stat.islnk
+
+# Before the install, which would start it. A mask set by hand outlives every package upgrade.
+- name: mask the packaged redis
+  ansible.builtin.systemd:
+    name: redis-server
+    masked: true
+    daemon_reload: true
+
+- name: install redis
+  ansible.builtin.apt:
+    name:
+      - "redis-server={{ redis_package }}"
+      - "redis-tools={{ redis_package }}"
+    state: present
+
+- name: store-redis's own directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ redis_user }}"
+    group: "{{ redis_user }}"
+    mode: "0750"
+  loop:
+    - /etc/store-redis
+    - /var/lib/store-redis
+    - /var/log/store-redis
+
+# From the first of these that holds data, into an empty directory of ours. What is copied from is
+# left as it was, which is the way back. /var/lib/redis-server is where an earlier version of this
+# role kept it.
+- name: adopt the data the stopped redis held
   ansible.builtin.shell: |
     set -eu
-    if [ -z "$(ls -A "$OURS")" ] && [ -n "$(ls -A "$THEIRS" 2>/dev/null)" ]; then
-      cp -a "$THEIRS/." "$OURS/"
-      chown -R "$OWNER:$OWNER" "$OURS"
-      echo adopted
-    fi
+    [ -z "$(ls -A "$OURS")" ] || exit 0
+    for theirs in $THEIRS; do
+      if [ -n "$(ls -A "$theirs" 2>/dev/null)" ]; then
+        cp -a "$theirs/." "$OURS/"
+        chown -R "$OWNER:$OWNER" "$OURS"
+        echo "adopted $theirs"
+        exit 0
+      fi
+    done
   environment:
-    OURS: /var/lib/redis-server
-    THEIRS: /var/lib/redis
+    OURS: /var/lib/store-redis
+    THEIRS: /var/lib/redis-server /var/lib/redis
     OWNER: "{{ redis_user }}"
   register: redis_adopted
-  changed_when: redis_adopted.stdout | trim == "adopted"
+  changed_when: redis_adopted.stdout | trim | length > 0
   when: not redis_own_unit.stat.exists
 
 - name: redis config
   ansible.builtin.template:
     src: redis.conf.j2
-    dest: /etc/redis-server/redis.conf
+    dest: /etc/store-redis/redis.conf
     owner: "{{ redis_user }}"
     group: "{{ redis_user }}"
     mode: "0640"
@@ -64,34 +97,22 @@
 
 - name: redis unit
   ansible.builtin.template:
-    src: redis-server.service.j2
-    dest: /etc/systemd/system/redis-server.service
+    src: store-redis.service.j2
+    dest: /etc/systemd/system/store-redis.service
     mode: "0644"
   register: redis_unit
-
-- name: load the unit
-  ansible.builtin.systemd:
-    daemon_reload: true
-  when: redis_unit is changed
-
-# The package starts `redis-server` as it lands: by now that name is the unit above.
-- name: install redis
-  ansible.builtin.apt:
-    name:
-      - "redis-server={{ redis_package }}"
-      - "redis-tools={{ redis_package }}"
-    state: present
 
 # A task, not a handler: a handler that failed to fire once never fires again, the file being right.
 - name: restart redis onto a changed config or unit
   ansible.builtin.systemd:
-    name: redis-server
+    name: store-redis
     state: restarted
+    daemon_reload: true
   when: redis_conf is changed or redis_unit is changed
 
 - name: redis started
   ansible.builtin.systemd:
-    name: redis-server
+    name: store-redis
     enabled: true
     state: started
 

@@ -63,21 +63,21 @@ class TestWhichReleaseAStoreTakes(unittest.TestCase):
 
 
 class TestAStoreRunsItsOwnRedis(unittest.TestCase):
-	"""As the service account, from Grove's own unit, config and directories. The packages' unit of
-	the same name is never read, and the three directories their installs chown are not used."""
+	"""store-redis: Grove's own unit, config and directories, as the service account. The packages
+	give the binary; their `redis-server` unit is masked and the directories their installs chown
+	are not used."""
 
 	def setUp(self):
 		self.tasks = role_tasks("main")
 		self.names = [task.get("name") for task in self.tasks]
-		self.unit = (ROLE / "templates/redis-server.service.j2").read_text()
+		self.unit = (ROLE / "templates/store-redis.service.j2").read_text()
 		self.conf = (ROLE / "templates/redis.conf.j2").read_text()
 
 	def test_the_unit_is_ours_and_runs_as_the_service_account(self):
-		"""In /etc/systemd/system it outranks the packages' unit of the same name."""
 		unit = named(self.tasks, "redis unit")["ansible.builtin.template"]
-		self.assertEqual(unit["dest"], "/etc/systemd/system/redis-server.service")
+		self.assertEqual(unit["dest"], "/etc/systemd/system/store-redis.service")
 		self.assertIn("User={{ redis_user }}", self.unit)
-		self.assertIn("ExecStart=/usr/bin/redis-server /etc/redis-server/redis.conf", self.unit)
+		self.assertIn("ExecStart=/usr/bin/redis-server /etc/store-redis/redis.conf", self.unit)
 
 	def test_systemd_is_told_when_redis_is_ready(self):
 		"""The unit waits for the notify; a conf that daemonized would never send it."""
@@ -86,25 +86,34 @@ class TestAStoreRunsItsOwnRedis(unittest.TestCase):
 		self.assertIn("supervised systemd", self.conf)
 
 	def test_nothing_of_ours_is_in_a_directory_the_packages_chown(self):
-		directories = named(self.tasks, "redis's own directories")
+		directories = named(self.tasks, "store-redis's own directories")
 		self.assertEqual(
-			directories["loop"], ["/etc/redis-server", "/var/lib/redis-server", "/var/log/redis-server"]
+			directories["loop"], ["/etc/store-redis", "/var/lib/store-redis", "/var/log/store-redis"]
 		)
 		self.assertEqual(directories["ansible.builtin.file"]["owner"], "{{ redis_user }}")
-		self.assertIn("dir /var/lib/redis-server\n", self.conf)
-		self.assertIn("logfile /var/log/redis-server/", self.conf)
+		self.assertIn("dir /var/lib/store-redis\n", self.conf)
+		self.assertIn("logfile /var/log/store-redis/", self.conf)
 
-	def test_the_unit_and_config_are_there_before_the_package_starts_redis(self):
-		"""The install starts `redis-server`; that has to be ours already, loaded."""
-		install = self.names.index("install redis")
-		for name in ("redis's own directories", "redis config", "redis unit", "load the unit"):
-			self.assertLess(self.names.index(name), install, name)
+	def test_the_packaged_unit_is_masked_before_the_install_would_start_it(self):
+		"""Unmasked it would come up on 6379 at every boot and install, on the packages' files."""
+		mask = named(self.tasks, "mask the packaged redis")["ansible.builtin.systemd"]
+		self.assertEqual((mask["name"], mask["masked"]), ("redis-server", True))
+		self.assertLess(self.names.index("mask the packaged redis"), self.names.index("install redis"))
 		packages = named(self.tasks, "install redis")["ansible.builtin.apt"]["name"]
 		self.assertEqual(packages, ["redis-server={{ redis_package }}", "redis-tools={{ redis_package }}"])
+
+	def test_a_unit_file_under_the_packaged_name_goes_before_the_mask_and_a_mask_is_kept(self):
+		"""An earlier role wrote one there. The mask is a link at the same path: it must stay."""
+		remove = named(self.tasks, "remove a unit file an earlier role put under the packaged name")
+		self.assertEqual(
+			remove["when"], "redis_packaged_name.stat.exists and not redis_packaged_name.stat.islnk"
+		)
+		self.assertLess(self.names.index(remove["name"]), self.names.index("mask the packaged redis"))
 
 	def test_a_changed_config_or_unit_restarts_redis_by_a_task(self):
 		restart = named(self.tasks, "restart redis onto a changed config or unit")
 		self.assertEqual(restart["when"], "redis_conf is changed or redis_unit is changed")
+		self.assertEqual(restart["ansible.builtin.systemd"]["name"], "store-redis")
 		for name in ("redis config", "redis unit"):
 			self.assertNotIn("notify", named(self.tasks, name))
 
@@ -113,37 +122,43 @@ class TestAStoreRunsItsOwnRedis(unittest.TestCase):
 		self.assertEqual(VERSION_TASK, f"redis : {last['name']}")
 		self.assertIn("redis_release", last["failed_when"])
 
-	def test_the_backup_and_the_log_shipper_look_where_redis_now_is(self):
+	def test_everything_else_names_the_same_unit_and_paths(self):
+		[stop] = yaml.safe_load((PLAYBOOKS / "gateway_store/stop.yml").read_text())
+		self.assertEqual(stop["tasks"][0]["ansible.builtin.systemd"]["name"], "store-redis")
+		exporter = (PLAYBOOKS / "roles/redis_exporter/templates/redis_exporter.service.j2").read_text()
+		self.assertIn("store-redis.service", exporter)
 		conf = named(self.tasks, "redis config")["ansible.builtin.template"]["dest"]
 		self.assertEqual(gateway_store.CONFS.split()[0], conf)
-		log_dir = gateway_store.LOGS[0].removesuffix("*.log")
-		self.assertIn(f"logfile {log_dir}", self.conf)
+		self.assertIn(f"logfile {gateway_store.LOGS[0].removesuffix('*.log')}", self.conf)
 
 
-class TestTheMoveOffThePackagedRedis(unittest.TestCase):
-	"""Once per store: the packaged redis stopped, its data copied, its directory left as it was."""
+class TestTheMoveOntoStoreRedis(unittest.TestCase):
+	"""Once per store: what ran as redis-server stopped, its data copied, that directory left as it
+	was."""
 
 	def setUp(self):
 		self.tasks = role_tasks("main")
 		self.names = [task.get("name") for task in self.tasks]
-		self.adopt = named(self.tasks, "adopt the data the packaged redis held")
+		self.adopt = named(self.tasks, "adopt the data the stopped redis held")
 
 	def test_it_happens_only_while_our_unit_is_not_there_yet(self):
-		"""Later, an emptied data dir must not be refilled from what the packaged redis once held."""
-		stop = named(self.tasks, "stop the packaged redis for the move")
+		"""Later, an emptied data dir must not be refilled from what an older redis once held."""
+		stop = named(self.tasks, "stop the redis-server unit for the move")
 		for task in (stop, self.adopt):
 			self.assertEqual(task["when"], "not redis_own_unit.stat.exists")
-		self.assertLess(self.names.index("look for our own redis unit"), self.names.index(stop["name"]))
+		self.assertLess(
+			self.names.index("look for a store-redis set up earlier"), self.names.index(stop["name"])
+		)
 
-	def test_the_packaged_redis_stops_before_its_files_are_copied_and_ours_starts_after(self):
-		order = ["stop the packaged redis for the move", self.adopt["name"], "redis unit", "redis started"]
+	def test_the_old_redis_stops_before_its_files_are_copied_and_ours_starts_after(self):
+		order = ["stop the redis-server unit for the move", self.adopt["name"], "redis unit", "redis started"]
 		self.assertEqual(sorted(order, key=self.names.index), order)
 
-	def adopt_into(self, ours, theirs):
+	def adopt_into(self, ours, *theirs):
 		env = {
 			"PATH": os.environ["PATH"],
 			"OURS": str(ours),
-			"THEIRS": str(theirs),
+			"THEIRS": " ".join(str(path) for path in theirs),
 			"OWNER": str(os.getuid()),
 		}
 		script = self.adopt["ansible.builtin.shell"]
@@ -156,13 +171,25 @@ class TestTheMoveOffThePackagedRedis(unittest.TestCase):
 			(theirs / "appendonlydir").mkdir(parents=True)
 			(theirs / "dump.rdb").write_text("snapshot")
 			(theirs / "appendonlydir/appendonly.aof.manifest").write_text("manifest")
-			self.assertEqual(self.adopt_into(ours, theirs).stdout.strip(), "adopted")
+			self.assertEqual(self.adopt_into(ours, theirs).stdout.strip(), f"adopted {theirs}")
 			copied = sorted(str(path.relative_to(ours)) for path in ours.rglob("*") if path.is_file())
 			self.assertEqual(copied, ["appendonlydir/appendonly.aof.manifest", "dump.rdb"])
 			self.assertEqual((theirs / "dump.rdb").read_text(), "snapshot")
 			(theirs / "later").write_text("written after the move")
 			self.assertEqual(self.adopt_into(ours, theirs).stdout.strip(), "")
 			self.assertFalse((ours / "later").exists())
+
+	def test_the_directory_an_earlier_role_used_comes_before_the_packaged_one(self):
+		"""On a store that role moved, the packaged directory holds what was there before it."""
+		self.assertEqual(self.adopt["environment"]["THEIRS"], "/var/lib/redis-server /var/lib/redis")
+		with tempfile.TemporaryDirectory() as folder:
+			ours, newer, older = (pathlib.Path(folder, name) for name in ("ours", "newer", "older"))
+			for directory, text in ((ours, None), (newer, "live"), (older, "stale")):
+				directory.mkdir()
+				if text:
+					(directory / "dump.rdb").write_text(text)
+			self.assertEqual(self.adopt_into(ours, newer, older).stdout.strip(), f"adopted {newer}")
+			self.assertEqual((ours / "dump.rdb").read_text(), "live")
 
 	def test_a_new_store_has_nothing_to_adopt(self):
 		with tempfile.TemporaryDirectory() as folder:
@@ -184,15 +211,16 @@ class TestALiveStoreIsUpgraded(unittest.TestCase):
 		[check] = self.play["pre_tasks"]
 		self.assertIn("redis_password", " ".join(check["ansible.builtin.assert"]["that"]))
 
-	def test_redis_stops_for_the_copy_only_when_the_package_changes_under_our_own_unit(self):
-		"""A store still on the packaged redis is stopped by the role, for the move."""
+	def test_redis_stops_for_the_copy_only_when_the_package_changes_under_store_redis(self):
+		"""A store not on store-redis yet is stopped by the role, for the move."""
 		self.assertEqual(
 			self.stop["when"], "redis_installed.stdout != redis_package and redis_own_data.stat.exists"
 		)
-		names = [task["name"] for task in self.stop["block"]]
-		self.assertEqual(names[-2:], ["redis stopped", "keep the data dir as the old redis left it"])
-		copy = self.stop["block"][-1]["ansible.builtin.command"]
-		self.assertEqual(copy, "cp -a /var/lib/redis-server {{ redis_data_copy }}")
+		stopped, copied = self.stop["block"][-2:]
+		self.assertEqual(stopped["ansible.builtin.systemd"]["name"], "store-redis")
+		self.assertEqual(
+			copied["ansible.builtin.command"], "cp -a /var/lib/store-redis {{ redis_data_copy }}"
+		)
 
 	def test_an_earlier_copy_is_refused_before_redis_stops(self):
 		names = [task["name"] for task in self.stop["block"]]
@@ -203,10 +231,13 @@ class TestALiveStoreIsUpgraded(unittest.TestCase):
 		self.assertNotIn("when", self.install)
 		self.assertEqual(self.install["ansible.builtin.include_role"]["name"], "redis")
 
-	def test_a_failed_step_starts_redis_again(self):
-		bring_back = self.swap["rescue"][0]["ansible.builtin.systemd"]
-		self.assertEqual((bring_back["name"], bring_back["state"]), ("redis-server", "started"))
-		self.assertIn("ansible.builtin.fail", self.swap["rescue"][1])
+	def test_a_failed_step_starts_store_redis_again_once_it_exists(self):
+		"""Before the unit exists there is nothing of ours to start: the play is run again."""
+		looked, bring_back, report = self.swap["rescue"]
+		self.assertEqual(looked["ansible.builtin.stat"]["path"], "/etc/systemd/system/store-redis.service")
+		self.assertEqual(bring_back["ansible.builtin.systemd"], {"name": "store-redis", "state": "started"})
+		self.assertEqual(bring_back["when"], "redis_unit_file.stat.exists")
+		self.assertIn("ansible.builtin.fail", report)
 
 
 class TestWhatAnEarlierRoleLeft(unittest.TestCase):

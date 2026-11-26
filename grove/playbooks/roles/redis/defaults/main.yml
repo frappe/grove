@@ -8,5 +8,5 @@ redis_version: "~=8.12.0"
 # .asc: apt reads an armored key as it is served.
 redis_keyring: /usr/share/keyrings/redis-archive-keyring.asc
 
-# Who runs redis. A literal: upgrade_redis.yml runs this role with no grove_user in scope.
+# Who runs store-redis. A literal: upgrade_redis.yml runs this role with no grove_user in scope.
 redis_user: frappe

@@ -42,7 +42,7 @@ frappe.ui.form.on("Gateway Store", {
 					grove.confirm_call(
 						frm,
 						__(
-							"Upgrade Redis on {0}? The store is down while the play swaps it and its gateways refuse requests meanwhile: put them in maintenance and pull usage first. Nothing is stopped when it already runs the newest release under Grove's own unit.",
+							"Upgrade Redis on {0}? The store is down while the play swaps it and its gateways refuse requests meanwhile: put them in maintenance and pull usage first. Nothing is stopped when it already runs the newest release as store-redis.",
 							[frm.doc.name]
 						),
 						"upgrade_redis"

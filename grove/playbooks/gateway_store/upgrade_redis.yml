@@ -1,13 +1,13 @@
 ---
-# Move a live store onto the newest redis the role's `redis_version` allows, under Grove's own
-# unit. The store is down while redis is stopped: for a new package, or once for the move off the
-# packaged unit. A run with neither to do stops nothing. extra-vars: redis_bind_ip, redis_password.
+# Move a live store onto the newest redis the role's `redis_version` allows, as store-redis. The
+# store is down while redis is stopped: for a new package, or once for the move off the redis-server
+# unit. A run with neither to do stops nothing. extra-vars: redis_bind_ip, redis_password.
 - hosts: all
   become: true
   gather_facts: true
 
   vars:
-    redis_data_copy: "/var/lib/redis-server.before-{{ redis_release }}"
+    redis_data_copy: "/var/lib/store-redis.before-{{ redis_release }}"
 
   pre_tasks:
     - name: refuse to upgrade without a password
@@ -30,15 +30,15 @@
       register: redis_installed
       changed_when: false
 
-    - name: look for redis's own data dir
+    - name: look for store-redis's data dir
       ansible.builtin.stat:
-        path: /var/lib/redis-server
+        path: /var/lib/store-redis
       register: redis_own_data
 
     - name: swap redis, bringing it back if a step fails
       block:
-        # A store still on the packaged redis has no copy to take: the role stops that one for the
-        # move and leaves its directory as it was.
+        # A store not on store-redis yet has no copy to take: the role stops what it runs for the
+        # move and leaves that directory as it was.
         - name: stop redis and keep its data dir, only when the package changes
           when: redis_installed.stdout != redis_package and redis_own_data.stat.exists
           block:
@@ -55,12 +55,12 @@
             # SIGTERM saves the RDB and fsyncs the AOF, as in stop.yml.
             - name: redis stopped
               ansible.builtin.systemd:
-                name: redis-server
+                name: store-redis
                 state: stopped
 
             # The only way back: an older redis cannot read what this one writes.
             - name: keep the data dir as the old redis left it
-              ansible.builtin.command: cp -a /var/lib/redis-server {{ redis_data_copy }}
+              ansible.builtin.command: cp -a /var/lib/store-redis {{ redis_data_copy }}
 
         - name: install redis and start it
           ansible.builtin.include_role:
@@ -69,14 +69,25 @@
             redis_bind: "127.0.0.1 {{ redis_bind_ip }}"
 
       rescue:
+        - name: look for the store-redis unit
+          ansible.builtin.stat:
+            path: /etc/systemd/system/store-redis.service
+          register: redis_unit_file
+
         - name: bring redis back
           ansible.builtin.systemd:
-            name: redis-server
+            name: store-redis
             state: started
+          when: redis_unit_file.stat.exists
 
+        # Without the unit the move had not got that far: what was copied from is untouched, and
+        # running the play again picks the move up.
         - name: report the step that failed
           ansible.builtin.fail:
-            msg: "The upgrade failed at '{{ ansible_failed_task.name }}'; redis-server was started again."
+            msg: >-
+              The upgrade failed at '{{ ansible_failed_task.name }}'.
+              {{ 'store-redis was started again.' if redis_unit_file.stat.exists
+                 else 'store-redis is not set up yet, so redis may be down: run this again.' }}
 
     - name: clear what an earlier version of the role left
       ansible.builtin.include_role:

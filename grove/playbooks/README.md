@@ -119,33 +119,36 @@ line with nothing at the floor fails there, before anything is stopped. Two stor
 days can be on different patch releases, so a Gateway Store's `redis_version` is what the box reported
 (the role's last task), not the setting.
 
-The packages are there for the binary. Redis itself runs from Grove's own unit, as the `frappe`
-account, on Grove's own files:
+The packages are there for the binary. Redis itself runs as `store-redis`: Grove's own unit, as the
+`frappe` account, on Grove's own files:
 
 | | Path |
 |---|---|
-| unit | `/etc/systemd/system/redis-server.service` (same name as the packages' unit under `/usr/lib`, which it outranks and which is never read) |
-| config | `/etc/redis-server/redis.conf`, written whole by the role (`templates/redis.conf.j2`); what it does not set is Redis's own default |
-| data | `/var/lib/redis-server` |
-| log | `/var/log/redis-server/redis-server.log`, which Vector reads through the `frappe` group |
+| unit | `/etc/systemd/system/store-redis.service` |
+| config | `/etc/store-redis/redis.conf`, written whole by the role (`templates/redis.conf.j2`); what it does not set is Redis's own default |
+| data | `/var/lib/store-redis` |
+| log | `/var/log/store-redis/redis.log`, which Vector reads through the `frappe` group |
 
-The packages' `/etc/redis`, `/var/lib/redis` and `/var/log/redis` are not used: their install scripts
-chown those back to `redis` at every install. The unit, config and directories are in place before the
-install, because the package starts `redis-server` as it lands and that name is ours by then. A config
-or unit that changed restarts Redis; persistence is checked on the running server as well.
+The packages' own `redis-server` unit is masked, before the install that would start it: left alone it
+comes up on 6379 at every boot and install, as `redis`, on the packages' config and data. A mask set by
+hand outlives package upgrades. Their `/etc/redis`, `/var/lib/redis` and `/var/log/redis` are not used:
+the install scripts chown those back to `redis` every time. A config or unit that changed restarts
+Redis; persistence is checked on the running server as well.
 
-A store set up before this ran the packaged Redis. Its first run of the role (Upgrade Redis) moves it,
-once: the packaged Redis is stopped, its data copied into `/var/lib/redis-server`, and Redis started
-from our unit. The packaged data dir is left as it was, which is the way back: start nothing on it
-until it is no longer needed. Until a store has moved, its backups and log shipping still read the
-packaged paths (`CONFS`, `LOGS` in `gateway_store.py` name both).
+A store set up before this ran Redis as `redis-server`. Its first run of the role (Upgrade Redis) moves
+it, once: that Redis is stopped, its data copied into `/var/lib/store-redis`, and `store-redis` started.
+The directory copied from is left as it was, which is the way back: start nothing on it until it is no
+longer needed. Until a store has moved, its backups and log shipping still read the packaged paths
+(`CONFS`, `LOGS` in `gateway_store.py` name both), and `stop.yml`, which Server Resize runs, finds no
+`store-redis` to stop: move a store before resizing it. After the move, Update Vector on the store so
+that its log ships from the new directory.
 
 The play ends by clearing what an earlier version of the role left on a store (`tasks/leftovers.yml`: a
 drop-in on the unit and dpkg stat overrides on the packaged paths). It removes no data directory.
 
 **Upgrade Redis** on a Gateway Store runs `gateway_store/upgrade_redis.yml`. With nothing newer than
-what is installed, and the store already on its own unit, it stops nothing. For a new package it stops
-Redis, copies the data dir to `/var/lib/redis-server.before-<release>` (refused, before the stop, when
+what is installed, and the store already on `store-redis`, it stops nothing. For a new package it stops
+Redis, copies the data dir to `/var/lib/store-redis.before-<release>` (refused, before the stop, when
 that copy exists) and runs the role; a step that fails starts Redis again. The store is down for that
 stretch, and for the move, and its gateways refuse requests, so:
 
@@ -154,7 +157,7 @@ stretch, and for the move, and its gateways refuse requests, so:
 3. Upgrade Redis. The doc's Redis Version changes when it is done.
 4. End Maintenance.
 
-The copy, or at the move the packaged data dir, is the only way back: an older Redis cannot read what
+The copy, or at the move the directory copied from, is the only way back: an older Redis cannot read what
 a newer one wrote (6.0 starts empty with no error, 7.0 refuses after the first AOF rewrite). Taken
 after the pull with the gateways drained, it holds no unbilled usage. Delete it once the new release
 has soaked. A patch release on the same line needs no bracket beyond a quiet minute.

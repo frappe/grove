@@ -15,9 +15,9 @@ from grove.infrastructure.fleet import NamedHost
 REDIS_PORT = 6379
 RDB_MAGIC = b"REDIS"
 # The password is read on the box from requirepass, so it never lands in argv or a log. A store not
-# yet moved onto its own unit (Upgrade Redis) still has only the packaged conf and log directory.
-CONFS = "/etc/redis-server/redis.conf /etc/redis/redis.conf"
-LOGS = ["/var/log/redis-server/*.log", "/var/log/redis/*.log"]
+# yet moved onto store-redis (Upgrade Redis) still has only the packaged conf and log directory.
+CONFS = "/etc/store-redis/redis.conf /etc/redis/redis.conf"
+LOGS = ["/var/log/store-redis/*.log", "/var/log/redis/*.log"]
 DUMP = (
 	f"REDISCLI_AUTH=\"$(cat {CONFS} 2>/dev/null | awk '/^requirepass/{{print $2; exit}}')\" "
 	"redis-cli --rdb - 2>/dev/null | base64 -w0"
@@ -134,9 +134,9 @@ class GatewayStore(NamedHost, Document):
 
 	@frappe.whitelist()
 	def upgrade_redis(self):
-		"""Button: move this store onto the newest Redis the role's `redis_version` allows, under
-		Grove's own unit. The store is down while the play swaps it; nothing is stopped when it
-		is already both."""
+		"""Button: move this store onto the newest Redis the role's `redis_version` allows, as
+		store-redis. The store is down while the play swaps it; nothing is stopped when it is
+		already both."""
 		if self.status != "Active":
 			frappe.throw(f"{self.name} is {self.status}: only an Active store's Redis is upgraded.")
 		frappe.enqueue_doc(self.doctype, self.name, "run_redis_upgrade", queue="long", timeout=1800)

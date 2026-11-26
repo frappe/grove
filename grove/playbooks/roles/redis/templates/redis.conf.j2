@@ -6,8 +6,8 @@ requirepass {{ redis_password }}
 {% endif %}
 daemonize no
 supervised systemd
-dir /var/lib/redis-server
-logfile /var/log/redis-server/redis-server.log
+dir /var/lib/store-redis
+logfile /var/log/store-redis/redis.log
 appendonly yes
 appendfsync everysec
 maxmemory-policy noeviction

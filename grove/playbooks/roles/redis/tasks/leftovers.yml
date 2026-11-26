@@ -1,6 +1,7 @@
 ---
 # What an earlier version of this role left on a store when it ran the packaged unit as the
-# service account. Nothing reads them now. Data directories are not touched here.
+# service account. Nothing reads them now. Data directories are not touched here, and the unit
+# file it later put under the packaged name goes in main.yml, ahead of the mask.
 - name: remove the account drop-in from the unit
   ansible.builtin.file:
     path: /etc/systemd/system/redis-server.service.d/account.conf
