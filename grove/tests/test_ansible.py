@@ -317,6 +317,9 @@ class TestOneServiceAccount(unittest.TestCase):
 			"vmagent_user": yaml.safe_load(
 				(PLAYBOOKS / "monitoring_agent/roles/vmagent/defaults/main.yml").read_text()
 			)["vmagent_user"],
+			"redis_user": yaml.safe_load((SHARED_ROLES / "redis/defaults/main.yml").read_text())[
+				"redis_user"
+			],
 		}
 		for unit in ("gateway_server/systemd/pathway.service", "ingress_server/systemd/pathway.service"):
 			user = next(l for l in (PLAYBOOKS / unit).read_text().splitlines() if l.startswith("User="))
@@ -352,7 +355,9 @@ class TestTheRunCodeComesFromAnsible(unittest.TestCase):
 		run.callback = SimpleNamespace(thread_db=None, stopped=stopped)
 		play = SimpleNamespace(name="PLAY-1", status=play_status)
 		with (
-			unittest.mock.patch("grove.infrastructure.ansible_runner.PlaybookExecutor", lambda **kw: FakeExecutor(rc)),
+			unittest.mock.patch(
+				"grove.infrastructure.ansible_runner.PlaybookExecutor", lambda **kw: FakeExecutor(rc)
+			),
 			unittest.mock.patch("frappe.get_doc", lambda *args, **kwargs: play),
 		):
 			return run.run()[1]

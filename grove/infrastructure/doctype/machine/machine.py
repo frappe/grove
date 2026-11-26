@@ -1,7 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
-import json
 import selectors
 import shlex
 import subprocess
@@ -10,7 +9,7 @@ import frappe
 from frappe.model.document import Document
 
 from grove import failure
-from grove.infrastructure.ansible import AnsibleHost
+from grove.infrastructure.ansible import AnsibleHost, task_result
 from grove.infrastructure.cloud_provider.base import CloudClientError, build_cloud_client
 from grove.infrastructure.doctype.ssh_key.ssh_key import injected_public_keys
 from grove.naming import GeneratedName, next_machine_name
@@ -721,13 +720,8 @@ def _mirror_onto_machine(machine):
 
 
 def _scan_result(play_name, task_name=SCAN_TASK):
-	"""A scan task's result, off its Ansible Task doc. Empty when the task never ran — an
-	unreachable host has no result to report."""
-	output = frappe.db.get_value("Ansible Task", {"play": play_name, "task_name": task_name}, "output")
-	try:
-		return json.loads(output) if output else {}
-	except json.JSONDecodeError:
-		return {}
+	"""A scan task's result; empty when the task never ran."""
+	return task_result(play_name, task_name)
 
 
 def _scan_message(result):

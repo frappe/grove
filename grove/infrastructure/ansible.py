@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+import json
 import os
 
 import frappe
@@ -177,6 +178,16 @@ class Ansible:
 
 
 _ansible_instance = None
+
+
+def task_result(play_name, task_name):
+	"""One task's result off its Ansible Task doc; a role's task is recorded as `<role> : <name>`.
+	Empty when the task never ran — an unreachable host has no result to report."""
+	output = frappe.db.get_value("Ansible Task", {"play": play_name, "task_name": task_name}, "output")
+	try:
+		return json.loads(output) if output else {}
+	except json.JSONDecodeError:
+		return {}
 
 
 def get_ansible(project_root=None):

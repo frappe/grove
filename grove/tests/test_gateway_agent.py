@@ -313,7 +313,8 @@ class TestAGatewayIsToldWhichRedis(unittest.TestCase):
 		with (
 			patch.object(frappe, "db", db),
 			patch(
-				"grove.infrastructure.doctype.gateway_server.gateway_server.store_writers", return_value=list(writers)
+				"grove.infrastructure.doctype.gateway_server.gateway_server.store_writers",
+				return_value=list(writers),
 			),
 		):
 			GatewayServer.record_store(SimpleNamespace(doctype="Gateway Server", name="gw-1"), rc, store)
@@ -456,10 +457,16 @@ class TestAnUpdateOwnsItsPlays(unittest.TestCase):
 	def test_both_planes_hand_the_reference_to_the_play(self):
 		reference = {"reference_doctype": "Pathway Update", "reference_docname": "r1"}
 		gateway = extravars_for(
-			GatewayServer, "grove.infrastructure.doctype.gateway_server.gateway_server", fake_gateway(), **reference
+			GatewayServer,
+			"grove.infrastructure.doctype.gateway_server.gateway_server",
+			fake_gateway(),
+			**reference,
 		)
 		ingress = extravars_for(
-			IngressServer, "grove.infrastructure.doctype.ingress_server.ingress_server", fake_ingress(), **reference
+			IngressServer,
+			"grove.infrastructure.doctype.ingress_server.ingress_server",
+			fake_ingress(),
+			**reference,
 		)
 		self.assertEqual(reference, gateway["play_kwargs"])
 		self.assertEqual(reference, ingress["play_kwargs"])

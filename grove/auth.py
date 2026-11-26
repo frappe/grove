@@ -3,19 +3,15 @@
 
 import frappe
 
-from grove.api.control import CONTROL_ROLE
-
 ALLOWED = "/api/method/grove.api."
 
 
 def hook():
-	"""`auth_hooks`, once the caller is known: a control client reaches `grove.api` and nothing
-	else of the site — no `/api/resource`, no `frappe.client`, no Desk button. Its role holds write
-	on Grove Team and Grove API Key so that its endpoints run under permission checks; this keeps
-	that write to what the endpoints do with it, and the operator's fields (`suspended_at_grove`,
-	`max_keys`) out of its reach. An operator who holds the role as well is not kept to it."""
-	roles = frappe.get_roles()
-	if CONTROL_ROLE not in roles or "System Manager" in roles:
+	"""`auth_hooks`, once the caller is known: only an operator (System Manager) has the run of the
+	site. Anyone else signed in, a control client or not, reaches `grove.api` and nothing else: no
+	`/api/resource`, no `frappe.client`, no Desk button, no page. A guest is left to Frappe, which
+	lets one call only what is whitelisted for guests."""
+	if frappe.session.user == "Guest" or "System Manager" in frappe.get_roles():
 		return
 	# `cmd` outranks the path in Frappe's router: it names what runs.
 	path = f"/api/method/{frappe.form_dict.cmd}" if frappe.form_dict.cmd else frappe.request.path

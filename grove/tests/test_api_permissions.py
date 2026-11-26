@@ -10,6 +10,7 @@ import base64
 import hashlib
 import hmac
 import unittest.mock
+from pathlib import Path
 
 import frappe
 from frappe.auth import LoginAttemptTracker
@@ -739,10 +740,11 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 				reached.assert_not_called()
 		self.assertEqual(frappe.db.get_value("Grove API Key", key, "expires_at"), expires_at)
 
-	def test_a_control_client_reaches_its_own_endpoints_and_nothing_else(self):
-		"""The role writes Grove Team and Grove API Key so that its endpoints run under permission
-		checks. Over REST, `frappe.client` or a Desk button that same write would reach the
-		operator's fields (`suspended_at_grove`, `max_keys`): the caller is kept to `grove.api`."""
+	def test_only_an_operator_reaches_past_the_api(self):
+		"""The control role writes Grove Team and Grove API Key so that its endpoints run under
+		permission checks. Over REST, `frappe.client` or a Desk button that same write would reach
+		the operator's fields (`suspended_at_grove`, `max_keys`). And any signed-in user may call
+		whatever is whitelisted: everyone signed in but an operator is kept to `grove.api`."""
 		self.assertIn("grove.auth.hook", frappe.get_hooks("auth_hooks"))
 		self.addCleanup(setattr, frappe.local, "request", getattr(frappe.local, "request", None))
 
@@ -752,20 +754,23 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 				auth.hook()
 
 		own = "/api/method/grove.api.teams.update_team"
-		ask(own)
 		elsewhere = (
 			"/api/resource/Grove Team/probe",
 			"/api/v2/document/Grove Team/probe",
 			"/api/method/frappe.client.set_value",
 			"/api/method/run_doc_method",
 			"/api/method/grove.grove.page.usage.usage.peek",
+			"/api/method/grove.monitoring.targets",
 			"/app/grove-team",
 		)
-		for path in elsewhere:
-			with self.assertRaises(frappe.PermissionError, msg=path):
-				ask(path)
-		with self.assertRaises(frappe.PermissionError, msg="cmd names what runs, whatever the path"):
-			ask(own, cmd="frappe.client.set_value")
+		for user in (PROBE, other_user("probe-roleless@example.com")):
+			frappe.set_user(user)
+			ask(own)
+			for path in elsewhere:
+				with self.assertRaises(frappe.PermissionError, msg=f"{user}: {path}"):
+					ask(path)
+			with self.assertRaises(frappe.PermissionError, msg="cmd names what runs, whatever the path"):
+				ask(own, cmd="frappe.client.set_value")
 		# What that prefix reaches is Grove's own: nothing whitelisted is borrowed into the modules.
 		borrowed = [
 			f"{module.__name__}.{name}"
@@ -777,10 +782,25 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		]
 		self.assertEqual(borrowed, [])
 
+		# A guest is Frappe's to keep out: the login page and its calls have to answer.
 		operator = other_user("probe-both@example.com", control.CONTROL_ROLE, "System Manager")
 		for user in ("Guest", "Administrator", operator):
 			frappe.set_user(user)
-			ask(elsewhere[0])
+			for path in ("/app", "/login", "/api/method/login", elsewhere[0]):
+				ask(path)
+
+	def test_a_guest_can_call_nothing_of_groves_past_the_api_but_the_scrape_list(self):
+		"""The hook leaves a guest to Frappe, which serves one only what is whitelisted for
+		guests. Outside `grove.api` that is `monitoring.targets`, which checks its own token."""
+		root = Path(auth.__file__).parent
+		past_the_api = {}
+		for path in root.rglob("*.py"):
+			name = str(path.relative_to(root))
+			if "tests" in path.parts or path.name.startswith("test_") or name.startswith("api/"):
+				continue
+			if count := path.read_text().count("allow_guest=True"):
+				past_the_api[name] = count
+		self.assertEqual(past_the_api, {"monitoring.py": 1})
 
 	def test_a_reader_of_a_team_and_its_key_changes_neither(self):
 		"""Read (Desk's Share gives it) is not write, nor read of the usage: checked at the load,

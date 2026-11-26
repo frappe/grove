@@ -1,0 +1,34 @@
+---
+# Redis's own APT repository, and which of its packages `redis_version` allows. Needs gathered facts.
+- name: fetch the redis signing key
+  ansible.builtin.get_url:
+    url: https://packages.redis.io/gpg
+    dest: "{{ redis_keyring }}"
+    mode: "0644"
+
+- name: add the redis repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by={{ redis_keyring }}] https://packages.redis.io/deb {{ ansible_distribution_release }} main"
+    filename: redis
+    state: present
+    update_cache: true
+
+# The newest on the line, read off the repository: its revision (1rl1, 1rl2) is not ours to guess.
+- name: choose the redis package
+  ansible.builtin.shell: |
+    set -eu
+    newest=$(apt-cache madison redis-server | awk '{print $3}' | grep -F ":${FLOOR%.*}." | sort -V | tail -1)
+    if ! dpkg --compare-versions "$newest" ge "6:$FLOOR"; then
+      echo "no redis-server ~= $FLOOR in the repository; newest on that line: ${newest:-none}" >&2
+      exit 1
+    fi
+    echo "$newest"
+  environment:
+    FLOOR: "{{ redis_version | replace('~=', '') }}"
+  register: redis_choice
+  changed_when: false
+
+- name: name the package and the release it is
+  ansible.builtin.set_fact:
+    redis_package: "{{ redis_choice.stdout | trim }}"
+    redis_release: "{{ redis_choice.stdout.split(':')[-1].split('-')[0] }}"

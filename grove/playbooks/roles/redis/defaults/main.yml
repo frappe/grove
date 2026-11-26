@@ -1,3 +1,12 @@
 ---
 redis_bind: "127.0.0.1"
 redis_password: ""
+
+# pip's ~=: this release or a later one on its line (8.12.x), never the next line. Only ~= is read.
+redis_version: "~=8.12.0"
+
+# .asc: apt reads an armored key as it is served.
+redis_keyring: /usr/share/keyrings/redis-archive-keyring.asc
+
+# Who runs store-redis. A literal: upgrade_redis.yml runs this role with no grove_user in scope.
+redis_user: frappe

@@ -35,6 +35,21 @@ frappe.ui.form.on("Gateway Store", {
 					)
 			);
 		}
+		if (frm.doc.status === "Active") {
+			frm.add_custom_button(
+				__("Upgrade Redis"),
+				() =>
+					grove.confirm_call(
+						frm,
+						__(
+							"Upgrade Redis on {0}? The store is down while the play swaps it and its gateways refuse requests meanwhile: put them in maintenance and pull usage first. Nothing is stopped when it already runs the newest release as store-redis.",
+							[frm.doc.name]
+						),
+						"upgrade_redis"
+					),
+				__("Danger")
+			);
+		}
 		if (frm.doc.status !== "Terminated") {
 			frm.add_custom_button(
 				__("Resize Server"),
@@ -50,36 +65,6 @@ frappe.ui.form.on("Gateway Store", {
 							[frm.doc.name]
 						),
 						() => frm.call("archive").then(() => frm.reload_doc())
-					);
-				},
-				__("Danger")
-			);
-		}
-		if (frm.doc.status === "Active") {
-			frm.add_custom_button(
-				__("Restore"),
-				() => {
-					frappe.prompt(
-						{
-							fieldname: "source",
-							fieldtype: "Link",
-							options: "Gateway Store",
-							label: __("Backup of"),
-							default: frm.doc.name,
-							reqd: 1,
-							description: __(
-								"Itself, or the Terminated store this box replaces. Only for a store whose disk is gone — a surviving AOF already holds everything."
-							),
-						},
-						({ source }) =>
-							frappe.confirm(
-								__(
-									"Replace everything in {0}'s Redis with {1}'s latest backup? Writes fail for a few seconds while it loads. The current state is uploaded first.",
-									[frm.doc.name, source]
-								),
-								() => frm.call("restore", { source }).then(() => frm.reload_doc())
-							),
-						__("Restore")
 					);
 				},
 				__("Danger")

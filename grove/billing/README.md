@@ -173,10 +173,9 @@ Credit, invoices and payment are Central's: it bills what landed since its last 
 
 **Two spends, one input.** The gateway's `spent:<month>` per key and store, and Grove's records
 per key, are each priced at the same pricing id; neither side writes the other's. A key on
-a flushed Redis starts its month's counter at 0 and so gets exactly its cap again; a restore
-(`restore.yml`) raises the counter on each live key to what Grove has billed it this month where
-the snapshot has less, and nothing else detects a flushed Redis or a drain lost inside the gateway:
-the per-drain compare below cannot see either.
+a flushed Redis starts its month's counter at 0 and so gets exactly its cap again; nothing raises
+it back, and nothing detects a flushed Redis or a drain lost inside the gateway: the per-drain
+compare below cannot see either.
 
 **The drain.** The gateway counts each key's usage in `usage:<prefix>:<YYYY-MM-DD>`, one bucket per
 UTC day it served the key, named off the clock that names the key's `spent:<month>`. A pull GETs

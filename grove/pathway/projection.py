@@ -12,8 +12,7 @@ What a tick builds is bounded by a stamp. Every Gateway Store, every gateway not
 every Ingress Server carries `last_synced_at`: the read time of the last tick it took a push from
 or already held. A tick rebuilds only the key buckets a save moved since the oldest stamp among
 the gateway units that answered, less LOOKBACK; everything under force, for a unit with no stamp
-or no key hashes, after a Tier or Grove Settings save, and past FULL_ABOVE dirty buckets. A store
-restored from a backup drops its hashes (restore.yml), so it rebuilds as a unit with no key hash.
+or no key hashes, after a Tier or Grove Settings save, and past FULL_ABOVE dirty buckets.
 
 What each plane is given is what keeps them apart: a GATEWAY takes the full snapshot with only its
 own Geography's routes, an INGRESS takes only the replica table for the boxes it owns.

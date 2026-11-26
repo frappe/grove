@@ -1,6 +1,6 @@
 [Unit]
 Description=Prometheus redis exporter (scraped by Vector on this box)
-After=network-online.target redis-server.service
+After=network-online.target store-redis.service
 Wants=network-online.target
 
 [Service]

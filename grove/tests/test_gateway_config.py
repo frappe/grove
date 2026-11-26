@@ -18,6 +18,7 @@ import unittest
 from typing import ClassVar
 
 import yaml
+from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 PLAYBOOKS = pathlib.Path(__file__).resolve().parent.parent / "playbooks"
 
@@ -232,10 +233,9 @@ class TestUsageSurvivesTheBoxRestarting(unittest.TestCase):
 		self.names = [t.get("name") for t in self.tasks]
 
 	def test_the_config_file_asks_for_durable_writes(self):
-		block = next(t for t in self.tasks if t.get("name") == "redis zero-loss persistence")
-		written = block["ansible.builtin.blockinfile"]["block"]
-		self.assertIn("appendonly yes", written)
-		self.assertIn("appendfsync everysec", written)
+		written = (PLAYBOOKS / "roles/redis/templates/redis.conf.j2").read_text()
+		self.assertIn("appendonly yes\n", written)
+		self.assertIn("appendfsync everysec\n", written)
 
 	def test_the_running_server_is_reconciled_too(self):
 		self.assertIn("enforce persistence on the running redis", self.names)
@@ -243,8 +243,8 @@ class TestUsageSurvivesTheBoxRestarting(unittest.TestCase):
 	def test_it_does_not_depend_on_a_handler_firing(self):
 		"""The trap that caused this. A handler runs only when its task reports a change, so a
 		handler that failed to fire once never fires again — the file is already right."""
-		block = next(t for t in self.tasks if t.get("name") == "redis zero-loss persistence")
-		self.assertNotIn("notify", block)
+		config = next(t for t in self.tasks if t.get("name") == "redis config")
+		self.assertNotIn("notify", config)
 
 	def test_redis_is_running_before_anything_talks_to_it(self):
 		self.assertLess(
@@ -415,11 +415,21 @@ class TestAStoreIsNeverOpenWithoutAPassword(unittest.TestCase):
 		self.assertIn("redis_password", " ".join(check["ansible.builtin.assert"]["that"]))
 
 	def test_the_listen_address_is_only_written_with_a_password(self):
+		templates = Environment(
+			loader=FileSystemLoader(PLAYBOOKS / "roles/redis/templates"),
+			trim_blocks=True,
+			undefined=StrictUndefined,
+		)
+		render = templates.get_template("redis.conf.j2").render
+		behind_a_password = render(redis_bind="127.0.0.1 10.0.61.9", redis_password="pw").splitlines()
+		self.assertIn("bind 127.0.0.1 10.0.61.9", behind_a_password)
+		self.assertIn("requirepass pw", behind_a_password)
+		without_one = render(redis_bind="127.0.0.1 10.0.61.9", redis_password="").splitlines()
+		self.assertIn("bind 127.0.0.1", without_one)
+		self.assertFalse([line for line in without_one if "requirepass" in line or "10.0.61.9" in line])
 		redis = yaml.safe_load((PLAYBOOKS / "roles/redis/tasks/main.yml").read_text())
-		network = next(task for task in redis if task.get("name") == "redis listens for the gateways")
-		self.assertIn("requirepass", network["ansible.builtin.blockinfile"]["block"])
-		self.assertIn("redis_password", network["when"])
-		self.assertTrue(network["no_log"])
+		config = next(task for task in redis if task.get("name") == "redis config")
+		self.assertTrue(config["no_log"])
 
 
 class TestMaintenanceIsATunable(unittest.TestCase):
