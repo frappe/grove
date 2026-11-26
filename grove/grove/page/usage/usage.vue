@@ -101,12 +101,15 @@ const providerOptions = computed(() => [
 	...(choices.value.providers || []).map((name) => ({ label: name, value: name })),
 ]);
 
+// Sync, so a filter that names a team and its key (`apply`) drops the old key before the new
+// one is set, not after.
 watch(
 	() => filters.team,
 	(team, before) => {
 		if (before !== undefined && filters.api_key) filters.api_key = "";
 		options.load({ team: team || null });
-	}
+	},
+	{ flush: "sync" }
 );
 
 const refresh = () => version.value++;
