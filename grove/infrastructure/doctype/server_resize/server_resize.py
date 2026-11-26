@@ -250,7 +250,6 @@ class ServerResize(StepHandler, Document):
 		before = server.public_ip
 		server.status = "Active"
 		server.save()
-		server.sync_dns_records()
 		if server.public_ip != before:
 			reconcile.sync_networks()
 

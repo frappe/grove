@@ -19,6 +19,7 @@ from grove.infrastructure.doctype.gateway_store.gateway_store import (
 	backup_all,
 	backup_key,
 )
+from grove.infrastructure.fleet import NamedHost
 
 
 class Refused(Exception):
@@ -213,7 +214,8 @@ if __name__ == "__main__":
 
 
 class TestDnsRecord(unittest.TestCase):
-	"""A store's own name is what operators SSH to: written on a good Setup, removed on Terminated."""
+	"""A store's own name is what operators SSH to: written on a good Setup, rewritten when the
+	store becomes Active or its address moves, removed on Terminated."""
 
 	def provision(self, rc):
 		synced, self.vector_queued, self.version_read_off = [], [], []
@@ -252,7 +254,37 @@ class TestDnsRecord(unittest.TestCase):
 			store = SimpleNamespace(
 				status=status,
 				has_value_changed=lambda field, changed=changed: changed,
+				has_moved=False,
 				remove_dns_records=lambda: removed.append(status),
 			)
 			GatewayStore.on_update(store)
 		self.assertEqual(removed, ["Terminated"])
+
+	def test_a_save_that_moved_the_store_rewrites_the_record_and_any_other_leaves_it(self):
+		written = []
+		for moved in (True, False):
+			store = SimpleNamespace(
+				status="Active",
+				has_value_changed=lambda field: False,
+				has_moved=moved,
+				sync_dns_records=lambda moved=moved: written.append(moved),
+			)
+			GatewayStore.on_update(store)
+		self.assertEqual(written, [True])
+
+	def has_moved(self, status="Active", changed=(), address="1.1.1.1"):
+		store = SimpleNamespace(
+			status=status,
+			dns_fields=("public_ip",),
+			has_value_changed=lambda field: field in changed,
+			has_dns_records=bool(address),
+		)
+		return NamedHost.has_moved.fget(store)
+
+	def test_moved_is_an_active_box_that_just_became_active_or_changed_address(self):
+		self.assertTrue(self.has_moved(changed=["status"]))
+		self.assertTrue(self.has_moved(changed=["public_ip"]))
+		self.assertFalse(self.has_moved())
+		self.assertFalse(self.has_moved(status="Broken", changed=["status", "public_ip"]))
+		# No address yet: nothing to write, and the save must not be refused for it.
+		self.assertFalse(self.has_moved(changed=["status"], address=""))

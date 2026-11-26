@@ -65,6 +65,21 @@ class NamedHost(Server):
 
 	dns_fields = ("public_ip",)
 
+	def on_update(self):
+		"""The box's DNS records follow its doc: gone once it is Terminated, rewritten when it
+		becomes Active or its address moves while it is."""
+		if self.has_value_changed("status") and self.status == "Terminated":
+			self.remove_dns_records()
+		elif self.has_moved:
+			self.sync_dns_records()
+
+	@property
+	def has_moved(self):
+		"""Whether this save left an Active box where its records do not point: it just became
+		Active, or its address changed. A box with no address yet has nothing to write."""
+		changed = self.has_value_changed("status") or self.has_value_changed(self.dns_fields[0])
+		return bool(self.status == "Active" and changed and self.has_dns_records)
+
 	@property
 	def hostname(self):
 		"""The name that reaches THIS box: <short name>.<its geography's zone>, covered by that

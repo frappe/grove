@@ -344,12 +344,12 @@ class TestSyncServer(unittest.TestCase):
 			ServerResize.refresh_server(resize())
 		return networks
 
-	def test_the_server_is_active_again_on_its_addresses_in_dns(self):
+	def test_the_server_is_saved_active_again_and_its_dns_is_left_to_that_save(self):
 		gw = gateway(status="Broken")
 		networks = self.refresh(gw)
 		self.assertEqual("Active", gw.status)
 		gw.save.assert_called_once()
-		gw.sync_dns_records.assert_called_once()
+		gw.sync_dns_records.assert_not_called()
 		networks.assert_not_called()
 
 	def test_a_moved_public_ip_reaches_the_security_groups_now(self):

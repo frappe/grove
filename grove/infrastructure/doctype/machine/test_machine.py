@@ -1140,3 +1140,64 @@ class TestTerminatingABoxTakesItsServersWithIt(unittest.TestCase):
 		self.assertEqual(1, len(logged))
 		self.assertIn("Gateway Server gw-bad", logged[0])
 		self.assertEqual([{"save_point": "mark_dependent"}], rollbacks)
+
+
+class TestABoxOnANewAddressRefreshesItsServers(unittest.TestCase):
+	"""A server fetches its address off the Machine only when it is saved, and its DNS follows that
+	save: so a Machine whose address moved saves every live server built on it."""
+
+	def test_every_live_server_is_saved_through_its_document_as_it_is(self):
+		saved, asked = [], {}
+
+		class FakeDoc:
+			def __init__(self, doctype, name):
+				self.doctype, self.name, self.status = doctype, name, "Broken"
+
+			def save(self, ignore_permissions=False):
+				saved.append((self.doctype, self.name, self.status))
+
+		def get_all(doctype, filters, pluck):
+			asked[doctype] = filters
+			return ["store-1"] if doctype == "Gateway Store" else []
+
+		machine = SimpleNamespace(name="mc-1", status="Active")
+		machine.mark_dependent = lambda dt, n: Machine.mark_dependent(machine, dt, n)
+		with (
+			patch("frappe.get_all", get_all),
+			patch("frappe.get_doc", side_effect=FakeDoc),
+			patch.object(frappe, "db", SimpleNamespace(savepoint=lambda name: None)),
+		):
+			Machine.refresh_dependent_servers(machine)
+		self.assertEqual(saved, [("Gateway Store", "store-1", "Broken")])
+		self.assertEqual(asked["Gateway Store"], {"machine": "mc-1", "status": ("!=", "Terminated")})
+
+	def sync(self, address_now):
+		"""Machine.sync on a box holding 1.1.1.1 that AWS reports at `address_now`. → what it ran."""
+		ran = []
+		instance = {
+			"status": "Active",
+			"public_ip": address_now,
+			"private_ip": "10.0.0.5",
+			"instance_type": "t3.small",
+			"image_id": "ami-1",
+			"root_volume_gb": 50,
+		}
+		machine = SimpleNamespace(
+			name="mc-1",
+			instance_id="i-1",
+			public_ip="1.1.1.1",
+			require_instance=lambda: None,
+			cloud_client=SimpleNamespace(
+				get_instance=lambda instance_id: instance, is_termination_protected=lambda instance_id: False
+			),
+			sync_dependent_servers=lambda: ran.append("statuses"),
+			refresh_dependent_servers=lambda: ran.append("addresses"),
+			sync_instance_type=lambda client: None,
+		)
+		machine.db_set = lambda values: machine.__dict__.update(values)
+		Machine.sync(machine)
+		return ran
+
+	def test_a_sync_that_finds_the_box_elsewhere_refreshes_them_and_a_quiet_one_does_not(self):
+		self.assertEqual(self.sync("2.2.2.2"), ["statuses", "addresses"])
+		self.assertEqual(self.sync("1.1.1.1"), ["statuses"])

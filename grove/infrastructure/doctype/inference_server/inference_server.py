@@ -52,11 +52,13 @@ class InferenceServer(FleetHost, Document):
 			frappe.throw(f"Standalone is fixed once {self.name} is set up.")
 
 	def on_update(self):
-		"""The DNS record follows the flag, so a replica never derives a name nothing resolves. Routes
+		"""The DNS record follows the flag, so a replica never derives a name nothing resolves, and
+		a standalone box's follows its status and address as any named box's does. Routes
 		need no hook: moving a box between ingresses moves both tables' hashes for the next tick."""
 		before = self.get_doc_before_save()
 		was_standalone = bool(before and before.is_standalone)
-		if self.is_standalone and not was_standalone and self.machine_ip:
+		named_now = self.is_standalone and not was_standalone and self.machine_ip
+		if named_now or (self.is_standalone and self.has_moved):
 			self.sync_dns_records()
 		terminated = self.has_value_changed("status") and self.status == "Terminated"
 		if was_standalone and (terminated or not self.is_standalone):

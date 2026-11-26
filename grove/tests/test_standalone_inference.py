@@ -136,8 +136,9 @@ class TestTlsVariables(unittest.TestCase):
 
 
 class TestDnsRecordFollowsTheFlag(unittest.TestCase):
-	def on_update(self, doc, before, changed=()):
+	def on_update(self, doc, before, changed=(), moved=False):
 		doc.get_doc_before_save = lambda: before
+		doc.has_moved = moved
 		doc.has_value_changed = lambda field: field in changed
 		doc.sync_dns_records = MagicMock()
 		doc.remove_dns_records = MagicMock()
@@ -152,6 +153,12 @@ class TestDnsRecordFollowsTheFlag(unittest.TestCase):
 		self.assertEqual(self.on_update(server(), server(is_standalone=1)), (False, True))
 		terminated = server(is_standalone=1, status="Terminated")
 		self.assertEqual(self.on_update(terminated, server(is_standalone=1), ["status"]), (False, True))
+
+	def test_a_standalone_box_made_active_or_moved_has_its_record_rewritten_a_replica_never(self):
+		standalone = server(is_standalone=1)
+		self.assertEqual(self.on_update(standalone, server(is_standalone=1), moved=True), (True, False))
+		self.assertEqual(self.on_update(standalone, server(is_standalone=1)), (False, False))
+		self.assertEqual(self.on_update(server(), server(), moved=True), (False, False))
 
 	def test_a_new_box_that_is_not_standalone_touches_no_dns(self):
 		self.assertEqual(self.on_update(server(), None, ["status"]), (False, False))

@@ -72,10 +72,6 @@ class GatewayServer(PathwayHost, Document):
 		if not self.get_password("admin_token", raise_exception=False):
 			self.admin_token = frappe.generate_hash(length=48)
 
-	def on_update(self):
-		if self.has_value_changed("status") and self.status == "Terminated":
-			self.remove_dns_records()
-
 	def on_trash(self):
 		self.remove_dns_records()
 
