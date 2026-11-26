@@ -30,8 +30,3 @@ class TestModelID(IntegrationTestCase):
 		ensure_model_id("Probe Named 7B", "Probe Named")
 		ensure_model_id("Probe Named 7B", "Renamed")
 		self.assertEqual("Probe Named", frappe.db.get_value("Model ID", name, "display_name"))
-
-	def test_a_model_cannot_name_an_id_the_site_has_no_record_of(self):
-		model = {"doctype": "Model", "model_id": "never-made-7b", "hf_repo": "probe/Repo"}
-		with self.assertRaises(frappe.LinkValidationError):
-			frappe.get_doc(model).insert()

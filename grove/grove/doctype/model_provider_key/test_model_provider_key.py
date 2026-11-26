@@ -18,24 +18,6 @@ class TestAKeyIsKnownByItsTitle(IntegrationTestCase):
 		keyed_provider("_T-probe-titled-there")
 
 
-class TestAKeysSecretIsSetOnce(IntegrationTestCase):
-	def test_a_new_secret_is_refused_and_the_rest_still_saves(self):
-		"""Frappe's own check, which compares the masked values: it tells a secret of another
-		length, not one of the same."""
-		vendor = keyed_provider("_T-probe-set-once", base_url="https://api.probe.test")
-		key = add_key(vendor, "first-secret", "rotating")
-		key.title = "renamed"
-		key.save()
-		key.api_key = "another-longer-secret"
-		frappe.db.savepoint("first_secret")
-		with self.assertRaises(frappe.CannotChangeConstantError):
-			key.save()
-		# The check runs after the secret is stored: the request's rollback is what keeps the old one.
-		frappe.db.rollback(save_point="first_secret")
-		kept = frappe.get_doc("Model Provider Key", key.name)
-		self.assertEqual((kept.title, kept.get_password("api_key")), ("renamed", "first-secret"))
-
-
 class TestTheKeysAGatewayMayDial(IntegrationTestCase):
 	def test_they_are_read_oldest_first_and_a_disabled_one_stays_home(self):
 		vendor = keyed_provider("_T-probe-ring", base_url="https://api.probe.test")

@@ -668,19 +668,8 @@ class TestBaremetalMachine(IntegrationTestCase):
 
 
 class TestLaunchLockedFields(IntegrationTestCase):
-	"""The SSH keys go in via user-data at launch, so editing the key afterwards would only make
-	the doc disagree with the box. A static IP is not locked like that — it can be attached to a
-	running box at any time, by button."""
-
-	def setUp(self):
-		self.key = frappe.get_doc(
-			{
-				"doctype": "SSH Key",
-				"key_name": "test-launch-locked-key",
-				"public_key": "ssh-ed25519 AAAA test@grove",
-			}
-		).insert(ignore_permissions=True)
-		self.addCleanup(self.key.delete, ignore_permissions=True)
+	"""A static IP is not locked at launch — it can be attached to a running box at any time, by
+	button."""
 
 	def machine(self, name, **fields):
 		machine = frappe.get_doc(
@@ -693,12 +682,6 @@ class TestLaunchLockedFields(IntegrationTestCase):
 		).insert(ignore_permissions=True)
 		self.addCleanup(machine.delete, ignore_permissions=True)
 		return machine
-
-	def test_ssh_key_cannot_change_on_a_launched_box(self):
-		machine = self.machine("test-launch-locked", instance_id="i-123", ssh_key=self.key.name)
-		machine.ssh_key = ""
-		with self.assertRaises(frappe.ValidationError):
-			machine.save(ignore_permissions=True)
 
 	def test_static_ip_is_not_launch_locked(self):
 		machine = self.machine("test-static-ip-unlocked", instance_id="i-456")

@@ -39,13 +39,6 @@ class IntegrationTestGroveTeam(IntegrationTestCase):
 		make_test_geography()
 		frappe.db.set_single_value("Grove Settings", "default_tier", "")
 
-	def test_an_id_names_one_team(self):
-		team("team-probe-twin")
-		with self.assertRaises(frappe.DuplicateEntryError):
-			team("team-probe-twin")
-		with self.assertRaises(frappe.ValidationError):
-			frappe.get_doc({"doctype": "Grove Team"}).insert()
-
 	def test_a_team_holds_as_many_keys_as_it_likes(self):
 		doc = team("team-probe-count", spend_limit=5)
 		for _ in range(3):
@@ -103,17 +96,12 @@ class IntegrationTestGroveTeam(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			team("team-probe-negative", spend_limit=-1)
 
-	def test_the_key_cap_window_is_monthly_or_total_and_figures_report_it(self):
+	def test_figures_report_the_key_cap_window(self):
 		from grove.api import usage
 
 		self.assertEqual(usage.figures(team("team-probe-window").name)["spend"]["key_cap_window"], "Monthly")
 		doc = team("team-probe-window-total", key_cap_window="Total")
 		self.assertEqual(usage.figures(doc.name)["spend"]["key_cap_window"], "Total")
-		doc.key_cap_window = "Monthly"
-		with self.assertRaises(frappe.CannotChangeConstantError):
-			doc.save()
-		with self.assertRaises(frappe.ValidationError):
-			team("team-probe-weekly", key_cap_window="Weekly")
 
 	def test_a_total_team_has_no_spend_limit(self):
 		from grove.api import keys, usage

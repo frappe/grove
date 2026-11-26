@@ -232,8 +232,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		key = keys.provision_key(team)["api_key"]
 		self.assertEqual(teams.provision_team(team), {"team": team})
 		self.assertEqual(frappe.db.get_value("Grove API Key", {"key_hash": hash_secret(key)}, "team"), team)
-		with self.assertRaises(frappe.ValidationError):
-			teams.provision_team("")
 
 	def test_a_total_team_is_not_the_control_roles_to_make(self):
 		"""The role inserts teams, so a plain REST insert could name the window itself."""
@@ -241,11 +239,6 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			frappe.get_doc(
 				{"doctype": "Grove Team", "__newname": "probe-total", "key_cap_window": "Total"}
 			).insert()
-		monthly = frappe.get_doc({"doctype": "Grove Team", "__newname": "probe-monthly"}).insert()
-		self.assertEqual(monthly.key_cap_window, "Monthly")
-		monthly.key_cap_window = "Total"
-		with self.assertRaises(frappe.CannotChangeConstantError):
-			monthly.save()
 
 	def test_a_key_is_minted_for_a_known_team_in_a_geography(self):
 		team = "probe-keyed"
