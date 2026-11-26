@@ -76,12 +76,7 @@ def team_grants(teams=None):
 	rows = frappe.get_all(
 		"Grove Model Row", filters=filters, fields=["parent", "parentfield", "model", "model_key"]
 	)
-	geographies = {}
-	if rows:
-		docs = frappe.get_all(
-			"Model", filters={"name": ("in", [row.model for row in rows])}, fields=["name", "geography"]
-		)
-		geographies = {doc.name: doc.geography for doc in docs}
+	geographies = model_geographies(row.model for row in rows)
 	grouped = {}
 	for row in rows:
 		pair = (row.model_key, geographies.get(row.model) or "")
@@ -95,25 +90,50 @@ def reaching(rows, geography):
 	return sorted({key for key, where in rows if not where or where == geography})
 
 
+def model_geographies(models):
+	"""{model doc: its geography} for the docs named; a model of ours has none."""
+	names = sorted({model for model in models if model})
+	if not names:
+		return {}
+	docs = frappe.get_all("Model", filters={"name": ("in", names)}, fields=["name", "geography"])
+	return {doc.name: doc.geography for doc in docs}
+
+
+def model_reaching(model_key, geography):
+	"""The doc of `model_key` a key in `geography` reaches: that geography's, or one of ours."""
+	docs = frappe.get_all("Model", filters={"model_key": model_key}, fields=["name", "geography"])
+	return next((doc.name for doc in docs if not doc.geography or doc.geography == geography), None)
+
+
 def limit_entries(parenttype, parents=None):
-	"""{parent: [{model_key, metric, window, value}, ...]} of the Model Limit rows on every
-	`parenttype` doc, or on `parents`, each list sorted by model, metric and window."""
+	"""{parent: [{model_key, geography, metric, window, value}, ...]} of the Model Limit rows on
+	every `parenttype` doc, or on `parents`, sorted. `geography` is the row's model doc's, where the
+	row holds; blank on a row naming no model or a model of ours, which hold everywhere."""
 	filters = {"parenttype": parenttype}
 	if parents is not None:
 		filters["parent"] = ("in", list(parents))
 	rows = frappe.get_all(
-		"Model Limit", filters=filters, fields=["parent", "model_key", "metric", "window", "value"]
+		"Model Limit", filters=filters, fields=["parent", "model", "model_key", "metric", "window", "value"]
 	)
+	geographies = model_geographies(row.model for row in rows)
 	grouped = {}
 	for row in rows:
+		row.geography = geographies.get(row.model)
 		grouped.setdefault(row.parent, []).append(row)
 	return {parent: sorted_limits(entries) for parent, entries in grouped.items()}
 
 
+def limits_reaching(rows, geography):
+	"""The limit rows that hold for a key in `geography`: those naming no model, a model of ours,
+	or a model of that geography."""
+	return [row for row in rows if not row["geography"] or row["geography"] == geography]
+
+
 def tier_limits(teams):
-	"""{team: [{model_key, metric, window, value}, ...]} for `teams` ({team: tier}; blank is the
-	default tier; a tier with no rows is uncapped), else DEFAULT_LIMITS when the site has no tier at
-	all. The rows the gateway counts under the team, per model; a key's own rows travel beside them."""
+	"""{team: [{model_key, geography, metric, window, value}, ...]} for `teams` ({team: tier}; blank
+	is the default tier; a tier with no rows is uncapped), else DEFAULT_LIMITS when the site has no
+	tier at all. The rows the gateway counts under the team, per model, each where its
+	geography says (`limits_reaching`); a key's own rows travel beside them."""
 	by_tier = limit_entries("Tier")
 	fallback = default_tier()
 	default = sorted_limits(DEFAULT_LIMITS)
@@ -128,31 +148,37 @@ def sorted_limits(rows):
 		(
 			{
 				"model_key": r.get("model_key") or "",
+				"geography": r.get("geography") or "",
 				"metric": r.get("metric"),
 				"window": r.get("window"),
 				"value": r.get("value"),
 			}
 			for r in rows
 		),
-		key=lambda r: (r["model_key"], r["metric"], r["window"]),
+		key=lambda r: (r["model_key"], r["geography"], r["metric"], r["window"]),
 	)
 
 
-def validate_limit_rows(rows):
-	"""One limit per model, metric and window, each above zero, each named model one Grove serves;
-	the gateway refuses a push carrying one it cannot read."""
+def validate_limit_rows(rows, geography=None):
+	"""One limit per model, metric and window, each above zero, a model named by its doc. On a key,
+	whose `geography` is given, the model is one the key reaches; a Tier's rows may name any."""
+	where = model_geographies(row.model for row in rows) if geography else {}
 	seen = set()
 	for row in rows:
 		if (row.value or 0) <= 0:
 			frappe.throw(f"Limit row {row.idx}: the value must be above zero.")
-		if row.model_key and not frappe.db.exists("Model", {"model_key": row.model_key}):
-			frappe.throw(f"Limit row {row.idx}: no model has the key {row.model_key!r}.")
-		if (row.model_key or "", row.metric, row.window) in seen:
+		if row.model_key and not row.model:
+			frappe.throw(f"Limit row {row.idx}: link the model, {row.model_key!r} is only its key.")
+		if where.get(row.model) not in (None, "", geography):
+			frappe.throw(
+				f"Limit row {row.idx}: {row.model_key} is of {where[row.model]}, not this key's {geography}."
+			)
+		if (row.model or "", row.metric, row.window) in seen:
 			frappe.throw(
 				f"Two limits on {row.metric} per {row.window}"
-				+ (f" for {row.model_key}." if row.model_key else ".")
+				+ (f" for {row.model_key}." if row.model else ".")
 			)
-		seen.add((row.model_key or "", row.metric, row.window))
+		seen.add((row.model or "", row.metric, row.window))
 
 
 def get_reachable_models(team, geography):

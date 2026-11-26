@@ -8,7 +8,7 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import add_days, flt, get_datetime, now_datetime
 
-from grove.access import team_limits, validate_limit_rows
+from grove.access import model_reaching, team_limits, validate_limit_rows
 from grove.billing.pricing import committed, forget_figures, lock_team, usd
 
 KEY_PREFIX = "gr_"
@@ -69,8 +69,20 @@ class GroveAPIKey(Document):
 	def on_update(self):
 		forget_figures(self.team)
 
+	def link_limit_models(self):
+		"""A row a control client names by model key is linked to the doc of that key this key
+		reaches: its geography's, or one of ours."""
+		for row in self.limits:
+			if row.model_key and not row.model:
+				row.model = model_reaching(row.model_key, self.geography)
+				if not row.model:
+					frappe.throw(
+						f"Limit row {row.idx}: no model has the key {row.model_key!r} in {self.geography}."
+					)
+
 	def validate(self):
-		validate_limit_rows(self.limits)
+		self.link_limit_models()
+		validate_limit_rows(self.limits, self.geography)
 		self.validate_groups()
 		if flt(self.cap) < 0:
 			frappe.throw("A cap cannot be negative.")

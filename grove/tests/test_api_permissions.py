@@ -214,7 +214,8 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		teams.provision_team(team)
 		name = keys.provision_key(team, limits=[{"metric": "requests", "window": "1m", "value": 200}])["name"]
 		self.assertEqual(
-			keys.limits(team, name), [{"model_key": "", "metric": "requests", "window": "1m", "value": 200}]
+			keys.limits(team, name),
+			[{"model_key": "", "geography": "", "metric": "requests", "window": "1m", "value": 200}],
 		)
 		with self.assertRaises(frappe.DoesNotExistError):
 			keys.limits("nobody-limits", name)
@@ -347,15 +348,15 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			team, title="pinned", limits=[{"metric": "requests", "window": "1m", "value": 5}]
 		)["name"]
 		defaults = [
-			{"model_key": "", "metric": "requests", "window": "1m", "value": 20},
-			{"model_key": "", "metric": "total_tokens", "window": "1m", "value": 100_000},
+			{"model_key": "", "geography": "", "metric": "requests", "window": "1m", "value": 20},
+			{"model_key": "", "geography": "", "metric": "total_tokens", "window": "1m", "value": 100_000},
 		]
 		self.assertEqual(usage.figures(team)["spend"]["limits"], defaults)
 		self.assertEqual(
 			(keys.limits(team, unpinned), keys.limits(team, pinned)),
-			([], [{"model_key": "", "metric": "requests", "window": "1m", "value": 5}]),
+			([], [{"model_key": "", "geography": "", "metric": "requests", "window": "1m", "value": 5}]),
 		)
-		growth = [{"model_key": "", "metric": "requests", "window": "1m", "value": 60}]
+		growth = [{"model_key": "", "geography": "", "metric": "requests", "window": "1m", "value": 60}]
 		tier("probe-growth", spend_limit=50, limits=[dict(r) for r in growth])
 		limits = teams.update_team(team, tier="probe-growth")
 		self.assertEqual((limits["tier"], limits["spend_limit"]), ("probe-growth", 50))
@@ -363,7 +364,11 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 		listed = {row.name: row.limits for row in figures["keys"]}
 		self.assertEqual(
 			(figures["spend"]["limits"], listed[unpinned], listed[pinned]),
-			(growth, [], [{"model_key": "", "metric": "requests", "window": "1m", "value": 5}]),
+			(
+				growth,
+				[],
+				[{"model_key": "", "geography": "", "metric": "requests", "window": "1m", "value": 5}],
+			),
 		)
 		frappe.db.set_single_value("Grove Settings", "default_tier", "probe-growth")
 		self.addCleanup(frappe.db.set_single_value, "Grove Settings", "default_tier", "")
@@ -651,7 +656,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 	def test_a_renamed_tier_label_follows_at_grove(self):
 		team = "probe-rename"
 		teams.provision_team(team)
-		rows = [{"model_key": "", "metric": "requests", "window": "1m", "value": 7}]
+		rows = [{"model_key": "", "geography": "", "metric": "requests", "window": "1m", "value": 7}]
 		tier("probe-ren-a", limits=[dict(r) for r in rows])
 		teams.update_team(team, tier="probe-ren-a")
 		keys.provision_key(team, title="follows")

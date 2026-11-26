@@ -12,7 +12,8 @@ from grove.billing.pricing import forget_figures
 class Tier(Document):
 	"""What a team on it may do, named by Central's trust tier label (`Growth`): monthly spend
 	across its keys' caps, and the rate limits the team runs under per model (a blank row is every
-	model, a named one that model alone; no rows: uncapped). A tier a team names cannot be deleted."""
+	model, one linking a model that model alone, in its geography; no rows: uncapped). A tier a team
+	names cannot be deleted."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -58,7 +59,7 @@ def ensure(name):
 				"spend_limit": flt(source.get("spend_limit")),
 				"limits": [
 					{
-						"model_key": r.get("model_key") or "",
+						"model": r.get("model"),
 						"metric": r.get("metric"),
 						"window": r.get("window"),
 						"value": r.get("value"),

@@ -297,8 +297,8 @@ class TestTheCatalogOwnsTierRows(CatalogCase):
 		self.load(tiers=[{"name": "catalog-tier", "spend_limit": 10, "limits": rows}])
 		doc = frappe.get_doc("Tier", "catalog-tier")
 		self.assertEqual(
-			(doc.spend_limit, [(r.model_key, r.metric, r.window, r.value) for r in doc.limits]),
-			(10, [("", "requests", "1m", 60)]),
+			(doc.spend_limit, [(r.model, r.metric, r.window, r.value) for r in doc.limits]),
+			(10, [(None, "requests", "1m", 60)]),
 		)
 		doc.spend_limit = 25
 		doc.save()
@@ -307,6 +307,10 @@ class TestTheCatalogOwnsTierRows(CatalogCase):
 		self.load(tiers=[{"name": "catalog-tier", "spend_limit": 10, "limits": named}])
 		doc.reload()
 		self.assertEqual(doc.spend_limit, 25)
-		self.assertEqual([(r.model_key, r.value) for r in doc.limits], [("", 60), (dear.model_key, 6)])
+		self.assertEqual(
+			[(r.model, r.model_key, r.value) for r in doc.limits],
+			[(None, None, 60), (dear.name, dear.model_key, 6)],
+			"the file names a model by key; the row links its doc",
+		)
 		self.load(tiers=[{"name": "catalog-tier", "spend_limit": 10, "limits": named}])
 		self.assertEqual(frappe.db.get_value("Tier", "catalog-tier", "modified"), doc.modified)

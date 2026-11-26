@@ -16,6 +16,7 @@ from grove.access import (
 	group_geographies,
 	group_rows,
 	limit_entries,
+	limits_reaching,
 	model_rows,
 	reaching,
 	team_grants,
@@ -97,18 +98,18 @@ def effective_keys(names=None):
 				"budget": nano(k.cap or 0),
 				"budget_window": "total" if team.key_cap_window == "Total" else "month",
 				# Blank when none: the box merges fields, so leaving it out would keep a removed limit in force.
-				"key_limits": wire_limits(own_limits.get(k.name, [])),
+				"key_limits": wire_limits(limits_reaching(own_limits.get(k.name, []), k.geography)),
 			}
 		)
 	return records
 
 
-def effective_teams(names=None):
-	"""Every Grove Team projected for the gateway, which reads the record beside each of the team's
-	keys: `limited` (suspended, which refuses every key whatever its own cap says), `log_payloads`,
-	`cap_message` (what the box's 402 says once a key's cap is spent; blank: the box's own text)
-	and `limits`, its tier's rate limit rows, counted per model for the team as a whole. `names`
-	narrows it to those teams: what a tick rebuilds."""
+def effective_teams(names=None, geography=""):
+	"""Every Grove Team projected for a gateway of `geography`, which reads the record beside each
+	of the team's keys: `limited` (suspended, which refuses every key whatever its own cap says),
+	`log_payloads`, `cap_message` (what the box's 402 says once a key's cap is spent; blank: the
+	box's own text) and `limits`, its tier's rate limit rows that hold in that geography, counted
+	per model for the team as a whole. `names` narrows it to those teams: what a tick rebuilds."""
 	if names is not None and not names:
 		return []
 	teams = frappe.get_all(
@@ -124,7 +125,7 @@ def effective_teams(names=None):
 			"log_payloads": bool(team.log_payloads),
 			# Blank when none: the box merges fields, so leaving one out would keep what was removed in force.
 			"cap_message": team.cap_message or "",
-			"limits": wire_limits(limits[team.name]),
+			"limits": wire_limits(limits_reaching(limits[team.name], geography)),
 		}
 		for team in sorted(teams, key=lambda team: team.name)
 	]
@@ -186,10 +187,11 @@ def team_names(labels):
 	return [name for name in frappe.get_all("Grove Team", pluck="name") if bucket_of(name) in labels]
 
 
-def teams_section(labels=None):
-	"""The `teams` section: every team when `labels` is None, else the teams of those buckets only."""
+def teams_section(labels=None, geography=""):
+	"""The `teams` section for gateways of `geography`: every team when `labels` is None, else the
+	teams of those buckets only."""
 	names = None if labels is None else team_names(labels)
-	return bucketed_section(effective_teams(names), "team")
+	return bucketed_section(effective_teams(names, geography), "team")
 
 
 def holds_buckets(remote):
@@ -228,8 +230,8 @@ def bucketed_section(records, id_field):
 
 
 def gateway_snapshot(geography, teams, keys):
-	"""The same for every gateway in `geography` but the routes, so a run builds it once per
-	geography over the one `teams` and one `keys` section it built."""
+	"""A geography's own routes and `teams` (a limit row holds where its model does), over the one
+	`keys` section a run built: one snapshot per geography, shared by its gateways."""
 	return {
 		"groups": flat_section({"records": effective_groups()}),
 		"teams": teams,

@@ -45,7 +45,19 @@ def write(path=None):
 def get_tiers():
 	rows = limit_entries("Tier")
 	tiers = frappe.get_all("Tier", fields=["name", "spend_limit"], order_by="name")
-	return [{"name": t.name, "spend_limit": t.spend_limit, "limits": rows.get(t.name, [])} for t in tiers]
+	return [
+		{
+			"name": t.name,
+			"spend_limit": t.spend_limit,
+			"limits": [tier_row(row) for row in rows.get(t.name, [])],
+		}
+		for t in tiers
+	]
+
+
+def tier_row(row):
+	"""A limit row as the file names it: a model by its key, and by its geography when it has one."""
+	return {field: value for field, value in row.items() if value != ""}
 
 
 def get_counters():

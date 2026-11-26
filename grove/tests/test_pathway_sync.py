@@ -387,7 +387,6 @@ class TestEffectiveKeys(unittest.TestCase):
 				"Grove API Key": 1,
 				"Grove Team": 1,
 				"Grove Model Row": 1,
-				"Model": 1,
 				"Model Group Row": 2,
 				"Model Group": 1,
 				"Model Limit": 1,
@@ -491,18 +490,20 @@ class TestEffectiveTeams(unittest.TestCase):
 	"""team:<name> — what is the team's and read beside each of its keys: its suspension, payload
 	logging, cap message and its tier's rate limit rows, once per team however many keys it holds."""
 
-	def teams(self, teams, limits=(), default_tier=None, names=None):
+	def teams(self, teams, limits=(), default_tier=None, names=None, models=(), geography=""):
+		"""`models` are the docs the limit rows link, each with its geography."""
 		self.filters = {}
+		answers = {"Grove Team": teams, "Model Limit": limits, "Model": models}
 
 		def get_all(doctype, filters=None, **kwargs):
 			self.filters[doctype] = filters
-			return list(teams) if doctype == "Grove Team" else list(limits)
+			return list(answers[doctype])
 
 		with (
 			unittest.mock.patch.object(frappe, "get_all", side_effect=get_all),
 			unittest.mock.patch.object(access, "default_tier", return_value=default_tier),
 		):
-			return snapshot.effective_teams(names)
+			return snapshot.effective_teams(names, geography)
 
 	def team(self, name="T-1", **fields):
 		fields = {"suspended": 0, "log_payloads": 0, "cap_message": None, "tier": None, **fields}
@@ -542,6 +543,37 @@ class TestEffectiveTeams(unittest.TestCase):
 	def test_a_team_with_no_tier_runs_under_the_default_tier(self):
 		[team] = self.teams([self.team()], limits=[self.tier_row()], default_tier="Growth")
 		self.assertEqual(team["limits"], "requests:1m:60")
+
+	def test_a_row_reaches_only_the_gateways_of_its_models_geography(self):
+		"""A row linking a vendor's doc holds in that doc's geography; one linking a model of ours,
+		or none, holds in every one."""
+		rows = [
+			self.tier_row(),
+			self.tier_row(model="M-IN", model_key="openai/gpt-6-luna", value=6),
+			self.tier_row(model="M-EU", model_key="openai/gpt-6-luna", value=9),
+			self.tier_row(model="M-OURS", model_key="frappe/qwen3-4b", value=4),
+		]
+		models = [
+			frappe._dict(name="M-IN", geography="in"),
+			frappe._dict(name="M-EU", geography="eu"),
+			frappe._dict(name="M-OURS", geography=None),
+		]
+		pushed = {
+			geography: self.teams([self.team(tier="Growth")], rows, models=models, geography=geography)[0][
+				"limits"
+			]
+			for geography in ("in", "eu", "")
+		}
+		everywhere = "requests:1m:60,requests:1m:4:frappe/qwen3-4b"
+		self.assertEqual(
+			pushed,
+			{
+				"in": everywhere + ",requests:1m:6:openai/gpt-6-luna",
+				"eu": everywhere + ",requests:1m:9:openai/gpt-6-luna",
+				"": everywhere,
+			},
+		)
+		self.assertEqual(self.filters["Model"], {"name": ("in", ["M-EU", "M-IN", "M-OURS"])})
 
 	def test_a_tier_with_no_rows_is_pushed_blank(self):
 		[team] = self.teams([self.team(tier="Open")])

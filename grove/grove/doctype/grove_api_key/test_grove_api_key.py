@@ -231,7 +231,7 @@ class IntegrationTestATeamsGrantsReachTheKeysOfTheirGeography(IntegrationTestCas
 
 def own(*rows):
 	"""Limit rows as `limit_entries` answers them."""
-	return [{"model_key": "", **row} for row in rows]
+	return [{"model_key": "", "geography": "", **row} for row in rows]
 
 
 class IntegrationTestRateLimits(IntegrationTestCase):
@@ -365,7 +365,7 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 				"__newname": "key-tier-per-model",
 				"limits": [
 					{"metric": "requests", "window": "1m", "value": 60},
-					{"model_key": served.model_key, "metric": "requests", "window": "1m", "value": 6},
+					{"model": served.name, "metric": "requests", "window": "1m", "value": 6},
 				],
 			}
 		).insert()
@@ -373,11 +373,58 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 			{"doctype": "Grove API Key", "team": team("key-limit-per-model", tier=tier.name)}
 		).insert()
 		self.assertEqual(team_limits_pushed(dear.team), f"requests:1m:60,requests:1m:6:{served.model_key}")
-		tier.append(
-			"limits", {"model_key": served.model_key, "metric": "requests", "window": "1m", "value": 7}
-		)
+		tier.append("limits", {"model": served.name, "metric": "requests", "window": "1m", "value": 7})
 		with self.assertRaisesRegex(frappe.ValidationError, f"for {served.model_key}"):
 			tier.save()
+
+	def test_a_limit_row_holds_where_its_model_does(self):
+		"""One key served in two geographies is two docs. A tier row linking one reaches that
+		geography's team record alone, a row linking a model of ours reaches both, and a key's own
+		row names a doc the key's geography reaches."""
+		here, away = make_test_geography("limit-here"), make_test_geography("limit-away")
+		docs = {}
+		for geography in (here, away):
+			vendor = keyed_provider("_T-limit-vendor", base_url="https://limit.test/v1", geography=geography)
+			docs[geography] = vendor_model("limit-big", vendor.name).insert()
+		ours, shared_key = our_model("limit-ours").insert(), docs[here].model_key
+		tier = frappe.get_doc(
+			{
+				"doctype": "Tier",
+				"__newname": "key-tier-by-geography",
+				"limits": [
+					{"model": docs[here].name, "metric": "requests", "window": "1m", "value": 3},
+					{"model": docs[away].name, "metric": "requests", "window": "1m", "value": 9},
+					{"model": ours.name, "metric": "requests", "window": "1m", "value": 5},
+				],
+			}
+		).insert()
+		name = team("key-limit-by-geography", tier=tier.name)
+		pushed = {g: set(effective_teams([name], g)[0]["limits"].split(",")) for g in (here, away, "")}
+		everywhere = f"requests:1m:5:{ours.model_key}"
+		self.assertEqual(
+			pushed,
+			{
+				here: {everywhere, f"requests:1m:3:{shared_key}"},
+				away: {everywhere, f"requests:1m:9:{shared_key}"},
+				"": {everywhere},
+			},
+		)
+
+		by_key = {"model_key": shared_key, "metric": "requests", "window": "1m", "value": 2}
+		doc = frappe.get_doc(
+			{"doctype": "Grove API Key", "team": name, "geography": here, "limits": [by_key]}
+		).insert()
+		self.assertEqual(doc.limits[0].model, docs[here].name)
+		self.assertEqual(projected(doc.name)["key_limits"], f"requests:1m:2:{shared_key}")
+		self.assertEqual(
+			limit_entries("Grove API Key", [doc.name])[doc.name],
+			[{"model_key": shared_key, "geography": here, "metric": "requests", "window": "1m", "value": 2}],
+		)
+		doc.limits[0].model = docs[away].name
+		with self.assertRaisesRegex(frappe.ValidationError, f"is of {away}, not this key's {here}"):
+			doc.save()
+		with self.assertRaisesRegex(frappe.ValidationError, "link the model"):
+			frappe.get_doc({"doctype": "Tier", "__newname": "key-tier-by-key", "limits": [by_key]}).insert()
 
 
 class IntegrationTestOneGeographyPerKey(IntegrationTestCase):

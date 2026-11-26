@@ -135,20 +135,21 @@ def full_sync(proxies=None, trigger="Manual", ingresses=None, wait=60):
 
 
 def snapshots_for(targets, labels=None):
-	"""{target: its desired state} — a gateway snapshot once per geography over one `teams` and one
-	`keys` section (the buckets `labels` names of each, all when None), an ingress its own replica
-	table."""
-	per_geography, snapshots, bucketed = {}, {}, None
+	"""{target: its desired state} — a gateway snapshot once per geography, its own `teams` section
+	over the one `keys` section (the buckets `labels` names of each, all when None), an ingress its
+	own replica table."""
+	per_geography, snapshots, keys = {}, {}, None
+	rebuilt = labels or {"teams": None, "keys": None}
 	for target in targets:
 		if target.server_type == "Ingress Server":
 			snapshots[target] = snapshot.ingress_snapshot(target.name)
 			continue
-		if bucketed is None:
-			rebuilt = labels or {"teams": None, "keys": None}
-			bucketed = (snapshot.teams_section(rebuilt["teams"]), snapshot.keys_section(rebuilt["keys"]))
+		if keys is None:
+			keys = snapshot.keys_section(rebuilt["keys"])
 		geography = snapshot.gateway_geography(target.name)
 		if geography not in per_geography:
-			per_geography[geography] = snapshot.gateway_snapshot(geography, *bucketed)
+			teams = snapshot.teams_section(rebuilt["teams"], geography)
+			per_geography[geography] = snapshot.gateway_snapshot(geography, teams, keys)
 		snapshots[target] = per_geography[geography]
 	return snapshots
 

@@ -6,7 +6,6 @@ from pathlib import Path
 
 import frappe
 
-from grove.access import sorted_limits
 from grove.grove.doctype.model_id.model_id import ensure_model_id
 
 CATALOG = Path(__file__).with_name("catalog.json")
@@ -53,18 +52,42 @@ def insert_missing(path=None):
 		frappe.db.set_single_value("Grove Settings", "default_tier", default)
 
 
+def tier_rows(entry):
+	"""A catalog tier's limit rows as its doc holds them. The file names a model by key, and by
+	geography when the row is one geography's: it becomes one row per doc of that key there."""
+	rows = []
+	for row in entry.get("limits", []):
+		limit = {field: row[field] for field in ("metric", "window", "value")}
+		if not row.get("model_key"):
+			rows.append(limit)
+			continue
+		filters = {"model_key": row["model_key"]}
+		if row.get("geography"):
+			filters["geography"] = row["geography"]
+		models = frappe.get_all("Model", filters=filters, pluck="name")
+		if not models:
+			frappe.throw(f"Tier {entry['name']}: no model matches the limit row {row}.")
+		rows += [{**limit, "model": model} for model in models]
+	return rows
+
+
+def row_ids(rows):
+	"""Limit rows by what makes two the same: model doc, metric, window and value, sorted."""
+	return sorted((r.get("model") or "", r.get("metric"), r.get("window"), r.get("value")) for r in rows)
+
+
 def sync_tier(entry):
 	"""A tier the catalog names: inserted when the site lacks it, else its `limits` rows rewritten
 	from the file when they differ. The rows are the catalog's; `spend_limit` is the operator's
-	once the tier exists. After the models, so a row's model key can be checked."""
-	rows = sorted_limits(entry.get("limits", []))
+	once the tier exists. After the models, so a row's model can be linked."""
+	rows = tier_rows(entry)
 	try:
 		doc = frappe.get_doc("Tier", entry["name"])
 	except frappe.DoesNotExistError:
 		frappe.clear_last_message()
 		frappe.get_doc({"doctype": "Tier", **entry, "limits": rows}).insert()
 		return
-	if sorted_limits(doc.limits) != rows:
+	if row_ids(doc.limits) != row_ids(rows):
 		doc.set("limits", rows)
 		doc.save()
 

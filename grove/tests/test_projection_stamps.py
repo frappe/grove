@@ -117,9 +117,11 @@ class TestBucketNames(unittest.TestCase):
 			unittest.mock.patch.object(snapshot, "effective_teams", return_value=[]) as teams,
 		):
 			snapshot.teams_section()
-			snapshot.teams_section({AA})
-			snapshot.teams_section(set())
-		self.assertEqual([call.args for call in teams.call_args_list], [(None,), (["aa"],), ([],)])
+			snapshot.teams_section({AA}, "in")
+			snapshot.teams_section(set(), "in")
+		self.assertEqual(
+			[call.args for call in teams.call_args_list], [(None, ""), (["aa"], "in"), ([], "in")]
+		)
 
 
 class TestBucketsInPlay(unittest.TestCase):
