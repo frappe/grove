@@ -74,12 +74,11 @@ class Window:
 		if not given.geography:
 			return given.api_key or None
 		filters = {"geography": given.geography}
-		if given.team:
-			filters["team"] = given.team
 		if given.api_key:
 			filters["name"] = given.api_key
+		scope = team_scope(given.team) if given.team else None
 		# ponytail: a geography's key names ride the IN list; a join in money_rows past lakhs.
-		return frappe.get_list("Grove API Key", filters=filters, pluck="name") or [""]
+		return frappe.get_list("Grove API Key", filters=filters, or_filters=scope, pluck="name") or [""]
 
 	def models_of(self, given):
 		if given.model:
@@ -295,14 +294,15 @@ def keys(filters: dict | str | None = None) -> list[dict]:
 	"""The keys of the window as `api.keys.key_rows` lists them, plus their team, model groups,
 	the window's usage, the last day served, how much of the cap the month took and the
 	hand-overs that brought them to their team (`transfers`, oldest first). Every key
-	of the filtered team; else the window's costliest, KEY_LIMIT of them. Live keys first."""
+	the filtered team holds or handed over; else the window's costliest, KEY_LIMIT of them. Live
+	keys first."""
 	operator()
 	window = Window(filters)
 	table, params = window.table()
 	usage = {row["name"]: row for row in grouped(table, params, "x.api_key", KEY_LIMIT)}
 	names = set(usage)
-	if window.filters["team"]:
-		names |= set(frappe.get_list("Grove API Key", filters={"team": window.filters["team"]}, pluck="name"))
+	if team := window.filters["team"]:
+		names |= set(frappe.get_list("Grove API Key", or_filters=team_scope(team), pluck="name"))
 	held = window.filters["api_key"]
 	if isinstance(held, str):
 		names.add(held)
@@ -515,13 +515,20 @@ def filter_options(team: str | None = None) -> dict:
 	}
 
 
+def team_scope(team):
+	"""The or-filters naming the keys `team` holds or handed over: what a key used before its
+	move stays under the team it left, so that team's view still counts and lists it."""
+	# ponytail: every key the team ever handed over; window them by transfer date past thousands.
+	moved = frappe.get_list("Key Transfer", filters={"from_team": team}, pluck="api_key")
+	return {"team": team, "name": ("in", moved)}
+
+
 def team_keys(team):
 	"""The keys `team` holds and the ones it handed over, those with `moved_to`: their team now.
 	Its usage of a key it handed over stays under it, so the picker still offers the key."""
-	moved = frappe.get_list("Key Transfer", filters={"from_team": team}, pluck="api_key")
 	keys = frappe.get_list(
 		"Grove API Key",
-		or_filters={"team": team, "name": ("in", moved)},
+		or_filters=team_scope(team),
 		fields=["name", "title", "masked", "status", "team"],
 		order_by="creation desc",
 		limit=OPTION_LIMIT,
