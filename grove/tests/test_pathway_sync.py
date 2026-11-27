@@ -453,8 +453,7 @@ class TestEffectiveTeams(unittest.TestCase):
 	logging, cap message and its tier's rate limit rows, once per team however many keys it holds."""
 
 	def teams(self, teams, limits=(), tiers=(), default_tier=None, names=None, models=(), geography=""):
-		"""`models` are the docs the limit rows link, each with its geography; `tiers` the
-		(name, limit scope) of each tier counting per key."""
+		"""`models` are the docs the limit rows link; `tiers` are (name, limit scope) pairs."""
 		self.filters = {}
 		answers = {"Grove Team": teams, "Model": models, "Tier": tiers}
 
@@ -529,8 +528,6 @@ class TestEffectiveTeams(unittest.TestCase):
 		)
 
 	def test_a_teams_own_rows_are_laid_over_its_tiers_row_by_row(self):
-		"""A team row stands in for the tier's on its model, metric and window and the tier's other
-		rows hold; a row at 0 goes out as it is: no limit there."""
 		own = [
 			self.tier_row("T-1", parenttype="Grove Team", value=9),
 			self.tier_row("T-1", parenttype="Grove Team", model_key="openai/gpt-6-luna", value=0),

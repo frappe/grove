@@ -54,8 +54,7 @@ def insert_missing(path=None):
 
 
 def tier_rows(entry):
-	"""A catalog tier's limit rows as its doc holds them. The file names a model by key, and by
-	geography when the row is one geography's: it becomes one row per doc of that key there."""
+	"""A catalog tier's rows as its doc holds them: a model key becomes one row per doc of it."""
 	rows = []
 	for row in entry.get("limits", []):
 		limit = {field: row[field] for field in ("metric", "window", "value")}
@@ -73,15 +72,12 @@ def tier_rows(entry):
 
 
 def row_ids(rows):
-	"""Limit rows by what makes two the same: model doc, metric, window and value, sorted."""
 	return sorted((r.get("model") or "", r.get("metric"), r.get("window"), r.get("value")) for r in rows)
 
 
 def sync_tier(entry):
-	"""A tier the catalog names: inserted when the site lacks it, else its rows rewritten from the
-	file when they differ, in the table its `limit_scope` counts with. The rows are the catalog's;
-	`spend_limit` and the scope are the operator's once the tier exists. After the models, so a
-	row's model can be linked."""
+	"""Inserted when the site lacks it, else its rows rewritten when they differ. `spend_limit` and
+	the scope stay the operator's once the tier exists."""
 	rows = tier_rows(entry)
 	try:
 		doc = frappe.get_doc("Tier", entry["name"])

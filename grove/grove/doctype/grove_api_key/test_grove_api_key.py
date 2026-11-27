@@ -311,7 +311,6 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 		)
 
 	def test_a_tier_counting_per_key_sends_its_per_key_table_under_the_key(self):
-		"""Each scope has its table, on the tier and on the team; the other one is not in force."""
 		tables = {
 			"limits": [{"metric": "requests", "window": "1m", "value": 600}],
 			"key_limits": [{"metric": "requests", "window": "1m", "value": 6}],

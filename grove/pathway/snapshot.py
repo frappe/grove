@@ -41,11 +41,9 @@ def effective_groups():
 
 def effective_keys(names=None):
 	"""Every LIVE API Key projected for the gateway, with the policy the gates read off the key.
-	`budget` is its cap and `budget_window` what the box counts it over: the UTC month, or
-	everything since the mint (the team's Key Cap Window); the box refuses the key once that
-	reaches the cap. The team's verdicts, settings and rate limits ride its own record
-	(`effective_teams`). `names` narrows it to those keys: what a tick rebuilds. Revoked keys are
-	not projected: absent from their bucket, the push prunes them off every box."""
+	`budget` is its cap, `budget_window` what the box counts it over. The team's verdicts, settings
+	and rate limits ride its own record (`effective_teams`). Revoked keys are not projected: absent
+	from their bucket, the push prunes them off every box."""
 	if names is not None and not names:
 		return []
 	filters = {"status": "active"}
@@ -102,14 +100,9 @@ def effective_keys(names=None):
 
 
 def effective_teams(names=None, geography=""):
-	"""Every Grove Team projected for a gateway of `geography`, which reads the record beside each
-	of the team's keys: `limited` (suspended, which refuses every key whatever its own cap says),
-	`log_payloads`, `cap_message` (what the box's 402 says once a key's cap is spent; blank: the
-	box's own text) and its rate limit rows that hold in that geography, its tier's with its own
-	laid over them (`access.limits_in_force`): as `limits`, counted per model for the team as a
-	whole, or as `key_limits`, counted under each of its keys with every model together, by its
-	tier's `limit_scope`.
-	`names` narrows it to those teams: what a tick rebuilds."""
+	"""Every Grove Team projected for a gateway of `geography`, read beside each of its keys. Its
+	rate limit rows go out as `limits` (per model, for the team) or as `key_limits` (per key, every
+	model together), by its tier's scope."""
 	if names is not None and not names:
 		return []
 	teams = frappe.get_all(

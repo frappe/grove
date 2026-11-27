@@ -59,7 +59,6 @@ def get_tiers():
 
 
 def tier_row(row):
-	"""A limit row as the file names it: a model by its key, and by its geography when it has one."""
 	return {field: value for field, value in row.items() if value != ""}
 
 

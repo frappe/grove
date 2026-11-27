@@ -10,12 +10,6 @@ from grove.billing.pricing import forget_figures
 
 
 class Tier(Document):
-	"""What a team on it may do, named by Central's trust tier label (`Growth`): monthly spend
-	across its keys' caps, and the rate limits the team runs under per model (a blank row is every
-	model, one linking a model that model alone, in its geography; no rows: uncapped), counted for
-	the team, or for each of its keys with every model together, by `limit_scope`: a table each. A tier a team names
-	cannot be deleted."""
-
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 

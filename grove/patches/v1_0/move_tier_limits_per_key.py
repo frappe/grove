@@ -2,9 +2,8 @@ import frappe
 
 
 def execute():
-	"""Until a tier could say, the gateway counted its limits per key, every model together. They
-	stay so: a tier's rows naming no model move to its per-key table and its scope says Key. A tier
-	already holding per-key rows is left as it is. The save re-pushes each team's record."""
+	"""The gateway counted limits per key, every model together, before a tier could say. They stay
+	so; a tier already holding per-key rows is left as it is."""
 	for name in frappe.get_all("Tier", pluck="name"):
 		tier = frappe.get_doc("Tier", name)
 		if tier.key_limits:

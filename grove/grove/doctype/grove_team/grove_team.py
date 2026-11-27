@@ -12,8 +12,7 @@ class GroveTeam(Document):
 	"""A control client's team — Central's (`TEAM-00520`) or Press's (`Press Team`) — named by the
 	client's id for it. What its keys may call is decided here, not on the key: a key is revoked and
 	minted again at will, the team is not. A Model Group and a vendor model are one geography's and
-	reach only the keys there; a model of ours reaches every key. Its own limit rows are
-	laid over its tier's, row by row, in the table the tier's `limit_scope` names."""
+	reach only the keys there; a model of ours reaches every key."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -45,7 +44,7 @@ class GroveTeam(Document):
 
 	@property
 	def limit_scope(self):
-		"""Who its tier counts rate limits for; picks which of its override tables is in force."""
+		"""Its tier's: a virtual field, read by the form to show the matching override table."""
 		return limit_scopes({self.name: self.tier})[self.name]
 
 	def before_insert(self):

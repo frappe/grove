@@ -5,7 +5,4 @@ from frappe.model.document import Document
 
 
 class KeyLimit(Document):
-	"""One cap a key runs under, every model together: `value` of `metric` per `window`. The window
-	resets on the UTC clock."""
-
 	pass

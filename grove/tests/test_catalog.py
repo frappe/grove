@@ -290,9 +290,6 @@ class TestTheShippedFile(unittest.TestCase):
 
 
 class TestTheCatalogOwnsTierRows(CatalogCase):
-	"""A tier the file names is inserted once; its limit rows follow the file on every load, in the
-	table its scope counts with; its spend limit never does once the tier exists."""
-
 	def test_a_per_key_tiers_rows_follow_the_file_in_its_per_key_table(self):
 		entry = {"name": "catalog-tier-key", "spend_limit": 10, "limit_scope": "Key"}
 		for value in (60, 6):
@@ -305,9 +302,6 @@ class TestTheCatalogOwnsTierRows(CatalogCase):
 			self.load(tiers=[{**entry, "limits": named}])
 
 	def test_the_move_patch_leaves_a_tier_counting_per_key_and_the_file_writes_there(self):
-		"""What the limits were before a tier could say: per key, every model together. The patch
-		moves the rows naming no model, a load after it finds them where it writes and rewrites
-		nothing, and a row naming a model stays behind, out of force."""
 		from grove.patches.v1_0.move_tier_limits_per_key import execute
 
 		tiers = [
