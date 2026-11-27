@@ -13,6 +13,7 @@ and the drain are in [`../README.md`](../README.md).
 | `report/revenue/` | Revenue report: what each drain was billed, cut by model, API key, team or day. |
 | `report/vendor_reconciliation/` | Vendor Reconciliation report: per UTC day and model, what Grove charged users beside what the vendor billed Grove. |
 | `usage_report.py` | The hourly push of AI cost to Central (`UsageReport`): one line per team, model and UTC landing day, signed, confirmed into `Usage Report Day`. |
+| `usage_evidence.py` | How each pushed line was derived (`DayEvidence`): per team and model of a landing day, the requests, tokens and cost per pricing at its rates, a digest of the records summed, and the corrections among them. |
 | `vendor.py` | What a vendor billed Grove, read live off its billing API (`vendor_figures`): Baseten's usage and cost APIs, paged, at most 90 days. |
 
 ## Doctypes
@@ -206,6 +207,32 @@ matching rejection names exactly with `retry` false is Refused and sent again on
 changes. A refused call (bad signature, bad `as_of`), a 5xx, no answer, or a reply with no
 `message.rejected` list fails the run and leaves the batch unconfirmed for the next hour. **Pause
 Usage Report** stops it; with no Central URL or secret it sends nothing.
+
+**Each line carries its evidence.** A line also sends `evidence`: how its value was derived,
+read by `usage_evidence.DayEvidence` over the same landing window. It is recomputed with the value
+each run and is never part of the line's key or of the compare that decides whether a line is due,
+so a change in evidence alone sends nothing. Central keeps it in the signed report body for a
+dispute and ignores keys it does not know; Grove ignores keys it does not know in Central's reply
+(`underived`, for one). Times are UTC strings ending `Z`; costs are decimal strings in USD.
+
+```json
+{"v": 1, "requests": 4, "tokens_in": 301010, "tokens_out": 57,
+ "pricings": [{"id": "<Model Pricing>", "requests": 3,
+   "counters": {"prompt_tokens": 1010, "completion_tokens": 50},
+   "rates": {"prompt_tokens": "0.3", "completion_tokens": "1.2"}, "cost": "1.750000000"}],
+ "records": {"count": 2, "sha256": "<hex>", "first_at": "2026-11-20T10:00:00Z", "last_at": "2026-11-20T11:00:00Z"},
+ "corrections": {"count": 1, "cost": "-0.500000000", "discrepancies": ["<Cost Discrepancy>"]},
+ "truncated": false}
+```
+
+| Key | What it holds |
+| --- | --- |
+| `requests` | Requests of the usage records (a correction has none). |
+| `tokens_in`, `tokens_out` | The whole prompt and completion tokens: `prompt_tokens` and `completion_tokens` with their long-prompt rows, never their cached or audio parts again. |
+| `pricings` | Per pricing the gateway charged at, usage records only: its requests, its non-zero counters, the sell rates it holds (USD per unit, `{}` for a pricing Grove does not hold) and its cost. |
+| `records` | Every record summed, corrections included: the count, SHA-256 of their names sorted and joined by `,`, and the first and last landing time. |
+| `corrections` | The Grove corrections among the records: count, cost, and at most 20 Cost Discrepancy names. The line's cost is the pricings' cost plus this. |
+| `truncated` | True when part was left out: the digest (the joined names reached the 1 MB session limit, so `sha256` is omitted), or the counters and rates of every pricing (more than 8 pricings, then only the 8 costliest are kept, or over 8 KB of canonical JSON). |
 
 **The 30-day window.** A landing day older than 30 days (`usage_report.WINDOW_DAYS`) is never sent,
 and its outbox row is deleted. The Usage Record purge does not ask the outbox, so a day the purge

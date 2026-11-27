@@ -5,7 +5,7 @@ import base64
 import hashlib
 import hmac
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -20,6 +20,7 @@ from grove.billing.doctype.usage_report_day.usage_report_day import (
 	UsageReportDays,
 	report_key,
 )
+from grove.billing.usage_evidence import day_evidence
 from grove.utils import site_datetime
 
 REPORT_ROUTE = "/api/method/central.billing.api.metering.report"
@@ -35,12 +36,14 @@ TIMEOUT = 30
 
 @dataclass(frozen=True)
 class ReportLine:
-	"""One team's cost for one model on one UTC landing day, so far."""
+	"""One team's cost for one model on one UTC landing day, so far. `evidence` is how the cost
+	was derived: sent with the value, never part of its key or its comparison."""
 
 	team: str
 	model: str
 	day: date
 	cost: Decimal
+	evidence: dict | None = field(default=None, compare=False)
 
 	@property
 	def key(self):
@@ -60,6 +63,7 @@ class ReportLine:
 			"dimension": self.model,
 			"amount": float(self.cost),
 			"currency": "USD",
+			"evidence": self.evidence,
 		}
 
 
@@ -131,7 +135,8 @@ class UsageReport:
 
 	def get_day_lines(self, day):
 		"""Summed in SQL as decimals and read as text: the database driver turns a decimal into a
-		float. The landing day's bounds are UTC; `creation` is site time."""
+		float. The landing day's bounds are UTC; `creation` is site time. Each line carries its
+		evidence, read over the same window."""
 		table, params = money_rows({}, since=site_datetime(day), until=site_datetime(day + timedelta(days=1)))
 		# `table` is fixed SQL and Usage Counter column names from money_rows; values are in `params`.
 		rows = frappe.db.sql(  # nosemgrep
@@ -141,7 +146,11 @@ class UsageReport:
 			params,
 			as_dict=True,
 		)
-		return [ReportLine(row.team, row.model, day, Decimal(row.cost or 0)) for row in rows]
+		evidence = day_evidence(day)
+		return [
+			ReportLine(row.team, row.model, day, Decimal(row.cost or 0), evidence.get((row.team, row.model)))
+			for row in rows
+		]
 
 	def is_due(self, line, row):
 		"""A refused line waits for its value to change; any other is sent until confirmed, and

@@ -60,6 +60,10 @@ class CounterTable:
 		roots = [r.name for r in self.rows if r.unit == "Mtok" and not r.base_counter and not r.part_of]
 		return roots + [r.name for r in self.rows if r.base_counter in roots]
 
+	def get_whole_of(self, root):
+		"""The `whole` counters that count `root`'s tokens: the root and its derived rows."""
+		return [counter for counter in self.whole if (self.base(counter) or counter) == root]
+
 	def base(self, counter):
 		return self.by_name[counter].base_counter or None
 
