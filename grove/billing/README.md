@@ -209,7 +209,8 @@ changes. A refused call (bad signature, bad `as_of`), a 5xx, no answer, or a rep
 Usage Report** stops it; with no Central URL or secret it sends nothing.
 
 **Each line carries its evidence.** A line also sends `evidence`: how its value was derived,
-read by `usage_evidence.DayEvidence` over the same landing window. It is recomputed with the value
+read by `usage_evidence.DayEvidence` over the same landing window (`usage_record.landing_window`)
+and team filter as the value, with the run's one `PriceBook`. It is recomputed with the value
 each run and is never part of the line's key or of the compare that decides whether a line is due,
 so a change in evidence alone sends nothing. Central keeps it in the signed report body for a
 dispute and ignores keys it does not know; Grove ignores keys it does not know in Central's reply
@@ -230,9 +231,9 @@ dispute and ignores keys it does not know; Grove ignores keys it does not know i
 | `requests` | Requests of the usage records (a correction has none). |
 | `tokens_in`, `tokens_out` | The whole prompt and completion tokens: `prompt_tokens` and `completion_tokens` with their long-prompt rows, never their cached or audio parts again. |
 | `pricings` | Per pricing the gateway charged at, usage records only: its requests, its non-zero counters, the sell rates it holds (USD per unit, `{}` for a pricing Grove does not hold) and its cost. |
-| `records` | Every record summed, corrections included: the count, SHA-256 of their names sorted and joined by `,`, and the first and last landing time. |
+| `records` | Every record summed, corrections included: the count, SHA-256 of their names sorted by byte order (`utf8mb4_bin`, not the table's case-blind collation) and joined by `,`, and the first and last landing time. |
 | `corrections` | The Grove corrections among the records: count, cost, and at most 20 Cost Discrepancy names. The line's cost is the pricings' cost plus this. |
-| `truncated` | True when part was left out: the digest (the joined names reached the 1 MB session limit, so `sha256` is omitted), or the counters and rates of every pricing (more than 8 pricings, then only the 8 costliest are kept, or over 8 KB of canonical JSON). |
+| `truncated` | True when part was left out: the digest (the joined names reached MariaDB's default 1 MB `group_concat_max_len`, so `sha256` is omitted), or the counters and rates of every pricing (more than 8 pricings, then only the 8 costliest are kept, or over 8 KB of canonical JSON). |
 
 **The 30-day window.** A landing day older than 30 days (`usage_report.WINDOW_DAYS`) is never sent,
 and its outbox row is deleted. The Usage Record purge does not ask the outbox, so a day the purge

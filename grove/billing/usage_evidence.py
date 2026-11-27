@@ -2,37 +2,34 @@
 # For license information, please see license.txt
 
 import json
-from datetime import timedelta
 from decimal import Decimal
 
 import frappe
 
-from grove.billing.doctype.usage_record.usage_record import usage_table
-from grove.billing.pricing import PriceBook
+from grove.billing.doctype.usage_record.usage_record import LANDING_WINDOW, team_clause, usage_table
 from grove.pathway.routes import utc_timestamp
-from grove.utils import site_datetime
 
 VERSION = 1
 MAXIMUM_BYTES = 8192
 MAXIMUM_PRICINGS = 8
 MAXIMUM_DISCREPANCIES = 20
+# MariaDB's default `group_concat_max_len`: joined names this long were cut.
 GROUP_CONCAT_BYTES = 1_048_576
 PROMPT_ROOT = "prompt_tokens"
 COMPLETION_ROOT = "completion_tokens"
-LANDED = """r.creation >= %(since)s and r.creation < %(until)s
-	and r.team is not null and r.team != ''"""
+LANDED = f"{LANDING_WINDOW} and {team_clause('r')}"
 IS_CORRECTION = "coalesce(r.cost_discrepancy, '') != ''"
 
 
 class DayEvidence:
 	"""How each report line of one UTC landing day was derived: per team and model, the requests,
 	tokens and cost under each pricing at its rates, a digest of the records summed, and the
-	corrections among them. Read over the same landing window as the line's value."""
+	corrections among them. `window` is the line value's landing window ({since, until})."""
 
-	def __init__(self, day, book=None):
-		self.book = book or PriceBook.load()
-		self.counters = [name for name in self.book.counters.names if name != "request_count"]
-		self.params = {"since": site_datetime(day), "until": site_datetime(day + timedelta(days=1))}
+	def __init__(self, window, book):
+		self.book = book
+		self.counters = book.counters.usage_columns
+		self.params = window
 
 	def get_lines(self):
 		"""{(team, model): evidence} for every line of the day."""
@@ -60,10 +57,9 @@ class DayEvidence:
 		)
 
 	def get_record_rows(self):
-		"""Per team and model: the records summed, the digest of their sorted names, the landing
-		span, and the corrections among them. Joined names that reach the session limit were cut,
-		so their digest is not of every record."""
-		frappe.db.sql(f"set session group_concat_max_len = {int(GROUP_CONCAT_BYTES)}")  # nosemgrep
+		"""Per team and model: the records summed, the digest of their names in byte order, the
+		landing span, and the corrections among them. Joined names that reach the session limit
+		were cut, so their digest is not of every record."""
 		# Fixed SQL only; values are in `params`.
 		return frappe.db.sql(  # nosemgrep
 			f"""select team, model, records, sha2(joined, 256) as digest,
@@ -71,7 +67,7 @@ class DayEvidence:
 			first_at, last_at, corrections, cast(correction_cost as char) as correction_cost,
 			discrepancies from (
 				select r.team, coalesce(u.model, '') as model, count(distinct r.name) as records,
-				group_concat(distinct r.name order by r.name separator ',') as joined,
+				group_concat(distinct r.name order by r.name collate utf8mb4_bin separator ',') as joined,
 				min(r.creation) as first_at, max(r.creation) as last_at,
 				count(distinct case when {IS_CORRECTION} then r.name end) as corrections,
 				sum(case when {IS_CORRECTION} then u.grove_cost else 0 end) as correction_cost,
@@ -145,8 +141,3 @@ def fit(evidence):
 def size(evidence):
 	"""Bytes of the canonical JSON: sorted keys, no spaces."""
 	return len(json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode())
-
-
-def day_evidence(day, book=None):
-	"""{(team, model): evidence} for the UTC landing `day`."""
-	return DayEvidence(day, book).get_lines()

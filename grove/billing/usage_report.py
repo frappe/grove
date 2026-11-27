@@ -8,11 +8,12 @@ import json
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from functools import cached_property
 
 import frappe
 import requests
 
-from grove.billing.doctype.usage_record.usage_record import money_rows
+from grove.billing.doctype.usage_record.usage_record import landing_window, money_rows, team_clause
 from grove.billing.doctype.usage_report_day.usage_report_day import (
 	CONFIRMED,
 	PENDING,
@@ -20,7 +21,8 @@ from grove.billing.doctype.usage_report_day.usage_report_day import (
 	UsageReportDays,
 	report_key,
 )
-from grove.billing.usage_evidence import day_evidence
+from grove.billing.pricing import PriceBook
+from grove.billing.usage_evidence import DayEvidence
 from grove.utils import site_datetime
 
 REPORT_ROUTE = "/api/method/central.billing.api.metering.report"
@@ -80,6 +82,11 @@ class UsageReport:
 		"""Taken before any record is read, so a later report always carries at least as much."""
 		return cls(frappe.get_single("Grove Settings"), datetime.now(UTC))
 
+	@cached_property
+	def book(self):
+		"""The sell rates the evidence names, read once per run."""
+		return PriceBook.load()
+
 	@property
 	def secret(self):
 		return self.settings.get_password("central_report_secret", raise_exception=False) or ""
@@ -135,20 +142,20 @@ class UsageReport:
 
 	def get_day_lines(self, day):
 		"""Summed in SQL as decimals and read as text: the database driver turns a decimal into a
-		float. The landing day's bounds are UTC; `creation` is site time. Each line carries its
-		evidence, read over the same window."""
-		table, params = money_rows({}, since=site_datetime(day), until=site_datetime(day + timedelta(days=1)))
+		float. Each line carries its evidence, read over the same landing window."""
+		window = landing_window(day)
+		table, params = money_rows({}, **window)
 		# `table` is fixed SQL and Usage Counter column names from money_rows; values are in `params`.
 		rows = frappe.db.sql(  # nosemgrep
 			f"""select team, coalesce(model, '') as model,
 			cast(sum(cost) as char) as cost from {table}
-			where team is not null and team != '' group by team, coalesce(model, '')""",
+			where {team_clause("x")} group by team, coalesce(model, '')""",
 			params,
 			as_dict=True,
 		)
-		evidence = day_evidence(day)
+		evidence = DayEvidence(window, self.book).get_lines()
 		return [
-			ReportLine(row.team, row.model, day, Decimal(row.cost or 0), evidence.get((row.team, row.model)))
+			ReportLine(row.team, row.model, day, Decimal(row.cost or 0), evidence[(row.team, row.model)])
 			for row in rows
 		]
 

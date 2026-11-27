@@ -44,6 +44,11 @@ class CounterTable:
 		return [row.name for row in self.rows]
 
 	@property
+	def usage_columns(self):
+		"""The counters a usage entry holds: all but `request_count`, which is the record's."""
+		return [name for name in self.names if name != "request_count"]
+
+	@property
 	def roots(self):
 		return [row.name for row in self.rows if not row.base_counter]
 
