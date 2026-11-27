@@ -8,7 +8,7 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import add_days, flt, get_datetime, now_datetime
 
-from grove.access import team_limits, validate_limit_rows
+from grove.access import team_limits
 from grove.billing.pricing import committed, forget_figures, lock_team, usd
 
 KEY_PREFIX = "gr_"
@@ -31,7 +31,6 @@ class GroveAPIKey(Document):
 		from frappe.types import DF
 
 		from grove.grove.doctype.model_group_row.model_group_row import ModelGroupRow
-		from grove.grove.doctype.model_limit.model_limit import ModelLimit
 
 		api_secret: DF.Password | None
 		cap: DF.Currency
@@ -40,7 +39,6 @@ class GroveAPIKey(Document):
 		expiry_from_first_use: DF.Check
 		geography: DF.Link
 		key_hash: DF.Data | None
-		limits: DF.Table[ModelLimit]
 		masked: DF.Data | None
 		model_groups: DF.TableMultiSelect[ModelGroupRow]
 		status: DF.Literal["active", "revoked"]
@@ -49,7 +47,6 @@ class GroveAPIKey(Document):
 	# end: auto-generated types
 
 	def before_insert(self):
-		self.check_key_count()
 		# Blank is no title: NULL, which the (title, team) unique index never counts as a twin.
 		self.title = self.title or None
 		full_key = KEY_PREFIX + secrets.token_hex(24)
@@ -59,20 +56,6 @@ class GroveAPIKey(Document):
 		days = EXPIRY_DAYS.get(self.expiry)
 		self.expires_at = add_days(self.creation, days) if days and not self.expiry_from_first_use else None
 		self.set_geography()
-
-	def check_key_count(self):
-		"""Rate limits are per key, so the team's key count is what bounds its throughput. The team row
-		is locked first and the count reads FOR UPDATE, so two mints at the limit serialize and the
-		second sees the first's key rather than the snapshot it started on."""
-		max_keys = team_limits(self.team, for_update=True).max_keys
-		if not max_keys:
-			return
-		active = frappe.db.sql(
-			"select count(*) from `tabGrove API Key` where team = %s and status = 'active' for update",
-			[self.team],
-		)[0][0]
-		if active >= max_keys:
-			frappe.throw(f"This team already holds {active} live keys, its limit. Revoke one first.")
 
 	def set_geography(self):
 		"""One geography per key: blank is the default one."""
@@ -85,7 +68,6 @@ class GroveAPIKey(Document):
 		forget_figures(self.team)
 
 	def validate(self):
-		validate_limit_rows(self.limits)
 		self.validate_groups()
 		if flt(self.cap) < 0:
 			frappe.throw("A cap cannot be negative.")
@@ -142,8 +124,7 @@ class GroveAPIKey(Document):
 		"""A raise or a mint keeps what the month binds of the team's spend limit within it: each
 		live key's cap or what it spent this month, whichever is more, plus what revoked keys spent
 		(`pricing.committed`). So moving a spent cap to another key, or revoking and minting afresh,
-		frees nothing. The boxes are read here, under the team row and after the key count: a mint
-		refused for its count never dials."""
+		frees nothing. The boxes are read here, under the team row."""
 		from grove.pathway.usage import peek_team
 
 		team = team_limits(self.team, for_update=True)
@@ -164,9 +145,9 @@ class GroveAPIKey(Document):
 
 	def transfer(self, to_team: str, title: str | None = None):
 		"""The trial's rules go with the trial: its own groups are cleared and its expiry lifted, so
-		what it may call is the new team's; cap, geography and limit rows stay. Counted against the new
-		team like a mint. The next tick re-pushes team, window and limits — the push at which the box
-		closes the old team's books. Refused between two teams of one cap window: the box keeps a key's
+		what it may call is the new team's; cap and geography stay. Counted against the new team like
+		a mint. The next tick re-pushes team and window — the push at which the box closes the old
+		team's books. Refused between two teams of one cap window: the box keeps a key's
 		spend under one field per window, so it would follow the key."""
 		if to_team == self.team:
 			return
@@ -181,7 +162,6 @@ class GroveAPIKey(Document):
 		title = title or self.title
 		old_team, old_title = self.team, self.title
 		self.team = to_team
-		self.check_key_count()
 		if window != "Total":
 			self.validate_cap()
 		self.title = title

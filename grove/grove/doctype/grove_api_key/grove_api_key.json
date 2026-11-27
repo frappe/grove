@@ -18,9 +18,7 @@
   "api_secret",
   "masked",
   "section_access",
-  "model_groups",
-  "section_limits",
-  "limits"
+  "model_groups"
  ],
  "fields": [
   {
@@ -68,7 +66,7 @@
   },
   {
    "default": "0",
-   "description": "What this key may spend over its team's Key Cap Window — this UTC month, or everything since the mint: the gateway counts its spend and refuses it at 402 once that reaches the cap. 0 until a cap is set, and the key is refused until then. Across the team's live keys the caps add up to no more than the team's Spend Limit.",
+   "description": "What this key may spend over its team's Key Cap Window \u2014 this UTC month, or everything since the mint: the gateway counts its spend and refuses it at 402 once that reaches the cap. 0 until a cap is set, and the key is refused until then. Across the team's live keys the caps add up to no more than the team's Spend Limit.",
    "fieldname": "cap",
    "fieldtype": "Currency",
    "in_list_view": 1,
@@ -131,18 +129,6 @@
    "fieldtype": "Table MultiSelect",
    "label": "Model Groups",
    "options": "Model Group Row"
-  },
-  {
-   "fieldname": "section_limits",
-   "fieldtype": "Section Break",
-   "label": "Rate limits"
-  },
-  {
-   "description": "Counted on the gateway, per Gateway Store, for this key alone. A window resets on the UTC clock: top of the minute, the hour, midnight, the 1st. No rows: the key runs under its team's Tier, else the default tier, else 20 requests and 100 000 tokens a minute.",
-   "fieldname": "limits",
-   "fieldtype": "Table",
-   "label": "Limits",
-   "options": "Model Limit"
   }
  ],
  "links": [
@@ -162,7 +148,7 @@
    "link_fieldname": "api_key"
   }
  ],
- "modified": "2026-11-26 12:00:00.000000",
+ "modified": "2026-11-27 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove API Key",

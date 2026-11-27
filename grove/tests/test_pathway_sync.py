@@ -231,15 +231,14 @@ class TestEffectiveGroups(unittest.TestCase):
 
 
 class TestEffectiveKeys(unittest.TestCase):
-	"""key:<hash> — the one record the gateway reads: the credential and the whole policy behind
-	it, with what is the team's (its models, payload logging, suspension) riding on each key."""
+	"""key:<hash> — the credential and the policy behind it, with the team's models riding on each
+	key; its verdicts, settings and rate limits ride the team's own record."""
 
 	def keys(
 		self,
 		keys=(),
 		rows=(),
 		groups=(),
-		limits=(),
 		teams=None,
 		default_tier=None,
 		names=None,
@@ -250,7 +249,7 @@ class TestEffectiveKeys(unittest.TestCase):
 		rows name (none: every row is a model of ours, reaching every key); `group_docs` the
 		groups with their geography (none: every group named is the keys' `in`)."""
 		self.calls, seen = {}, {}
-		teams = [frappe._dict(name="T-1", log_payloads=0, suspended=0)] if teams is None else teams
+		teams = [frappe._dict(name="T-1")] if teams is None else teams
 		if group_docs is None:
 			group_docs = [
 				frappe._dict(name=g, geography="in") for g in dict.fromkeys(r.model_group for r in groups)
@@ -271,10 +270,6 @@ class TestEffectiveKeys(unittest.TestCase):
 				return list(models)
 			if doctype == "Model Group":
 				return list(group_docs)
-			if doctype == "Model Limit":
-				return [
-					row for row in limits if row.get("parenttype", "Grove API Key") == filters["parenttype"]
-				]
 			raise AssertionError(f"unexpected get_all({doctype})")
 
 		with (
@@ -298,7 +293,7 @@ class TestEffectiveKeys(unittest.TestCase):
 			}
 		)
 
-	def test_a_key_carries_its_teams_groups_deltas_and_verdict(self):
+	def test_a_key_carries_its_teams_groups_and_deltas_and_none_of_its_verdicts(self):
 		[key] = self.keys(
 			[self.key()],
 			[
@@ -306,7 +301,7 @@ class TestEffectiveKeys(unittest.TestCase):
 				frappe._dict(parent="T-1", model_key="qwen3-35b", parentfield="deny"),
 			],
 			[frappe._dict(parent="T-1", model_group="acme")],
-			teams=[frappe._dict(name="T-1", log_payloads=1, suspended=1, cap_message="trial over")],
+			teams=[frappe._dict(name="T-1", key_cap_window="Total")],
 		)
 		self.assertEqual(
 			key,
@@ -318,13 +313,9 @@ class TestEffectiveKeys(unittest.TestCase):
 				"group": "acme",
 				"allow": "qwen3-4b",
 				"deny": "qwen3-35b",
-				"limited": True,
-				"log_payloads": True,
 				"geography": "in",
 				"budget": 0,
-				"budget_window": "month",
-				"cap_message": "trial over",
-				"limits": "requests:1m:20,total_tokens:1m:100000",
+				"budget_window": "total",
 			},
 		)
 
@@ -367,12 +358,8 @@ class TestEffectiveKeys(unittest.TestCase):
 	def test_a_key_that_grants_nothing_is_still_pushed_as_blank(self):
 		[key] = self.keys([self.key()])
 		self.assertEqual((key["group"], key["allow"], key["deny"]), ("", "", ""))
-		self.assertIs(key["limited"], False)
-		self.assertIs(key["log_payloads"], False)
-		self.assertEqual(key["limits"], "requests:1m:20,total_tokens:1m:100000")
-		open_tier = frappe._dict(name="T-1", log_payloads=0, suspended=0, tier="Open")
-		[key] = self.keys([self.key()], teams=[open_tier])
-		self.assertEqual(key["limits"], "")
+		self.assertEqual(key["budget_window"], "month")
+		self.assertFalse({"limits", "key_limits"} & set(key), "limits ride the team's record")
 
 	def test_one_row_query_covers_every_key(self):
 		keys = self.keys(
@@ -385,7 +372,7 @@ class TestEffectiveKeys(unittest.TestCase):
 				frappe._dict(parent="T-1", model_group="acme"),
 				frappe._dict(parent="T-2", model_group="beta"),
 			],
-			teams=[frappe._dict(name=t, log_payloads=0, suspended=0) for t in ("T-1", "T-2")],
+			teams=[frappe._dict(name=t) for t in ("T-1", "T-2")],
 		)
 		self.assertEqual([k["allow"] for k in keys], ["m1", "m2"])
 		self.assertEqual([k["group"] for k in keys], ["acme", "beta"])
@@ -395,10 +382,8 @@ class TestEffectiveKeys(unittest.TestCase):
 				"Grove API Key": 1,
 				"Grove Team": 1,
 				"Grove Model Row": 1,
-				"Model": 1,
 				"Model Group Row": 2,
 				"Model Group": 1,
-				"Model Limit": 2,
 			},
 		)
 
@@ -430,54 +415,9 @@ class TestEffectiveKeys(unittest.TestCase):
 			[("acme", "frappe/qwen3-4b,openai/gpt-5", ""), ("europa", "frappe/qwen3-4b", "openai/gpt-5-eu")],
 		)
 
-	def test_limits_are_one_sorted_comma_list(self):
-		"""pathway, internal/domain/limit.go `ParseLimits`: metric:window:value, comma-joined."""
-		[key] = self.keys(
-			[self.key()],
-			limits=[
-				frappe._dict(parent="KEY-1", metric="total_tokens", window="1h", value=50000),
-				frappe._dict(parent="KEY-1", metric="requests", window="1m", value=200),
-			],
-		)
-		self.assertEqual(key["limits"], "requests:1m:200,total_tokens:1h:50000")
-
-	def test_a_limit_edit_rehashes_only_that_keys_bucket(self):
-		keys = [self.key("KEY-1", "abc"), self.key("KEY-2", "abd")]
-		limit = frappe._dict(parent="KEY-1", metric="requests", window="1m", value=5)
-		before = snapshot.bucketed_section(self.keys(keys), "key_hash")["buckets"]
-		after = snapshot.bucketed_section(self.keys(keys, limits=[limit]), "key_hash")["buckets"]
-		changed = {label for label in before if before[label]["hash"] != after[label]["hash"]}
-		self.assertEqual(changed, {snapshot.bucket_of("abc")})
-
 	def test_a_key_carries_its_cap_in_nano_usd(self):
 		[key] = self.keys([self.key(cap=Decimal("7.5"))])
 		self.assertEqual(key["budget"], 7_500_000_000)
-
-	def test_limits_are_the_keys_own_else_its_tiers_else_the_defaults(self):
-		tiered = frappe._dict(name="T-2", log_payloads=0, suspended=0, tier="Growth")
-		keys = self.keys(
-			[
-				self.key("KEY-1", "abc"),
-				self.key("KEY-2", "abd", team="T-2"),
-				self.key("KEY-3", "abe", team="T-2"),
-			],
-			limits=[
-				frappe._dict(
-					parenttype="Grove API Key", parent="KEY-3", metric="requests", window="1m", value=5
-				),
-				frappe._dict(parenttype="Tier", parent="Growth", metric="requests", window="1m", value=60),
-			],
-			teams=[frappe._dict(name="T-1", log_payloads=0, suspended=0), tiered],
-		)
-		self.assertEqual(
-			[k["limits"] for k in keys],
-			["requests:1m:20,total_tokens:1m:100000", "requests:1m:60", "requests:1m:5"],
-		)
-
-	def test_a_team_with_no_tier_runs_under_the_default_tier(self):
-		growth = frappe._dict(parenttype="Tier", parent="Growth", metric="requests", window="1m", value=60)
-		[key] = self.keys([self.key()], limits=[growth], default_tier="Growth")
-		self.assertEqual(key["limits"], "requests:1m:60")
 
 	def test_every_key_carries_its_pin(self):
 		keys = self.keys([self.key("KEY-1", "abc", geography="eu"), self.key("KEY-2", "abd", geography=None)])
@@ -506,6 +446,173 @@ class TestEffectiveKeys(unittest.TestCase):
 	def test_no_names_is_no_key_and_no_query(self):
 		self.assertEqual(self.keys([self.key()], names=[]), [])
 		self.assertEqual(self.calls, {})
+
+
+class TestEffectiveTeams(unittest.TestCase):
+	"""team:<name> — what is the team's and read beside each of its keys: its suspension, payload
+	logging, cap message and its tier's rate limit rows, once per team however many keys it holds."""
+
+	def teams(self, teams, limits=(), tiers=(), default_tier=None, names=None, models=(), geography=""):
+		"""`models` are the docs the limit rows link; `tiers` are (name, limit scope) pairs."""
+		self.filters = {}
+		answers = {"Grove Team": teams, "Model": models, "Tier": tiers}
+
+		def get_all(doctype, filters=None, **kwargs):
+			self.filters[doctype] = filters
+			if doctype in ("Model Limit", "Key Limit"):
+				table = "key_limits" if doctype == "Key Limit" else "limits"
+				return [
+					row
+					for row in limits
+					if row.parentfield == table and row.get("parenttype", "Tier") == filters["parenttype"]
+				]
+			return list(answers[doctype])
+
+		with (
+			unittest.mock.patch.object(frappe, "get_all", side_effect=get_all),
+			unittest.mock.patch.object(access, "default_tier", return_value=default_tier),
+		):
+			return snapshot.effective_teams(names, geography)
+
+	def team(self, name="T-1", **fields):
+		fields = {"suspended": 0, "log_payloads": 0, "cap_message": None, "tier": None, **fields}
+		return frappe._dict({"name": name, **fields})
+
+	def tier_row(self, tier="Growth", **fields):
+		row = {"parent": tier, "parentfield": "limits", "metric": "requests", "window": "1m", "value": 60}
+		return frappe._dict({**row, **fields})
+
+	def test_a_team_carries_its_verdicts_and_its_tiers_rows_sorted_by_name(self):
+		"""pathway, internal/transport/http/admin.go `adminTeam`: team, limited, log_payloads,
+		cap_message, limits, key_limits. It refuses a field it does not know."""
+		trial = self.team("T-1", suspended=1, log_payloads=1, cap_message="trial over")
+		teams = self.teams(
+			[self.team("T-2", tier="Growth"), trial],
+			limits=[self.tier_row(), self.tier_row(model_key="openai/gpt-6-luna", value=6)],
+		)
+		self.assertEqual(
+			teams,
+			[
+				{
+					"team": "T-1",
+					"limited": True,
+					"log_payloads": True,
+					"cap_message": "trial over",
+					"limits": "requests:1m:20,total_tokens:1m:100000",
+					"key_limits": "",
+				},
+				{
+					"team": "T-2",
+					"limited": False,
+					"log_payloads": False,
+					"cap_message": "",
+					"limits": "requests:1m:60,requests:1m:6:openai/gpt-6-luna",
+					"key_limits": "",
+				},
+			],
+		)
+
+	def test_limits_are_one_sorted_comma_list_with_the_model_last(self):
+		"""pathway, internal/domain/limit.go `ParseLimits`: metric:window:value[:model], comma-joined;
+		the model last so a key holding a colon still splits there."""
+		[team] = self.teams(
+			[self.team(tier="Growth")],
+			limits=[
+				self.tier_row(metric="total_tokens", window="1h", value=50000),
+				self.tier_row(model_key="openai/gpt-6-luna", value=10),
+				self.tier_row(value=200),
+			],
+		)
+		self.assertEqual(
+			team["limits"], "requests:1m:200,total_tokens:1h:50000,requests:1m:10:openai/gpt-6-luna"
+		)
+
+	def test_a_teams_own_rows_are_laid_over_its_tiers_row_by_row(self):
+		own = [
+			self.tier_row("T-1", parenttype="Grove Team", value=9),
+			self.tier_row("T-1", parenttype="Grove Team", model_key="openai/gpt-6-luna", value=0),
+		]
+		teams = self.teams(
+			[self.team("T-1", tier="Growth"), self.team("T-2", tier="Growth")],
+			limits=[self.tier_row(), self.tier_row(window="1h", value=600), *own],
+		)
+		self.assertEqual(
+			[team["limits"] for team in teams],
+			[
+				"requests:1h:600,requests:1m:9,requests:1m:0:openai/gpt-6-luna",
+				"requests:1h:600,requests:1m:60",
+			],
+		)
+
+	def test_a_tier_counting_per_key_sends_its_per_key_table_as_key_limits_alone(self):
+		rows = [
+			self.tier_row(),
+			self.tier_row("Trial"),
+			self.tier_row("Trial", parentfield="key_limits", value=6),
+			self.tier_row("T-2", parenttype="Grove Team", value=9),
+			self.tier_row("T-2", parenttype="Grove Team", parentfield="key_limits", window="1h", value=2),
+		]
+		teams = self.teams(
+			[self.team("T-1", tier="Growth"), self.team("T-2", tier="Trial"), self.team("T-3", tier="Trial")],
+			limits=rows,
+			tiers=[("Growth", "Team"), ("Trial", "Key")],
+		)
+		self.assertEqual(
+			[(team["limits"], team["key_limits"]) for team in teams],
+			[("requests:1m:60", ""), ("", "requests:1h:2,requests:1m:6"), ("", "requests:1m:6")],
+		)
+
+	def test_a_team_with_no_tier_runs_under_the_default_tier(self):
+		[team] = self.teams([self.team()], limits=[self.tier_row()], default_tier="Growth")
+		self.assertEqual(team["limits"], "requests:1m:60")
+
+	def test_a_row_reaches_only_the_gateways_of_its_models_geography(self):
+		"""A row linking a vendor's doc holds in that doc's geography; one linking a model of ours,
+		or none, holds in every one."""
+		rows = [
+			self.tier_row(),
+			self.tier_row(model="M-IN", model_key="openai/gpt-6-luna", value=6),
+			self.tier_row(model="M-EU", model_key="openai/gpt-6-luna", value=9),
+			self.tier_row(model="M-OURS", model_key="frappe/qwen3-4b", value=4),
+		]
+		models = [
+			frappe._dict(name="M-IN", geography="in"),
+			frappe._dict(name="M-EU", geography="eu"),
+			frappe._dict(name="M-OURS", geography=None),
+		]
+		pushed = {
+			geography: self.teams([self.team(tier="Growth")], rows, models=models, geography=geography)[0][
+				"limits"
+			]
+			for geography in ("in", "eu", "")
+		}
+		everywhere = "requests:1m:60,requests:1m:4:frappe/qwen3-4b"
+		self.assertEqual(
+			pushed,
+			{
+				"in": everywhere + ",requests:1m:6:openai/gpt-6-luna",
+				"eu": everywhere + ",requests:1m:9:openai/gpt-6-luna",
+				"": everywhere,
+			},
+		)
+		self.assertEqual(self.filters["Model"], {"name": ("in", ["M-EU", "M-IN", "M-OURS"])})
+
+	def test_a_tier_with_no_rows_is_pushed_blank(self):
+		[team] = self.teams([self.team(tier="Open")])
+		self.assertEqual(team["limits"], "")
+
+	def test_named_teams_narrow_the_read_and_no_names_is_no_query(self):
+		self.teams([self.team()], names=["T-1"])
+		self.assertEqual(self.filters["Grove Team"], {"name": ("in", ["T-1"])})
+		self.assertEqual(self.teams([self.team()], names=[]), [])
+		self.assertEqual(self.filters, {})
+
+	def test_a_tier_edit_rehashes_the_teams_under_it_alone(self):
+		teams = [self.team("T-1", tier="Growth"), self.team("T-2", tier="Open")]
+		before = snapshot.bucketed_section(self.teams(teams, [self.tier_row()]), "team")["buckets"]
+		after = snapshot.bucketed_section(self.teams(teams, [self.tier_row(value=90)]), "team")["buckets"]
+		changed = {label for label in before if before[label]["hash"] != after[label]["hash"]}
+		self.assertEqual(changed, {snapshot.bucket_of("T-1")})
 
 
 class TestSnapshotHashes(unittest.TestCase):
@@ -586,12 +693,13 @@ class TestDelta(unittest.TestCase):
 
 	def test_a_partial_tick_prunes_only_among_the_buckets_it_rebuilt(self):
 		old = self.snapshot([self.key("aa"), self.key("bb")])
-		delta = snapshot.snapshot_delta(self.snapshot(), self.hashes(old), labels={snapshot.bucket_of("bb")})
+		labels = {"keys": {snapshot.bucket_of("bb")}}
+		delta = snapshot.snapshot_delta(self.snapshot(), self.hashes(old), labels=labels)
 		self.assertEqual(delta, {"keys": {"buckets": {snapshot.bucket_of("bb"): {"records": []}}}})
 
 	def test_a_partial_tick_still_sends_a_rebuilt_bucket_the_box_lacks(self):
 		new = self.snapshot([self.key("aa")])
-		delta = snapshot.snapshot_delta(new, {}, labels={snapshot.bucket_of("aa")})
+		delta = snapshot.snapshot_delta(new, {}, labels={"keys": {snapshot.bucket_of("aa")}})
 		self.assertEqual(list(delta["keys"]["buckets"]), [snapshot.bucket_of("aa")])
 
 	def test_a_changed_flat_section_is_sent_whole(self):
@@ -742,6 +850,7 @@ class TestCheckState(unittest.TestCase):
 
 	def check(self, remote):
 		with (
+			unittest.mock.patch.object(snapshot, "teams_section", return_value={}),
 			unittest.mock.patch.object(snapshot, "keys_section", return_value={}),
 			unittest.mock.patch.object(snapshot, "gateway_snapshot", return_value=self.SNAPSHOT),
 			unittest.mock.patch.object(snapshot, "gateway_geography", return_value="in"),
@@ -839,6 +948,7 @@ class TestSyncProjection(unittest.TestCase):
 				"read_hashes",
 				side_effect=lambda targets: {t: remote.get(t.name, {}) for t in targets},
 			),
+			unittest.mock.patch.object(snapshot, "teams_section", return_value={"buckets": {}}),
 			unittest.mock.patch.object(snapshot, "keys_section", return_value={"buckets": {}}),
 			unittest.mock.patch.object(snapshot, "gateway_snapshot", return_value=self.SNAPSHOT),
 			unittest.mock.patch.object(snapshot, "gateway_geography", return_value="in"),

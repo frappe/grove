@@ -56,7 +56,7 @@ gateways cannot jointly overrun one replica.
 | `monitoring.py` / `log_relay.py` | The scrape targets a Monitoring Agent pulls, and streaming an engine's log onto an open form. |
 | `failure.py` | `@reports_failure` — a long job that dies marks its doc Broken and says why. |
 | `api/` | The whitelisted surface the control clients (Central, Press) call, one module per subject: `control` (enrollment), `teams`, `keys`, `catalog` (geographies, models), `usage` (usage, figures, pulls). Two gates on each, neither standing in for the other: `control.for_control_clients` checks the role, and what the endpoint hands out or changes is checked against the caller's doc permissions (`frappe.get_list`, a load with `check_permission`, a plain save) before it reads a cache, sums in SQL, asks a store or writes without a save; `tests/test_api_permissions.py` holds each with the other off. `create_control_client_key` is the role's alone, as it touches only the caller's own User. A client reaches these endpoints and nothing else of the site (`auth.py`). What is one client's alone — Press's trial policy, Central's pool of pre-minted trial keys — is what it sends per mint (title, cap, expiry and whether it counts from first use), not code here. `keys.transfer_key` hands a trial's key to the team that converted; what moves is in the `Grove API Key` row of [`grove/doctype/README.md`](grove/doctype/README.md). |
-| `auth.py` | `hook`, an `auth_hooks` entry: only an operator (System Manager) has the run of the site. Every other signed-in caller, a control client or a user with any other role or none, is refused every path but `/api/method/grove.api.`: Frappe lets any signed-in user call whatever is whitelisted, and this keeps Grove's own whitelisted methods, `/api/resource`, `frappe.client`, Desk buttons and pages to operators. The control role's write on `Grove Team` and `Grove API Key` is there so the endpoints run under permission checks; a field that is the operator's (`suspended_at_grove`, `max_keys`) stays out of a client's reach. A guest is left to Frappe, which serves one only what is whitelisted for guests: of Grove's, the two enrollment calls in `api/` and `monitoring.targets` (its own token), a list a test pins. |
+| `auth.py` | `hook`, an `auth_hooks` entry: only an operator (System Manager) has the run of the site. Every other signed-in caller, a control client or a user with any other role or none, is refused every path but `/api/method/grove.api.`: Frappe lets any signed-in user call whatever is whitelisted, and this keeps Grove's own whitelisted methods, `/api/resource`, `frappe.client`, Desk buttons and pages to operators. The control role's write on `Grove Team` and `Grove API Key` is there so the endpoints run under permission checks; a field that is the operator's (`suspended_at_grove`) stays out of a client's reach. A guest is left to Frappe, which serves one only what is whitelisted for guests: of Grove's, the two enrollment calls in `api/` and `monitoring.targets` (its own token), a list a test pins. |
 | `grove/page/usage/` | The Usage page (`/app/usage`, System Manager): fleet-wide usage by team, key and model over a window, each team against its tier and each key against its cap, the last sync of each kind, what is open for a human (Stuck Usage, Cost Discrepancy, pending Gateway Spend Adjustment), and every vendor key's counters under their requests per UTC day of the pull (stacked by outcome, key or provider), all read off `money_rows`, `key_rows`, `month_spent_by` and the log doctypes. **Gateway check** alone dials the boxes (`usage.peek_team`), on a button. A Frappe UI page: `usage.vue` beside `usage.json`, built by `bench build` into framework's `page-island` dist (once per bench: `yarn install --cwd apps/frappe/ui/vite/island/toolchain`). Its pickers are frappe-ui Selects off one `filter_options` read, not searching Links: frappe-ui's Combobox closes on the option's focus inside a shadow root (reka-ui's `ComboboxInput` reads `document.activeElement`), so a Link never takes a pick there until reka-ui reads the root node; the reads are `usage.py`. Grove Team and Grove API Key forms link into it filtered. |
 | `utils.py` | Slugs, paths. |
 
@@ -64,11 +64,11 @@ gateways cannot jointly overrun one replica.
 
 The agent's admin API is token-gated (`X-Grove-Admin-Token`) at
 `<box>/grove-admin/{state,state-hash,usage}`. The push is **desired state, whole, and absence
-prunes**: `POST state` carries any subset of the three sections (groups, keys, routes),
+prunes**: `POST state` carries any subset of the four sections (groups, teams, keys, routes),
 each stamped with a hash the agent stores in `grove:state_hash` and returns from `GET state-hash`.
 The tick pushes only sections whose hash the box does not already hold; a wiped Redis holds no
-hashes, so the next tick re-pushes everything — that IS the repair path. `keys` is
-split into 256 buckets (`pathway.snapshot.bucket_of`) hashed independently, so one key minted re-pushes
+hashes, so the next tick re-pushes everything — that IS the repair path. `teams` and `keys` are
+each split into 256 buckets (`pathway.snapshot.bucket_of`) hashed independently, so one key minted re-pushes
 one bucket, not the population. The full contract lives in `plan_agent_state_sync.md` at the
 repo root.
 
@@ -105,7 +105,8 @@ fleet gets re-pushed over row order. Order means nothing on the wire; it exists 
 
 | Redis key | Written by | Holds |
 |---|---|---|
-| `key:<sha256(secret)>` | state push (keys) + the agent | the whole policy: `team`, `group` (comma list: its team's groups of its geography, and its own), `allow`/`deny` (its team's rows that reach its geography; a model of ours reaches every geography), `geography`, `limits` (its team's Tier's, else the default tier's, else the defaults, with the key's own rows replacing the tier's on the metrics they name), `budget` (its monthly cap), `limited`, `log_payloads`; the agent's own `spent:<YYYY-MM>`, this month's spend |
+| `key:<sha256(secret)>` | state push (keys) + the agent | the whole policy: `team`, `group` (comma list: its team's groups of its geography, and its own), `allow`/`deny` (its team's rows that reach its geography; a model of ours reaches every geography), `geography`, `budget` (its cap) and `budget_window`; the agent's own `spent:<YYYY-MM>`, this month's spend |
+| `team:<Grove Team>` | state push (teams) | what is the team's, read beside each of its keys: `limited`, `log_payloads`, `cap_message`, and its rate limit rows (its Tier's, else the default tier's, else the defaults, with the team's own laid over them; a row at 0 is no limit there) as `limits`, counted per model for the team as a whole, or as `key_limits`, counted under each of its keys on its own with every model together (those rows name no model), by its Tier's Limits Count Per (each scope has its own table of rows) |
 | `model_group:<name>` | state push (groups) | the model grant for everyone in it |
 | `deploy:<model>` | state push (routes) | every placement of one model |
 | `grove:state_hash` | state push | per-section/bucket hashes of what the box holds |
@@ -206,7 +207,7 @@ charged beside what the vendor billed.
 
 ## The catalog (`catalog/`)
 
-Providers, vendor models and their prices ship in `catalog/catalog.json`, not in `fixtures/`: a
+Providers, vendor models and their prices, and the tier ladder with its rate limits, ship in `catalog/catalog.json`, not in `fixtures/`: a
 migrate deletes and re-inserts every fixture doc, which wipes its API key and resets what the
 operator set. The file is authored, not dumped from a site: the counter table, `Main`, and the
 vendors we sell — openai (`gpt-6-luna`, `gpt-6-sol`), anthropic (`claude-sonnet-5-5`), baseten
@@ -220,7 +221,11 @@ never overwrites what an operator set. Before a vendor or a model is added, walk
 - `seed.insert_missing()` runs after install and after every migrate. It inserts a geography,
   cloud account (keyless, for the operator to fill), region or model the site has no doc
   named for, a provider the site has no record named for in any geography, and a `Denied Tool`
-  pair the site lacks. It never updates and never deletes.
+  pair the site lacks. It never deletes, and updates one thing: a catalog tier's limit rows
+  (`sync_tier`, after the models so a row's model key can be checked) are the file's, rewritten
+  when they differ in the table the tier's Limits Count Per counts with; a tier's `spend_limit`
+  and that scope stay the operator's once the tier exists (the file's `limit_scope` is read when
+  a tier is first inserted).
 - `denied_tools` is what a vendor bills outside the token counts, and only that: Anthropic's web
   search ($10 per 1,000 searches) and code execution (container hours), OpenAI's `web_search_options`
   and the Responses API's priced hosted tools (web search, file search, code interpreter, image
@@ -242,13 +247,13 @@ never overwrites what an operator set. Before a vendor or a model is added, walk
 - `bench --site <site> execute grove.catalog.export.write` rewrites the file from the site: every
   provider once (no API key, a vendor's geography set to `Main`), every denied tool, vendor models only,
   each with the rows of its Enabled pricing, the one geography `Main`, every cloud account's type
-  (no key), every region, and every model group with the exported models it grants (no `is_default`, no geography).
+  (no key), every region, every tier with its spend limit and rows, and every model group with the exported models it grants (no `is_default`, no geography).
 
 ## Scheduled jobs (`hooks.py`)
 
 | When | Job | Note |
 |---|---|---|
-| `*/1` | `pathway.projection.sync_projection` | stamp-bounded and hash-gated: rebuilds only the key buckets a save moved since the stores' `last_synced_at`, reads every box's hashes, pushes each box only what it does not already hold; a fleet in sync logs nothing and builds no key record. Also sends each store the spend adjustments it is owed (Pending `Gateway Spend Adjustment` rows) |
+| `*/1` | `pathway.projection.sync_projection` | stamp-bounded and hash-gated: rebuilds only the team and key buckets a save moved since the stores' `last_synced_at`, reads every box's hashes, pushes each box only what it does not already hold; a fleet in sync logs nothing and builds no key record. Also sends each store the spend adjustments it is owed (Pending `Gateway Spend Adjustment` rows) |
 | `*/2` | `cloud_provider.reconcile.sync_all` | the provider owns whether a pod is up; this closes the drift |
 | `0 */6` | `pathway.key_stats.pull_all` | one Provider Key Stats row per key per store: what it answered since the last pull, cleared on the gateway as it is read |
 | hourly | `pathway.usage.pull_all` | a store is drained once, through its first writer that answers; recorded, billed, then what landed is acked. A failed pull loses nothing: the box re-sends every unacked pair. Also Gateway Server → **Pull Usage**, Stuck Usage → **Pull Now**, and `api.usage.pull_usage(team)` for one team, which answers its `figures` afresh (2 an hour per team, counted in the site cache; the rest are not limited) |

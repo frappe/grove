@@ -6,6 +6,7 @@ from pathlib import Path
 
 import frappe
 
+from grove.access import LIMIT_TABLES
 from grove.grove.doctype.model_id.model_id import ensure_model_id
 
 CATALOG = Path(__file__).with_name("catalog.json")
@@ -31,12 +32,6 @@ def insert_missing(path=None):
 		insert_named("Cloud Provider", cloud_provider, ignore_mandatory=True)
 	for region in catalog.get("regions", []):
 		insert_named("Region", region)
-	for tier in catalog.get("tiers", []):
-		insert_named("Tier", tier)
-	if (default := catalog.get("default_tier")) and not frappe.db.get_single_value(
-		"Grove Settings", "default_tier"
-	):
-		frappe.db.set_single_value("Grove Settings", "default_tier", default)
 	for provider in catalog["providers"]:
 		if not frappe.db.exists("Model Provider", {"provider_name": provider["provider_name"]}):
 			frappe.get_doc({"doctype": "Model Provider", **provider}).insert()
@@ -50,6 +45,53 @@ def insert_missing(path=None):
 	}
 	for group in catalog.get("model_groups", []):
 		insert_model_group(group, docs)
+	for tier in catalog.get("tiers", []):
+		sync_tier(tier)
+	if (default := catalog.get("default_tier")) and not frappe.db.get_single_value(
+		"Grove Settings", "default_tier"
+	):
+		frappe.db.set_single_value("Grove Settings", "default_tier", default)
+
+
+def tier_rows(entry):
+	"""A catalog tier's rows as its doc holds them: a model key becomes one row per doc of it."""
+	rows = []
+	for row in entry.get("limits", []):
+		limit = {field: row[field] for field in ("metric", "window", "value")}
+		if not row.get("model_key"):
+			rows.append(limit)
+			continue
+		filters = {"model_key": row["model_key"]}
+		if row.get("geography"):
+			filters["geography"] = row["geography"]
+		models = frappe.get_all("Model", filters=filters, pluck="name")
+		if not models:
+			frappe.throw(f"Tier {entry['name']}: no model matches the limit row {row}.")
+		rows += [{**limit, "model": model} for model in models]
+	return rows
+
+
+def row_ids(rows):
+	return sorted((r.get("model") or "", r.get("metric"), r.get("window"), r.get("value")) for r in rows)
+
+
+def sync_tier(entry):
+	"""Inserted when the site lacks it, else its rows rewritten when they differ. `spend_limit` and
+	the scope stay the operator's once the tier exists."""
+	rows = tier_rows(entry)
+	try:
+		doc = frappe.get_doc("Tier", entry["name"])
+	except frappe.DoesNotExistError:
+		frappe.clear_last_message()
+		doc = None
+	table = LIMIT_TABLES[(doc.limit_scope if doc else entry.get("limit_scope")) or "Team"]
+	if table == "key_limits" and any(row.get("model") for row in rows):
+		frappe.throw(f"Tier {entry['name']} counts per key, every model together: its rows name no model.")
+	if doc is None:
+		frappe.get_doc({"doctype": "Tier", **entry, "limits": [], table: rows}).insert()
+	elif row_ids(doc.get(table)) != row_ids(rows):
+		doc.set(table, rows)
+		doc.save()
 
 
 def insert_named(doctype, entry, ignore_mandatory=False):

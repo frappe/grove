@@ -4,6 +4,7 @@
 import frappe
 from frappe.model.document import Document
 
+from grove.access import LIMIT_TABLES, limit_scopes, validate_limit_rows
 from grove.billing.pricing import forget_figures
 
 
@@ -22,21 +23,29 @@ class GroveTeam(Document):
 		from frappe.types import DF
 
 		from grove.grove.doctype.grove_model_row.grove_model_row import GroveModelRow
+		from grove.grove.doctype.key_limit.key_limit import KeyLimit
 		from grove.grove.doctype.model_group_row.model_group_row import ModelGroupRow
+		from grove.grove.doctype.model_limit.model_limit import ModelLimit
 
 		allow: DF.TableMultiSelect[GroveModelRow]
 		cap_message: DF.SmallText | None
 		deny: DF.TableMultiSelect[GroveModelRow]
 		key_cap_window: DF.Literal["Monthly", "Total"]
+		key_limits: DF.Table[KeyLimit]
 		last_reported_at: DF.Datetime | None
+		limit_scope: DF.Data | None
+		limits: DF.Table[ModelLimit]
 		log_payloads: DF.Check
-		max_keys: DF.Int
 		model_groups: DF.TableMultiSelect[ModelGroupRow]
-		override_max_keys: DF.Check
 		suspended: DF.Check
 		suspended_at_grove: DF.Check
 		tier: DF.Link | None
 	# end: auto-generated types
+
+	@property
+	def limit_scope(self):
+		"""Its tier's: a virtual field, read by the form to show the matching override table."""
+		return limit_scopes({self.name: self.tier})[self.name]
 
 	def before_insert(self):
 		"""A Total team is an operator's to make: the control role inserts teams too."""
@@ -51,8 +60,6 @@ class GroveTeam(Document):
 				self.append("model_groups", {"model_group": group})
 
 	def validate(self):
-		if (self.max_keys or 0) < 0:
-			frappe.throw("Max Keys cannot be negative; 0 is no limit.")
 		# By doc, not key: one vendor key is a doc per geography, allowed in one and denied in another.
 		denied = {row.model for row in self.deny}
 		both = sorted(row.model_key for row in self.allow if row.model in denied)
@@ -61,6 +68,8 @@ class GroveTeam(Document):
 		# Central's sync writes `suspended` as it sees the team; Grove's hold outranks it.
 		if self.suspended_at_grove:
 			self.suspended = 1
+		for table in LIMIT_TABLES.values():
+			validate_limit_rows(self.get(table))
 
 	def on_update(self):
 		forget_figures(self.name)

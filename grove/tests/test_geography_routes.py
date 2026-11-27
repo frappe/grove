@@ -149,7 +149,6 @@ class TestEveryKeyCarriesItsPin(unittest.TestCase):
 		with (
 			patch.object(snapshot, "model_rows", return_value={}),
 			patch.object(snapshot, "group_rows", return_value={}),
-			patch.object(snapshot, "effective_limits", return_value={}),
 			patch.object(frappe, "get_all", side_effect=get_all),
 		):
 			return {key["prefix"]: key for key in snapshot.effective_keys()}
@@ -180,14 +179,15 @@ class TestEveryKeyCarriesItsPin(unittest.TestCase):
 
 
 class TestOneSnapshotPerGeography(unittest.TestCase):
-	"""One snapshot per geography: only the routes differ between them, and every store is pushed
-	the same budget, so gateways on different Redises in one geography share it."""
+	"""One snapshot per geography: the routes and the team records differ between them (a limit row
+	holds where its model does), and every store is pushed the same budget, so gateways on
+	different Redises in one geography share it."""
 
 	def test_each_geography_is_built_once_and_shared_by_its_gateways(self):
 		built, pushed = [], []
 		geographies = {"gw-in-1": "in", "gw-in-2": "in", "gw-in-3": "in", "gw-eu-1": "eu"}
 
-		def build(geography, _keys):
+		def build(geography, _teams, _keys):
 			built.append(geography)
 			return {"routes": {"table": geography, "hash": geography}}
 
@@ -204,7 +204,8 @@ class TestOneSnapshotPerGeography(unittest.TestCase):
 			patch.object(projection, "read_hashes", side_effect=lambda targets: {t: {} for t in targets}),
 			patch.object(frappe.utils, "now_datetime", lambda: datetime(2026, 8, 16, 0, 1)),
 			patch.object(snapshot, "gateway_geography", side_effect=geographies.get),
-			patch.object(snapshot, "keys_section", return_value={"buckets": {}}),
+			patch.object(snapshot, "teams_section", return_value={"buckets": {}}) as teams,
+			patch.object(snapshot, "keys_section", return_value={"buckets": {}}) as keys,
 			patch.object(snapshot, "gateway_snapshot", side_effect=build),
 			patch.object(Target, "resolve", side_effect=lambda kind, name: Target(kind, name, "u", "t")),
 			patch.object(projection, "push_target", side_effect=push_target),
@@ -222,6 +223,8 @@ class TestOneSnapshotPerGeography(unittest.TestCase):
 		):
 			projection.sync_projection()
 		self.assertEqual(sorted(built), ["eu", "in"])
+		self.assertEqual(sorted(call.args[1] for call in teams.call_args_list), ["eu", "in"])
+		keys.assert_called_once()
 		self.assertEqual(
 			sorted(pushed), [("gw-eu-1", "eu"), ("gw-in-1", "in"), ("gw-in-2", "in"), ("gw-in-3", "in")]
 		)

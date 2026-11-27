@@ -10,6 +10,7 @@ group from invalidating every key beneath it."""
 import frappe
 from frappe.utils import flt
 
+LIMIT_TABLES = {"Team": "limits", "Key": "key_limits"}
 DEFAULT_LIMITS = (
 	{"metric": "requests", "window": "1m", "value": 20},
 	{"metric": "total_tokens", "window": "1m", "value": 100_000},
@@ -23,20 +24,14 @@ def default_tier():
 
 def team_limits(team, for_update=False):
 	"""What gates `team`'s keys: `key_cap_window` (what each cap counts: the month, or everything
-	since the mint) and the tier's `max_keys` / `spend_limit` (the default tier's when it has none;
-	without either, 0 and 0: no key limit, and no cap can be set). `max_keys` is the team's own
-	under Override Max Keys. The tier comes off the doc cache: a save clears it."""
-	fields = ["suspended", "log_payloads", "key_cap_window", "tier", "override_max_keys", "max_keys"]
+	since the mint) and the tier's `spend_limit` (the default tier's when it has none; without
+	either, 0: no cap can be set). The tier comes off the doc cache: a save clears it."""
+	fields = ["suspended", "log_payloads", "key_cap_window", "tier"]
 	row = (
 		frappe.db.get_value("Grove Team", team, fields, as_dict=True, for_update=for_update) or frappe._dict()
 	)
 	tier = row.tier or default_tier()
-	limits = (
-		tier and frappe.get_cached_value("Tier", tier, ["max_keys", "spend_limit"], as_dict=True)
-	) or frappe._dict()
-	if not row.override_max_keys:
-		row.max_keys = limits.max_keys
-	row.max_keys, row.spend_limit = row.max_keys or 0, flt(limits.spend_limit)
+	row.spend_limit = flt(tier and frappe.get_cached_value("Tier", tier, "spend_limit"))
 	return row
 
 
@@ -82,12 +77,7 @@ def team_grants(teams=None):
 	rows = frappe.get_all(
 		"Grove Model Row", filters=filters, fields=["parent", "parentfield", "model", "model_key"]
 	)
-	geographies = {}
-	if rows:
-		docs = frappe.get_all(
-			"Model", filters={"name": ("in", [row.model for row in rows])}, fields=["name", "geography"]
-		)
-		geographies = {doc.name: doc.geography for doc in docs}
+	geographies = model_geographies(row.model for row in rows)
 	grouped = {}
 	for row in rows:
 		pair = (row.model_key, geographies.get(row.model) or "")
@@ -101,57 +91,90 @@ def reaching(rows, geography):
 	return sorted({key for key, where in rows if not where or where == geography})
 
 
+def model_geographies(models):
+	names = sorted({model for model in models if model})
+	if not names:
+		return {}
+	docs = frappe.get_all("Model", filters={"name": ("in", names)}, fields=["name", "geography"])
+	return {doc.name: doc.geography for doc in docs}
+
+
 def limit_entries(parenttype, parents=None):
-	"""{parent: [{metric, window, value}, ...]}, each list sorted by metric and window."""
+	"""{(parent, table): rows}. A row's `geography` is its model doc's; blank holds everywhere."""
 	filters = {"parenttype": parenttype}
 	if parents is not None:
 		filters["parent"] = ("in", list(parents))
-	rows = frappe.get_all("Model Limit", filters=filters, fields=["parent", "metric", "window", "value"])
+	fields = ["parent", "parentfield", "metric", "window", "value"]
+	per_model, per_key = {**filters, "parentfield": "limits"}, {**filters, "parentfield": "key_limits"}
+	rows = frappe.get_all("Model Limit", filters=per_model, fields=[*fields, "model", "model_key"])
+	rows += frappe.get_all("Key Limit", filters=per_key, fields=fields)
+	geographies = model_geographies(row.model for row in rows)
 	grouped = {}
 	for row in rows:
-		grouped.setdefault(row.parent, []).append(
-			{"metric": row.metric, "window": row.window, "value": row.value}
-		)
-	return {parent: sorted_limits(entries) for parent, entries in grouped.items()}
+		row.geography = geographies.get(row.model)
+		grouped.setdefault((row.parent, row.parentfield), []).append(row)
+	return {table: sorted_limits(entries) for table, entries in grouped.items()}
 
 
-def effective_limits(keys, own, tiers):
-	"""{key: [{metric, window, value}, ...]} for `keys` (rows with `name` and `team`), as the gateway
-	is to count them: the rows of its team's Tier (`tiers`: {team: tier}; blank is the default
-	tier; a tier with no rows is uncapped), else DEFAULT_LIMITS, with the key's own rows (`own`,
-	from `limit_entries`) replacing the tier's on every metric they name."""
-	by_tier = limit_entries("Tier")
+def limits_reaching(rows, geography):
+	return [row for row in rows if not row["geography"] or row["geography"] == geography]
+
+
+def limit_scopes(teams):
+	"""{team: "Team" | "Key"} for `teams` ({team: tier}; blank is the default tier)."""
+	scopes = dict(frappe.get_all("Tier", fields=["name", "limit_scope"], as_list=True))
 	fallback = default_tier()
-	default = sorted_limits(DEFAULT_LIMITS)
-	resolved = {}
-	for key in keys:
-		if tier := tiers.get(key.team) or fallback:
-			base = by_tier.get(tier, [])
-		else:
-			base = default
-		pinned = own.get(key.name, [])
-		metrics = {row["metric"] for row in pinned}
-		resolved[key.name] = sorted_limits([row for row in base if row["metric"] not in metrics] + pinned)
-	return resolved
+	return {team: scopes.get(named or fallback) or "Team" for team, named in teams.items()}
+
+
+def limits_in_force(teams):
+	"""{team: rows} for `teams` ({team: tier}): the table its tier's scope names, the team's own
+	rows laid over it by model, metric and window. No tier at all: DEFAULT_LIMITS."""
+	scopes = limit_scopes(teams)
+	own, by_tier = limit_entries("Grove Team", list(teams)), limit_entries("Tier")
+	fallback = default_tier()
+	rows = {}
+	for team, named in teams.items():
+		tier, table = named or fallback, LIMIT_TABLES[scopes[team]]
+		base = by_tier.get((tier, table), []) if tier else sorted_limits(DEFAULT_LIMITS)
+		slots = {limit_slot(row): row for row in [*base, *own.get((team, table), [])]}
+		rows[team] = sorted(slots.values(), key=limit_slot)
+	return rows
+
+
+def limit_slot(row):
+	return (row["model_key"], row["geography"], row["metric"], row["window"])
 
 
 def sorted_limits(rows):
 	return sorted(
-		({"metric": r["metric"], "window": r["window"], "value": r["value"]} for r in rows),
-		key=lambda r: (r["metric"], r["window"]),
+		(
+			{
+				"model_key": r.get("model_key") or "",
+				"geography": r.get("geography") or "",
+				"metric": r.get("metric"),
+				"window": r.get("window"),
+				"value": r.get("value"),
+			}
+			for r in rows
+		),
+		key=limit_slot,
 	)
 
 
 def validate_limit_rows(rows):
-	"""One limit per metric and window, each above zero; the gateway refuses a push carrying one it
-	cannot read."""
 	seen = set()
 	for row in rows:
-		if (row.value or 0) <= 0:
-			frappe.throw(f"Limit row {row.idx}: the value must be above zero.")
-		if (row.metric, row.window) in seen:
-			frappe.throw(f"Two limits on {row.metric} per {row.window}.")
-		seen.add((row.metric, row.window))
+		model, model_key = row.get("model") or "", row.get("model_key")
+		if (row.value or 0) < 0:
+			frappe.throw(f"Limit row {row.idx}: the value cannot be below zero.")
+		if model_key and not model:
+			frappe.throw(f"Limit row {row.idx}: link the model, {model_key!r} is only its key.")
+		if (model, row.metric, row.window) in seen:
+			frappe.throw(
+				f"Two limits on {row.metric} per {row.window}" + (f" for {model_key}." if model else ".")
+			)
+		seen.add((model, row.metric, row.window))
 
 
 def get_reachable_models(team, geography):

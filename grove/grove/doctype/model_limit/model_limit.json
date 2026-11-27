@@ -4,42 +4,61 @@
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
- "istable": 1,
  "field_order": [
+  "model",
+  "model_key",
   "metric",
   "window",
   "value"
  ],
  "fields": [
   {
+   "columns": 3,
+   "description": "Blank: every model, each counted on its own. A named model overrides the blank row there.",
+   "fieldname": "model",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Model",
+   "options": "Model"
+  },
+  {
+   "fetch_from": "model.model_key",
+   "fieldname": "model_key",
+   "fieldtype": "Data",
+   "label": "Model Key",
+   "read_only": 1
+  },
+  {
+   "columns": 3,
    "fieldname": "metric",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Metric",
    "options": "requests\ntotal_tokens",
-   "reqd": 1,
-   "in_list_view": 1,
-   "columns": 4
+   "reqd": 1
   },
   {
+   "columns": 2,
    "fieldname": "window",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Window",
    "options": "1m\n1h\n1d\n1M",
-   "reqd": 1,
-   "in_list_view": 1,
-   "columns": 2
+   "reqd": 1
   },
   {
+   "columns": 2,
+   "description": "0: no limit.",
    "fieldname": "value",
    "fieldtype": "Int",
-   "label": "Value",
-   "reqd": 1,
    "in_list_view": 1,
-   "columns": 4
+   "label": "Value",
+   "reqd": 1
   }
  ],
+ "istable": 1,
  "links": [],
- "modified": "2026-10-04 17:30:00.000000",
+ "modified": "2026-11-27 23:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Model Limit",

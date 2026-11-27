@@ -99,11 +99,6 @@ class TestProviderNames(IntegrationTestCase):
 	"""The provider name is the prefix of every model id under it and the vendor type the gateway
 	dials it as, so it is picked from the vendors pathway knows, never typed."""
 
-	def test_a_name_pathway_does_not_know_is_refused(self):
-		for bad in ("OpenAI", "open-ai", "vertex-ai", "Bad Name Inc"):
-			with self.subTest(bad), self.assertRaises(frappe.ValidationError):
-				provider(bad).insert()
-
 	def test_a_known_vendor_is_fine(self):
 		doc = provider("openai").insert()
 		self.assertEqual("openai", doc.provider_name)

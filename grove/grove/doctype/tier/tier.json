@@ -7,19 +7,12 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "max_keys",
   "spend_limit",
-  "limits"
+  "limit_scope",
+  "limits",
+  "key_limits"
  ],
  "fields": [
-  {
-   "default": "0",
-   "description": "Live keys a team on this tier may hold; 0 is no limit. Rate limits are per key, so this is what bounds a team's throughput.",
-   "fieldname": "max_keys",
-   "fieldtype": "Int",
-   "in_list_view": 1,
-   "label": "Max Keys"
-  },
   {
    "default": "0",
    "description": "What a team's live keys may spend in a month together: \u03a3 the keys' caps stays within it. 0 lets no cap be set. Lowering it stops no key; it only refuses a raise or a new cap until the caps fit again.",
@@ -30,11 +23,28 @@
    "precision": "9"
   },
   {
-   "description": "Counted on the gateway per key, per Gateway Store; a window resets on the UTC clock. One row per metric and window. No rows: the tier's keys are uncapped. A key's own rows replace these on the metrics they name. A change here reaches every key of every team on the tier on the next sync.",
+   "depends_on": "eval:doc.limit_scope != \"Key\"",
+   "description": "One row per model, metric and window; a blank model is every model. A value of 0 is no limit. No rows: uncapped. The catalog rewrites these on migrate.",
    "fieldname": "limits",
    "fieldtype": "Table",
    "label": "Limits",
    "options": "Model Limit"
+  },
+  {
+   "default": "Team",
+   "description": "Team: one count per model for the whole team. Key: one count per key, every model together. Only the table picked is shown and in force.",
+   "fieldname": "limit_scope",
+   "fieldtype": "Select",
+   "label": "Limits Count Per",
+   "options": "Team\nKey"
+  },
+  {
+   "depends_on": "eval:doc.limit_scope == \"Key\"",
+   "description": "One row per metric and window, for each key across every model. A value of 0 is no limit. No rows: uncapped. The catalog rewrites these on migrate.",
+   "fieldname": "key_limits",
+   "fieldtype": "Table",
+   "label": "Limits Per Key",
+   "options": "Key Limit"
   }
  ],
  "links": [
@@ -44,7 +54,7 @@
    "link_fieldname": "tier"
   }
  ],
- "modified": "2026-10-13 00:00:00.000000",
+ "modified": "2026-11-27 23:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Tier",

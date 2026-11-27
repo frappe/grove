@@ -5,6 +5,6 @@ from frappe.model.document import Document
 
 
 class ModelLimit(Document):
-	"""One cap on its parent: `value` of `metric` per `window`. The window resets on the UTC clock."""
+	"""One cap on its parent: `value` of `metric` per `window`, on every model or the one linked."""
 
 	pass
