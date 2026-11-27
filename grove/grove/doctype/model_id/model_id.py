@@ -37,12 +37,10 @@ class ModelID(Document):
 def ensure_model_id(model_id, display_name=None):
 	"""A display name given fills a blank one and never replaces what an operator set."""
 	name = slugify(model_id)
-	try:
-		doc = frappe.get_doc("Model ID", name)
-	except frappe.DoesNotExistError:
-		frappe.clear_last_message()
+	existing = frappe.db.get_value("Model ID", name, "display_name", as_dict=True)
+	if existing is None:
 		record = {"doctype": "Model ID", "model_id": model_id, "display_name": display_name}
 		return frappe.get_doc(record).insert().name
-	if display_name and not doc.display_name:
-		doc.db_set("display_name", display_name)
+	if display_name and not existing.display_name:
+		frappe.db.set_value("Model ID", name, "display_name", display_name)
 	return name
