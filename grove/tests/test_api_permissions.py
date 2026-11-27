@@ -386,6 +386,8 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 			(listed.geography, listed.gateway_url, listed.cap, listed.month_spent),
 			(minted["geography"], minted["gateway_url"], 0, 0),
 		)
+		self.assertEqual(listed.limits, usage.figures(team)["spend"]["limits"])
+		self.assertIsInstance(listed.limits, list)
 		self.assertEqual(listed.masked, minted["api_key"][:7] + "…")
 		self.assertNotIn(minted["api_key"], str(listed))
 		with self.assertRaises(frappe.ValidationError):
