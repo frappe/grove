@@ -484,6 +484,7 @@
  ],
  "tiers": [
   {
+   "limit_scope": "Key",
    "limits": [
     {
      "metric": "requests",
@@ -500,6 +501,7 @@
    "spend_limit": 20
   },
   {
+   "limit_scope": "Key",
    "limits": [
     {
      "metric": "requests",
@@ -516,6 +518,7 @@
    "spend_limit": 100
   },
   {
+   "limit_scope": "Key",
    "limits": [
     {
      "metric": "requests",
@@ -532,6 +535,7 @@
    "spend_limit": 300
   },
   {
+   "limit_scope": "Key",
    "limits": [
     {
      "metric": "requests",
@@ -548,6 +552,7 @@
    "spend_limit": 1000
   },
   {
+   "limit_scope": "Key",
    "limits": [
     {
      "metric": "requests",
@@ -564,6 +569,7 @@
    "spend_limit": 3000
   },
   {
+   "limit_scope": "Key",
    "limits": [
     {
      "metric": "requests",
