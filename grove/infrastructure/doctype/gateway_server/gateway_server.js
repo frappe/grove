@@ -158,20 +158,14 @@ frappe.ui.form.on("Gateway Server", {
 			const start = !frm.doc.is_in_maintenance;
 			frm.add_custom_button(
 				start ? __("Start Maintenance") : __("End Maintenance"),
-				() => {
-					frappe.confirm(
-						start
-							? __(
-									"New requests to {0} get 503 until maintenance ends; running ones finish.",
-									[frm.doc.name]
-							  )
-							: __("{0} serves new requests again.", [frm.doc.name]),
-						() =>
-							frm
-								.call("set_maintenance", { on: start ? 1 : 0 })
-								.then(() => frm.reload_doc())
-					);
-				},
+				() =>
+					grove.toggle_maintenance(
+						frm,
+						__(
+							"New requests to {0} get 503 until maintenance ends; running ones finish.",
+							[frm.doc.name]
+						)
+					),
 				__("Gateway")
 			);
 

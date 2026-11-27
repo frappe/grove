@@ -266,7 +266,7 @@ Nothing else pushes. A doctype hook, a provision and a pod lifecycle all just wr
 tick carries it within a minute. The only manual paths are Gateway Server → **Full Sync**, Ingress
 Server → **Sync Replicas**, and **Force Sync All** on the Pathway Sync list.
 
-Grove Settings → **Pause Projection** stops the scheduled push; **Pause Usage Pull** stops the
+Grove Settings → **Pause Projection** stops the scheduled push (Start Maintenance on a Gateway or Ingress Server offers to tick it, End Maintenance to untick it); **Pause Usage Pull** stops the
 hourly usage pull and 6-hourly key stats read (`SyncRun.pause_field`). The manual paths above still work.
 
 There is no separate backstop job: the hashes live on the box, so losing the store means losing
