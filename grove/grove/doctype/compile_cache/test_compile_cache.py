@@ -18,7 +18,5 @@ class IntegrationTestCompileCache(IntegrationTestCase):
 		first = _upsert(*KEY, {"objects": 1, "bytes": 1_000_000}, "probe-bucket")
 		again = _upsert(*KEY, {"objects": 3, "bytes": 2_500_000}, "probe-bucket")
 		self.assertEqual(first.name, again.name)
-		self.assertEqual(
-			(3, 2.5), frappe.db.get_value("Compile Cache", first.name, ["objects", "size_mb"])
-		)
+		self.assertEqual((3, 2.5), frappe.db.get_value("Compile Cache", first.name, ["objects", "size_mb"]))
 		self.assertEqual([], frappe.get_message_log())
