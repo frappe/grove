@@ -289,17 +289,16 @@ class TestTheShippedFile(unittest.TestCase):
 			self.assertNotIn(f'"{key}"', text)
 
 
-class TestTheCatalogOwnsTierRows(CatalogCase):
-	def test_a_per_key_tiers_rows_follow_the_file_in_its_per_key_table(self):
+class TestTheCatalogInsertsATierOnce(CatalogCase):
+	def test_a_per_key_tier_is_inserted_with_its_rows_in_the_per_key_table(self):
 		entry = {"name": "catalog-tier-key", "spend_limit": 10, "limit_scope": "Key"}
-		for value in (60, 6):
-			self.load(tiers=[{**entry, "limits": [{"metric": "requests", "window": "1m", "value": value}]}])
-			doc = frappe.get_doc("Tier", "catalog-tier-key")
-			self.assertEqual(([row.value for row in doc.key_limits], doc.limits), ([value], []))
+		self.load(tiers=[{**entry, "limits": [{"metric": "requests", "window": "1m", "value": 60}]}])
+		doc = frappe.get_doc("Tier", "catalog-tier-key")
+		self.assertEqual(([row.value for row in doc.key_limits], doc.limits), ([60], []))
 		dear = our_model("catalog-key-dear").insert()
 		named = [{"model_key": dear.model_key, "metric": "requests", "window": "1m", "value": 6}]
 		with self.assertRaisesRegex(frappe.ValidationError, "its rows name no model"):
-			self.load(tiers=[{**entry, "limits": named}])
+			self.load(tiers=[{**entry, "name": "catalog-tier-key-named", "limits": named}])
 
 	def test_the_move_patch_leaves_a_tier_counting_per_key_and_the_file_writes_there(self):
 		from grove.patches.v1_0.move_tier_limits_per_key import execute
@@ -349,26 +348,33 @@ class TestTheCatalogOwnsTierRows(CatalogCase):
 		)
 		self.assertFalse(frappe.db.exists("Model Limit", {"parentfield": "key_limits"}))
 
-	def test_rows_follow_the_file_and_the_spend_limit_stays(self):
+	def test_a_tier_the_site_holds_is_left_as_the_operator_has_it(self):
 		make_test_geography()
-		rows = [{"metric": "requests", "window": "1m", "value": 60}]
+		dear = our_model("catalog-dear").insert()
+		rows = [
+			{"metric": "requests", "window": "1m", "value": 60},
+			{"model_key": dear.model_key, "metric": "requests", "window": "1m", "value": 6},
+		]
 		self.load(tiers=[{"name": "catalog-tier", "spend_limit": 10, "limits": rows}])
 		doc = frappe.get_doc("Tier", "catalog-tier")
 		self.assertEqual(
-			(doc.spend_limit, [(r.model, r.metric, r.window, r.value) for r in doc.limits]),
-			(10, [(None, "requests", "1m", 60)]),
-		)
-		doc.spend_limit = 25
-		doc.save()
-		dear = our_model("catalog-dear").insert()
-		named = [*rows, {"model_key": dear.model_key, "metric": "requests", "window": "1m", "value": 6}]
-		self.load(tiers=[{"name": "catalog-tier", "spend_limit": 10, "limits": named}])
-		doc.reload()
-		self.assertEqual(doc.spend_limit, 25)
-		self.assertEqual(
-			[(r.model, r.model_key, r.value) for r in doc.limits],
-			[(None, None, 60), (dear.name, dear.model_key, 6)],
+			(doc.spend_limit, [(r.model, r.model_key, r.value) for r in doc.limits]),
+			(10, [(None, None, 60), (dear.name, dear.model_key, 6)]),
 			"the file names a model by key; the row links its doc",
 		)
-		self.load(tiers=[{"name": "catalog-tier", "spend_limit": 10, "limits": named}])
-		self.assertEqual(frappe.db.get_value("Tier", "catalog-tier", "modified"), doc.modified)
+		doc.spend_limit, doc.limit_scope = 25, "Key"
+		doc.set("limits", [{"metric": "requests", "window": "1m", "value": 70}])
+		doc.set("key_limits", [{"metric": "requests", "window": "1m", "value": 7}])
+		doc.save()
+		self.load(tiers=[{"name": "catalog-tier", "spend_limit": 10, "limits": rows}])
+		kept = frappe.get_doc("Tier", "catalog-tier")
+		self.assertEqual(
+			(
+				kept.spend_limit,
+				kept.limit_scope,
+				[r.value for r in kept.limits],
+				[r.value for r in kept.key_limits],
+			),
+			(25, "Key", [70], [7]),
+		)
+		self.assertEqual(str(kept.modified), str(doc.modified))

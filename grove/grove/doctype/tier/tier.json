@@ -3,7 +3,7 @@
  "allow_rename": 1,
  "autoname": "Prompt",
  "creation": "2026-10-12 00:00:00",
- "description": "Named by Central's trust tier label (Growth). What a team on it may do: live keys, monthly spend across its keys' caps, and the rate limits its keys run under when they carry none of their own. Central names a team's tier and renames it when the label changes; the values here are Grove's to edit.",
+ "description": "Named by Central's trust tier label (Emerging). What a team on it may do: its monthly spend across its keys' caps and its rate limits.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -24,7 +24,7 @@
   },
   {
    "depends_on": "eval:doc.limit_scope != \"Key\"",
-   "description": "One row per model, metric and window; a blank model is every model. A value of 0 is no limit. No rows: uncapped. The catalog rewrites these on migrate.",
+   "description": "One row per model, metric and window; a blank model is every model. A value of 0 is no limit. No rows: uncapped.",
    "fieldname": "limits",
    "fieldtype": "Table",
    "label": "Limits",
@@ -40,7 +40,7 @@
   },
   {
    "depends_on": "eval:doc.limit_scope == \"Key\"",
-   "description": "One row per metric and window, for each key across every model. A value of 0 is no limit. No rows: uncapped. The catalog rewrites these on migrate.",
+   "description": "One row per metric and window, for each key across every model. A value of 0 is no limit. No rows: uncapped.",
    "fieldname": "key_limits",
    "fieldtype": "Table",
    "label": "Limits Per Key",
@@ -54,7 +54,7 @@
    "link_fieldname": "tier"
   }
  ],
- "modified": "2026-11-27 23:30:00.000000",
+ "modified": "2026-11-28 01:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Tier",

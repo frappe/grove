@@ -202,7 +202,8 @@ const open = (row) => host.navigate?.(["Form", "Grove API Key", row.name]);
 										})
 									"
 								>
-									from {{ item.moved.from_team }} · {{ day(item.moved.creation) }}
+									from {{ item.moved.from_team }} ·
+									{{ day(item.moved.creation) }}
 								</button>
 							</ListCell>
 							<ListCell class="flex-col !items-start justify-center gap-1">
