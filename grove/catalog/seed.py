@@ -84,7 +84,7 @@ def sync_tier(entry):
 	except frappe.DoesNotExistError:
 		frappe.clear_last_message()
 		doc = None
-	table = LIMIT_TABLES[(doc.limit_scope if doc else entry.get("limit_scope")) or "Team"]
+	table = LIMIT_TABLES[(doc.limit_scope if doc else entry.get("limit_scope")) or "Model"]
 	if table == "key_limits" and any(row.get("model") for row in rows):
 		frappe.throw(f"Tier {entry['name']} counts per key, every model together: its rows name no model.")
 	if doc is None:

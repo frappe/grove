@@ -276,6 +276,7 @@ class TestTheControlRoleReachesOnlyWhatItServes(IntegrationTestCase):
 				"committed": 10.0,
 				"spend_limit": 10.0,
 				"limits": [],
+				"limit_scope": "Model",
 				"suspended": False,
 				"log_payloads": True,
 				"key_cap_window": "Monthly",

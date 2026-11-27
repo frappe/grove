@@ -22,7 +22,7 @@ class Tier(Document):
 		from grove.grove.doctype.model_limit.model_limit import ModelLimit
 
 		key_limits: DF.Table[KeyLimit]
-		limit_scope: DF.Literal["Team", "Key"]
+		limit_scope: DF.Literal["Model", "Key"]
 		limits: DF.Table[ModelLimit]
 		spend_limit: DF.Currency
 	# end: auto-generated types
@@ -61,7 +61,7 @@ def ensure(name):
 				"doctype": "Tier",
 				"__newname": name,
 				"spend_limit": flt(source.get("spend_limit")),
-				"limit_scope": source.get("limit_scope") or "Team",
+				"limit_scope": source.get("limit_scope") or "Model",
 				"limits": copied(source.limits),
 				"key_limits": copied(source.key_limits),
 			}

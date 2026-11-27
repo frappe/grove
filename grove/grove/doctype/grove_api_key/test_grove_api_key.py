@@ -320,7 +320,7 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 			"key_limits": [{"metric": "requests", "window": "1m", "value": 2}],
 		}
 		pushed = {}
-		for scope in ("Team", "Key"):
+		for scope in ("Model", "Key"):
 			tier = frappe.get_doc(
 				{"doctype": "Tier", "__newname": f"key-tier-scope-{scope}", "limit_scope": scope, **tables}
 			).insert()
@@ -333,7 +333,7 @@ class IntegrationTestRateLimits(IntegrationTestCase):
 		self.assertEqual(
 			pushed,
 			{
-				"Team": [("requests:1m:600", ""), ("requests:1m:300", "")],
+				"Model": [("requests:1m:600", ""), ("requests:1m:300", "")],
 				"Key": [("", "requests:1m:6"), ("", "requests:1m:2")],
 			},
 		)

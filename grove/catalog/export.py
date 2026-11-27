@@ -49,9 +49,9 @@ def get_tiers():
 		{
 			"name": t.name,
 			"spend_limit": t.spend_limit,
-			"limit_scope": t.limit_scope or "Team",
+			"limit_scope": t.limit_scope or "Model",
 			"limits": [
-				tier_row(row) for row in rows.get((t.name, LIMIT_TABLES[t.limit_scope or "Team"]), [])
+				tier_row(row) for row in rows.get((t.name, LIMIT_TABLES[t.limit_scope or "Model"]), [])
 			],
 		}
 		for t in tiers

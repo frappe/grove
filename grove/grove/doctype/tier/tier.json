@@ -31,12 +31,12 @@
    "options": "Model Limit"
   },
   {
-   "default": "Team",
-   "description": "Team: one count per model for the whole team. Key: one count per key, every model together. Only the table picked is shown and in force.",
+   "default": "Model",
+   "description": "Model: one count per model for the whole team. Key: one count per key, every model together. Only the table picked is shown and in force.",
    "fieldname": "limit_scope",
    "fieldtype": "Select",
    "label": "Limits Count Per",
-   "options": "Team\nKey"
+   "options": "Model\nKey"
   },
   {
    "depends_on": "eval:doc.limit_scope == \"Key\"",
@@ -54,7 +54,7 @@
    "link_fieldname": "tier"
   }
  ],
- "modified": "2026-11-27 23:00:00.000000",
+ "modified": "2026-11-27 23:30:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Tier",
