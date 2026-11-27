@@ -11,6 +11,7 @@ from frappe.tests import IntegrationTestCase
 
 from grove.api import keys, teams
 from grove.billing.pricing import committed
+from grove.infrastructure.doctype.geography.test_geography import make_test_geography
 from grove.tests.test_api_permissions import tier
 
 TEAM, TIER = "race-two-raises", "race-two-raises-tier"
@@ -20,6 +21,7 @@ class TestTwoRaisesOnOneTeam(IntegrationTestCase):
 	def test_two_raises_at_once_pass_one_at_a_time(self):
 		self.delete_fixtures()
 		self.addCleanup(self.delete_fixtures)
+		make_test_geography()
 		teams.provision_team(TEAM)
 		teams.update_team(TEAM, tier=tier(TIER, spend_limit=5))
 		first, second = (keys.provision_key(TEAM, title=title)["name"] for title in ("first", "second"))

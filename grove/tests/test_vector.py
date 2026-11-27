@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # See license.txt
-"""Vector on a gateway box. Pure — no site, no SSH, no Central."""
+"""Vector on a gateway box. No SSH, no Central; only the credential check reads the site."""
 
 import re
 import unittest
@@ -11,6 +11,8 @@ from unittest.mock import Mock, patch
 
 import frappe
 import yaml
+from frappe.tests import IntegrationTestCase
+from frappe.utils.password import set_encrypted_password
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from grove.infrastructure import datum
@@ -397,13 +399,7 @@ class TestTheRefresh(unittest.TestCase):
 
 
 def fake_settings(url="https://central.test/", token="token-1"):
-	labels = {"central_url": "Central URL", "central_token": "Central Token"}
-	return SimpleNamespace(
-		central_url=url,
-		get_password=lambda field, raise_exception=True: token,
-		get=lambda field: {"central_url": url}[field],
-		meta=SimpleNamespace(get_label=labels.__getitem__),
-	)
+	return SimpleNamespace(central_url=url, get_password=lambda field, raise_exception=True: token)
 
 
 class TestMintToken(unittest.TestCase):
@@ -432,17 +428,21 @@ class TestMintToken(unittest.TestCase):
 		self.assertIn("401 not permitted", throw.call_args.args[0])
 
 
-class TestCredentialProblems(unittest.TestCase):
+class TestCredentialProblems(IntegrationTestCase):
+	def set_credentials(self, url, token):
+		frappe.db.set_single_value("Grove Settings", "central_url", url)
+		set_encrypted_password("Grove Settings", "Grove Settings", token, "central_token")
+
 	def test_each_blank_field_is_named(self):
-		with patch("frappe.get_single", return_value=fake_settings(url="", token="")):
-			problems = datum.credential_problems()
+		self.set_credentials("", "")
 		self.assertEqual(
-			["Set Central URL in Grove Settings.", "Set Central Token in Grove Settings."], problems
+			["Set Central URL in Grove Settings.", "Set Central Token in Grove Settings."],
+			datum.credential_problems(),
 		)
 
 	def test_a_filled_credential_has_none(self):
-		with patch("frappe.get_single", return_value=fake_settings()):
-			self.assertEqual([], datum.credential_problems())
+		self.set_credentials("https://central.test/", "token-1")
+		self.assertEqual([], datum.credential_problems())
 
 
 def fake_region_doc(**fields):

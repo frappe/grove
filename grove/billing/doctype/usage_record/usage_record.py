@@ -1,13 +1,16 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+from datetime import timedelta
+
 import frappe
 from frappe.model.document import Document
 from frappe.utils import add_days, cint
 
-from grove.utils import utc_today
+from grove.utils import site_datetime, utc_today
 
 RECORD_COLUMNS = {"team": "r.team", "api_key": "r.api_key", "model": "u.model"}
+LANDING_WINDOW = "r.creation >= %(since)s and r.creation < %(until)s"
 
 RETENTION_DAYS = 90
 # ponytail: chunked DELETEs, each its own transaction, so a day of a lakh keys never holds the table
@@ -84,17 +87,24 @@ def money_rows(filters, from_date=None, to_date=None, since=None, until=None):
 		f"{RECORD_COLUMNS[f]} {'in' if isinstance(v, list | tuple) else '='} %({f})s"
 		for f, v in given.items()
 	]
-	where.append(
-		"r.creation >= %(since)s and r.creation < %(until)s"
-		if since
-		else "r.day between %(from_date)s and %(to_date)s"
-	)
+	where.append(LANDING_WINDOW if since else "r.day between %(from_date)s and %(to_date)s")
 	return (
 		f"""(select r.team, r.api_key, u.model, r.day, r.creation as pulled_at,
 		u.requests, {tokens_expression()} as tokens, u.grove_cost as cost
 		from `tabUsage Record` r, {usage_table()} where {" and ".join(where)}) x""",
 		{**given, "from_date": from_date, "to_date": to_date, "since": since, "until": until},
 	)
+
+
+def landing_window(day):
+	"""{since, until}: the UTC landing `day` as the site-time bounds of `creation`, `until`
+	exclusive."""
+	return {"since": site_datetime(day), "until": site_datetime(day + timedelta(days=1))}
+
+
+def team_clause(alias):
+	"""SQL: the row names a team. A record with none is billed to no one."""
+	return f"{alias}.team is not null and {alias}.team != ''"
 
 
 def usage_table(record="r"):
@@ -105,8 +115,7 @@ def usage_table(record="r"):
 
 	counters = ", ".join(
 		f"{counter} bigint path '$.{counter}' default '0' on empty"
-		for counter in CounterTable.load().names
-		if counter != "request_count"
+		for counter in CounterTable.load().usage_columns
 	)
 	return (
 		f"json_table({record}.`usage`, '$[*]' columns (model varchar(140) path '$.model', "

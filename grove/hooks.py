@@ -19,7 +19,11 @@ fixtures = [
 	{"dt": "Role", "filters": [["name", "in", ["Grove Control"]]]},
 ]
 
-after_install = "grove.catalog.seed.insert_missing"
+# The seed writes Grove Settings before its defaults apply, so they are stored after it.
+after_install = [
+	"grove.catalog.seed.insert_missing",
+	"grove.grove.doctype.grove_settings.grove_settings.set_missing_defaults",
+]
 after_migrate = ["grove.catalog.seed.insert_missing"]
 
 scheduler_events = {
@@ -42,6 +46,7 @@ scheduler_events = {
 	],
 	"hourly_long": [
 		"grove.pathway.usage.pull_all",
+		"grove.billing.usage_report.report_usage",
 		"grove.infrastructure.tls.renew_fleet_certificate",
 		"grove.infrastructure.cloud_provider.schedule.run_due_pods",
 	],

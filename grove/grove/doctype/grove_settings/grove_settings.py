@@ -6,8 +6,9 @@ import re
 
 import bcrypt
 import frappe
+from frappe import _
 from frappe.model.document import Document
-from frappe.utils import get_url
+from frappe.utils import cint, get_url
 
 # The SD token rides in a query string: URL-unreserved characters only.
 SD_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._~-]{16,}$")
@@ -24,6 +25,22 @@ def verify_scrape_password(password: str, stored: str) -> bool:
 		return False
 
 
+def set_missing_defaults(fields=None):
+	"""Store the default of each Grove Settings field the site holds no value for: a Single written
+	before its defaults applied, or before a field existed, never took them. `fields` limits it to
+	those names."""
+	stored = frappe.db.get_singles_dict("Grove Settings")
+	missing = {
+		field.fieldname: field.default
+		for field in frappe.get_meta("Grove Settings").fields
+		if field.default
+		and (fields is None or field.fieldname in fields)
+		and stored.get(field.fieldname) in (None, "")
+	}
+	if missing:
+		frappe.db.set_single_value("Grove Settings", missing, update_modified=False)
+
+
 class GroveSettings(Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -34,13 +51,16 @@ class GroveSettings(Document):
 		from frappe.types import DF
 
 		acme_email: DF.Data | None
+		central_report_secret: DF.Password | None
 		central_token: DF.Password | None
 		central_url: DF.Data | None
 		dns_provider: DF.Link | None
 		monitoring_extra_labels: DF.SmallText | None
 		pathway_release: DF.Data | None
 		pathway_repo: DF.Data | None
+		pause_usage_report: DF.Check
 		pod_geography: DF.Link | None
+		report_resend_days: DF.Int
 		scrape_password: DF.Password | None
 		scrape_password_hash: DF.Data | None
 		sd_token: DF.Password | None
@@ -56,6 +76,7 @@ class GroveSettings(Document):
 
 	def validate(self):
 		self.validate_sd_token()
+		self.validate_report_resend_days()
 		self.set_scrape_password_hash()
 		if self.monitoring_extra_labels:
 			try:
@@ -74,6 +95,31 @@ class GroveSettings(Document):
 				"Service Discovery Token must be at least 16 characters of letters, digits, "
 				"'-', '_', '.' or '~'. Generate one with: openssl rand -hex 32"
 			)
+
+	def validate_report_resend_days(self):
+		self.report_resend_days = self.resend_days
+		if self.report_resend_days < 1:
+			frappe.throw(_("Resend Days must be at least 1: every report sends today again."))
+
+	@property
+	def resend_days(self):
+		"""Resend Days, or its default on a site that has never stored one."""
+		if self.report_resend_days in (None, ""):
+			return cint(self.meta.get_field("report_resend_days").default)
+		return self.report_resend_days
+
+	def get_unset_field_problems(self, fields):
+		"""Each of `fields` left blank, named."""
+		return [
+			f"Set {self.meta.get_label(field)} in Grove Settings."
+			for field in fields
+			if not self.is_field_set(field)
+		]
+
+	def is_field_set(self, field):
+		if self.meta.get_field(field).fieldtype == "Password":
+			return bool(self.get_password(field, raise_exception=False))
+		return bool(self.get(field))
 
 	def set_scrape_password_hash(self):
 		"""The hash each box writes into its htpasswd file, derived here so the password never reaches a
