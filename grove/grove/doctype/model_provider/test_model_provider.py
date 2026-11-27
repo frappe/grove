@@ -14,6 +14,11 @@ from grove.grove.doctype.model_provider.model_provider import self_hosted_provid
 from grove.infrastructure.doctype.geography.test_geography import make_test_geography
 
 
+def self_hosted_provider_name():
+	"""What the Self Hosted provider is called: its record is named by hash."""
+	return frappe.db.get_value("Model Provider", self_hosted_provider(), "provider_name")
+
+
 def provider(provider_name, **fields):
 	if not fields.get("is_self_hosted"):
 		fields.setdefault("geography", make_test_geography())
@@ -100,7 +105,7 @@ class TestOneProviderIsSelfHosted(IntegrationTestCase):
 	def test_a_second_one_is_refused(self):
 		with self.assertRaises(frappe.ValidationError) as caught:
 			provider("_T-probe-second-ours", is_self_hosted=1).insert()
-		self.assertIn(self_hosted_provider(), str(caught.exception))
+		self.assertIn(self_hosted_provider_name(), str(caught.exception))
 
 	def test_it_dials_nothing(self):
 		with self.assertRaises(frappe.ValidationError) as caught:

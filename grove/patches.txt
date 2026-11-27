@@ -3,6 +3,7 @@
 grove.patches.v1_0.merge_free_usage_records #2026-10-19 quotes usage, runs without billed
 grove.patches.v1_0.rename_central_team
 grove.patches.v1_0.rename_cost_discrepancy
+grove.patches.v1_0.check_provider_key_titles
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
@@ -28,3 +29,4 @@ grove.patches.v1_0.log_past_key_transfers
 grove.patches.v1_0.drop_key_limit_rows
 grove.patches.v1_0.move_tier_limits_per_key
 grove.patches.v1_0.settle_limit_scope_and_tables
+grove.patches.v1_0.unique_provider_key_title
