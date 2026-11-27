@@ -106,7 +106,7 @@ fleet gets re-pushed over row order. Order means nothing on the wire; it exists 
 | Redis key | Written by | Holds |
 |---|---|---|
 | `key:<sha256(secret)>` | state push (keys) + the agent | the whole policy: `team`, `group` (comma list: its team's groups of its geography, and its own), `allow`/`deny` (its team's rows that reach its geography; a model of ours reaches every geography), `geography`, `budget` (its cap) and `budget_window`; the agent's own `spent:<YYYY-MM>`, this month's spend |
-| `team:<Grove Team>` | state push (teams) | what is the team's, read beside each of its keys: `limited`, `log_payloads`, `cap_message`, and its rate limit rows (its Tier's, else the default tier's, else the defaults, with the team's own laid over them; a row at 0 is no limit there) as `limits`, counted per model for the team as a whole, or as `key_limits`, counted under each of its keys on its own, by its Tier's Limits Count Per (each scope has its own table of rows) |
+| `team:<Grove Team>` | state push (teams) | what is the team's, read beside each of its keys: `limited`, `log_payloads`, `cap_message`, and its rate limit rows (its Tier's, else the default tier's, else the defaults, with the team's own laid over them; a row at 0 is no limit there) as `limits`, counted per model for the team as a whole, or as `key_limits`, counted under each of its keys on its own with every model together (those rows name no model), by its Tier's Limits Count Per (each scope has its own table of rows) |
 | `model_group:<name>` | state push (groups) | the model grant for everyone in it |
 | `deploy:<model>` | state push (routes) | every placement of one model |
 | `grove:state_hash` | state push | per-section/bucket hashes of what the box holds |

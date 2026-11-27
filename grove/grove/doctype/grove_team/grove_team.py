@@ -24,6 +24,7 @@ class GroveTeam(Document):
 		from frappe.types import DF
 
 		from grove.grove.doctype.grove_model_row.grove_model_row import GroveModelRow
+		from grove.grove.doctype.key_limit.key_limit import KeyLimit
 		from grove.grove.doctype.model_group_row.model_group_row import ModelGroupRow
 		from grove.grove.doctype.model_limit.model_limit import ModelLimit
 
@@ -31,7 +32,7 @@ class GroveTeam(Document):
 		cap_message: DF.SmallText | None
 		deny: DF.TableMultiSelect[GroveModelRow]
 		key_cap_window: DF.Literal["Monthly", "Total"]
-		key_limits: DF.Table[ModelLimit]
+		key_limits: DF.Table[KeyLimit]
 		last_reported_at: DF.Datetime | None
 		limit_scope: DF.Data | None
 		limits: DF.Table[ModelLimit]

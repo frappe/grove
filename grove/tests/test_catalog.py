@@ -299,10 +299,15 @@ class TestTheCatalogOwnsTierRows(CatalogCase):
 			self.load(tiers=[{**entry, "limits": [{"metric": "requests", "window": "1m", "value": value}]}])
 			doc = frappe.get_doc("Tier", "catalog-tier-key")
 			self.assertEqual(([row.value for row in doc.key_limits], doc.limits), ([value], []))
+		dear = our_model("catalog-key-dear").insert()
+		named = [{"model_key": dear.model_key, "metric": "requests", "window": "1m", "value": 6}]
+		with self.assertRaisesRegex(frappe.ValidationError, "its rows name no model"):
+			self.load(tiers=[{**entry, "limits": named}])
 
 	def test_the_move_patch_leaves_a_tier_counting_per_key_and_the_file_writes_there(self):
-		"""What the limits were before a tier could say: the patch moves the rows, a load after it
-		finds them where it writes and rewrites nothing."""
+		"""What the limits were before a tier could say: per key, every model together. The patch
+		moves the rows naming no model, a load after it finds them where it writes and rewrites
+		nothing, and a row naming a model stays behind, out of force."""
 		from grove.patches.v1_0.move_tier_limits_per_key import execute
 
 		tiers = [
@@ -313,10 +318,15 @@ class TestTheCatalogOwnsTierRows(CatalogCase):
 			}
 		]
 		self.load(tiers=tiers)
-		execute()
+		dear = our_model("catalog-moved-dear").insert()
 		doc = frappe.get_doc("Tier", "catalog-tier-moved")
+		doc.append("limits", {"model": dear.name, "metric": "requests", "window": "1m", "value": 6})
+		doc.save()
+		execute()
+		doc.reload()
 		self.assertEqual(
-			(doc.limit_scope, [row.value for row in doc.key_limits], doc.limits), ("Key", [60], [])
+			(doc.limit_scope, [row.value for row in doc.key_limits], [row.model for row in doc.limits]),
+			("Key", [60], [dear.name]),
 		)
 		self.load(tiers=tiers)
 		self.assertEqual(frappe.db.get_value("Tier", "catalog-tier-moved", "modified"), doc.modified)

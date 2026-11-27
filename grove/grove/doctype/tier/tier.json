@@ -32,7 +32,7 @@
   },
   {
    "default": "Team",
-   "description": "Who the rate limits are counted for, one or the other: Team, the team as a whole on each model however many keys it holds, or Key, each of its keys on its own (a trial tier, where every key is another customer). Each has its own table of rows; only the one picked is shown and in force.",
+   "description": "Who the rate limits are counted for, one or the other: Team, the team as a whole on each model however many keys it holds, or Key, each of its keys on its own with every model together (a trial tier, where every key is another customer). Each has its own table of rows; only the one picked is shown and in force.",
    "fieldname": "limit_scope",
    "fieldtype": "Select",
    "label": "Limits Count Per",
@@ -40,11 +40,11 @@
   },
   {
    "depends_on": "eval:doc.limit_scope == \"Key\"",
-   "description": "Counted on the gateway under each key of the tier's teams on its own, per model and Gateway Store. Rows as in Limits: a blank model is every model, a named one stands in for it there, a value of 0 is no limit. No rows: uncapped. The rows are the catalog's while this is the table in force. A team's own rows are laid over these.",
+   "description": "Counted on the gateway under each key of the tier's teams on its own, every model together, per Gateway Store: 20 requests per minute is 20 for the key whatever it calls. One row per metric and window; a value of 0 is no limit. No rows: uncapped. The rows are the catalog's while this is the table in force. A team's own rows are laid over these.",
    "fieldname": "key_limits",
    "fieldtype": "Table",
    "label": "Limits Per Key",
-   "options": "Model Limit"
+   "options": "Key Limit"
   }
  ],
  "links": [
@@ -54,7 +54,7 @@
    "link_fieldname": "tier"
   }
  ],
- "modified": "2026-11-27 21:00:00.000000",
+ "modified": "2026-11-27 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Tier",

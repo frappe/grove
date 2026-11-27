@@ -131,7 +131,7 @@
    "options": "Model Limit"
   },
   {
-   "description": "Its tier's: Team, counted for the team as a whole on each model, or Key, for each of its keys on its own. The override table of that kind is the one shown below.",
+   "description": "Its tier's: Team, counted for the team as a whole on each model, or Key, for each of its keys on its own with every model together. The override table of that kind is the one shown below.",
    "fieldname": "limit_scope",
    "fieldtype": "Data",
    "is_virtual": 1,
@@ -140,11 +140,11 @@
   },
   {
    "depends_on": "eval:doc.limit_scope == \"Key\"",
-   "description": "Laid over its tier's Limits Per Key: a row here stands in for the tier's row on the same model, metric and window, and the tier's other rows hold. A value of 0 lifts the limit there.",
+   "description": "Laid over its tier's Limits Per Key: a row here stands in for the tier's row on the same metric and window, and the tier's other rows hold. A value of 0 lifts the limit there.",
    "fieldname": "key_limits",
    "fieldtype": "Table",
    "label": "Limit Overrides Per Key",
-   "options": "Model Limit"
+   "options": "Key Limit"
   }
  ],
  "links": [
@@ -169,7 +169,7 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-11-27 21:00:00.000000",
+ "modified": "2026-11-27 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Grove Team",

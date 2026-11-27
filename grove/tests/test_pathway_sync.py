@@ -460,8 +460,13 @@ class TestEffectiveTeams(unittest.TestCase):
 
 		def get_all(doctype, filters=None, **kwargs):
 			self.filters[doctype] = filters
-			if doctype == "Model Limit":
-				return [row for row in limits if row.get("parenttype", "Tier") == filters["parenttype"]]
+			if doctype in ("Model Limit", "Key Limit"):
+				table = "key_limits" if doctype == "Key Limit" else "limits"
+				return [
+					row
+					for row in limits
+					if row.parentfield == table and row.get("parenttype", "Tier") == filters["parenttype"]
+				]
 			return list(answers[doctype])
 
 		with (

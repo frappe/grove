@@ -107,7 +107,8 @@ def effective_teams(names=None, geography=""):
 	`log_payloads`, `cap_message` (what the box's 402 says once a key's cap is spent; blank: the
 	box's own text) and its rate limit rows that hold in that geography, its tier's with its own
 	laid over them (`access.limits_in_force`): as `limits`, counted per model for the team as a
-	whole, or as `key_limits`, counted under each of its keys on its own, by its tier's `limit_scope`.
+	whole, or as `key_limits`, counted under each of its keys with every model together, by its
+	tier's `limit_scope`.
 	`names` narrows it to those teams: what a tick rebuilds."""
 	if names is not None and not names:
 		return []

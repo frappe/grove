@@ -13,7 +13,7 @@ class Tier(Document):
 	"""What a team on it may do, named by Central's trust tier label (`Growth`): monthly spend
 	across its keys' caps, and the rate limits the team runs under per model (a blank row is every
 	model, one linking a model that model alone, in its geography; no rows: uncapped), counted for
-	the team or for each of its keys by `limit_scope`, each with its own table. A tier a team names
+	the team, or for each of its keys with every model together, by `limit_scope`: a table each. A tier a team names
 	cannot be deleted."""
 
 	# begin: auto-generated types
@@ -24,9 +24,10 @@ class Tier(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		from grove.grove.doctype.key_limit.key_limit import KeyLimit
 		from grove.grove.doctype.model_limit.model_limit import ModelLimit
 
-		key_limits: DF.Table[ModelLimit]
+		key_limits: DF.Table[KeyLimit]
 		limit_scope: DF.Literal["Team", "Key"]
 		limits: DF.Table[ModelLimit]
 		spend_limit: DF.Currency
@@ -48,7 +49,8 @@ class Tier(Document):
 
 
 def copied(rows):
-	return [{field: row.get(field) for field in ("model", "metric", "window", "value")} for row in rows]
+	fields = ("model", "metric", "window", "value")
+	return [{field: row.get(field) for field in fields if row.get(field) is not None} for row in rows]
 
 
 def ensure(name):
