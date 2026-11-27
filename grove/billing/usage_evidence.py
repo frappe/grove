@@ -13,8 +13,6 @@ VERSION = 1
 MAXIMUM_BYTES = 8192
 MAXIMUM_PRICINGS = 8
 MAXIMUM_DISCREPANCIES = 20
-# MariaDB's default `group_concat_max_len`: joined names this long were cut.
-GROUP_CONCAT_BYTES = 1_048_576
 PROMPT_ROOT = "prompt_tokens"
 COMPLETION_ROOT = "completion_tokens"
 LANDED = f"{LANDING_WINDOW} and {team_clause('r')}"
@@ -63,7 +61,7 @@ class DayEvidence:
 		# Fixed SQL only; values are in `params`.
 		return frappe.db.sql(  # nosemgrep
 			f"""select team, model, records, sha2(joined, 256) as digest,
-			length(joined) as joined_length,
+			length(joined) < @@session.group_concat_max_len as is_whole,
 			first_at, last_at, corrections, cast(correction_cost as char) as correction_cost,
 			discrepancies from (
 				select r.team, coalesce(u.model, '') as model, count(distinct r.name) as records,
@@ -82,7 +80,8 @@ class DayEvidence:
 		)
 
 	def get_evidence(self, record_row, pricing_rows):
-		is_digest_whole = record_row.joined_length < GROUP_CONCAT_BYTES
+		# Joined names that reach the server's own limit were cut, so their digest is not of every record.
+		is_digest_whole = bool(record_row.is_whole)
 		records = {
 			"count": record_row.records,
 			"first_at": utc_timestamp(record_row.first_at),

@@ -233,7 +233,7 @@ dispute and ignores keys it does not know; Grove ignores keys it does not know i
 | `pricings` | Per pricing the gateway charged at, usage records only: its requests, its non-zero counters, the sell rates it holds (USD per unit, `{}` for a pricing Grove does not hold) and its cost. |
 | `records` | Every record summed, corrections included: the count, SHA-256 of their names sorted by byte order (`utf8mb4_bin`, not the table's case-blind collation) and joined by `,`, and the first and last landing time. |
 | `corrections` | The Grove corrections among the records: count, cost, and at most 20 Cost Discrepancy names. The line's cost is the pricings' cost plus this. |
-| `truncated` | True when part was left out: the digest (the joined names reached MariaDB's default 1 MB `group_concat_max_len`, so `sha256` is omitted), or the counters and rates of every pricing (more than 8 pricings, then only the 8 costliest are kept, or over 8 KB of canonical JSON). |
+| `truncated` | True when part was left out: the digest (the joined names reached the server's `group_concat_max_len`, so `sha256` is omitted), or the counters and rates of every pricing (more than 8 pricings, then only the 8 costliest are kept, or over 8 KB of canonical JSON). |
 
 **The 30-day window.** A landing day older than 30 days (`usage_report.WINDOW_DAYS`) is never sent,
 and its outbox row is deleted. The Usage Record purge does not ask the outbox, so a day the purge

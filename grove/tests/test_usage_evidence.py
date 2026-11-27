@@ -149,8 +149,10 @@ class TestTheEvidenceMatchesTheRecords(EvidenceCase):
 		for _ in range(2):
 			record(self.team, NOON, entry("p1", 1))
 
-		with unittest.mock.patch.object(usage_evidence, "GROUP_CONCAT_BYTES", 4):
-			evidence = self.evidence()
+		limit = frappe.db.sql("select @@session.group_concat_max_len")[0][0]
+		self.addCleanup(frappe.db.sql, f"set session group_concat_max_len = {int(limit)}")
+		frappe.db.sql("set session group_concat_max_len = 4")
+		evidence = self.evidence()
 
 		self.assertNotIn("sha256", evidence["records"])
 		self.assertEqual(evidence["records"]["count"], 2)
