@@ -46,7 +46,7 @@ def insert_missing(path=None):
 	for group in catalog.get("model_groups", []):
 		insert_model_group(group, docs)
 	for tier in catalog.get("tiers", []):
-		sync_tier(tier)
+		insert_tier(tier)
 	if (default := catalog.get("default_tier")) and not frappe.db.get_single_value(
 		"Grove Settings", "default_tier"
 	):
@@ -71,27 +71,16 @@ def tier_rows(entry):
 	return rows
 
 
-def row_ids(rows):
-	return sorted((r.get("model") or "", r.get("metric"), r.get("window"), r.get("value")) for r in rows)
-
-
-def sync_tier(entry):
-	"""Inserted when the site lacks it, else its rows rewritten when they differ. `spend_limit` and
-	the scope stay the operator's once the tier exists."""
+def insert_tier(entry):
+	"""A tier the site lacks, with the file's rows in the table its scope counts with. One the
+	site holds is left as the operator has it."""
+	if frappe.db.exists("Tier", entry["name"]):
+		return
 	rows = tier_rows(entry)
-	try:
-		doc = frappe.get_doc("Tier", entry["name"])
-	except frappe.DoesNotExistError:
-		frappe.clear_last_message()
-		doc = None
-	table = LIMIT_TABLES[(doc.limit_scope if doc else entry.get("limit_scope")) or "Model"]
+	table = LIMIT_TABLES[entry.get("limit_scope") or "Model"]
 	if table == "key_limits" and any(row.get("model") for row in rows):
 		frappe.throw(f"Tier {entry['name']} counts per key, every model together: its rows name no model.")
-	if doc is None:
-		frappe.get_doc({"doctype": "Tier", **entry, "limits": [], table: rows}).insert()
-	elif row_ids(doc.get(table)) != row_ids(rows):
-		doc.set(table, rows)
-		doc.save()
+	frappe.get_doc({"doctype": "Tier", **entry, "limits": [], table: rows}).insert()
 
 
 def insert_named(doctype, entry, ignore_mandatory=False):

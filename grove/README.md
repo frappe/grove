@@ -221,11 +221,9 @@ never overwrites what an operator set. Before a vendor or a model is added, walk
 - `seed.insert_missing()` runs after install and after every migrate. It inserts a geography,
   cloud account (keyless, for the operator to fill), region or model the site has no doc
   named for, a provider the site has no record named for in any geography, and a `Denied Tool`
-  pair the site lacks. It never deletes, and updates one thing: a catalog tier's limit rows
-  (`sync_tier`, after the models so a row's model key can be checked) are the file's, rewritten
-  when they differ in the table the tier's Limits Count Per counts with; a tier's `spend_limit`
-  and that scope stay the operator's once the tier exists (the file's `limit_scope` is read when
-  a tier is first inserted).
+  pair the site lacks, and a tier the site has none named for (`insert_tier`, after the models so
+  a row's model key can be checked). It never deletes and never updates: what a site holds is
+  the operator's.
 - `denied_tools` is what a vendor bills outside the token counts, and only that: Anthropic's web
   search ($10 per 1,000 searches) and code execution (container hours), OpenAI's `web_search_options`
   and the Responses API's priced hosted tools (web search, file search, code interpreter, image

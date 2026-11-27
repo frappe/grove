@@ -24,7 +24,7 @@
   },
   {
    "depends_on": "eval:doc.limit_scope != \"Key\"",
-   "description": "One row per model, metric and window; a blank model is every model. A value of 0 is no limit. No rows: uncapped. The catalog rewrites these on migrate.",
+   "description": "One row per model, metric and window; a blank model is every model. A value of 0 is no limit. No rows: uncapped.",
    "fieldname": "limits",
    "fieldtype": "Table",
    "label": "Limits",
@@ -40,7 +40,7 @@
   },
   {
    "depends_on": "eval:doc.limit_scope == \"Key\"",
-   "description": "One row per metric and window, for each key across every model. A value of 0 is no limit. No rows: uncapped. The catalog rewrites these on migrate.",
+   "description": "One row per metric and window, for each key across every model. A value of 0 is no limit. No rows: uncapped.",
    "fieldname": "key_limits",
    "fieldtype": "Table",
    "label": "Limits Per Key",
@@ -54,7 +54,7 @@
    "link_fieldname": "tier"
   }
  ],
- "modified": "2026-11-27 23:30:00.000000",
+ "modified": "2026-11-28 00:30:00.000000",
  "modified_by": "Administrator",
  "module": "Grove",
  "name": "Tier",
