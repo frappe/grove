@@ -4,7 +4,7 @@
 import frappe
 from frappe.utils import flt
 
-from grove.access import limits_in_force, team_limits
+from grove.access import limit_scopes, limits_in_force, team_limits
 from grove.api.control import for_control_clients
 from grove.api.keys import key_rows
 from grove.api.teams import get_team
@@ -103,6 +103,7 @@ def spend_of(team):
 		"committed": committed(team, lock=False),
 		"spend_limit": None if doc.key_cap_window == "Total" else flt(doc.spend_limit, 9),
 		"limits": limits_in_force({team: doc.tier})[team],
+		"limit_scope": limit_scopes({team: doc.tier})[team],
 		"suspended": bool(doc.suspended),
 		"log_payloads": bool(doc.log_payloads),
 		"key_cap_window": doc.key_cap_window or "Monthly",

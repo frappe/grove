@@ -555,7 +555,7 @@ class TestEffectiveTeams(unittest.TestCase):
 		teams = self.teams(
 			[self.team("T-1", tier="Growth"), self.team("T-2", tier="Trial"), self.team("T-3", tier="Trial")],
 			limits=rows,
-			tiers=[("Growth", "Team"), ("Trial", "Key")],
+			tiers=[("Growth", "Model"), ("Trial", "Key")],
 		)
 		self.assertEqual(
 			[(team["limits"], team["key_limits"]) for team in teams],

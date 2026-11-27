@@ -6,7 +6,7 @@ import functools
 import frappe
 from frappe.utils import flt
 
-from grove.access import team_limits
+from grove.access import limits_in_force, team_limits
 from grove.api.control import for_control_clients
 from grove.api.teams import get_team
 
@@ -157,10 +157,19 @@ def key_rows(names):
 	if not names:
 		return []
 	rows = frappe.get_list(
-		"Grove API Key", filters={"name": ("in", names)}, fields=KEY_FIELDS, order_by="creation desc"
+		"Grove API Key",
+		filters={"name": ("in", names)},
+		fields=[*KEY_FIELDS, "team"],
+		order_by="creation desc",
 	)
 	month = month_spent_by("api_key", names)
+	teams = frappe.get_list(
+		"Grove Team", filters={"name": ("in", {row.team for row in rows})}, fields=["name", "tier"]
+	)
+	limits = limits_in_force({team.name: team.tier for team in teams})
 	for row in rows:
+		# A client reads `limits` off every key: the rows its team runs under, never missing.
+		row["limits"] = limits.get(row.pop("team"), [])
 		row["gateway_url"] = get_gateway_url(row.geography)
 		row["month_spent"] = flt(month.get(row.name, 0), 9)
 		row["expires_at"] = utc_timestamp(row.expires_at) if row.expires_at else None

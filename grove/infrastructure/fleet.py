@@ -306,11 +306,14 @@ class PathwayHost(FleetHost):
 		return play_name, rc
 
 	@frappe.whitelist()
-	def set_maintenance(self, on: int):
+	def set_maintenance(self, on: int, pause_projection: int | None = None):
 		"""Button: refuse new requests while running ones finish, or serve again. The box is asked
-		first — a pathway that predates the key refuses the whole file, even at its next start."""
+		first — a pathway that predates the key refuses the whole file, even at its next start.
+		`pause_projection`, when given, sets Grove Settings' Pause Projection with it."""
 		self.get_in_flight()
 		self.db_set("is_in_maintenance", on)
+		if pause_projection is not None:
+			frappe.db.set_single_value("Grove Settings", "pause_projection", int(pause_projection))
 		frappe.enqueue_doc(self.doctype, self.name, "apply_config", queue="short", timeout=600)
 		frappe.msgprint(f"{'Starting' if on else 'Ending'} maintenance on {self.name}.", alert=True)
 

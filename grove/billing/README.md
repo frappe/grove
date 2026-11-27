@@ -161,7 +161,7 @@ it holds no money that must not run out. What gates is:
 **What Central reads.** `api.usage.figures(team)`: `spend` (`month_spent`, this UTC month's
 records of every key the team held, revoked ones too, plus what Grove corrected, nothing
 stored; `capped`, Σ live caps; `committed`, what the month has spoken for, the figure a raise is
-checked against; `spend_limit`; `limits`, the team's rate limits in force, its tier's rows with its own laid over them; `suspended`), `keys` (live first, newest first within each, with its cap and `month_spent`) and `usage` (this month, every key), read together and kept in the site
+checked against; `spend_limit`; `limits`, the team's rate limits in force, its tier's rows with its own laid over them; `limit_scope`, `Model` or `Key`, how its tier counts them; `suspended`), `keys` (live first, newest first within each, with its cap, `month_spent` and `limits`, the rows its team runs under, always a list) and `usage` (this month, every key), read together and kept in the site
 cache until something moves them — a drain lands, a key, the team or its tier saved — and 30 minutes
 at most, so every console page shows one moment; a correction or a switch of the default tier waits
 those minutes out.

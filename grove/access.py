@@ -10,7 +10,7 @@ group from invalidating every key beneath it."""
 import frappe
 from frappe.utils import flt
 
-LIMIT_TABLES = {"Team": "limits", "Key": "key_limits"}
+LIMIT_TABLES = {"Model": "limits", "Key": "key_limits"}
 DEFAULT_LIMITS = (
 	{"metric": "requests", "window": "1m", "value": 20},
 	{"metric": "total_tokens", "window": "1m", "value": 100_000},
@@ -121,10 +121,10 @@ def limits_reaching(rows, geography):
 
 
 def limit_scopes(teams):
-	"""{team: "Team" | "Key"} for `teams` ({team: tier}; blank is the default tier)."""
+	"""{team: "Model" | "Key"} for `teams` ({team: tier}; blank is the default tier)."""
 	scopes = dict(frappe.get_all("Tier", fields=["name", "limit_scope"], as_list=True))
 	fallback = default_tier()
-	return {team: scopes.get(named or fallback) or "Team" for team, named in teams.items()}
+	return {team: scopes.get(named or fallback) or "Model" for team, named in teams.items()}
 
 
 def limits_in_force(teams):

@@ -325,6 +325,30 @@ class TestTheCatalogOwnsTierRows(CatalogCase):
 		self.load(tiers=tiers)
 		self.assertEqual(frappe.db.get_value("Tier", "catalog-tier-moved", "modified"), doc.modified)
 
+	def test_a_site_from_before_the_scope_settled_is_brought_in_line(self):
+		from grove.patches.v1_0.settle_limit_scope_and_tables import execute
+
+		dear = our_model("catalog-settled-dear").insert()
+		rows = [
+			{"metric": "requests", "window": "1m", "value": 60},
+			{"model": dear.name, "metric": "requests", "window": "1m", "value": 6},
+		]
+		for name in ("catalog-tier-old-team", "catalog-tier-old-key"):
+			frappe.get_doc({"doctype": "Tier", "__newname": name, "limits": rows}).insert()
+		frappe.db.set_value("Tier", "catalog-tier-old-team", "limit_scope", "Team")
+		frappe.db.set_value("Tier", "catalog-tier-old-key", "limit_scope", "Key")
+		frappe.db.set_value("Model Limit", {"parent": "catalog-tier-old-key"}, "parentfield", "key_limits")
+		execute()
+		renamed, moved = (
+			frappe.get_doc("Tier", name) for name in ("catalog-tier-old-team", "catalog-tier-old-key")
+		)
+		self.assertEqual((renamed.limit_scope, len(renamed.limits), renamed.key_limits), ("Model", 2, []))
+		self.assertEqual(
+			(moved.limit_scope, [row.value for row in moved.key_limits], [row.model for row in moved.limits]),
+			("Key", [60], [dear.name]),
+		)
+		self.assertFalse(frappe.db.exists("Model Limit", {"parentfield": "key_limits"}))
+
 	def test_rows_follow_the_file_and_the_spend_limit_stays(self):
 		make_test_geography()
 		rows = [{"metric": "requests", "window": "1m", "value": 60}]

@@ -554,6 +554,22 @@ class TestMaintenanceIsHeldInConfigJson(unittest.TestCase):
 			GatewayServer.set_maintenance(doc, 1)
 		doc.db_set.assert_not_called()
 
+	def test_maintenance_sets_pause_projection_only_when_told(self):
+		doc = fake_gateway(doctype="Gateway Server", get_in_flight=Mock(return_value={}), db_set=Mock())
+		with (
+			patch("frappe.enqueue_doc"),
+			patch("frappe.msgprint"),
+			patch.object(frappe.db, "set_single_value") as set_single_value,
+		):
+			GatewayServer.set_maintenance(doc, 1)
+			set_single_value.assert_not_called()
+			GatewayServer.set_maintenance(doc, 1, pause_projection=1)
+			GatewayServer.set_maintenance(doc, 0, pause_projection=0)
+		self.assertEqual(
+			[call.args for call in set_single_value.call_args_list],
+			[("Grove Settings", "pause_projection", 1), ("Grove Settings", "pause_projection", 0)],
+		)
+
 
 class TestSetupCapsMemoryAtTheDocsLimit(unittest.TestCase):
 	"""A limit typed before provisioning is what Setup writes, not the automatic one."""
