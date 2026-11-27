@@ -310,8 +310,6 @@ class PathwayHost(FleetHost):
 		"""Button: refuse new requests while running ones finish, or serve again. The box is asked
 		first — a pathway that predates the key refuses the whole file, even at its next start.
 		`pause_projection`, when given, sets Grove Settings' Pause Projection with it."""
-		if pause_projection is not None:
-			frappe.has_permission("Grove Settings", "write", throw=True)
 		self.get_in_flight()
 		self.db_set("is_in_maintenance", on)
 		if pause_projection is not None:

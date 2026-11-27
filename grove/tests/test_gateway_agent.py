@@ -559,7 +559,6 @@ class TestMaintenanceIsHeldInConfigJson(unittest.TestCase):
 		with (
 			patch("frappe.enqueue_doc"),
 			patch("frappe.msgprint"),
-			patch("frappe.has_permission", return_value=True),
 			patch.object(frappe.db, "set_single_value") as set_single_value,
 		):
 			GatewayServer.set_maintenance(doc, 1)
