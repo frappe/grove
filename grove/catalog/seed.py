@@ -72,8 +72,6 @@ def tier_rows(entry):
 
 
 def insert_tier(entry):
-	"""A tier the site lacks, with the file's rows in the table its scope counts with. One the
-	site holds is left as the operator has it."""
 	if frappe.db.exists("Tier", entry["name"]):
 		return
 	rows = tier_rows(entry)
@@ -92,8 +90,6 @@ def insert_named(doctype, entry, ignore_mandatory=False):
 
 
 def insert_geography(geography):
-	"""Endpoint and zone are the operator's to fill, so this one insert skips the mandatory check.
-	The default only when the site has none."""
 	if frappe.db.exists("Geography", geography["name"]):
 		return
 	doc = frappe.get_doc({"doctype": "Geography", **geography})
@@ -119,8 +115,6 @@ def insert_model(model, geography):
 
 
 def insert_model_group(group, docs):
-	"""A group the site lacks, in the geography its models landed in — `docs` is their doc per
-	key. That geography's default only when it has none."""
 	if frappe.db.exists("Model Group", group["name"]):
 		return
 
