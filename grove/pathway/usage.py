@@ -13,7 +13,6 @@ the drain id `dead:<request id>`."""
 import hashlib
 import json
 import time
-from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 
@@ -23,6 +22,7 @@ from frappe.utils import getdate
 from grove.billing.doctype.stuck_usage.stuck_usage import record_stuck, resolve_stuck
 from grove.billing.pricing import PriceBook
 from grove.pathway import snapshot
+from grove.pathway.data_models import Drain
 from grove.pathway.reconcile import DEAD, Reconciler
 from grove.pathway.run import SyncRun, Target, error_text, gateway_units, guarded, in_turn
 from grove.utils import utc_today
@@ -192,23 +192,6 @@ def store_of(gateway):
 	if not store:
 		frappe.throw(f"{gateway} is on no Gateway Store — set it up before pulling its usage.")
 	return store
-
-
-@dataclass
-class Drain:
-	"""One gateway's answer, sorted for landing and for the ack back to the box."""
-
-	by_team: dict = field(default_factory=dict)  # {team: {drain id: {key: {day: hash}}}}
-	acks: dict = field(default_factory=dict)  # {drain id: {key: [days]}}
-	dead_acks: list = field(default_factory=list)
-	pulled: int = 0
-	stuck: int = 0
-
-	def hold(self, team, drain_id, prefix, day, h):
-		self.by_team.setdefault(team, {}).setdefault(drain_id, {}).setdefault(prefix, {})[day] = h
-
-	def acknowledge(self, drain_id, prefix, days):
-		self.acks.setdefault(drain_id, {}).setdefault(prefix, []).extend(days)
 
 
 def record_drains(proxy_name, drains, dead=(), gateway_store=None):

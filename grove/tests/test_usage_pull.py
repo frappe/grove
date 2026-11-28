@@ -19,6 +19,7 @@ from grove.billing.pricing import committed
 from grove.grove.doctype.model_id.model_id import ensure_model_id
 from grove.infrastructure.doctype.geography.test_geography import make_test_geography
 from grove.pathway import reconcile, run, usage
+from grove.pathway.data_models import Drain
 from grove.pathway.reconcile import FIELDS, Reconciler
 from grove.pathway.run import Target
 from grove.tests.test_api_permissions import billed_record
@@ -482,7 +483,7 @@ class TestADrainIsAcknowledgedOnceRecorded(unittest.TestCase):
 	"""Pure: the pull and the box are fakes."""
 
 	def land(self, drains, record=None, ack=None):
-		record = record or usage.Drain(acks={"d1": ["k"]}, pulled=1)
+		record = record or Drain(acks={"d1": ["k"]}, pulled=1)
 		row = {"server": "gw1", "success": 1, "duration_ms": 0, "drains": drains, "dead": []}
 		target = unittest.mock.Mock(error=None)
 		target.post.side_effect = ack
@@ -513,11 +514,11 @@ class TestADrainIsAcknowledgedOnceRecorded(unittest.TestCase):
 		self.assertIn("db gone", row["error"])
 
 	def test_nothing_landed_sends_no_ack(self):
-		_outcome, _row, post = self.land({"d1": {"k": {}}}, record=usage.Drain(pulled=1, stuck=1))
+		_outcome, _row, post = self.land({"d1": {"k": {}}}, record=Drain(pulled=1, stuck=1))
 		post.assert_not_called()
 
 	def test_dead_lines_alone_are_acknowledged_too(self):
-		_outcome, _row, post = self.land({}, record=usage.Drain(dead_acks=["r1"], pulled=1))
+		_outcome, _row, post = self.land({}, record=Drain(dead_acks=["r1"], pulled=1))
 		post.assert_called_once_with("usage/ack", {"acks": {}, "dead": ["r1"]}, timeout=usage.DRAIN_TIMEOUT)
 
 	def test_a_failed_ack_loses_nothing_and_says_so(self):
@@ -527,7 +528,7 @@ class TestADrainIsAcknowledgedOnceRecorded(unittest.TestCase):
 
 	def test_the_sync_row_says_how_many_teams_are_stuck(self):
 		_outcome, row, _post = self.land(
-			{"d1": {"k": {}}}, record=usage.Drain(acks={"d1": ["a"]}, pulled=3, stuck=1)
+			{"d1": {"k": {}}}, record=Drain(acks={"d1": ["a"]}, pulled=3, stuck=1)
 		)
 		self.assertEqual(row["detail"], "pulled:3 stuck:1")
 
@@ -564,7 +565,7 @@ class TestAStoreIsPulledThroughOneWriter(unittest.TestCase):
 				usage, "fetch_usage", side_effect=lambda target, _keys: (fetch or fetch_one)(target)
 			),
 			unittest.mock.patch.object(
-				usage, "record_drains", side_effect=record or (lambda *_, **__: usage.Drain(pulled=1))
+				usage, "record_drains", side_effect=record or (lambda *_, **__: Drain(pulled=1))
 			),
 			unittest.mock.patch.object(run, "finalize") as finalize,
 			unittest.mock.patch.object(
@@ -601,7 +602,7 @@ class TestAStoreIsPulledThroughOneWriter(unittest.TestCase):
 				"fetch_usage",
 				side_effect=lambda *_: {"success": 1, "reachable": 1, "duration_ms": 0, "drains": {}},
 			),
-			unittest.mock.patch.object(usage, "record_drains", return_value=usage.Drain()),
+			unittest.mock.patch.object(usage, "record_drains", return_value=Drain()),
 			unittest.mock.patch.object(run, "finalize"),
 			unittest.mock.patch.object(run, "new_run", return_value=self.run_doc()),
 			unittest.mock.patch.object(
@@ -641,7 +642,7 @@ class TestAStoreIsPulledThroughOneWriter(unittest.TestCase):
 
 		def record(*_args, **kwargs):
 			landed.append(kwargs.get("gateway_store"))
-			return usage.Drain(pulled=1)
+			return Drain(pulled=1)
 
 		pulled, counts = self.pull([("store1", ["gw1"])], succeeds={"gw9"}, gateways=["gw9"], record=record)
 		self.assertEqual((pulled, counts, landed), (["gw9"], (1, 1), ["store9"]))
@@ -662,7 +663,7 @@ class TestAStoreIsPulledThroughOneWriter(unittest.TestCase):
 		def record(gateway, _drains, _dead, **_):
 			if gateway == "gw1":
 				raise RuntimeError("disk on fire")
-			return usage.Drain(pulled=4)
+			return Drain(pulled=4)
 
 		_pulled, counts = self.pull(
 			[(None, ["gw1"]), (None, ["gw2"])], succeeds={"gw1", "gw2"}, record=record
