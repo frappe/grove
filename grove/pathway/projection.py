@@ -178,7 +178,7 @@ def push_target(target, delta, adjustments=()):
 			row["payload"].append({"push": "state", "body": redact(delta)})
 			row["detail"] = snapshot.describe(delta, target.post("state", delta))
 		for body in adjustments:
-			row["payload"].append({"push": "spend-adjust", "body": body})
+			row["payload"].append({"push": "spend-adjust", "body": redact(body)})
 			row["adjusted"][body["id"]] = adjust(target, body)
 		if adjustments:
 			row["detail"] = f"{row['detail']} spend-adjust:{len(adjustments)}".strip()

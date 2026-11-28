@@ -2,13 +2,14 @@
 # For license information, please see license.txt
 
 import json
+from collections import Counter
 
 import frappe
 from frappe.model.document import Document
 
 from grove.grove.doctype.engine_image.engine_image import engine_tuning
 from grove.grove.doctype.model.model import launch_config
-from grove.grove.doctype.model_replica.model_replica import GPU_CLAIMING_STATUSES
+from grove.grove.doctype.model_replica.model_replica import CLAIM_HOLDING_STATUSES, GPU_CLAIMING_STATUSES
 from grove.infrastructure.doctype.gpu.gpu import GPUUnavailable, cards_on
 from grove.naming import next_deployment_name
 from grove.placement import lease
@@ -262,11 +263,13 @@ class ModelDeployment(Document):
 		}
 
 	def _replicas_per_region(self):
-		counts = {}
-		for replica in self.replicas:
-			region = frappe.db.get_value("Inference Server", replica.inference_server, "region") or ""
-			counts[region] = counts.get(region, 0) + 1
-		return counts
+		"""{region: this deployment's live replicas there}, what SpreadRegions thins out."""
+		rows = frappe.get_all(
+			"Model Replica",
+			filters={"model_deployment": self.name, "status": ("in", GPU_CLAIMING_STATUSES)},
+			fields=["region"],
+		)
+		return Counter(row.region or "" for row in rows)
 
 	@frappe.whitelist()
 	def add_replica(self, inference_server: str | None = None, gpus: str | list | None = None):
@@ -325,30 +328,32 @@ class ModelDeployment(Document):
 
 
 def _claims_by_box(boxes) -> dict[str, BoxClaims]:
-	"""Cards and holders arrive together — `held_by` is a column on the card — so this and the
-	allocation panel cannot disagree about what is free."""
+	"""Cards and holders arrive together (`held_by` is a column on the card), so this and the
+	allocation panel cannot disagree. A card whose holder no longer holds (Terminated, Inactive,
+	deleted) counts as free; the claim that follows still arbitrates."""
 	machines = sorted({box.machine for box in boxes if box.machine})
 	cards = cards_on(machines)
 	replicas = frappe.get_all(
 		"Model Replica",
 		filters={
 			"inference_server": ("in", [box.name for box in boxes]),
-			"status": ("in", GPU_CLAIMING_STATUSES),
+			"status": ("in", CLAIM_HOLDING_STATUSES),
 		},
-		fields=["name", "inference_server"],
+		fields=["name", "inference_server", "status"],
 	)
-	holding = {card.held_by for card in cards if card.held_by}
+	holders = {replica.name for replica in replicas}
+	pinned = {card.held_by for card in cards if card.held_by}
 
 	claims = {}
 	for box in boxes:
-		mine = [r for r in replicas if r.inference_server == box.name]
+		mine = [r for r in replicas if r.inference_server == box.name and r.status in GPU_CLAIMING_STATUSES]
 		on_machine = [c for c in cards if c.machine == box.machine]
 		claims[box.name] = BoxClaims(
-			free_gpus=[c for c in on_machine if not c.held_by],
+			free_gpus=[c for c in on_machine if c.held_by not in holders],
 			vram_by_card={c.name: c.vram_gb for c in on_machine},
 			capability_by_card={c.name: c.compute_capability for c in on_machine},
 			replicas=len(mine),
-			unpinned=len([r for r in mine if r.name not in holding]),
+			unpinned=len([r for r in mine if r.name not in pinned]),
 		)
 	return claims
 

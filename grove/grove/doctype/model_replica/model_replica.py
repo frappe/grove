@@ -475,7 +475,7 @@ def _vllm_extravars(md, m, inf, key):
 @failure.reports_failure(mark_broken=True, doctype="Model Replica")
 def deploy_model(model_replica):
 	"""Every arg is passed as Ansible extra-vars — the doctypes are the source of truth, not a hand-written
-	group_vars."""
+	group_vars. The cards are claimed first: Deploy is offered on Inactive, which released them."""
 	md = frappe.get_doc("Model Replica", model_replica)
 	m = frappe.get_doc("Model", md.model)
 	inf = md.server
@@ -484,6 +484,7 @@ def deploy_model(model_replica):
 			f"Inference Server {inf.name} is not provisioned — run its Setup "
 			"(host bootstrap) before deploying a model onto it."
 		)
+	md.claim_gpus()
 
 	key = md.get_password("internal_api_key", raise_exception=False)
 	# Teardown frees the port with db.set_value, which skips validate, so a redeploy arrives holding

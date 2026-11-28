@@ -218,7 +218,6 @@ class Ansible:
 		h = self.inventory.get_host(self.host)
 		h.set_variable("ansible_port", self.port)
 		h.set_variable("ansible_user", self.user)
-		h.set_variable("ansible_ssh_common_args", "-o StrictHostKeyChecking=accept-new -o ConnectTimeout=20")
 		self.variable_manager = VariableManager(loader=self.loader, inventory=self.inventory)
 		self.variable_manager._extra_vars = self.variables
 

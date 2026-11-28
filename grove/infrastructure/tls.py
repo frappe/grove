@@ -40,7 +40,7 @@ def is_lineage_stale(zone):
 
 
 def renew_fleet_certificate():
-	"""Daily, per geography that holds a certificate. certbot decides whether anything is due, and
+	"""Hourly, per geography that holds a certificate. certbot decides whether anything is due, and
 	Grove notices only when the files on disk stop matching what is stored — which is what keeps
 	this from reloading the fleet every night. One geography failing does not stop the rest."""
 	settings = frappe.get_single("Grove Settings")

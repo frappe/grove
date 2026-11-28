@@ -17,7 +17,7 @@ ERROR_LIMIT = 2000
 NO_WRITER = "No Active Gateway Store Writer — mark one of this store's gateways, or nothing updates it."
 
 SECRET_KEYS = frozenset(
-	{"internal_key", "credentials", "key_hash", "admin_token", "data_token", "api_secret"}
+	{"internal_key", "credentials", "key_hash", "key", "admin_token", "data_token", "api_secret"}
 )
 PAYLOAD_LIMIT = 8000
 

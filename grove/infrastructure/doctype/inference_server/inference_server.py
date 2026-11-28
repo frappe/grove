@@ -65,8 +65,8 @@ class InferenceServer(FleetHost, Document):
 			self.terminate_replicas()
 
 	def terminate_replicas(self):
-		"""The box is gone and its containers with it, so there is nothing to tear down — only
-		rows that would otherwise keep a route and their cards."""
+		"""The box is gone and its containers with it: nothing to tear down, only rows that would
+		keep a route and their cards. Terminated by `db.set_value`, so the cards are released here."""
 		from grove.grove.doctype.model.model import sync_published
 
 		replicas = frappe.get_all(
@@ -74,9 +74,15 @@ class InferenceServer(FleetHost, Document):
 			filters={"inference_server": self.name, "status": ("!=", "Terminated")},
 			fields=["name", "model"],
 		)
-		for replica in replicas:
-			frappe.db.set_value("Model Replica", replica.name, {"status": "Terminated", "engine_port": 0})
-			sync_published(replica.model)
+		if not replicas:
+			return
+		names = [replica.name for replica in replicas]
+		frappe.db.set_value("GPU", {"held_by": ("in", names)}, "held_by", None)
+		frappe.db.set_value(
+			"Model Replica", {"name": ("in", names)}, {"status": "Terminated", "engine_port": 0}
+		)
+		for model in sorted({replica.model for replica in replicas}):
+			sync_published(model)
 
 	def on_trash(self):
 		if self.is_standalone:
