@@ -265,7 +265,7 @@ class TestAGatewayIsToldWhichRedis(unittest.TestCase):
 			network_store="s-network",
 			record_agent_version=lambda rc: None,
 			record_store=lambda rc, store: None,
-			run_playbook=lambda play, extravars: ("play-1", 0),
+			run_playbook=lambda play, extravars, **reference: ("play-1", 0),
 		)
 		doc.get_agent_extravars = Mock(return_value={})
 		GatewayServer._deploy_agent(doc)

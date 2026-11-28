@@ -74,7 +74,7 @@ class TestSpawnRetries(unittest.TestCase):
 	def test_a_refusal_is_asked_again_up_to_the_retry_count(self):
 		h = Harness([RunPodError("no capacity"), RunPodError("no capacity"), {"pod_id": "p1"}])
 		result = h.run("spawn")
-		self.assertEqual(result["status"], "success")
+		self.assertEqual(result["outcome"], "success")
 		self.assertEqual([c[0] for c in h.calls], ["create", "create", "create"])
 		self.assertEqual(h.sleeps, [provisioner.SPAWN_RETRY_DELAY] * 2)
 		self.assertEqual(
@@ -89,7 +89,7 @@ class TestSpawnRetries(unittest.TestCase):
 	def test_the_last_refusal_gives_up_and_parks_the_pod(self):
 		h = Harness([RunPodError("no capacity")] * 2, retries=1, stored_pod_id="")
 		result = h.run("spawn", await_ready=lambda p: (_ for _ in ()).throw(AssertionError("must not run")))
-		self.assertEqual(result["status"], "error")
+		self.assertEqual(result["outcome"], "error")
 		self.assertEqual(len([c for c in h.calls if c[0] == "create"]), 2)
 		self.assertEqual(h.reported.call_count, 1)
 		self.assertIn({"status": "Stopped"}, h.writes)
@@ -106,7 +106,7 @@ class TestSpawnRetries(unittest.TestCase):
 	def test_a_pod_that_got_an_id_is_never_created_twice(self):
 		h = Harness([{"pod_id": "p1"}, {"pod_id": "p2"}])
 		result = h.run("spawn", await_ready=lambda p: (_ for _ in ()).throw(RunPodError("poll timed out")))
-		self.assertEqual(result["status"], "error")
+		self.assertEqual(result["outcome"], "error")
 		self.assertEqual(len([c for c in h.calls if c[0] == "create"]), 1)
 		self.assertNotIn({"status": "Stopped"}, h.writes)
 		self.assertEqual(h.events(), [("Spawn", "Failure", None)])
@@ -115,7 +115,7 @@ class TestSpawnRetries(unittest.TestCase):
 class TestTerminateAndTheRest(unittest.TestCase):
 	def test_terminate_writes_once_and_logs_it(self):
 		h = Harness([], pod_id="p1")
-		self.assertEqual(h.run("terminate"), {"status": "success"})
+		self.assertEqual(h.run("terminate"), {"outcome": "success"})
 		self.assertIn({"pod_id": "", "status": "Terminated", "engine_url": ""}, h.writes)
 		self.assertEqual(h.events(), [("Terminate", "Success", None)])
 
@@ -129,13 +129,13 @@ class TestTerminateAndTheRest(unittest.TestCase):
 	def test_a_provider_error_on_terminate_is_a_failure_row(self):
 		h = Harness([], pod_id="p1")
 		h.provisioner._client.terminate_pod = lambda pod_id: (_ for _ in ()).throw(RunPodError("boom"))
-		self.assertEqual(h.run("terminate")["status"], "error")
+		self.assertEqual(h.run("terminate")["outcome"], "error")
 		self.assertEqual(h.events(), [("Terminate", "Failure", None)])
 
 	def test_a_failed_stop_is_reported_not_raised(self):
 		h = Harness([], pod_id="p1")
 		h.stop_error = RunPodError("boom")
-		self.assertEqual(h.run("stop")["status"], "error")
+		self.assertEqual(h.run("stop")["outcome"], "error")
 		self.assertEqual(h.reported.call_count, 1)
 		self.assertEqual(h.events(), [("Stop", "Failure", None)])
 

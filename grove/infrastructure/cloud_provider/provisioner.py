@@ -272,7 +272,7 @@ class PodProvisioner:
 			return self.fail(e, "Spawn", started)
 		self.log("Spawn", "Success", f"{self.current_status} at {ready['public_ip']}", started=started)
 		return {
-			"status": "success",
+			"outcome": "success",
 			"pod_id": pod_api["pod_id"],
 			"public_ip": ready["public_ip"],
 		}
@@ -368,13 +368,13 @@ class PodProvisioner:
 	def terminate(self):
 		"""The tick prunes its route on the next pass."""
 		if not self.pod.pod_id:
-			return {"status": "error", "message": "No provider pod to terminate"}
+			return {"outcome": "error", "message": "No provider pod to terminate"}
 		try:
 			self.client.terminate_pod(self.pod.pod_id)
 		except RunPodError as e:
 			return self.fail(e, "Terminate")
 		self.mark_terminated(f"Provider pod {self.pod.pod_id} terminated")
-		return {"status": "success"}
+		return {"outcome": "success"}
 
 	def mark_terminated(self, detail):
 		"""The one write for a pod that is gone, whoever removed it."""
@@ -438,7 +438,7 @@ class PodProvisioner:
 		# Not @reports_failure: this path never raises, and a Pod has no Broken status to mark.
 		failure.report("Pod", self.pod.name, title, str(error))
 		self.log(event, "Failure", error, started=started)
-		return {"status": "error", "message": str(error)}
+		return {"outcome": "error", "message": str(error)}
 
 
 def _is_engine_serving(health_url, timeout=5):

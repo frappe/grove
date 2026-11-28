@@ -50,14 +50,14 @@ class Reconciler:
 		self.drain_id = drain_id
 		self.landed = landed
 
-	def team(self, team, drains):
-		"""`drains`: {API key: parsed hash} for `team`'s keys in this drain on this day. A key this
+	def team(self, team, parsed_by_key):
+		"""`parsed_by_key`: {API key: parsed hash} for `team`'s keys in this drain on this day. A key this
 		drain already landed for the day is skipped, so a re-sent drain bills nothing twice. The rows
 		go in as one statement however many keys: a store's hourly drain is a lakh of them."""
 		lock_team(team)
 		rows = [
 			self.row(team, prefix, self.priced(drain.pricings) + self.unpriced(drain), drain.requests)
-			for prefix, drain in drains.items()
+			for prefix, drain in parsed_by_key.items()
 			if not self.has_landed(prefix)
 		]
 		frappe.db.bulk_insert("Usage Record", FIELDS, [[row[field] for field in FIELDS] for row in rows])

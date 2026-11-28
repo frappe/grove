@@ -188,7 +188,7 @@ class ServerResize(StepHandler, Document):
 			step.status = Status.Skipped
 		else:
 			gateway.db_set("is_in_maintenance", 1)
-			play_name = gateway.apply_config(**self.play_reference())[0]
+			play_name, _rc = gateway.apply_config(**self.play_reference())
 			step.job_type = "Ansible Play"
 			step.job = play_name
 			step.status = Status.Success
@@ -307,7 +307,8 @@ class ServerResize(StepHandler, Document):
 	def lift_maintenance(self, gateway):
 		doc = frappe.get_doc("Gateway Server", gateway)
 		doc.db_set("is_in_maintenance", 0)
-		return doc.apply_config(**self.play_reference())[0]
+		play_name, _rc = doc.apply_config(**self.play_reference())
+		return play_name
 
 	def succeed(self, success_status=Status.Success):
 		self.ended_at = now_datetime()

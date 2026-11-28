@@ -611,7 +611,7 @@ def plan_reconcile(existing, scanned, slot_is_identity=False):
 	return upgrades, inserts, [card for card in existing if card.name not in claimed]
 
 
-def reconcile_gpus(machine, scanned):
+def reconcile_gpus(machine: str, scanned: list[dict]):
 	"""Upserted, not replaced: a card still there keeps its row and therefore its `held_by`, so a
 	re-scan of a busy box does not disturb a running replica."""
 	from grove.infrastructure.doctype.gpu.gpu import cards_on

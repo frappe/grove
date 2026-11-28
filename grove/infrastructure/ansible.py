@@ -20,7 +20,7 @@ class AnsibleHost:
 			frappe.throw(f"{self.doctype} {self.name} has no Machine to run a playbook against.")
 		return self.machine
 
-	def run_playbook(self, playbook, project=None, extravars=None, **kwargs):
+	def run_playbook(self, playbook, project=None, extravars=None, **kwargs) -> ansible_runner.PlayResult:
 		"""`project` names another doctype's folder when the play is shared — exporters.yml belongs
 		to Monitoring Agent but runs against Inference and Gateway Server boxes."""
 		ansible = Ansible(project_root=ansible_project_dir(project or self.doctype))
@@ -66,10 +66,9 @@ class Ansible:
 		skip_tags=None,
 		reference_doctype=None,
 		reference_docname=None,
-	):
-		"""Doctype-integrated mode, tracked as Ansible Play/Task docs. `machine_name` is the Machine
-		doc: same as `server_name` for Machine, different for role servers. Returns (play_name, rc),
-		rc 0 = success."""
+	) -> ansible_runner.PlayResult:
+		"""Tracked as Ansible Play/Task docs. `machine_name` is the Machine doc: same as `server_name`
+		for Machine, different for role servers."""
 		playbook_path = self._resolve_playbook_path(playbook_name)
 
 		kwargs = {

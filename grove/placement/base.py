@@ -15,6 +15,17 @@ class PlacementError(Exception):
 
 
 @dataclass(frozen=True)
+class BoxClaims:
+	"""One box's cards and replicas, read together so this and the allocation panel agree."""
+
+	free_gpus: list
+	vram_by_card: dict
+	capability_by_card: dict
+	replicas: int = 0
+	unpinned: int = 0
+
+
+@dataclass(frozen=True)
 class Candidate:
 	"""One box, already measured against ONE deployment's shape — which is why a Scorer needs
 	nothing but this."""

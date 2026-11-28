@@ -136,8 +136,8 @@ class IngressServer(PathwayHost, Document):
 		)
 
 	@failure.reports_failure(mark_broken=False)
-	def _deploy_agent(self, **play):
-		"""`play` names the doc the play is run for, e.g. a Pathway Update.
+	def _deploy_agent(self, reference_doctype=None, reference_docname=None):
+		"""The reference names the doc the play is run for, e.g. a Pathway Update.
 
 		Resolved here rather than at enqueue: the certificate key would otherwise be serialised into
 		the job payload and sit in Redis. Dropped entirely — agent.env names the certificate's PATH,
@@ -155,7 +155,8 @@ class IngressServer(PathwayHost, Document):
 				**tls_variables,
 				**self.config_variables,
 			},
-			**play,
+			reference_doctype=reference_doctype,
+			reference_docname=reference_docname,
 		)
 		self.record_agent_version(rc)
 		return play_name, rc

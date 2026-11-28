@@ -9,6 +9,7 @@ parent play."""
 
 import json
 import os
+from typing import NamedTuple
 
 import frappe
 from ansible import constants as C
@@ -311,6 +312,15 @@ class Ansible:
 		return frappe.get_doc("Ansible Play", self.play_name), rc
 
 
+class PlayResult(NamedTuple):
+	play_name: str
+	rc: int
+
+	@property
+	def ok(self) -> bool:
+		return self.rc == 0
+
+
 def run_play(
 	playbook,
 	server_type,
@@ -323,7 +333,7 @@ def run_play(
 	reference_doctype=None,
 	reference_docname=None,
 ):
-	"""Returns (ansible_play_name, rc), rc 0 = success."""
+	"""Unpacks as `play_name, rc`; rc 0 is success."""
 	m = frappe.get_doc("Machine", machine_name)
 	if not m.public_ip:
 		frappe.throw(f"Machine {machine_name} has no public_ip")
@@ -348,4 +358,4 @@ def run_play(
 		reference_docname=reference_docname,
 	)
 	play, rc = ansible.run()
-	return play.name, rc
+	return PlayResult(play.name, rc)

@@ -12,7 +12,7 @@ from grove.grove.doctype.model_replica.model_replica import GPU_CLAIMING_STATUSE
 from grove.infrastructure.doctype.gpu.gpu import GPUUnavailable, cards_on
 from grove.naming import next_deployment_name
 from grove.placement import lease
-from grove.placement.base import Candidate, fitting_gpus, placement_policy, sort_key
+from grove.placement.base import BoxClaims, Candidate, fitting_gpus, placement_policy, sort_key
 from grove.serving.base import DEFAULT_PORT, build_engine
 
 # The knobs a replica may override. Blank or 0 means inherit: none of these has 0 as a legal
@@ -324,7 +324,7 @@ class ModelDeployment(Document):
 		return replica.name
 
 
-def _claims_by_box(boxes):
+def _claims_by_box(boxes) -> dict[str, BoxClaims]:
 	"""Cards and holders arrive together — `held_by` is a column on the card — so this and the
 	allocation panel cannot disagree about what is free."""
 	machines = sorted({box.machine for box in boxes if box.machine})
@@ -343,7 +343,7 @@ def _claims_by_box(boxes):
 	for box in boxes:
 		mine = [r for r in replicas if r.inference_server == box.name]
 		on_machine = [c for c in cards if c.machine == box.machine]
-		claims[box.name] = frappe._dict(
+		claims[box.name] = BoxClaims(
 			free_gpus=[c for c in on_machine if not c.held_by],
 			vram_by_card={c.name: c.vram_gb for c in on_machine},
 			capability_by_card={c.name: c.compute_capability for c in on_machine},
@@ -379,7 +379,7 @@ def cards_at(inference_server, indexes):
 	return [cards[index] for index in indexes]
 
 
-def gpu_indexes(gpus):
+def gpu_indexes(gpus: str | list | None) -> list[int]:
 	"""CUDA indices as ints, however the caller passed them: a JSON string or a comma-separated
 	one from the client, a plain list from Python."""
 	if isinstance(gpus, str):

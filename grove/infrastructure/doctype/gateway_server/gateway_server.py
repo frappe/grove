@@ -241,17 +241,20 @@ class GatewayServer(PathwayHost, Document):
 		)
 
 	@failure.reports_failure(mark_broken=False)
-	def _deploy_agent(self, agent_binary="", **play):
+	def _deploy_agent(self, agent_binary="", reference_doctype=None, reference_docname=None):
 		"""Install the pinned agent release — or, for a dev deploy, the build `agent_binary` names
-		on the control plane — and rewrite agent.env and config.json. `play` names the doc the play
-		is run for, e.g. a Pathway Update.
+		on the control plane — and rewrite agent.env and config.json. The reference names the doc
+		the play is run for, e.g. a Pathway Update.
 
 		Both are written whole from the same extra-vars provision passes, so a config-only run never
 		blanks the admin token. Stays on the Redis it is on: moving a live gateway onto a store
 		drains it first, which a deploy does not."""
 		store = self.gateway_store
 		play_name, rc = self.run_playbook(
-			"deploy_agent.yml", extravars=self.get_agent_extravars(store, agent_binary), **play
+			"deploy_agent.yml",
+			extravars=self.get_agent_extravars(store, agent_binary),
+			reference_doctype=reference_doctype,
+			reference_docname=reference_docname,
 		)
 		self.record_agent_version(rc)
 		self.record_store(rc, store)

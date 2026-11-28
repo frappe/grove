@@ -22,7 +22,7 @@ from frappe.utils import getdate
 from grove.billing.doctype.stuck_usage.stuck_usage import record_stuck, resolve_stuck
 from grove.billing.pricing import PriceBook
 from grove.pathway import snapshot
-from grove.pathway.data_models import Drain
+from grove.pathway.data_models import Drain, DrainAnswer
 from grove.pathway.reconcile import DEAD, Reconciler
 from grove.pathway.run import SyncRun, Target, error_text, gateway_units, guarded, in_turn
 from grove.utils import utc_today
@@ -207,7 +207,7 @@ def store_of(gateway):
 	return store
 
 
-def land_drains(proxy_name, drains, dead=(), gateway_store=None):
+def land_drains(proxy_name, drains: DrainAnswer, dead=(), gateway_store=None):
 	"""Record one gateway's answer — {drain id: {key: {day: hash}}}, each hash on its day — and
 	commit. Everything lands under the store drained: the boxes on a store share one set of
 	counters; which team each hash is, `sort_drains` says."""
@@ -259,7 +259,7 @@ def acknowledge_shares(drain, shares):
 			drain.acknowledge(drain_id, prefix, days)
 
 
-def teams_of_keys(drains):
+def teams_of_keys(drains: DrainAnswer):
 	"""{key: its team}. A key Grove does not hold is absent."""
 	prefixes = {prefix for keys in drains.values() for prefix in keys}
 	if not prefixes:
@@ -270,7 +270,7 @@ def teams_of_keys(drains):
 	return {row.name: row.team for row in rows}
 
 
-def sort_drains(drains):
+def sort_drains(drains: DrainAnswer):
 	"""Each hash to the team it lands under: the one the box stamped on it (`team`: a key that
 	changed hands has its books closed at the push, under the team charged), else the key's team
 	now; a hash of a key Grove does not hold is acknowledged unlanded."""
@@ -286,7 +286,7 @@ def sort_drains(drains):
 	return drain
 
 
-def walk_hashes(drains):
+def walk_hashes(drains: DrainAnswer):
 	"""(drain id, key, day, hash) for each hash of a {drain id: {key: {day: hash}}} answer."""
 	for drain_id, keys in drains.items():
 		for prefix, days in keys.items():

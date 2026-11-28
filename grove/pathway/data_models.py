@@ -1,5 +1,8 @@
 from dataclasses import dataclass, field
 
+# One gateway's drained counters: {drain id: {key: {day: hash}}}.
+DrainAnswer = dict[str, dict[str, dict[str, dict]]]
+
 
 @dataclass
 class Drain:

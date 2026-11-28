@@ -18,6 +18,7 @@ from grove.grove.doctype.model_deployment.model_deployment import (
 	ModelDeployment,
 	gpu_indexes,
 )
+from grove.placement.base import BoxClaims
 from grove.serving.base import DEFAULT_MAX_MODEL_LEN
 
 MODULE = "grove.grove.doctype.model_deployment.model_deployment"
@@ -200,7 +201,7 @@ class TestNaming(unittest.TestCase):
 
 def claim(free=(), unpinned=0, replicas=0, vram=80, capability=9.0):
 	cards = [{"name": f"gpu-{i}", "gpu_index": i, "gpu_type": "h100", "vram_gb": vram} for i in free]
-	return frappe._dict(
+	return BoxClaims(
 		free_gpus=cards,
 		vram_by_card={f"gpu-{i}": vram for i in free},
 		capability_by_card={f"gpu-{i}": capability for i in free},

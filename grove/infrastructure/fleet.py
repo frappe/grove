@@ -318,12 +318,16 @@ class PathwayHost(FleetHost):
 		frappe.msgprint(f"{'Starting' if on else 'Ending'} maintenance on {self.name}.", alert=True)
 
 	@failure.reports_failure(mark_broken=False)
-	def apply_config(self, **play):
+	def apply_config(self, reference_doctype=None, reference_docname=None):
 		"""Write config.json and SIGUSR1, then read the box back: a rejected reload keeps the old
 		config and says so only in the journal. A read that does not connect is asked again — one
-		dropped SYN must not fail the change the play already made. `play` names the doc the play
-		is run for."""
-		play_name, rc = self.run_playbook("config.yml", extravars=self.config_variables, **play)
+		dropped SYN must not fail the change the play already made."""
+		play_name, rc = self.run_playbook(
+			"config.yml",
+			extravars=self.config_variables,
+			reference_doctype=reference_doctype,
+			reference_docname=reference_docname,
+		)
 		if rc != 0:
 			frappe.throw(f"config.yml failed on {self.name} (Ansible Play {play_name}).")
 		want, answered = bool(self.is_in_maintenance), None
@@ -369,6 +373,6 @@ class PathwayHost(FleetHost):
 		self.db_set("memory_limit_mb", limit_mb)
 		return play_name, rc
 
-	def get_in_flight(self):
+	def get_in_flight(self) -> dict:
 		"""The box's own answer: {"maintenance": bool, "in_flight": requests still running}."""
 		return Target.of(self).get("in-flight")

@@ -148,7 +148,7 @@ def gateway_units(gateways=None, geography=None):
 	]
 
 
-def in_turn(unit, work):
+def in_turn(unit: Unit, work) -> tuple[bool | None, list[dict]]:
 	"""`work(target)` on each of the unit's targets until one succeeds. → (outcome, rows): True when
 	one succeeded, None when one already held the state (it leaves no row), False when none got
 	through. Touches no doc: the caller appends the rows."""
