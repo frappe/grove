@@ -15,9 +15,6 @@ import requests
 RUNPOD_API_URL = "https://api.runpod.io/v2"
 LOG_READ_TIMEOUT = 65
 
-DEFAULT_IMAGE = "vllm/vllm-openai:latest"
-DEFAULT_CONTAINER_DISK_GB = 2
-
 POD_STATUS = {
 	"RUNNING": "Running",
 	"EXITED": "Stopped",
@@ -31,6 +28,22 @@ def pod_status(runpod_state):
 	"""An unrecognised state reads Provisioning, never Stopped: a pod slow to come up must not be
 	recorded as one the operator stopped."""
 	return POD_STATUS.get(runpod_state, "Provisioning")
+
+
+def _sse_events(response):
+	"""(event_id, data) per `data:` line, (event_id, None) per anything else. A read error ends it
+	quietly: idle or dropped mid-stream, the caller resumes from the last event id."""
+	event_id = None
+	try:
+		for line in response.iter_lines(decode_unicode=True):
+			if line and line.startswith("id:"):
+				event_id = line[3:].strip()
+			elif line and line.startswith("data:"):
+				yield event_id, json.loads(line[5:].strip() or "{}")
+			else:
+				yield event_id, None
+	except requests.RequestException:
+		return
 
 
 class RunPodError(Exception):
@@ -100,11 +113,10 @@ class RunPodClient:
 		gpu_count,
 		volume_in_gb,
 		ports,
+		image_name,
+		volume_mount_path,
+		container_disk_in_gb,
 		env=None,
-		image_name=None,
-		volume_mount_path="/data",
-		container_disk_in_gb=DEFAULT_CONTAINER_DISK_GB,
-		cloud_type="SECURE",
 		args=None,
 		container_registry_auth_id=None,
 	):
@@ -116,7 +128,7 @@ class RunPodClient:
 			env=env,
 			args=args,
 			name=name,
-			image_name=image_name or DEFAULT_IMAGE,
+			image_name=image_name,
 			container_disk_in_gb=container_disk_in_gb,
 			volume_in_gb=volume_in_gb,
 			volume_mount_path=volume_mount_path,
@@ -125,7 +137,7 @@ class RunPodClient:
 		body = {
 			**config,
 			"gpu": {"id": gpu_type_id, "count": gpu_count},
-			"cloud": cloud_type,
+			"cloud": "SECURE",
 		}
 		pod = self._request("POST", "/pods", body)
 		if not pod.get("id"):
@@ -142,7 +154,7 @@ class RunPodClient:
 			raise RunPodError(f"update_pod {pod_id} called with nothing to change")
 		return self._parse_pod(self._request("PATCH", f"/pods/{pod_id}", body))
 
-	def get_registry_auth_id(self, name, username, password):
+	def register_registry_auth(self, name, username, password):
 		"""Register pull credentials with RunPod → the id passed as the pod's `registry` (RunPod
 		takes no inline credentials). Names are unique per account, so an existing entry under
 		`name` is dropped and rewritten — re-registering keeps it from drifting off the
@@ -202,7 +214,7 @@ class RunPodClient:
 			time.sleep(poll_interval_sec)
 		raise RunPodError(f"Pod {pod_id} did not become SSH-reachable within {timeout_sec}s")
 
-	def stream_logs(self, pod_id, source=None, tail=100, last_event_id=None):
+	def stream_logs(self, pod_id, tail=100, last_event_id=None):
 		"""Yield (event_id, {ts, source, line}) off the pod's SSE log stream as it arrives, and
 		(event_id, None) on each separator or keep-alive — a tick that lets a caller blocked on a
 		quiet stream act (stop, flush) without waiting for the next log line. Ends when the pod's
@@ -212,8 +224,6 @@ class RunPodClient:
 		if last_event_id:
 			headers["Last-Event-ID"] = last_event_id
 		params = {"tail": tail}
-		if source:
-			params["source"] = source
 		try:
 			response = requests.get(
 				f"{RUNPOD_API_URL}/pods/{pod_id}/logs",
@@ -227,17 +237,7 @@ class RunPodClient:
 		with response:
 			if not response.ok:
 				raise RunPodError(f"RunPod logs {pod_id} → {response.status_code}: {response.text}")
-			event_id = None
-			try:
-				for line in response.iter_lines(decode_unicode=True):
-					if line and line.startswith("id:"):
-						event_id = line[3:].strip()
-					elif line and line.startswith("data:"):
-						yield event_id, json.loads(line[5:].strip() or "{}")
-					else:
-						yield event_id, None
-			except requests.RequestException:
-				return  # idle or dropped mid-stream — the caller resumes from the last event id
+			yield from _sse_events(response)
 
 	def terminate_pod(self, pod_id):
 		self._request("DELETE", f"/pods/{pod_id}")

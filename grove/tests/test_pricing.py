@@ -24,14 +24,14 @@ def table(*extra):
 
 
 def book(models=(), pricings=None, counters=None):
-	b = PriceBook()
-	b.models = set(models)
-	b.counters = counters or table()
-	b.pricings = {
-		name: frappe._dict(model=model, rates={c: D(r) for c, r in rates.items()})
-		for name, (model, rates) in (pricings or {}).items()
-	}
-	return b
+	return PriceBook(
+		counters or table(),
+		set(models),
+		{
+			name: frappe._dict(model=model, rates={c: D(r) for c, r in rates.items()})
+			for name, (model, rates) in (pricings or {}).items()
+		},
+	)
 
 
 class TestPriceBook(unittest.TestCase):

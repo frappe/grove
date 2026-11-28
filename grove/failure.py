@@ -25,6 +25,11 @@ def report(doctype, name, title, detail, *, mark_broken=False):
 	_notify(doctype, name, title, detail)
 
 
+def was_reported():
+	"""Whether this job already announced a failure: a failed play reports without raising."""
+	return getattr(frappe.local, "grove_failure_reported", False)
+
+
 def reports_failure(mark_broken=False, doctype=None):
 	"""Reports, then RE-RAISES. A bound method finds the doc on `self`; a module-level job takes the
 	docname first and names its doctype here."""
@@ -35,7 +40,7 @@ def reports_failure(mark_broken=False, doctype=None):
 			try:
 				return method(*args, **kwargs)
 			except Exception as error:
-				if not getattr(frappe.local, "grove_failure_reported", False):
+				if not was_reported():
 					failed = args[0] if args else None
 					report(
 						doctype or getattr(failed, "doctype", None),

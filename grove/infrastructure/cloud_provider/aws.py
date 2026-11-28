@@ -93,7 +93,11 @@ def parse_architecture(instance_type_info):
 		for a in (instance_type_info.get("ProcessorInfo") or {}).get("SupportedArchitectures") or []
 	]
 	runnable = [a for a in architectures if a in RUNNABLE_ARCHITECTURES]
-	return (runnable or architectures or [""])[0]
+	if runnable:
+		return runnable[0]
+	if architectures:
+		return architectures[0]
+	return ""
 
 
 def parse_instance_type(info):
@@ -218,10 +222,12 @@ class EC2Client(CloudClient):
 		reservations = (
 			self._call(self.ec2.describe_instances, InstanceIds=[instance_id]).get("Reservations") or []
 		)
+		instances = []
 		for reservation in reservations:
-			for instance in reservation.get("Instances") or []:
-				return self._parse_instance(instance)
-		raise AWSError(f"Instance {instance_id} not found")
+			instances += reservation.get("Instances") or []
+		if not instances:
+			raise AWSError(f"Instance {instance_id} not found")
+		return self._parse_instance(instances[0])
 
 	def get_instance_type_info(self, instance_type):
 		types = (
@@ -260,13 +266,13 @@ class EC2Client(CloudClient):
 
 	def _pages(self, operation, key, **kwargs):
 		"""Every `key` item of a NextToken-paged describe call."""
-		token = None
 		while True:
-			response = self._call(operation, **kwargs, **({"NextToken": token} if token else {}))
+			response = self._call(operation, **kwargs)
 			yield from response.get(key) or []
 			token = response.get("NextToken")
 			if not token:
 				return
+			kwargs["NextToken"] = token
 
 	def poll_instance_ready(self, instance_id, timeout_sec=900, poll_interval_sec=10):
 		"""Running is not reachable: a bare metal instance reports running with a public IP a minute
@@ -480,17 +486,10 @@ class EC2Client(CloudClient):
 		raise AWSError(f"Volume {volume_id} was still resizing after {timeout_sec}s")
 
 	def _root_volume_id(self, instance_id):
-		"""get_instance returns the parsed shape, which does not carry BlockDeviceMappings, so this
-		reads the raw instance."""
-		reservations = (
-			self._call(self.ec2.describe_instances, InstanceIds=[instance_id]).get("Reservations") or []
-		)
-		for reservation in reservations:
-			for instance in reservation.get("Instances") or []:
-				if volume_id := root_volume_id(instance):
-					return volume_id
-				raise AWSError(f"Instance {instance_id} has no EBS root volume to resize")
-		raise AWSError(f"Instance {instance_id} not found")
+		volume_id = self.get_instance(instance_id)["root_volume_id"]
+		if not volume_id:
+			raise AWSError(f"Instance {instance_id} has no EBS root volume to resize")
+		return volume_id
 
 	def stop_instance(self, instance_id):
 		self._call(self.ec2.stop_instances, InstanceIds=[instance_id])
@@ -544,18 +543,18 @@ class EC2Client(CloudClient):
 			"private_ip": instance.get("PrivateIpAddress"),
 			"instance_type": instance.get("InstanceType"),
 			"image_id": instance.get("ImageId"),
-			"root_volume_gb": self._root_volume_gb(instance),
+			"root_volume_id": root_volume_id(instance),
 			"_ec2_state": state,
 		}
 
-	def _root_volume_gb(self, instance):
-		"""The root EBS volume's size — not on the instance itself, so a second call against
-		the volume id."""
-		volume_id = root_volume_id(instance)
+	def get_volume_gb(self, volume_id):
+		"""0 when there is no volume: an instance-store root, or block device info not in yet."""
 		if not volume_id:
 			return 0
 		volumes = self._call(self.ec2.describe_volumes, VolumeIds=[volume_id]).get("Volumes") or []
-		return volumes[0].get("Size") or 0 if volumes else 0
+		if not volumes:
+			return 0
+		return volumes[0].get("Size") or 0
 
 	@staticmethod
 	def _call(operation, **kwargs):

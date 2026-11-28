@@ -8,6 +8,7 @@ import frappe
 
 from grove.access import LIMIT_TABLES
 from grove.grove.doctype.model_id.model_id import ensure_model_id
+from grove.infrastructure.doctype.geography.geography import default_geography
 
 CATALOG = Path(__file__).with_name("catalog.json")
 MODALITY_FIELDS = ("input_modalities", "output_modalities")
@@ -39,17 +40,16 @@ def insert_missing(path=None):
 		if not frappe.db.exists("Denied Tool", denied):
 			frappe.get_doc({"doctype": "Denied Tool", **denied}).insert()
 	geographies = {p["provider_name"]: p.get("geography") for p in catalog["providers"]}
-	docs = {
-		get_model_key(model): insert_model(model, geographies.get(model["provider"]) or default_geography())
-		for model in catalog["models"]
-	}
+	docs = {}
+	for model in catalog["models"]:
+		geography = geographies.get(model["provider"]) or default_geography()
+		docs[get_model_key(model)] = insert_model(model, geography)
 	for group in catalog.get("model_groups", []):
 		insert_model_group(group, docs)
 	for tier in catalog.get("tiers", []):
 		insert_tier(tier)
-	if (default := catalog.get("default_tier")) and not frappe.db.get_single_value(
-		"Grove Settings", "default_tier"
-	):
+	default = catalog.get("default_tier")
+	if default and not frappe.db.get_single_value("Grove Settings", "default_tier"):
 		frappe.db.set_single_value("Grove Settings", "default_tier", default)
 
 
@@ -137,10 +137,6 @@ def provider_record(provider_name, geography):
 		f"The catalog names models under {provider_name}, which the site carries in "
 		f"{len(records)} geographies and not in {geography}."
 	)
-
-
-def default_geography():
-	return frappe.db.get_value("Geography", {"is_default": 1})
 
 
 def get_model_key(model):

@@ -298,13 +298,13 @@ class TestTheEnd(unittest.TestCase):
 		return doc
 
 	def test_every_server_deployed_is_a_success(self):
-		doc = self.finish(PathwayUpdate.succeed, row("Gateway Server", "gw1", Status.Success))
+		doc = self.finish(PathwayUpdate.finish, row("Gateway Server", "gw1", Status.Success))
 		self.assertEqual(Status.Success, doc.status)
 		self.assertIsNotNone(doc.ended_at)
 
 	def test_a_server_passed_over_after_failing_fails_the_update(self):
 		doc = self.finish(
-			PathwayUpdate.succeed,
+			PathwayUpdate.finish,
 			row("Gateway Server", "gw1", Status.Failure),
 			row("Gateway Server", "gw2", Status.Success),
 		)

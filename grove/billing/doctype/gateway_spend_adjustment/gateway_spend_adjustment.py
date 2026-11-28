@@ -43,12 +43,11 @@ def pending_adjustments():
 		fields=["cost_discrepancy", "api_key", "gateway_store", "adjustment"],
 		order_by="creation asc",
 	)
+	if not rows:
+		return {}
 	hashes = dict(
 		frappe.get_all(
-			"Grove API Key",
-			{"name": ("in", [r.api_key for r in rows] or [""])},
-			["name", "key_hash"],
-			as_list=True,
+			"Grove API Key", {"name": ("in", [r.api_key for r in rows])}, ["name", "key_hash"], as_list=True
 		)
 	)
 	owed = {}

@@ -16,9 +16,9 @@ from grove.infrastructure.doctype.gpu.gpu import (
 	release_if_stale,
 )
 from grove.naming import next_replica_name
+from grove.serving.base import DEFAULT_PORT
 from grove.utils import is_env_key, is_env_value
 
-ENGINE_PORT_BASE = 8080
 _PORT_FREE_STATUSES = ("Terminated",)
 GPU_CLAIMING_STATUSES = ("Provisioning", "Active", "Broken")
 CLAIM_HOLDING_STATUSES = ("Draft", *GPU_CLAIMING_STATUSES)
@@ -78,9 +78,10 @@ class ModelReplica(Document):
 		"""`<model id>-<region>-<server>-<n>`, e.g. `qwen3-8b-ap-south-1-inf3-00007`. Model and region are
 		read directly because NEITHER field's `fetch_from` has run this early — a replica created from a
 		deployment would otherwise name itself with a blank model and fail its own mandatory check."""
-		self.model, self.model_key = frappe.db.get_value(
-			"Model Deployment", self.model_deployment, ["model", "model_key"]
-		)
+		deployment = frappe.db.get_value("Model Deployment", self.model_deployment, ["model", "model_key"])
+		if not deployment:
+			frappe.throw(f"Model Deployment {self.model_deployment} not found.")
+		self.model, self.model_key = deployment
 		region = frappe.db.get_value("Inference Server", self.inference_server, "region")
 		self.name = next_replica_name(self.model_key, self.inference_server, region)
 
@@ -88,6 +89,8 @@ class ModelReplica(Document):
 		self._assign_engine_port()
 		self._derive_engine_url()
 		self._validate_gpus()
+		self._validate_shape()
+		self.set_serve_command()
 		self._validate_engine()
 
 	def _validate_engine(self):
@@ -148,8 +151,8 @@ class ModelReplica(Document):
 						f"GPU {r.gpu} is not on {self.inference_server}'s machine. Pick a card from this box."
 					)
 
-		self._validate_shape()
-
+	def set_serve_command(self):
+		"""Refused first when the engine cannot serve this placement."""
 		engine = self.engine
 		if errors := engine.placement_errors:
 			frappe.throw("<br>".join(errors))
@@ -247,7 +250,7 @@ class ModelReplica(Document):
 			)
 			if p
 		}
-		port = ENGINE_PORT_BASE
+		port = DEFAULT_PORT
 		while port in used:
 			port += 1
 		self.engine_port = port
@@ -460,16 +463,19 @@ def _vllm_extravars(md, m, inf, key):
 	extravars["vllm_image"] = image.full_image
 	extravars["vllm_image_gb"] = image.size_gb or 0
 	extravars["vllm_engine_kind"] = image.engine_kind
-	if credentials := image.registry_credentials:
+	credentials = image.registry_credentials
+	if credentials:
+		username, token = credentials
 		extravars["vllm_registry_host"] = image.registry_host
-		extravars["vllm_registry_username"], extravars["vllm_registry_token"] = credentials
+		extravars["vllm_registry_username"] = username
+		extravars["vllm_registry_token"] = token
 	return extravars
 
 
 @failure.reports_failure(mark_broken=True, doctype="Model Replica")
 def deploy_model(model_replica):
 	"""Every arg is passed as Ansible extra-vars — the doctypes are the source of truth, not a hand-written
-	group_vars."""
+	group_vars. The cards are claimed first: Deploy is offered on Inactive, which released them."""
 	md = frappe.get_doc("Model Replica", model_replica)
 	m = frappe.get_doc("Model", md.model)
 	inf = md.server
@@ -478,6 +484,7 @@ def deploy_model(model_replica):
 			f"Inference Server {inf.name} is not provisioned — run its Setup "
 			"(host bootstrap) before deploying a model onto it."
 		)
+	md.claim_gpus()
 
 	key = md.get_password("internal_api_key", raise_exception=False)
 	# Teardown frees the port with db.set_value, which skips validate, so a redeploy arrives holding

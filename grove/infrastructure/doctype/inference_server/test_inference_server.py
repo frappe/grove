@@ -20,7 +20,7 @@ class IntegrationTestInferenceServer(IntegrationTestCase):
 
 class TestATerminatedServerTakesItsReplicasWithIt(unittest.TestCase):
 	"""The box is gone, so the teardown play cannot run: a replica left Active would keep its
-	route on every gateway and point callers at nothing."""
+	route on every gateway and point callers at nothing, and its cards would read taken forever."""
 
 	def terminate(self, replicas):
 		asked, written, synced = {}, [], []
@@ -38,14 +38,22 @@ class TestATerminatedServerTakesItsReplicasWithIt(unittest.TestCase):
 			InferenceServer.terminate_replicas(SimpleNamespace(name="inf-1"))
 		return asked, written, synced
 
-	def test_every_live_replica_is_retired_and_gives_its_port_back(self):
-		asked, written, synced = self.terminate([{"name": "r1", "model": "m1"}])
+	def test_every_live_replica_is_retired_with_its_port_and_cards_given_back(self):
+		asked, written, synced = self.terminate(
+			[{"name": "r1", "model": "m1"}, {"name": "r2", "model": "m1"}]
+		)
 		# Only Terminated is already gone; Inactive and Broken still hold a port.
 		self.assertEqual(
 			asked["Model Replica"], {"inference_server": "inf-1", "status": ("!=", "Terminated")}
 		)
-		self.assertEqual(written, [("Model Replica", "r1", {"status": "Terminated", "engine_port": 0})])
-		self.assertEqual(synced, ["m1"])
+		self.assertEqual(
+			written,
+			[
+				("GPU", {"held_by": ("in", ["r1", "r2"])}, "held_by", None),
+				("Model Replica", {"name": ("in", ["r1", "r2"])}, {"status": "Terminated", "engine_port": 0}),
+			],
+		)
+		self.assertEqual(synced, ["m1"], "published once per model, not per replica")
 
 	def test_a_box_with_no_replicas_writes_nothing(self):
 		_, written, synced = self.terminate([])

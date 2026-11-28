@@ -11,6 +11,7 @@ import json
 import re
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import grove
 from grove.pathway.run import redact
@@ -75,6 +76,25 @@ class TestRedaction(unittest.TestCase):
 	def test_nested_structures_are_walked(self):
 		payload = {"a": [{"b": {"c": [{"internal_key": SECRET}]}}]}
 		self.assertNotIn(SECRET, json.dumps(redact(payload)))
+
+
+class TestASpendAdjustIsLoggedRedacted(unittest.TestCase):
+	"""The adjustment names the key by the hash the state push hides; the row hides it the same way."""
+
+	def test_the_row_carries_the_adjustment_with_its_key_masked(self):
+		from grove.pathway.projection import push_target
+
+		def dial(work, **fields):
+			row = {"detail": "", **fields}
+			work(row)
+			return row
+
+		target = SimpleNamespace(post=lambda path, body: {"spent": 7}, dial=dial)
+		row = push_target(target, {}, [{"key": "abc", "delta": 5, "id": "CD-1"}])
+		self.assertEqual(
+			row["payload"], [{"push": "spend-adjust", "body": {"key": "***", "delta": 5, "id": "CD-1"}}]
+		)
+		self.assertEqual(row["adjusted"], {"CD-1": 7})
 
 
 class TestEveryRowNamesTheBoxItIsAbout(unittest.TestCase):

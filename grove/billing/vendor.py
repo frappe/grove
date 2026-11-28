@@ -32,11 +32,11 @@ def vendor_figures(providers, from_date, to_date):
 
 	figures = {}
 	for secret in secret_by_account.values():
-		read_baseten(secret, from_date, to_date, figures)
+		add_baseten_figures(secret, from_date, to_date, figures)
 	return figures
 
 
-def read_baseten(secret, from_date, to_date, figures):
+def add_baseten_figures(secret, from_date, to_date, figures):
 	"""Baseten's usage API (seven day-buckets a page, so 90 days is about 13 GETs) and its cost API
 	(31 days a page), each grouped by model, summed into `figures` by (day, model). `subtotal` is a
 	decimal string and is kept exact."""

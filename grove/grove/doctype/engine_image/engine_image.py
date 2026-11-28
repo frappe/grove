@@ -180,7 +180,10 @@ def engine_tuning(engine_image):
 	mandatory check has run."""
 	if not engine_image:
 		return "vllm", {}
-	kind, path, body = frappe.get_cached_value(
+	values = frappe.get_cached_value(
 		"Engine Image", engine_image, ["engine_kind", "warmup_path", "warmup_body"]
 	)
+	if not values:
+		frappe.throw(f"Engine Image {engine_image} not found.")
+	kind, path, body = values
 	return kind, {"warmup_path": path, "warmup_body": body}

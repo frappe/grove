@@ -13,14 +13,15 @@ frappe.ui.form.on("Grove API Key", {
 		);
 		if (frm.doc.status !== "active") return;
 
-		frm.add_custom_button(__("Revoke"), () => {
-			frappe.confirm(
+		frm.add_custom_button(__("Revoke"), () =>
+			grove.confirm_call(
+				frm,
 				__(
 					"Revoke this key? It is kept here as a record, its unspent cap returns to the team, and it is dropped from every gateway on the next sync. It cannot be un-revoked."
 				),
-				() => frm.call("revoke").then(() => frm.reload_doc())
-			);
-		});
+				"revoke"
+			)
+		);
 		frm.change_custom_button_type(__("Revoke"), null, "danger");
 	},
 });

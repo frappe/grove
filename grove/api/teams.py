@@ -45,7 +45,8 @@ def update_team(
 
 	# Checked at the load: an older report is answered below without a save.
 	doc = frappe.get_doc("Grove Team", get_team(team), check_permission="write")
-	if is_not_newer(observed_at, doc.last_reported_at):
+	reported = doc.last_reported_at
+	if observed_at and reported and get_datetime(observed_at) <= get_datetime(reported):
 		return {"team": doc.name, "ignored": "not newer", **team_limits(doc.name)}
 	if tier:
 		ensure(tier)
@@ -66,12 +67,6 @@ def update_team(
 @for_control_clients
 def archive_team(team: str):
 	return frappe.get_doc("Grove Team", get_team(team)).revoke_keys()
-
-
-def is_not_newer(observed_at, last_reported_at) -> bool:
-	return bool(observed_at and last_reported_at) and get_datetime(observed_at) <= get_datetime(
-		last_reported_at
-	)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -95,13 +90,25 @@ def _webhook_user() -> str:
 	attempts = LoginAttemptTracker(f"webhook:{frappe.local.request_ip}", max_consecutive_login_attempts=2)
 	if not attempts.is_user_allowed():
 		frappe.throw("Too many bad webhook signatures from this address.", frappe.TooManyRequestsError)
-	key = frappe.get_request_header(CONTROL_KEY_HEADER)
-	user = key and frappe.db.get_value("User", {"api_key": key, "enabled": 1}, "name")
-	secret = user and get_decrypted_password("User", user, "api_secret", raise_exception=False)
-	if not secret or CONTROL_ROLE not in frappe.get_roles(user) or not is_signed_with(secret):
+	user = _get_signing_user()
+	if not user:
 		attempts.add_failure_attempt()
 		frappe.throw("Invalid webhook signature.", frappe.AuthenticationError)
 	attempts.add_success_attempt()
+	return user
+
+
+def _get_signing_user() -> str | None:
+	"""The enabled control user named by `X-Grove-Control-Key` whose secret signed the body, else None."""
+	key = frappe.get_request_header(CONTROL_KEY_HEADER)
+	if not key:
+		return None
+	user = frappe.db.get_value("User", {"api_key": key, "enabled": 1}, "name")
+	if not user:
+		return None
+	secret = get_decrypted_password("User", user, "api_secret", raise_exception=False)
+	if not secret or CONTROL_ROLE not in frappe.get_roles(user) or not is_signed_with(secret):
+		return None
 	return user
 
 

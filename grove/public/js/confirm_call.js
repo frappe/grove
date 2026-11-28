@@ -4,6 +4,23 @@ grove.confirm_call = function (frm, message, method, args) {
 	frappe.confirm(message, () => frm.call(method, args).then(() => frm.reload_doc()));
 };
 
+grove.add_archive_button = function (frm, message) {
+	frm.add_custom_button(
+		__("Archive"),
+		() =>
+			grove.confirm_call(
+				frm,
+				message ||
+					__(
+						"Archive {0}? Its Machine is terminated — the box and everything on its disk are gone — and this server leaves the fleet. Refused while anything still depends on it.",
+						[frm.doc.name]
+					),
+				"archive"
+			),
+		__("Danger")
+	);
+};
+
 // Start or end maintenance on a pathway box. Starting offers to pause the every-minute push to
 // every box; ending offers to resume it when it is paused.
 grove.toggle_maintenance = async function (frm, start_message) {

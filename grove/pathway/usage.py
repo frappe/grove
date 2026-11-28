@@ -20,11 +20,10 @@ import frappe
 from frappe.utils import getdate
 
 from grove.billing.doctype.stuck_usage.stuck_usage import record_stuck, resolve_stuck
-from grove.billing.pricing import PriceBook
-from grove.pathway import snapshot
-from grove.pathway.data_models import Drain
+from grove.billing.pricing import NANO, PriceBook
+from grove.pathway.data_models import Drain, DrainAnswer
 from grove.pathway.reconcile import DEAD, Reconciler
-from grove.pathway.run import SyncRun, Target, error_text, gateway_units, guarded, in_turn
+from grove.pathway.run import SyncRun, Target, error_text, gateway_units, in_turn
 from grove.utils import utc_today
 
 # A store of a lakh keys answers tens of MB after as many Redis reads; the run's default is for a push.
@@ -43,57 +42,53 @@ class Usage(SyncRun):
 		self.gateways = gateways
 		self.team = team
 		self.keys = None
-		self.hashes = {}
 
 	def units(self):
-		if self.team:
-			keys = frappe.get_all(
-				"Grove API Key", filters={"team": self.team}, fields=["name", "key_hash", "geography"]
-			)
-			self.keys = [k.name for k in keys]
-			self.hashes = {k.key_hash: k.name for k in keys if k.key_hash}
-			if not self.keys:
-				return []
-			geographies = {k.geography for k in keys}
-			if self.gateways is None and all(geographies):
-				return [unit for g in sorted(geographies) for unit in gateway_units(None, geography=g)]
-		return gateway_units(self.gateways)
+		if not self.team:
+			return gateway_units(self.gateways)
+		keys, units = get_team_keys_and_units(self.team, self.gateways)
+		self.keys = [k.name for k in keys]
+		return units
 
 	def work(self, unit):
 		return in_turn(unit, lambda target: fetch_usage(target, self.keys))
 
 	def settle(self, unit, result):
-		"""Landed the moment it arrives, then acknowledged so the box stops re-sending it."""
-		return record_drain(*super().settle(unit, result), gateway_store=unit.store)
+		"""Landed the moment it arrives, under the store drained, then acknowledged so the box stops
+		re-sending it. A drain that cannot be recorded at all is rolled back and acknowledges
+		nothing, so the box sends it again."""
+		outcome, rows = super().settle(unit, result)
+		for row in rows:
+			drains, dead = row.pop("drains", None) or {}, row.pop("dead", None) or []
+			spool = row.pop("spool", None) or {}
+			if not row.get("success"):
+				continue
+			start = time.monotonic()
+			try:
+				drain = land_drains(row["server"], drains, dead, gateway_store=unit.store)
+				row["had_data"] = 1 if drain.pulled else 0
+				row["detail"] = f"pulled:{drain.pulled}" + (f" stuck:{drain.stuck}" if drain.stuck else "")
+				if spool.get("depth") or spool.get("dead"):
+					row["detail"] += f" spool:{spool.get('depth', 0)} dead:{spool.get('dead', 0)}"
+				if drain.acks or drain.dead_acks:
+					row["detail"] += acknowledge(row["server"], drain.acks, drain.dead_acks)
+			except Exception as e:
+				frappe.db.rollback()
+				row["success"], row["error"], outcome = 0, error_text(e), False
+			row["duration_ms"] += int((time.monotonic() - start) * 1000)
+		return outcome, rows
 
 
-class Peek(Usage):
-	"""What the boxes count as this month's spend of one team's keys, off each key's own counter —
-	the one its cap is gated on — for a cap check. Every store of the team's geographies is asked
-	for every key in one call; a key a store does not hold is left out of its answer. No lock and
-	no run doc: nothing moves, nothing is logged, and two checks may read beside a pull."""
-
-	def run(self):
-		return self.record([self.settle(unit, guarded(self.work, unit)) for unit in self.units()])
-
-	def work(self, unit):
-		return in_turn(unit, lambda target: fetch_spent(target, list(self.hashes)))
-
-	def settle(self, unit, result):
-		return super(Usage, self).settle(unit, result)
-
-	def record(self, answers):
-		"""→ {"ok": every store answered through one of its writers, "spent": nano-USD by key name,
-		summed over the stores that hold it}. A writer that failed before the next one answered
-		leaves its row, which says nothing about the store."""
-		ok = all(outcome is True for outcome, _rows in answers)
-		spent = {}
-		for _outcome, rows in answers:
-			for row in rows:
-				for key_hash, nano in (row.get("spent") or {}).items():
-					if name := self.hashes.get(key_hash):
-						spent[name] = spent.get(name, 0) + int(nano)
-		return {"ok": ok, "spent": spent if ok else {}}
+def get_team_keys_and_units(team, gateways=None):
+	"""(the team's keys, the units holding them): the stores of the keys' geographies, unless
+	gateways are named or a key has none. No unit for a team with no key."""
+	keys = frappe.get_all("Grove API Key", filters={"team": team}, fields=["name", "key_hash", "geography"])
+	if not keys:
+		return keys, []
+	geographies = {k.geography for k in keys}
+	if gateways is not None or not all(geographies):
+		return keys, gateway_units(gateways)
+	return keys, [unit for g in sorted(geographies) for unit in gateway_units(None, geography=g)]
 
 
 def pull_all(gateways=None, trigger="Scheduled", wait=30, team=None):
@@ -102,20 +97,27 @@ def pull_all(gateways=None, trigger="Scheduled", wait=30, team=None):
 
 
 def peek_team(team):
-	"""This month's spend the boxes count for each of `team`'s keys, USD by key name: the figure a
-	cap check puts beside the records, the boxes' own and not up to an hour old. Refused rather
-	than stale: while pushes are paused (a lowered cap would not reach the box) and when a store
-	answered through none of its writers. A key no store holds is left out."""
-	from grove.billing.pricing import NANO
-
+	"""This month's spend the boxes count for each of `team`'s keys, USD by key name, off each key's
+	own counter, summed over the stores of its geographies; a key no store holds is left out. No
+	lock, no run doc: it reads beside a pull. Refused rather than stale: pushes paused (a lowered cap
+	would not reach the box), or a store answering through none of its writers."""
 	if frappe.db.get_single_value("Grove Settings", "pause_projection"):
 		frappe.throw(
 			"Pushes to the gateways are paused, so a cap change would not reach them. Try again once they resume."
 		)
-	answer = Peek(trigger="Manual", team=team).run()
-	if not answer["ok"]:
-		frappe.throw("A gateway store could not be reached at the moment. Please try again later.")
-	return {name: Decimal(nano) / NANO for name, nano in answer["spent"].items()}
+	keys, units = get_team_keys_and_units(team)
+	hashes = {k.key_hash: k.name for k in keys if k.key_hash}
+	spent = {}
+	for unit in units:
+		outcome, rows = in_turn(unit, lambda target: fetch_spent(target, list(hashes)))
+		if outcome is not True:
+			frappe.throw("A gateway store could not be reached at the moment. Please try again later.")
+		answered = [pair for row in rows for pair in row["spent"].items()]
+		for key_hash, nano in answered:
+			if key_hash in hashes:
+				name = hashes[key_hash]
+				spent[name] = spent.get(name, 0) + int(nano)
+	return {name: Decimal(nano) / NANO for name, nano in spent.items()}
 
 
 def fetch_usage(target, keys=None):
@@ -151,30 +153,6 @@ def landed_pairs(drain_ids):
 	return {(row.drain_id, row.api_key, str(row.day)) for row in rows}
 
 
-def record_drain(outcome, rows, gateway_store=None):
-	"""A drain that cannot be recorded at all is rolled back and acknowledges nothing, so the box sends
-	it again. `gateway_store` is the store drained, or None for a gateway dialled by name."""
-	for row in rows:
-		drains, dead = row.pop("drains", None) or {}, row.pop("dead", None) or []
-		spool = row.pop("spool", None) or {}
-		if not row.get("success"):
-			continue
-		start = time.monotonic()
-		try:
-			drain = record_drains(row["server"], drains, dead, gateway_store=gateway_store)
-			row["had_data"] = 1 if drain.pulled else 0
-			row["detail"] = f"pulled:{drain.pulled}" + (f" stuck:{drain.stuck}" if drain.stuck else "")
-			if spool.get("depth") or spool.get("dead"):
-				row["detail"] += f" spool:{spool.get('depth', 0)} dead:{spool.get('dead', 0)}"
-			if drain.acks or drain.dead_acks:
-				row["detail"] += acknowledge(row["server"], drain.acks, drain.dead_acks)
-		except Exception as e:
-			frappe.db.rollback()
-			row["success"], row["error"], outcome = 0, error_text(e), False
-		row["duration_ms"] += int((time.monotonic() - start) * 1000)
-	return outcome, rows
-
-
 def acknowledge(gateway, acks, dead_acks):
 	"""A failed ack loses nothing: the box re-sends them and every record is already there. → a
 	note for the row."""
@@ -187,25 +165,22 @@ def acknowledge(gateway, acks, dead_acks):
 		return f" ack failed: {error_text(e)}"
 
 
-def store_of(gateway):
-	store = snapshot.gateway_store(gateway)
-	if not store:
-		frappe.throw(f"{gateway} is on no Gateway Store — set it up before pulling its usage.")
-	return store
-
-
-def record_drains(proxy_name, drains, dead=(), gateway_store=None):
+def land_drains(proxy_name, drains: DrainAnswer, dead=(), gateway_store=None):
 	"""Record one gateway's answer — {drain id: {key: {day: hash}}}, each hash on its day — and
-	commit. Everything lands under the store drained: the boxes on a store share one set of
-	counters; which team each hash is, `sort_drains` says."""
-	gateway_store = gateway_store or store_of(proxy_name)
+	commit. Everything lands under `gateway_store`, the store drained: the boxes on a store share one
+	set of counters; which team each hash is, `sort_drains` says."""
+	if not gateway_store:
+		frappe.throw(f"{proxy_name} is on no Gateway Store — set it up before pulling its usage.")
 	drain = sort_drains(drains)
 	for line in dead:
 		drain.pulled += 1
-		if landing := read_dead_line(line, gateway_store):
+		landing = parse_dead_line(line)
+		if landing:
 			team, prefix, day, fields = landing
-			drain.by_team.setdefault(team, {}).setdefault(DEAD + line["id"], {})[prefix] = {day: fields}
-		elif line["id"] not in drain.dead_acks:
+			drain.hold(team, DEAD + line["id"], prefix, day, fields)
+			continue
+		keep_dead_line(line, gateway_store)
+		if line["id"] not in drain.dead_acks:
 			drain.dead_acks.append(line["id"])
 
 	book = PriceBook.load()
@@ -213,29 +188,37 @@ def record_drains(proxy_name, drains, dead=(), gateway_store=None):
 	for team, shares in drain.by_team.items():
 		frappe.db.savepoint("usage_team")
 		try:
-			for drain_id, keys in shares.items():
-				for day, hashes in by_day(keys).items():
-					Reconciler(book, served_on(day, drain_id), gateway_store, drain_id, landed).team(
-						team, {k: parse_drain(h, book.counters) for k, h in hashes.items()}
-					)
-			resolve_stuck(team, gateway_store, shares)
+			land_team(book, team, shares, gateway_store, landed)
 		except Exception:
 			frappe.db.rollback(save_point="usage_team")
 			record_stuck(team, gateway_store, shares)
 			drain.stuck += 1
-			continue
-		for drain_id, keys in shares.items():
-			if drain_id.startswith(DEAD):
-				drain.dead_acks.append(drain_id.removeprefix(DEAD))
-			else:
-				for prefix, days in keys.items():
-					drain.acknowledge(drain_id, prefix, days)
+		else:
+			acknowledge_shares(drain, shares)
 
 	frappe.db.commit()
 	return drain
 
 
-def teams_of_keys(drains):
+def land_team(book, team, shares, gateway_store, landed):
+	"""Lands one team's shares, a Reconciler per drain and day, and clears its Stuck Usage."""
+	for drain_id, keys in shares.items():
+		for day, hashes in by_day(keys).items():
+			reconciler = Reconciler(book, served_on(day, drain_id), gateway_store, drain_id, landed)
+			reconciler.team(team, {k: parse_drain(h, book.counters) for k, h in hashes.items()})
+	resolve_stuck(team, gateway_store, shares)
+
+
+def acknowledge_shares(drain, shares):
+	for drain_id, keys in shares.items():
+		if drain_id.startswith(DEAD):
+			drain.dead_acks.append(drain_id.removeprefix(DEAD))
+			continue
+		for prefix, days in keys.items():
+			drain.acknowledge(drain_id, prefix, days)
+
+
+def teams_of_keys(drains: DrainAnswer):
 	"""{key: its team}. A key Grove does not hold is absent."""
 	prefixes = {prefix for keys in drains.values() for prefix in keys}
 	if not prefixes:
@@ -246,21 +229,28 @@ def teams_of_keys(drains):
 	return {row.name: row.team for row in rows}
 
 
-def sort_drains(drains):
+def sort_drains(drains: DrainAnswer):
 	"""Each hash to the team it lands under: the one the box stamped on it (`team`: a key that
 	changed hands has its books closed at the push, under the team charged), else the key's team
 	now; a hash of a key Grove does not hold is acknowledged unlanded."""
 	team_of = teams_of_keys(drains)
 	drain = Drain()
+	for drain_id, prefix, day, h in walk_hashes(drains):
+		drain.pulled += 1
+		team = h.get("team") or team_of.get(prefix)
+		if not team:
+			drain.acknowledge(drain_id, prefix, [day])
+			continue
+		drain.hold(team, drain_id, prefix, day, h)
+	return drain
+
+
+def walk_hashes(drains: DrainAnswer):
+	"""(drain id, key, day, hash) for each hash of a {drain id: {key: {day: hash}}} answer."""
 	for drain_id, keys in drains.items():
 		for prefix, days in keys.items():
-			drain.pulled += len(days)
 			for day, h in days.items():
-				if team := h.get("team") or team_of.get(prefix):
-					drain.hold(team, drain_id, prefix, day, h)
-				else:
-					drain.acknowledge(drain_id, prefix, [day])
-	return drain
+				yield drain_id, prefix, day, h
 
 
 def by_day(keys):
@@ -284,21 +274,24 @@ def served_on(day, drain_id=""):
 	return datetime.strptime(stamp, "%Y%m%d").date() if stamp.isdigit() else utc_today()
 
 
-def read_dead_line(line, gateway_store):
+def parse_dead_line(line):
 	"""(team, key, day, fields) for a dead line Grove can land — the UTC day it was spooled, blank
-	(today) when it carries none — else None after keeping it as Stuck Usage: the box drops it once
-	acknowledged, so this row is the only copy left."""
+	(today) when it carries none — else None."""
 	try:
 		accrual = json.loads(line["line"])
 		prefix, fields = accrual["prefix"], accrual["fields"]
 		team = frappe.db.get_value("Grove API Key", prefix, "team")
 		if not team:
-			raise ValueError(f"No Grove API Key {prefix!r}")
+			return None
 		return team, prefix, (accrual.get("at") or "")[:10], fields
 	except Exception:
-		name = line["id"] or "sha1:" + hashlib.sha1(line["line"].encode()).hexdigest()
-		record_stuck(None, gateway_store, line, dead_line=name)
 		return None
+
+
+def keep_dead_line(line, gateway_store):
+	"""The box drops a dead line once acknowledged, so this Stuck Usage row is the only copy left."""
+	name = line["id"] or "sha1:" + hashlib.sha1(line["line"].encode()).hexdigest()
+	record_stuck(None, gateway_store, line, dead_line=name)
 
 
 def parse_drain(h, table):
@@ -312,6 +305,7 @@ def parse_drain(h, table):
 	for k, v in h.items():
 		if k.startswith("m:"):
 			metric, _, model = k[2:].partition(":")  # model may contain ':' — keep the rest
+			# Unbilled: only zero-cost report entries read m:, and total_tokens has no counter here.
 			if model and metric in table:
 				counters.setdefault(model, {})[metric] = int(v or 0)
 		elif k.startswith("f:"):
@@ -320,6 +314,7 @@ def parse_drain(h, table):
 			pricing, _, counter = k[2:].partition(":")
 			if counter not in table and counter != "cost":
 				raise ValueError(f"{k}: not a counter Grove prices — is Grove older than the gateway?")
+			# The gateway writes no p: without a pricing id (PricedFields), so a blank one has nothing to bill.
 			if pricing:
 				pricings.setdefault(pricing, {})[counter] = int(v or 0)
 	return frappe._dict(requests=requests, counters=counters, pricings=pricings)

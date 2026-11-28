@@ -9,7 +9,7 @@ playbooks/
   gateway_server/     gateway.yml  deploy_agent.yml  deploy_tls.yml  retire_exporter.yml  config.yml  memory.yml  stop.yml   + config.json.j2, systemd/
   ingress_server/     ingress.yml  deploy_agent.yml  config.yml
   inference_server/   provision.yml  serve.yml  reconfigure.yml  container_state.yml  teardown.yml  deploy_tls.yml
-  machine/            ping.yml  grow_root.yml  scan_gpus.yml     — box-level, no role layered on yet
+  machine/            grow_root.yml  scan_gpus.yml     — box-level, no role layered on yet
   monitoring_agent/   agent.yml  config.yml  exporters.yml  push_targets.yml  vector.yml
   gateway_store/      store.yml  stop.yml  ping.yml     — Redis only, shared by a Network's gateways
   roles/              grove_user  remove_cloud_user  auditd  dcgm_exporter  node_exporter  fleet_tls  grove_https  install_gateway_agent  openresty  redis  redis_exporter  pathway_memory  vector
@@ -199,7 +199,7 @@ instead until `is_vector_setup`: vector.yml, then `gateway_server/retire_exporte
 node_exporter and scrape htpasswd its old play installed — Vector first, so the box is never unwatched. `ship_host_metrics` off drops the `host_metrics` source and nothing else:
 an Atlas machine's Pilot already ships those, and nobody else ships the logs.
 
-The roster's token is the one Grove keeps: `Region.get_datum_token` holds it on the Region (`datum_token`,
+The roster's token is the one Grove keeps: `Region.ensure_datum_token` holds it on the Region (`datum_token`,
 encrypted, with `datum_token_expires_at`) and asks Central again only with five minutes left, or after datum
 answers 401 — not once a minute.
 

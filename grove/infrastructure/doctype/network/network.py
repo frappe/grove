@@ -6,7 +6,6 @@ import ipaddress
 import frappe
 from frappe.model.document import Document
 
-from grove.infrastructure.cloud_provider.base import build_cloud_client
 from grove.infrastructure.doctype.gateway_store.gateway_store import REDIS_PORT
 from grove.monitoring import BOX_HTTP_PORT, BOX_HTTPS_PORT
 
@@ -100,15 +99,9 @@ class Network(Document):
 	def cloud_client(self):
 		if not self.cloud_provider:
 			frappe.throw(f"Network {self.name} has no Cloud Provider set.")
-
-		provider = frappe.get_doc("Cloud Provider", self.cloud_provider)
-		secret = provider.get_password("api_key", raise_exception=False)
-		if not (provider.access_key_id and secret):
-			frappe.throw(f"Cloud Provider {provider.name} has no credentials set.")
 		if not self.region:
 			frappe.throw(f"Network {self.name} has no Region set.")
-
-		return build_cloud_client(provider.provider_type, provider.access_key_id, secret, self.region)
+		return frappe.get_doc("Cloud Provider", self.cloud_provider).client(self.region)
 
 	@frappe.whitelist()
 	def create_network(self):
@@ -245,18 +238,14 @@ def reconcile_ingress(client, group_ids, ports, cidrs):
 def _with_machine(rows):
 	"""Each row's Machine joined on, read live rather than mirrored onto the server doc, where the
 	copy is only as fresh as that doc's last save."""
-	machines = (
-		{
-			machine["name"]: machine
-			for machine in frappe.get_all(
-				"Machine",
-				filters={"name": ("in", [row["machine"] for row in rows if row.get("machine")])},
-				fields=["name", "network", "public_ip", "private_ip"],
-			)
-		}
-		if rows
-		else {}
+	if not rows:
+		return []
+	found = frappe.get_all(
+		"Machine",
+		filters={"name": ("in", [row["machine"] for row in rows if row.get("machine")])},
+		fields=["name", "network", "public_ip", "private_ip"],
 	)
+	machines = {machine["name"]: machine for machine in found}
 	return [{**row, **machines.get(row.get("machine"), {})} for row in rows]
 
 
@@ -268,10 +257,15 @@ def inference_ingress_cidrs(gateways, agents, network):
 	public IP, so even same-VPC traffic arrives from the public side: every gateway is listed, by its
 	public address. An agent in this Network dials privately and the VPC range already covers it. A
 	Terminated box is gone, and its address belongs to whoever AWS hands it to next."""
-	live = lambda rows: [row for row in rows if row.get("status") != GONE_STATUS]  # noqa: E731
-	addresses = [gateway.get("public_ip") for gateway in live(gateways)]
-	addresses += [agent.get("public_ip") for agent in live(agents) if agent.get("network") != network]
+	addresses = [gateway.get("public_ip") for gateway in get_live_rows(gateways)]
+	addresses += [
+		agent.get("public_ip") for agent in get_live_rows(agents) if agent.get("network") != network
+	]
 	return sorted({f"{address}/32" for address in addresses if address})
+
+
+def get_live_rows(rows):
+	return [row for row in rows if row.get("status") != GONE_STATUS]
 
 
 def parse_security_group_ids(raw):

@@ -36,8 +36,12 @@ class CloudClient(ABC):
 	@abstractmethod
 	def get_instance(self, instance_id):
 		"""Fetch one instance → {instance_id, status, public_ip, private_ip, instance_type,
-		image_id, root_volume_gb}. status is already Grove's own vocabulary — callers never see a
+		image_id, root_volume_id}. status is already Grove's own vocabulary — callers never see a
 		provider's raw state. The launch facts let Sync backfill a Machine registered by hand."""
+
+	@abstractmethod
+	def get_volume_gb(self, volume_id):
+		"""One volume's size in GB, 0 when `volume_id` is empty."""
 
 	@abstractmethod
 	def get_instance_type_info(self, instance_type):

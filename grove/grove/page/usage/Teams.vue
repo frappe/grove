@@ -2,8 +2,9 @@
 import { useHost } from "@framework/ui/island";
 import { Badge, Button } from "frappe-ui";
 import { List, ListCell, ListHeader, ListHeaderCell, ListRow, ListRows } from "frappe-ui/list";
-import { computed, watch } from "vue";
+import { computed } from "vue";
 
+import CapBar from "./CapBar.vue";
 import {
 	CARD,
 	CARD_TITLE,
@@ -11,23 +12,16 @@ import {
 	LINK,
 	MUTED,
 	NUM,
-	barClass,
 	count,
 	day,
 	usd,
-	useCall,
+	useFilteredCall,
 } from "./lib.js";
 
 const props = defineProps({ params: Object, version: Number });
 const emit = defineEmits(["filter"]);
 const host = useHost();
-const { data, loading, error, load } = useCall("teams");
-
-watch(
-	() => [props.params, props.version],
-	() => load({ filters: props.params }),
-	{ immediate: true }
-);
+const { data, loading, error } = useFilteredCall("teams", props);
 
 const COLUMNS = [
 	"minmax(0,1.4fr)",
@@ -39,10 +33,11 @@ const COLUMNS = [
 	"6rem",
 	"2.5rem",
 ];
-const rows = computed(() => (data.value || []).map((row) => ({ ...row, id: row.team })));
-
 const limitPct = (row) =>
 	row.spend_limit ? Math.min(100, (row.month_spent / row.spend_limit) * 100) : null;
+const rows = computed(() =>
+	(data.value || []).map((row) => ({ ...row, id: row.team, limitPct: limitPct(row) }))
+);
 const open = (row) => host.navigate?.(["Form", "Grove Team", row.team]);
 </script>
 
@@ -50,7 +45,7 @@ const open = (row) => host.navigate?.(["Form", "Grove Team", row.team]);
 	<section :class="CARD">
 		<header class="mb-2 flex items-center justify-between gap-3">
 			<h2 :class="CARD_TITLE">Teams</h2>
-			<span :class="MUTED">{{ rows.length }} in this window</span>
+			<p :class="MUTED">{{ rows.length }} in this window</p>
 		</header>
 		<p v-if="error" class="text-sm text-ink-red-6">{{ error }}</p>
 		<p v-else-if="loading && !data" :class="MUTED">Loading…</p>
@@ -94,16 +89,7 @@ const open = (row) => host.navigate?.(["Form", "Grove Team", row.team]);
 									· caps for life</template
 								>
 							</span>
-							<span
-								v-if="limitPct(item) !== null"
-								class="block h-1 w-full overflow-hidden rounded-full bg-surface-gray-3"
-							>
-								<span
-									class="block h-full rounded-full"
-									:class="barClass(limitPct(item))"
-									:style="{ width: `${limitPct(item)}%` }"
-								/>
-							</span>
+							<CapBar v-if="item.limitPct !== null" :pct="item.limitPct" />
 						</ListCell>
 						<ListCell :class="CELL">{{ day(item.last_used) }}</ListCell>
 						<ListCell :class="NUM">{{ count(item.requests) }}</ListCell>

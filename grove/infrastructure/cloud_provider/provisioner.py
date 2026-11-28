@@ -16,6 +16,7 @@ from grove import failure, log_relay
 from grove.grove.doctype.pod_activity.pod_activity import record
 from grove.infrastructure.cloud_provider.runpod import RunPodClient, RunPodError, pod_status
 from grove.infrastructure.doctype.ssh_key.ssh_key import injected_public_keys
+from grove.serving.base import DEFAULT_PORT
 
 ENGINE_READY_TIMEOUT = 1500
 ENGINE_POLL_INTERVAL = 15
@@ -59,10 +60,7 @@ class PodProvisioner:
 		provider = frappe.get_doc("Cloud Provider", self.pod.cloud_provider)
 		if provider.provider_type != "runpod":
 			frappe.throw(f"Unsupported provider: {provider.provider_type}")
-		api_key = provider.get_password("api_key", raise_exception=False)
-		if not api_key:
-			frappe.throw(f"Cloud Provider {provider.name} has no API key set.")
-		return RunPodClient(api_key)
+		return provider.client()
 
 	@property
 	def public_keys(self):
@@ -76,7 +74,7 @@ class PodProvisioner:
 	@property
 	def env(self):
 		"""Whatever the engine needs, on the volume's paths so caches survive a restart, then the
-		Pod's own Env rows on top. PUBLIC_KEY is added by config_kwargs. The attention backend is NOT
+		Pod's own Env rows on top. PUBLIC_KEY is added by get_config_kwargs. The attention backend is NOT
 		here — it rides the serve command, because vLLM 0.24 dropped VLLM_ATTENTION_BACKEND."""
 		pod = self.pod
 		mount = pod.volume_mount_path or VOLUME_MOUNT
@@ -92,20 +90,18 @@ class PodProvisioner:
 				env[row.key] = row.value or ""
 		return env
 
-	@property
-	def registry_auth_id(self):
-		"""RunPod won't take inline pull credentials — they are registered under a name and
-		referenced by id. Re-registered per call so rotated credentials always apply."""
+	def register_registry_auth(self):
+		"""RunPod takes no inline pull credentials: they are registered under a name and referenced
+		by id. Re-registered on every spawn and restart so rotated credentials apply."""
 		if not self.pod.engine_image:
 			return None
 		image = frappe.get_cached_doc("Engine Image", self.pod.engine_image)
 		credentials = image.registry_credentials
 		if not credentials:
 			return None
-		return self.client.get_registry_auth_id(f"grove-{frappe.scrub(image.image_provider)}", *credentials)
+		return self.client.register_registry_auth(f"grove-{frappe.scrub(image.image_provider)}", *credentials)
 
-	@property
-	def config_kwargs(self):
+	def get_config_kwargs(self):
 		"""What RunPod accepts on BOTH create and update, so a restart applies exactly what a spawn
 		would. RunPod appends args to the image's entrypoint, so a custom image with neither runs
 		as built."""
@@ -118,20 +114,19 @@ class PodProvisioner:
 			env={"PUBLIC_KEY": self.public_keys, **self.env},
 			image_name=pod.resolved_image,
 			args=command or None,
-			container_registry_auth_id=self.registry_auth_id,
+			container_registry_auth_id=self.register_registry_auth(),
 			volume_mount_path=pod.volume_mount_path or VOLUME_MOUNT,
 			name=pod.name,
 		)
 
-	@property
-	def spawn_kwargs(self):
-		"""config_kwargs plus the create-only field update does not accept: the GPU shape."""
+	def get_spawn_kwargs(self):
+		"""get_config_kwargs plus the create-only field update does not accept: the GPU shape."""
 		if not self.pod.gpu_type_id:
 			frappe.throw(
 				f"Pod {self.pod.name} has no GPU Type ID — set it (provider GPU id, e.g. 'NVIDIA L40S')."
 			)
 		return dict(
-			self.config_kwargs,
+			self.get_config_kwargs(),
 			gpu_type_id=self.pod.gpu_type_id,
 			gpu_count=self.pod.gpu_count or 1,
 		)
@@ -143,7 +138,7 @@ class PodProvisioner:
 		moves every restart. A tcp row keeps its direct public_ip:external_port, which is plaintext
 		and does move."""
 		pod = self.pod
-		serve_port = int(pod.serve_port or 8080)
+		serve_port = int(pod.serve_port or DEFAULT_PORT)
 		row = next((p for p in pod.ports if int(p.internal_port) == serve_port), None)
 		if not row:
 			return ""
@@ -167,8 +162,8 @@ class PodProvisioner:
 		yet."""
 		return bool(self.engine.warmup_request) and self.current_status == "Running"
 
-	def get_warmup_error(self):
-		"""Why this engine could not serve one real request, "" when it did. Carries the bearer
+	def run_warmup_request(self):
+		"""Send the engine one real request: why it failed, "" when it served. Carries the bearer
 		/health never needed: an unauthenticated POST is a 401 on a perfectly good engine running
 		with VLLM_API_KEY."""
 		request = self.engine.warmup_request
@@ -242,7 +237,7 @@ class PodProvisioner:
 		self.apply_provider_state(ready, running=True)
 		if self.health_path:
 			self.await_engine(ready)
-		if self.is_warmup_due and (error := self.get_warmup_error()):
+		if self.is_warmup_due and (error := self.run_warmup_request()):
 			self.set_state({"status": "Loading", "engine_url": ""})
 			failure.report("Pod", self.pod.name, "Pod engine failed warmup", error)
 		self.sync_model_published()
@@ -265,7 +260,7 @@ class PodProvisioner:
 		frappe.db.commit()
 
 	def spawn(self):
-		spawn_kwargs = self.spawn_kwargs
+		spawn_kwargs = self.get_spawn_kwargs()
 		started = frappe.utils.now_datetime()
 		self.set_state({"status": "Provisioning", "provision_attempts": 0})
 		try:
@@ -275,7 +270,7 @@ class PodProvisioner:
 			return self.fail(e, "Spawn", started)
 		self.log("Spawn", "Success", f"{self.current_status} at {ready['public_ip']}", started=started)
 		return {
-			"status": "success",
+			"outcome": "success",
 			"pod_id": pod_api["pod_id"],
 			"public_ip": ready["public_ip"],
 		}
@@ -300,13 +295,11 @@ class PodProvisioner:
 	def log(self, event, outcome, detail="", attempt=None, started=None):
 		record(self.pod.name, event, outcome, detail, attempt=attempt, started=started, trigger=self.trigger)
 
-	def sync(self, wait=False):
+	def sync(self):
 		"""The route table follows on the next projection tick."""
 		self.require_pod_id("spawn it first")
 		try:
-			pod_api = (
-				self.client.poll_pod_ready(self.pod.pod_id) if wait else self.client.get_pod(self.pod.pod_id)
-			)
+			pod_api = self.client.get_pod(self.pod.pod_id)
 		except RunPodError as e:
 			if "404" not in str(e):
 				raise
@@ -328,7 +321,7 @@ class PodProvisioner:
 		if reason := self.restart_blocker(self.client.get_pod(self.pod.pod_id)):
 			frappe.throw(reason)
 
-		config_kwargs = self.config_kwargs
+		config_kwargs = self.get_config_kwargs()
 		started = frappe.utils.now_datetime()
 		try:
 			self.set_state({"status": "Provisioning", "engine_url": ""})
@@ -371,13 +364,13 @@ class PodProvisioner:
 	def terminate(self):
 		"""The tick prunes its route on the next pass."""
 		if not self.pod.pod_id:
-			return {"status": "error", "message": "No provider pod to terminate"}
+			return {"outcome": "error", "message": "No provider pod to terminate"}
 		try:
 			self.client.terminate_pod(self.pod.pod_id)
 		except RunPodError as e:
 			return self.fail(e, "Terminate")
 		self.mark_terminated(f"Provider pod {self.pod.pod_id} terminated")
-		return {"status": "success"}
+		return {"outcome": "success"}
 
 	def mark_terminated(self, detail):
 		"""The one write for a pod that is gone, whoever removed it."""
@@ -441,7 +434,7 @@ class PodProvisioner:
 		# Not @reports_failure: this path never raises, and a Pod has no Broken status to mark.
 		failure.report("Pod", self.pod.name, title, str(error))
 		self.log(event, "Failure", error, started=started)
-		return {"status": "error", "message": str(error)}
+		return {"outcome": "error", "message": str(error)}
 
 
 def _is_engine_serving(health_url, timeout=5):
@@ -461,16 +454,12 @@ def spawn_pod_doc(pod_name, trigger="Manual"):
 	return _provisioner(pod_name, trigger).spawn()
 
 
-def sync_pod(pod_name, wait=False):
-	return _provisioner(pod_name).sync(wait=wait)
+def sync_pod(pod_name):
+	return _provisioner(pod_name).sync()
 
 
 def restart_pod(pod_name):
 	return _provisioner(pod_name).restart()
-
-
-def validate_restart(pod_name):
-	return _provisioner(pod_name).validate_restart()
 
 
 def stop_pod(pod_name):
@@ -490,23 +479,26 @@ def pod_log_events(client, pod_id, tail=100):
 	stream drops — it ends on its own whenever the pod goes quiet. Yields None on a keep-alive
 	so the relay still ticks on a silent pod, and gives up after three instant empty
 	reconnects: that means the pod has stopped producing logs (terminated) entirely."""
-	last_id, dead_rounds = None, 0
-	while dead_rounds < 3:
-		opened_at, received = time.monotonic(), 0
-		try:
+	last_id = None
+	dead_rounds = 0
+	try:
+		while dead_rounds < 3:
+			opened_at = time.monotonic()
+			received = 0
 			for event_id, event in client.stream_logs(pod_id, tail=tail, last_event_id=last_id):
 				if not event:
 					yield None
 					continue
-				last_id, received = event_id or last_id, received + 1
+				last_id = event_id or last_id
+				received += 1
 				yield event.get("line", "")
-		except RunPodError as error:
-			yield f"— {error} —"
-			return
-		dead_rounds = dead_rounds + 1 if not received and time.monotonic() - opened_at < 5 else 0
-		tail = 0
-		time.sleep(LOG_RECONNECT_DELAY)
-		yield None  # tick, so a Stop pressed during a reconnect lands right away
+			closed_empty_at_once = not received and time.monotonic() - opened_at < 5
+			dead_rounds = dead_rounds + 1 if closed_empty_at_once else 0
+			tail = 0
+			time.sleep(LOG_RECONNECT_DELAY)
+			yield None  # tick, so a Stop pressed during a reconnect lands right away
+	except RunPodError as error:
+		yield f"— {error} —"
 
 
 def stream_pod_logs(pod_name, tail=100):

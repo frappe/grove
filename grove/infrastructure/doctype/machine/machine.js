@@ -9,212 +9,233 @@ const SERVER_DOCTYPE = {
 frappe.ui.form.on("Machine", {
 	refresh(frm) {
 		if (frm.is_new()) return;
-
-		if (frm.doc.public_ip && !frm.doc.cloud_provider) {
-			frm.add_custom_button(__("Scan GPUs"), () => {
-				frappe.confirm(
-					__(
-						"Read this box's GPUs over SSH? A card still there keeps its record and whatever holds it; one that is gone is removed."
-					),
-					() => frm.call("scan_gpus")
-				);
-			});
-		}
-
-		if ((frm.doc.gpus || []).length) {
-			frm.add_custom_button(__("GPU Memory"), () => show_gpu_memory(frm));
-		}
-
+		add_gpu_buttons(frm);
 		// Above the AWS-only gates below: a bare-metal box gets its server doc too.
-		const server_doctype = SERVER_DOCTYPE[frm.doc.machine_type];
-		if (server_doctype) {
-			frappe.db
-				.get_value(server_doctype, { machine: frm.doc.name }, "name")
-				.then(({ message }) => {
-					if (message && message.name) {
-						frm.add_custom_button(__("Open {0}", [server_doctype]), () =>
-							frappe.set_route("Form", server_doctype, message.name)
-						);
-					} else {
-						frm.add_custom_button(__("Create {0}", [server_doctype]), () =>
-							frappe.new_doc(server_doctype, { machine: frm.doc.name })
-						);
-					}
-				});
-		}
-
+		add_server_button(frm);
 		if (!frm.doc.cloud_provider) {
-			if (frm.doc.status !== "Terminated") {
-				frm.add_custom_button(
-					__("Terminate"),
-					() =>
-						grove.confirm_call(
-							frm,
-							__(
-								"Retire {0}? Nothing on the box is touched — its servers and their replicas are marked Terminated and its DNS record is removed.",
-								[frm.doc.name]
-							),
-							"terminate"
-						),
-					__("Danger")
-				);
-			}
+			add_retire_button(frm);
 			return;
 		}
-
 		if (!frm.doc.instance_id) {
-			// launch() sets Pending before instance_id lands; Provision then would launch a second instance.
-			if (frm.doc.status !== "Pending") {
-				frm.add_custom_button(
-					__("Provision"),
-					() =>
-						grove.confirm_call(
-							frm,
-							__(
-								"Launch a new EC2 instance for {0}? It is billed from the moment it starts.",
-								[frm.doc.name]
-							),
-							"provision"
-						),
-					__("AWS")
-				);
-			}
+			add_provision_button(frm);
 			return;
 		}
-		frm.add_custom_button(__("Sync"), () => frm.call("sync"), __("AWS"));
-		frm.add_custom_button(
-			__("Stop"),
-			() =>
-				grove.confirm_call(
-					frm,
-					__(
-						"Stop instance {0}? Everything it serves goes down until Start, and it may come back on a new address.",
-						[frm.doc.instance_id]
-					),
-					"stop"
-				),
-			__("AWS")
-		);
-		frm.add_custom_button(
-			__("Start"),
-			() =>
-				grove.confirm_call(
-					frm,
-					__("Start instance {0}? It is billed from the moment it runs.", [
-						frm.doc.instance_id,
-					]),
-					"start"
-				),
-			__("AWS")
-		);
-		if (frm.doc.static_ip_allocation_id) {
-			frm.add_custom_button(
-				__("Release Static IP"),
-				() => {
-					frappe.confirm(
-						__(
-							"Hand Elastic IP {0} back? {1} gets a new address, and anything pointing at this one — gateway routes, SSH config, DNS — stops reaching it.",
-							[frm.doc.public_ip, frm.doc.name]
-						),
-						() => frm.call("release_static_ip").then(() => frm.reload_doc())
-					);
-				},
-				__("AWS")
-			);
-		} else {
-			frm.add_custom_button(
-				__("Attach Static IP"),
-				() => {
-					frappe.confirm(
-						__(
-							"Give {0} an Elastic IP? Its current address {1} is dropped, and the new one is billed for as long as the box holds it.",
-							[frm.doc.name, frm.doc.public_ip]
-						),
-						() => frm.call("attach_static_ip").then(() => frm.reload_doc())
-					);
-				},
-				__("AWS")
-			);
-		}
-		frm.add_custom_button(
-			__("Resize Root Volume"),
-			() => {
-				frappe.prompt(
-					{
-						fieldname: "size_gb",
-						fieldtype: "Int",
-						label: __("New size (GB)"),
-						default: Math.max((frm.doc.root_volume_gb || 0) * 2, 100),
-						reqd: 1,
-						description: __(
-							"Currently {0} GB. A volume can only grow, and AWS refuses another resize of the same volume for about six hours after one — so pick a size that covers every model this box will serve.",
-							[frm.doc.root_volume_gb || 0]
-						),
-					},
-					({ size_gb }) => frm.call("resize_root_volume", { size_gb }),
-					__("Resize Root Volume")
-				);
-			},
-			__("AWS")
-		);
-		if (frm.doc.termination_protection) {
-			frm.add_custom_button(
-				__("Disable Termination Protection"),
-				() =>
-					grove.confirm_call(
-						frm,
-						__(
-							"Unlock {0}? Terminate and Archive then destroy it, from Grove or the AWS console.",
-							[frm.doc.name]
-						),
-						"set_termination_protection",
-						{ enabled: 0 }
-					),
-				__("AWS")
-			);
-			return;
-		}
-		frm.add_custom_button(
-			__("Enable Termination Protection"),
-			() =>
-				frm
-					.call("set_termination_protection", { enabled: 1 })
-					.then(() => frm.reload_doc()),
-			__("AWS")
-		);
-		frm.add_custom_button(
-			__("Terminate"),
-			() => {
-				frappe.confirm(
-					__(
-						"Destroy instance {0}? Its root volume goes with it — the engine images and every model weight on this box are lost.",
-						[frm.doc.instance_id]
-					),
-					() => frm.call("terminate")
-				);
-			},
-			__("AWS")
-		);
+		add_instance_buttons(frm);
+		add_static_ip_button(frm);
+		add_root_volume_button(frm);
+		add_termination_buttons(frm);
 	},
 });
 
-function show_gpu_memory(frm) {
-	frappe.dom.freeze(__("Reading nvidia-smi on {0}…", [frm.doc.name]));
-	frm.call("gpu_memory")
-		.then(({ message }) => {
-			frappe.dom.unfreeze();
-			new frappe.ui.Dialog({
-				title: __("GPU Memory — {0}", [frm.doc.name]),
-				fields: [
-					{
-						fieldtype: "HTML",
-						fieldname: "table",
-						options: gpu_memory_table(message || []),
-					},
-				],
-			}).show();
-		})
-		.catch(() => frappe.dom.unfreeze());
+function add_gpu_buttons(frm) {
+	if (frm.doc.public_ip && !frm.doc.cloud_provider) {
+		frm.add_custom_button(__("Scan GPUs"), () => {
+			frappe.confirm(
+				__(
+					"Read this box's GPUs over SSH? A card still there keeps its record and whatever holds it; one that is gone is removed."
+				),
+				() => frm.call("scan_gpus")
+			);
+		});
+	}
+	if ((frm.doc.gpus || []).length) {
+		frm.add_custom_button(__("GPU Memory"), () => show_gpu_memory(frm));
+	}
+}
+
+async function add_server_button(frm) {
+	const server_doctype = SERVER_DOCTYPE[frm.doc.machine_type];
+	if (!server_doctype) return;
+	const { message } = await frappe.db.get_value(
+		server_doctype,
+		{ machine: frm.doc.name },
+		"name"
+	);
+	if (message && message.name) {
+		frm.add_custom_button(__("Open {0}", [server_doctype]), () =>
+			frappe.set_route("Form", server_doctype, message.name)
+		);
+	} else {
+		frm.add_custom_button(__("Create {0}", [server_doctype]), () =>
+			frappe.new_doc(server_doctype, { machine: frm.doc.name })
+		);
+	}
+}
+
+function add_retire_button(frm) {
+	if (frm.doc.status === "Terminated") return;
+	frm.add_custom_button(
+		__("Terminate"),
+		() =>
+			grove.confirm_call(
+				frm,
+				__(
+					"Retire {0}? Nothing on the box is touched — its servers and their replicas are marked Terminated and its DNS record is removed.",
+					[frm.doc.name]
+				),
+				"terminate"
+			),
+		__("Danger")
+	);
+}
+
+function add_provision_button(frm) {
+	// launch() sets Pending before instance_id lands; Provision then would launch a second instance.
+	if (frm.doc.status === "Pending") return;
+	frm.add_custom_button(
+		__("Provision"),
+		() =>
+			grove.confirm_call(
+				frm,
+				__("Launch a new EC2 instance for {0}? It is billed from the moment it starts.", [
+					frm.doc.name,
+				]),
+				"provision"
+			),
+		__("AWS")
+	);
+}
+
+function add_instance_buttons(frm) {
+	frm.add_custom_button(__("Sync"), () => frm.call("sync"), __("AWS"));
+	frm.add_custom_button(
+		__("Stop"),
+		() =>
+			grove.confirm_call(
+				frm,
+				__(
+					"Stop instance {0}? Everything it serves goes down until Start, and it may come back on a new address.",
+					[frm.doc.instance_id]
+				),
+				"stop"
+			),
+		__("AWS")
+	);
+	frm.add_custom_button(
+		__("Start"),
+		() =>
+			grove.confirm_call(
+				frm,
+				__("Start instance {0}? It is billed from the moment it runs.", [
+					frm.doc.instance_id,
+				]),
+				"start"
+			),
+		__("AWS")
+	);
+}
+
+function add_static_ip_button(frm) {
+	if (frm.doc.static_ip_allocation_id) {
+		frm.add_custom_button(
+			__("Release Static IP"),
+			() =>
+				grove.confirm_call(
+					frm,
+					__(
+						"Hand Elastic IP {0} back? {1} gets a new address, and anything pointing at this one — gateway routes, SSH config, DNS — stops reaching it.",
+						[frm.doc.public_ip, frm.doc.name]
+					),
+					"release_static_ip"
+				),
+			__("AWS")
+		);
+	} else {
+		frm.add_custom_button(
+			__("Attach Static IP"),
+			() =>
+				grove.confirm_call(
+					frm,
+					__(
+						"Give {0} an Elastic IP? Its current address {1} is dropped, and the new one is billed for as long as the box holds it.",
+						[frm.doc.name, frm.doc.public_ip]
+					),
+					"attach_static_ip"
+				),
+			__("AWS")
+		);
+	}
+}
+
+function add_root_volume_button(frm) {
+	frm.add_custom_button(
+		__("Resize Root Volume"),
+		() => {
+			frappe.prompt(
+				{
+					fieldname: "size_gb",
+					fieldtype: "Int",
+					label: __("New size (GB)"),
+					default: Math.max((frm.doc.root_volume_gb || 0) * 2, 100),
+					reqd: 1,
+					description: __(
+						"Currently {0} GB. A volume can only grow, and AWS refuses another resize of the same volume for about six hours after one — so pick a size that covers every model this box will serve.",
+						[frm.doc.root_volume_gb || 0]
+					),
+				},
+				({ size_gb }) => frm.call("resize_root_volume", { size_gb }),
+				__("Resize Root Volume")
+			);
+		},
+		__("AWS")
+	);
+}
+
+function add_termination_buttons(frm) {
+	if (frm.doc.termination_protection) {
+		frm.add_custom_button(
+			__("Disable Termination Protection"),
+			() =>
+				grove.confirm_call(
+					frm,
+					__(
+						"Unlock {0}? Terminate and Archive then destroy it, from Grove or the AWS console.",
+						[frm.doc.name]
+					),
+					"set_termination_protection",
+					{ enabled: 0 }
+				),
+			__("AWS")
+		);
+		return;
+	}
+	frm.add_custom_button(
+		__("Enable Termination Protection"),
+		() => frm.call("set_termination_protection", { enabled: 1 }).then(() => frm.reload_doc()),
+		__("AWS")
+	);
+	frm.add_custom_button(
+		__("Terminate"),
+		() => {
+			frappe.confirm(
+				__(
+					"Destroy instance {0}? Its root volume goes with it — the engine images and every model weight on this box are lost.",
+					[frm.doc.instance_id]
+				),
+				() => frm.call("terminate")
+			);
+		},
+		__("AWS")
+	);
+}
+
+async function show_gpu_memory(frm) {
+	const { message } = await frm.call({
+		doc: frm.doc,
+		method: "gpu_memory",
+		freeze: true,
+		freeze_message: __("Reading nvidia-smi on {0}…", [frm.doc.name]),
+	});
+	new frappe.ui.Dialog({
+		title: __("GPU Memory — {0}", [frm.doc.name]),
+		fields: [
+			{
+				fieldtype: "HTML",
+				fieldname: "table",
+				options: gpu_memory_table(message || []),
+			},
+		],
+	}).show();
 }
 
 function gpu_memory_table(rows) {

@@ -4,13 +4,14 @@
 import selectors
 import shlex
 import subprocess
+from functools import cached_property
 
 import frappe
 from frappe.model.document import Document
 
 from grove import failure
 from grove.infrastructure.ansible import AnsibleHost, task_result
-from grove.infrastructure.cloud_provider.base import CloudClientError, build_cloud_client
+from grove.infrastructure.cloud_provider.base import CloudClientError
 from grove.infrastructure.doctype.ssh_key.ssh_key import injected_public_keys
 from grove.naming import GeneratedName, next_machine_name
 from grove.utils import vram_gb_from_mib
@@ -138,18 +139,13 @@ class Machine(GeneratedName, AnsibleHost, Document):
 			)
 		return parse_gpu_memory(result.get("stdout"))
 
-	@property
+	@cached_property
 	def cloud_client(self):
 		if not self.cloud_provider:
 			frappe.throw(
 				f"Machine {self.name} has no Cloud Provider — set one, or leave it blank for an on-prem box."
 			)
-		provider = frappe.get_doc("Cloud Provider", self.cloud_provider)
-		secret = provider.get_password("api_key", raise_exception=False)
-		if not (provider.access_key_id and secret):
-			frappe.throw(f"Cloud Provider {provider.name} has no credentials set.")
-
-		return build_cloud_client(provider.provider_type, provider.access_key_id, secret, self.region_code)
+		return frappe.get_doc("Cloud Provider", self.cloud_provider).client(self.region_code)
 
 	@property
 	def region_code(self):
@@ -198,21 +194,21 @@ class Machine(GeneratedName, AnsibleHost, Document):
 
 	@frappe.whitelist()
 	def provision(self):
+		"""Everything checkable without a running instance runs here, so a typo fails before AWS
+		starts billing. The image check needs the architecture sync_instance_type records."""
 		self.validate_launchable()
+		client = self.cloud_client
+		self.sync_instance_type(client)
+		self.validate_image_architecture(client)
 		frappe.enqueue_doc(self.doctype, self.name, "launch", queue="long", timeout=3000)
 		frappe.msgprint(f"Provisioning {self.name} — reload when it reports Active.", alert=True)
 
 	def validate_launchable(self):
-		"""Everything checkable without a running instance, so a typo fails before AWS starts
-		billing."""
 		if self.instance_id:
 			frappe.throw(f"Machine {self.name} already has instance {self.instance_id}.")
 		if not (self.instance_type and self.root_volume_gb):
 			frappe.throw("Set an Instance Type and a Root Volume (GB) before provisioning.")
-		client = self.cloud_client
 		self.get_security_group_ids(self.network_doc)
-		self.sync_instance_type(client)
-		self.validate_image_architecture(client)
 
 	def validate_image_architecture(self, client):
 		"""AWS accepts a mismatched AMI and the box then never boots — no console to read, no
@@ -319,7 +315,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 				"private_ip": instance["private_ip"] or "",
 				"instance_type": instance["instance_type"] or "",
 				"machine_image": instance["image_id"] or "",
-				"root_volume_gb": instance["root_volume_gb"] or 0,
+				"root_volume_gb": client.get_volume_gb(instance["root_volume_id"]),
 				"termination_protection": int(client.is_termination_protected(self.instance_id)),
 			}
 		)
@@ -399,7 +395,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 		"""AWS re-issues the public IP, so this polls for the new one rather than leaving a
 		now-wrong address on the doc."""
 		self.require_instance()
-		self.cloud_client
+		self.cloud_client  # built here so missing credentials fail on the button, not in a worker
 		frappe.enqueue_doc(self.doctype, self.name, "resume", queue="long", timeout=3000)
 		frappe.msgprint(f"Starting {self.name} — reload when it reports Active.", alert=True)
 
@@ -438,7 +434,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 				f"{self.name}'s root volume is already {self.root_volume_gb} GB. "
 				"A volume can only be grown, never shrunk."
 			)
-		self.cloud_client
+		self.cloud_client  # built here so missing credentials fail on the button, not in a worker
 		frappe.enqueue_doc(self.doctype, self.name, "grow_root", queue="long", timeout=1800, size_gb=size_gb)
 		frappe.msgprint(
 			f"Growing {self.name}'s root volume to {size_gb} GB — watch its Ansible Plays.", alert=True
@@ -611,7 +607,7 @@ def plan_reconcile(existing, scanned, slot_is_identity=False):
 	return upgrades, inserts, [card for card in existing if card.name not in claimed]
 
 
-def reconcile_gpus(machine, scanned):
+def reconcile_gpus(machine: str, scanned: list[dict]):
 	"""Upserted, not replaced: a card still there keeps its row and therefore its `held_by`, so a
 	re-scan of a busy box does not disturb a running replica."""
 	from grove.infrastructure.doctype.gpu.gpu import cards_on
@@ -644,11 +640,11 @@ def reconcile_gpus(machine, scanned):
 
 
 def _scanned_values(row):
-	"""The columns a scan owns on a card. Its type is resolved, not stored as the reported string."""
-	from grove.infrastructure.doctype.gpu_type.gpu_type import resolve
+	"""The columns a scan owns on a card. Its GPU Type is looked up, and created on first sight."""
+	from grove.infrastructure.doctype.gpu_type.gpu_type import ensure_gpu_type
 
 	return {
-		"gpu_type": resolve(row.get("gpu_model"), row.get("vram_gb"), row.get("compute_capability")),
+		"gpu_type": ensure_gpu_type(row.get("gpu_model"), row.get("vram_gb"), row.get("compute_capability")),
 		"gpu_index": row.get("gpu_index") or 0,
 	}
 

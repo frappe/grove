@@ -9,6 +9,7 @@ parent play."""
 
 import json
 import os
+from typing import NamedTuple
 
 import frappe
 from ansible import constants as C
@@ -33,9 +34,8 @@ TASK_STATUS = {
 }
 
 
-def _set_global_cli_args(remote_user, tags=None, skip_tags=None):
-	# PlaybookExecutor/TaskQueueManager read CLI args from this process-global, so it has to be
-	# complete enough to avoid KeyErrors. tags=["all"] runs every task.
+def _set_global_cli_args(remote_user):
+	"""PlaybookExecutor reads its CLI args off this process-global, so it has to be complete."""
 	context.CLIARGS = ImmutableDict(
 		connection="smart",
 		module_path=[],
@@ -64,8 +64,8 @@ def _set_global_cli_args(remote_user, tags=None, skip_tags=None):
 		listhosts=None,
 		listtasks=None,
 		listtags=None,
-		tags=tags or ["all"],
-		skip_tags=skip_tags or [],
+		tags=["all"],
+		skip_tags=[],
 		step=None,
 		timeout=30,
 	)
@@ -128,13 +128,11 @@ class AnsibleCallback(CallbackBase):
 		"""Ansible hands retry callbacks to its results thread, and frappe.local is a contextvar —
 		a new thread starts with none of it, so frappe.db raises "object is not bound". That thread
 		gets a connection of its own; the runner closes it when the play ends."""
-		try:
-			frappe.db.get_value
+		if frappe.db:
 			return
-		except RuntimeError:
-			frappe.init(site=self.site)
-			frappe.connect()
-			self.thread_db = frappe.db
+		frappe.init(site=self.site)
+		frappe.connect()
+		self.thread_db = frappe.db
 
 	def v2_playbook_on_stats(self, stats):
 		self._close_orphan("skipped" if self.stopped else "ok")
@@ -142,9 +140,15 @@ class AnsibleCallback(CallbackBase):
 		failed = any(
 			stats.summarize(h).get("failures", 0) or stats.summarize(h).get("unreachable", 0) for h in hosts
 		)
+		if self.stopped:
+			status = "Stopped"
+		elif failed:
+			status = "Failure"
+		else:
+			status = "Success"
 		self.runner.update_play(
 			{
-				"status": "Stopped" if self.stopped else ("Failure" if failed else "Success"),
+				"status": status,
 				"ended": frappe.utils.now(),
 				"output": "\n".join(self.log)[:1000000],
 			}
@@ -191,8 +195,6 @@ class Ansible:
 		user="root",
 		port=22,
 		variables=None,
-		tags=None,
-		skip_tags=None,
 		reference_doctype=None,
 		reference_docname=None,
 	):
@@ -207,13 +209,12 @@ class Ansible:
 		self.reference_doctype = reference_doctype
 		self.reference_docname = reference_docname
 
-		_set_global_cli_args(self.user, tags=tags, skip_tags=skip_tags)
+		_set_global_cli_args(self.user)
 		self.loader = DataLoader()
 		self.inventory = InventoryManager(loader=self.loader, sources=f"{self.host},")
 		h = self.inventory.get_host(self.host)
 		h.set_variable("ansible_port", self.port)
 		h.set_variable("ansible_user", self.user)
-		h.set_variable("ansible_ssh_common_args", "-o StrictHostKeyChecking=accept-new -o ConnectTimeout=20")
 		self.variable_manager = VariableManager(loader=self.loader, inventory=self.inventory)
 		self.variable_manager._extra_vars = self.variables
 
@@ -307,6 +308,15 @@ class Ansible:
 		return frappe.get_doc("Ansible Play", self.play_name), rc
 
 
+class PlayResult(NamedTuple):
+	play_name: str
+	rc: int
+
+	@property
+	def ok(self) -> bool:
+		return self.rc == 0
+
+
 def run_play(
 	playbook,
 	server_type,
@@ -314,12 +324,10 @@ def run_play(
 	machine_name,
 	project_dir,
 	extravars=None,
-	tags=None,
-	skip_tags=None,
 	reference_doctype=None,
 	reference_docname=None,
 ):
-	"""Returns (ansible_play_name, rc), rc 0 = success."""
+	"""Unpacks as `play_name, rc`; rc 0 is success."""
 	m = frappe.get_doc("Machine", machine_name)
 	if not m.public_ip:
 		frappe.throw(f"Machine {machine_name} has no public_ip")
@@ -338,10 +346,8 @@ def run_play(
 		user=m.ssh_user or "root",
 		port=m.ssh_port or 22,
 		variables=extravars,
-		tags=tags,
-		skip_tags=skip_tags,
 		reference_doctype=reference_doctype,
 		reference_docname=reference_docname,
 	)
 	play, rc = ansible.run()
-	return play.name, rc
+	return PlayResult(play.name, rc)

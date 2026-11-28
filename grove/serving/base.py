@@ -48,8 +48,8 @@ class Engine(ABC):
 	"""One placement of one Model. A Pod and a Model Replica carry the same knobs, so the
 	constructor takes them all and an engine ignores the ones it has no use for."""
 
-	# A class attribute, not a property: the projection reads it off the class.
-	default_concurrency: int
+	# Read off the class by the projection: what routing assumes when max_num_seqs is blank.
+	default_concurrency = 1024
 
 	def __init__(
 		self,

@@ -9,9 +9,7 @@ from frappe.model.document import Document
 
 from grove.grove.doctype.engine_image.engine_image import engine_tuning
 from grove.grove.doctype.model.model import launch_config
-from grove.serving.base import build_engine
-
-_ENGINE_PORT = 8080
+from grove.serving.base import DEFAULT_PORT, build_engine
 
 
 class Pod(Document):
@@ -101,12 +99,12 @@ class Pod(Document):
 		# http rides the provider's HTTPS proxy with no certificate of its own; SSH stays direct tcp.
 		if not self.ports:
 			self.append("ports", {"internal_port": 22, "protocol": "tcp"})
-			self.append("ports", {"internal_port": _ENGINE_PORT, "protocol": "http"})
+			self.append("ports", {"internal_port": DEFAULT_PORT, "protocol": "http"})
 
 	def validate(self):
 		model = frappe.get_cached_doc("Model", self.model)
 		model.reject_if_vendor_served("A pod starts an engine for it")
-		serve_port = int(self.serve_port or _ENGINE_PORT)
+		serve_port = int(self.serve_port or DEFAULT_PORT)
 		if not any(int(p.internal_port) == serve_port for p in self.ports or []):
 			frappe.throw(
 				f"Serve Port {serve_port} is not in the Ports table — add it so it's opened at spawn."

@@ -1,17 +1,12 @@
 <script setup>
+import { dayjs } from "frappe-ui";
 import { NumberCard } from "frappe-ui/charts";
-import { computed, watch } from "vue";
+import { computed } from "vue";
 
-import { MUTED, ago, compact, count, signedUsd, usd, useCall } from "./lib.js";
+import { MUTED, ago, compact, count, signedUsd, usd, useFilteredCall } from "./lib.js";
 
 const props = defineProps({ params: Object, version: Number });
-const { data, loading, error, load } = useCall("overview");
-
-watch(
-	() => [props.params, props.version],
-	() => load({ filters: props.params }),
-	{ immediate: true }
-);
+const { data, loading, error } = useFilteredCall("overview", props);
 
 const signedCount = (value) => (value > 0 ? `+${count(value)}` : count(value));
 const signedCompact = (value) => (value > 0 ? `+${compact(value)}` : compact(value));
@@ -30,8 +25,7 @@ const previous = computed(() => data.value?.previous || {});
 
 const days = computed(() => {
 	if (!data.value) return 0;
-	const span = new Date(data.value.to_date) - new Date(data.value.from_date);
-	return Math.round(span / 86_400_000) + 1;
+	return dayjs(data.value.to_date).diff(data.value.from_date, "day") + 1;
 });
 const caption = computed(() => (days.value ? `vs the ${days.value} days before` : ""));
 

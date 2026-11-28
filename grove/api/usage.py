@@ -8,7 +8,7 @@ from grove.access import limit_scopes, limits_in_force, team_limits
 from grove.api.control import for_control_clients
 from grove.api.keys import key_rows
 from grove.api.teams import get_team
-from grove.utils import site_datetime, utc_today
+from grove.utils import site_datetime, utc_timestamp, utc_today
 
 USAGE_FIELDS = ("requests", "tokens", "cost")
 PULLS_PER_HOUR = 5
@@ -27,7 +27,6 @@ def usage(
 	pulled_until: str | None = None,
 ):
 	from grove.billing.doctype.usage_record.usage_record import money_rows
-	from grove.pathway.routes import utc_timestamp
 
 	# The records are summed in SQL, past the permission system: their read is checked here.
 	frappe.has_permission("Usage Record", "read", throw=True)
@@ -35,18 +34,19 @@ def usage(
 		teams = [teams]
 	window = read_window(from_date, to_date, period, month, pulled_after, pulled_until)
 	known = frappe.get_list("Grove Team", {"name": ("in", teams)}, pluck="name")
-	api_key = _key_of(key_hash, known) if key_hash else None
+	api_key = None
+	if key_hash:
+		api_key = _key_of(key_hash, known)
 	table, params = money_rows({"team": known, "api_key": api_key}, **window)
-	rows = (
-		frappe.db.sql(
+	rows, daily = [], []
+	if known:
+		rows = frappe.db.sql(
 			f"""select team, model, sum(requests) as requests, sum(tokens) as tokens, sum(cost) as cost,
 		max(pulled_at) as as_of from {table} group by team, model""",
 			params,
 			as_dict=True,
 		)
-		if known
-		else []
-	)
+		daily = _daily_summary(table, params)
 	per_model = [
 		{
 			"model": row.model,
@@ -67,7 +67,7 @@ def usage(
 		"to_date": str(window["to_date"]) if "to_date" in window else None,
 		"as_of": utc_timestamp(max(row.as_of for row in rows)) if rows else None,
 		"model_summary": _totals_by_model(per_model),
-		"daily_summary": _daily_summary(table, params) if known else [],
+		"daily_summary": daily,
 		**totals,
 	}
 
@@ -176,7 +176,9 @@ def _totals_by_model(rows):
 
 
 def _key_of(key_hash, teams):
-	name = frappe.db.get_value("Grove API Key", {"key_hash": key_hash, "team": ("in", teams or [""])})
+	name = None
+	if teams:
+		name = frappe.db.get_value("Grove API Key", {"key_hash": key_hash, "team": ("in", teams)})
 	if not name:
 		frappe.throw("No such API key for these teams.", frappe.DoesNotExistError)
 	return name

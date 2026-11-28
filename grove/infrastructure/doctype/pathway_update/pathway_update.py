@@ -50,11 +50,11 @@ class PathwayUpdate(StepHandler, Document):
 		self.release, self.repo = gateway_agent_version(), pathway_repo()
 		self.set("servers", [])
 		for checkbox, doctype in SERVER_TYPES:
-			if self.get(checkbox):
-				for server in frappe.get_all(
-					doctype, filters={"status": "Active"}, order_by="name asc", pluck="name"
-				):
-					self.append("servers", {"server_type": doctype, "server": server})
+			if not self.get(checkbox):
+				continue
+			servers = frappe.get_all(doctype, filters={"status": "Active"}, order_by="name asc", pluck="name")
+			for server in servers:
+				self.append("servers", {"server_type": doctype, "server": server})
 
 	def validate(self):
 		"""Rows added by hand: only a ticked type, each server Pending at most once. Skipped while
@@ -191,13 +191,16 @@ class PathwayUpdate(StepHandler, Document):
 		if rc != 0:
 			frappe.throw(f"deploy_agent.yml failed on {step.server} (Ansible Play {play_name}).")
 
-	def succeed(self, success_status=Status.Success):
-		"""No Pending row left. A row that failed earlier and was passed over still fails the update."""
-		self.ended_at = now_datetime()
+	def finish(self, success_status=Status.Success):
+		"""A row that failed earlier and was passed over still fails the update."""
 		if any(row.status == Status.Failure for row in self.servers):
-			super().fail(Status.Failure)
+			self.fail(Status.Failure)
 		else:
-			super().succeed(success_status)
+			self.succeed(success_status)
+
+	def succeed(self, success_status=Status.Success):
+		self.ended_at = now_datetime()
+		super().succeed(success_status)
 
 	def fail(self, failure_status=Status.Failure):
 		self.ended_at = now_datetime()
@@ -214,7 +217,7 @@ class PathwayUpdate(StepHandler, Document):
 			reference_name=self.name,
 		)
 		failed = [row for row in self.servers if row.status == Status.Failure][-1]
-		if not getattr(frappe.local, "grove_failure_reported", False):
+		if not failure.was_reported():
 			failure.report(self.doctype, self.name, "Pathway update failed", failed.output)
 		# Committed first: set_maintenance can raise, and the rollback must not take the failure record.
 		frappe.db.commit()

@@ -1,196 +1,115 @@
 frappe.ui.form.on("Gateway Server", {
 	refresh(frm) {
 		if (frm.is_new()) return;
-
-		if (["Pending", "Broken"].includes(frm.doc.status)) {
-			frm.add_custom_button(
-				__("Provision"),
-				() =>
-					grove.confirm_call(
-						frm,
-						__(
-							"Run the full gateway play on {0}? It installs the agent and its config, and starts it.",
-							[frm.doc.name]
-						),
-						"setup"
-					),
-				__("Gateway")
-			);
-		}
-
-		if (frm.doc.admin_url) {
-			frm.add_custom_button(__("Ping"), () => frm.call("ping"), __("Gateway"));
-		}
-
-		if (frm.doc.machine) {
-			frm.add_custom_button(
-				__("Deploy Latest Agent"),
-				() =>
-					grove.confirm_call(
-						frm,
-						__(
-							"Ship the pathway release from Grove Settings to {0} and restart its agent?",
-							[frm.doc.name]
-						),
-						"deploy_agent"
-					),
-				__("Gateway")
-			);
-
-			frm.add_custom_button(
-				__("Update Memory Limit"),
-				() =>
-					frappe.prompt(
-						{
-							fieldname: "limit_mb",
-							fieldtype: "Int",
-							label: __("Memory Limit (MB)"),
-							default: frm.doc.memory_limit_mb || 0,
-							description: __(
-								"0 is automatic: the box's RAM less 512 MB. The cap applies at once; the Go limit, 90% of it, at pathway's next restart."
-							),
-						},
-						({ limit_mb }) => frm.call("set_memory_limit", { limit_mb }),
-						__("Cap pathway on {0}", [frm.doc.name]),
-						__("Update")
-					),
-				__("Gateway")
-			);
-
-			frm.add_custom_button(
-				__("Sync DNS Records"),
-				() =>
-					grove.confirm_call(
-						frm,
-						__("Rewrite {0}'s DNS records to its current address?", [frm.doc.name]),
-						"sync_dns_records"
-					),
-				__("TLS")
-			);
-
-			frm.add_custom_button(
-				__("Deploy Fleet Certificate"),
-				() =>
-					grove.confirm_call(
-						frm,
-						__("Push the Geography's certificate to {0} and reload what serves it?", [
-							frm.doc.name,
-						]),
-						"deploy_tls"
-					),
-				__("TLS")
-			);
-		}
-
-		if (frm.doc.status === "Active") {
-			const migrate = !frm.doc.is_vector_setup;
-			frm.add_custom_button(migrate ? __("Migrate to Vector") : __("Update Vector"), () =>
-				grove.confirm_call(
-					frm,
-					migrate
-						? __(
-								"Migrate {0} to Vector? It installs Vector, pushing logs — and host metrics when Ship Host Metrics is ticked — to Region {1}'s datum, then removes node_exporter and the scrape htpasswd.",
-								[frm.doc.name, frm.doc.region]
-						  )
-						: __(
-								"Re-render Vector on {0}? It pushes logs — and host metrics when Ship Host Metrics is ticked — to Region {1}'s datum.",
-								[frm.doc.name, frm.doc.region]
-						  ),
-					migrate ? "migrate_to_vector" : "install_vector"
-				)
-			);
-		}
-
-		if (frm.doc.status !== "Terminated") {
-			frm.add_custom_button(
-				__("Resize Server"),
-				() => grove.prompt_resize(frm),
-				__("Danger")
-			);
-			frm.add_custom_button(
-				__("Archive"),
-				() => {
-					frappe.confirm(
-						__(
-							"Archive {0}? Its Machine is terminated — the box and everything on its disk are gone — and this server leaves the fleet. Refused while anything still depends on it.",
-							[frm.doc.name]
-						),
-						() => frm.call("archive").then(() => frm.reload_doc())
-					);
-				},
-				__("Danger")
-			);
-		}
-		if (frm.doc.status === "Active" && frm.doc.admin_url) {
-			frm.add_custom_button(
-				__("Check State"),
-				() => {
-					frm.call("check_state");
-				},
-				__("Gateway")
-			);
-
-			frm.add_custom_button(
-				__("Full Sync"),
-				() =>
-					grove.confirm_call(
-						frm,
-						__(
-							"Push every key, user, group and route to {0}'s store, whether or not it already holds them?",
-							[frm.doc.name]
-						),
-						"full_sync"
-					),
-				__("Gateway")
-			);
-
-			frm.add_custom_button(
-				__("Pull Usage"),
-				() =>
-					grove.confirm_call(
-						frm,
-						__("Drain {0}'s store now and bill what it holds?", [frm.doc.name]),
-						"pull_usage"
-					),
-				__("Gateway")
-			);
-
-			const start = !frm.doc.is_in_maintenance;
-			frm.add_custom_button(
-				start ? __("Start Maintenance") : __("End Maintenance"),
-				() =>
-					grove.toggle_maintenance(
-						frm,
-						__(
-							"New requests to {0} get 503 until maintenance ends; running ones finish.",
-							[frm.doc.name]
-						)
-					),
-				__("Gateway")
-			);
-
-			const isolate = !frm.doc.isolate_caches;
-			frm.add_custom_button(
-				isolate ? __("Isolate Caches") : __("Share Caches"),
-				() => {
-					frappe.confirm(
-						isolate
-							? __(
-									"Every team gets its own prompt-cache partition on {0}: cache_salt on an engine, prompt_cache_key at OpenAI, user_id at DeepSeek. No cache hits across teams.",
-									[frm.doc.name]
-							  )
-							: __("Teams share one prompt cache on {0} again.", [frm.doc.name]),
-						() =>
-							frm
-								.call("set_isolate_caches", { on: isolate ? 1 : 0 })
-								.then(() => frm.reload_doc())
-					);
-				},
-				__("Gateway")
-			);
-		}
+		add_setup_buttons(frm);
+		if (frm.doc.status === "Active") grove.add_vector_button(frm);
+		add_danger_buttons(frm);
+		if (frm.doc.status === "Active" && frm.doc.admin_url) add_live_buttons(frm);
 		if (frm.doc.is_in_maintenance) {
 			frm.set_intro(__("In maintenance — new requests get 503."), "orange");
 		}
 	},
 });
+
+function add_setup_buttons(frm) {
+	if (["Pending", "Broken"].includes(frm.doc.status)) {
+		frm.add_custom_button(
+			__("Provision"),
+			() =>
+				grove.confirm_call(
+					frm,
+					__(
+						"Run the full gateway play on {0}? It installs the agent and its config, and starts it.",
+						[frm.doc.name]
+					),
+					"setup"
+				),
+			__("Gateway")
+		);
+	}
+	if (frm.doc.admin_url) {
+		frm.add_custom_button(__("Ping"), () => frm.call("ping"), __("Gateway"));
+	}
+	if (frm.doc.machine) {
+		grove.add_agent_buttons(frm, __("Gateway"));
+		grove.add_tls_buttons(frm);
+	}
+}
+
+function add_danger_buttons(frm) {
+	if (frm.doc.status === "Terminated") return;
+	frm.add_custom_button(__("Resize Server"), () => grove.prompt_resize(frm), __("Danger"));
+	grove.add_archive_button(frm);
+}
+
+function add_live_buttons(frm) {
+	frm.add_custom_button(
+		__("Check State"),
+		() => {
+			frm.call("check_state");
+		},
+		__("Gateway")
+	);
+	frm.add_custom_button(
+		__("Full Sync"),
+		() =>
+			grove.confirm_call(
+				frm,
+				__(
+					"Push every key, user, group and route to {0}'s store, whether or not it already holds them?",
+					[frm.doc.name]
+				),
+				"full_sync"
+			),
+		__("Gateway")
+	);
+	frm.add_custom_button(
+		__("Pull Usage"),
+		() =>
+			grove.confirm_call(
+				frm,
+				__("Drain {0}'s store now and bill what it holds?", [frm.doc.name]),
+				"pull_usage"
+			),
+		__("Gateway")
+	);
+	grove.add_maintenance_button(
+		frm,
+		__("New requests to {0} get 503 until maintenance ends; running ones finish.", [
+			frm.doc.name,
+		]),
+		__("Gateway")
+	);
+	add_cache_button(frm);
+}
+
+function add_cache_button(frm) {
+	if (frm.doc.isolate_caches) {
+		frm.add_custom_button(
+			__("Share Caches"),
+			() =>
+				grove.confirm_call(
+					frm,
+					__("Teams share one prompt cache on {0} again.", [frm.doc.name]),
+					"set_isolate_caches",
+					{ on: 0 }
+				),
+			__("Gateway")
+		);
+	} else {
+		frm.add_custom_button(
+			__("Isolate Caches"),
+			() =>
+				grove.confirm_call(
+					frm,
+					__(
+						"Every team gets its own prompt-cache partition on {0}: cache_salt on an engine, prompt_cache_key at OpenAI, user_id at DeepSeek. No cache hits across teams.",
+						[frm.doc.name]
+					),
+					"set_isolate_caches",
+					{ on: 1 }
+				),
+			__("Gateway")
+		);
+	}
+}

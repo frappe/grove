@@ -2,7 +2,6 @@
 # For license information, please see license.txt
 
 import frappe
-import requests
 from frappe.model.document import Document
 
 from grove import failure
@@ -63,9 +62,9 @@ class MonitoringAgent(Server, Document):
 		frappe.msgprint(f"Installing vmagent on {self.name} — watch its Ansible Plays.", alert=True)
 
 	@property
-	def remote_write_url(self):
+	def region_metrics_url(self):
 		"""Where this agent pushes: its Region's Metrics Endpoint, the one owner of that address.
-		Resolved on every read; the column of the same name is what the last install wrote, for
+		Resolved on every read; the `remote_write_url` column is what the last install wrote, for
 		the form."""
 		return (frappe.db.get_value("Region", self.region, "metrics_url") if self.region else "") or ""
 
@@ -82,7 +81,7 @@ class MonitoringAgent(Server, Document):
 		return {
 			**frappe.get_single("Grove Settings").monitoring_variables,
 			**self.target_variables,
-			"monitoring_remote_write_url": self.remote_write_url,
+			"monitoring_remote_write_url": self.region_metrics_url,
 			"monitoring_remote_write_token": self.get_password("metrics_token", raise_exception=False) or "",
 			"monitoring_agent": self.name,
 			# Omitted when blank, so the role's defaults/main.yml is the one place each default
@@ -101,7 +100,7 @@ class MonitoringAgent(Server, Document):
 		elif not frappe.db.get_value("Machine", self.machine, "public_ip"):
 			problems.append(f"Machine {self.machine} has no public IP — nothing to SSH to.")
 
-		if not self.remote_write_url:
+		if not self.region_metrics_url:
 			problems.append(
 				f"Nowhere to push — set the Metrics Endpoint on Region {self.region or '(unset)'}'s Monitoring tab."
 			)
@@ -114,8 +113,10 @@ class MonitoringAgent(Server, Document):
 				"agent's host scrapes."
 			)
 
-		if not is_pushing_targets():
-			problems += self.get_target_list_problems(variables)
+		if not is_pushing_targets() and not variables["monitoring_sd_token"]:
+			problems.append(
+				"Grove Settings → Service Discovery Token is empty — vmagent could not ask what to scrape."
+			)
 
 		if problems:
 			frappe.throw("<br>".join(problems), title=f"{self.name} is not ready to install")
@@ -172,7 +173,7 @@ class MonitoringAgent(Server, Document):
 			self.name,
 			{
 				"status": "Active" if rc == 0 else "Broken",
-				"remote_write_url": self.remote_write_url,
+				"remote_write_url": self.region_metrics_url,
 			},
 		)
 		return play_name, rc
@@ -196,41 +197,6 @@ class MonitoringAgent(Server, Document):
 		frappe.enqueue_doc(self.doctype, self.name, "write_config", queue="short", timeout=900)
 		frappe.msgprint(f"Token rotated — writing it to {self.name}. Watch its Ansible Plays.", alert=True)
 
-	def get_target_list_problems(self, variables):
-		"""An empty list is not a problem — an agent no box names yet still scrapes itself once it
-		is up. A 401 means the SD token cannot read the fleet, and vmagent would then scrape nothing.
-		Fetched from here, not from the agent's box: it proves the URL and the token, not that the
-		box can route to the site. That last hop still shows up as a down http_sd job."""
-		if not variables["monitoring_sd_token"]:
-			return [
-				"Grove Settings → Service Discovery Token is empty — vmagent could not ask what to scrape."
-			]
-
-		url = variables["monitoring_sd_url"]
-		try:
-			response = requests.get(
-				url,
-				params={
-					"agent": self.name,
-					"kind": "host",
-					# In the query string: validate_auth rejects an Authorization header before the endpoint runs.
-					"token": variables["monitoring_sd_token"],
-				},
-				timeout=10,
-			)
-		except requests.RequestException as error:
-			return [f"Could not reach {url} — vmagent fetches its targets from there. {error}"]
-
-		if response.status_code != 200:
-			return [f"{url} answered {response.status_code}, not 200. {response.text[:200]}"]
-		try:
-			targets = response.json()
-		except ValueError:
-			return [f"{url} did not answer with JSON — http_sd reads a JSON array."]
-		if not isinstance(targets, list):
-			return [f"{url} answered with a {type(targets).__name__}, not the JSON array http_sd reads."]
-		return []
-
 	@failure.reports_failure(mark_broken=True)
 	def provision(self):
 		"""Job: agent.yml — install vmagent, then everything write_config would do."""
@@ -243,7 +209,7 @@ class MonitoringAgent(Server, Document):
 			self.name,
 			{
 				"status": "Active" if rc == 0 else "Broken",
-				"remote_write_url": self.remote_write_url,
+				"remote_write_url": self.region_metrics_url,
 			},
 		)
 		return play_name, rc

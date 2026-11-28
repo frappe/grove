@@ -50,20 +50,21 @@ def copied(rows):
 def ensure(name):
 	"""`name`, inserted as a copy of the default tier when Grove has not seen it: Central names a
 	team's tier and the sync never refuses one; the operator tunes the new tier in Desk."""
-	if not frappe.db.exists("Tier", name):
-		source = (
-			frappe.get_doc("Tier", default)
-			if (default := default_tier())
-			else frappe._dict(limits=DEFAULT_LIMITS, key_limits=[])
-		)
-		frappe.get_doc(
-			{
-				"doctype": "Tier",
-				"__newname": name,
-				"spend_limit": flt(source.get("spend_limit")),
-				"limit_scope": source.get("limit_scope") or "Model",
-				"limits": copied(source.limits),
-				"key_limits": copied(source.key_limits),
-			}
-		).insert()
+	if frappe.db.exists("Tier", name):
+		return name
+	default = default_tier()
+	if default:
+		source = frappe.get_doc("Tier", default)
+	else:
+		source = frappe._dict(limits=DEFAULT_LIMITS, key_limits=[])
+	frappe.get_doc(
+		{
+			"doctype": "Tier",
+			"__newname": name,
+			"spend_limit": flt(source.get("spend_limit")),
+			"limit_scope": source.get("limit_scope") or "Model",
+			"limits": copied(source.limits),
+			"key_limits": copied(source.key_limits),
+		}
+	).insert()
 	return name

@@ -23,22 +23,6 @@ NODE_METRICS_PATH = "/metrics/node"
 GPU_METRICS_PATH = "/metrics/gpu"
 
 
-def run_exporters_play(server):
-	"""Gateway and Ingress Servers ship with Vector instead. The exporters only LISTEN; nothing
-	installed here is told which agent scrapes them."""
-	machine = frappe.get_doc("Machine", server.machine)
-	if not machine.public_ip:
-		frappe.throw(f"Machine {machine.name} has no public IP — nothing to connect to.")
-	return server.run_playbook(
-		"exporters.yml",
-		project="Monitoring Agent",
-		extravars={
-			"monitoring_has_gpu": bool(machine.gpus),
-			**frappe.get_single("Grove Settings").scrape_auth_variables,
-		},
-	)
-
-
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def targets(agent: str, kind: str = "engine", token: str = ""):
 	"""Prometheus http_sd list for one Monitoring Agent. Two kinds because they are scraped at
@@ -48,6 +32,8 @@ def targets(agent: str, kind: str = "engine", token: str = ""):
 	Authorization header it cannot resolve to a user before a whitelisted method ever runs, so
 	an agent carrying a bare shared secret can only reach here through the query string."""
 	authenticate(token)
+	if kind not in ("host", "engine"):
+		frappe.throw(f"Unknown target kind {kind!r}: host or engine.")
 	entries = host_targets(agent) if kind == "host" else engine_targets(agent)
 	return Response(json.dumps(entries), mimetype="application/json")
 
@@ -98,15 +84,13 @@ def engine_targets(agent):
 	"""Deployments and pods both at their engine_url — the address the gateway already routes to."""
 	network = agent_network(agent)
 	boxes = {box["name"]: box for box in inference_boxes(agent)}
-	deployments = (
-		frappe.get_all(
+	deployments = []
+	if boxes:
+		deployments = frappe.get_all(
 			"Model Replica",
 			filters={"inference_server": ("in", list(boxes)), "status": "Active"},
 			fields=["name", "model_key", "engine_url", "inference_server"],
 		)
-		if boxes
-		else []
-	)
 	entries = [
 		engine_entry(
 			deployment.engine_url,
@@ -154,18 +138,12 @@ def _with_machine_address(servers):
 	"""Read live off the Machine, not mirrored with a fetch_from: that copy is only as fresh as the
 	server's last save, and a stale scrape address is a target that can only ever be down."""
 	machines = [server["machine"] for server in servers if server.get("machine")]
-	addresses = (
-		{
-			machine["name"]: machine
-			for machine in frappe.get_all(
-				"Machine",
-				filters={"name": ("in", machines)},
-				fields=["name", "private_ip", "network"],
-			)
-		}
-		if machines
-		else {}
-	)
+	addresses = {}
+	if machines:
+		rows = frappe.get_all(
+			"Machine", filters={"name": ("in", machines)}, fields=["name", "private_ip", "network"]
+		)
+		addresses = {machine["name"]: machine for machine in rows}
 	return [
 		{
 			**server,

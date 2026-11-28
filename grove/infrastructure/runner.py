@@ -59,17 +59,16 @@ class StepHandler:
 
 	def handle_machine_status(self, step: GenericStep, machine: str, expected_status: str, **poll) -> None:
 		"""Poll step: sync the Machine off its cloud and pass once it reports `expected_status`."""
+		waiting_for = f"Machine {machine} to be {expected_status}"
 		try:
 			frappe.get_doc("Machine", machine).sync()
-		except CloudClientError:
-			pass
+		except CloudClientError as error:
+			waiting_for += f" (last sync failed: {error})"
 
 		machine_status = frappe.db.get_value("Machine", machine, "status")
 		if machine_status == "Terminated" and expected_status != "Terminated":
 			frappe.throw(f"Machine {machine} is Terminated, it will never reach {expected_status}.")
-		self.poll(
-			step, machine_status == expected_status, f"Machine {machine} to be {expected_status}", **poll
-		)
+		self.poll(step, machine_status == expected_status, waiting_for, **poll)
 
 	def handle_ansible_play(self, step: GenericStep, host: "AnsibleHost", playbook: str, **kwargs) -> None:
 		"""Run `playbook` on `host`'s box. The play references this doc, so its failure lands here."""
@@ -94,6 +93,10 @@ class StepHandler:
 		self.save()
 		frappe.db.commit()
 
+	def finish(self, success_status: str = Status.Success):
+		"""Once no step is left to run."""
+		self.succeed(success_status)
+
 	def handle_step_failure(self):
 		self.error = frappe.get_traceback(with_context=True)
 		self.save()
@@ -109,14 +112,6 @@ class StepHandler:
 			for method in methods
 		]
 
-	def _get_method(self, method_name: str, method_objects: list[object] | None = None):
-		"""Retrieve a method object by name."""
-		method_objects = method_objects or []
-		for method_object in method_objects:
-			if hasattr(method_object, method_name):
-				return getattr(method_object, method_name)
-		return getattr(self, method_name)
-
 	def next_step(self, steps: list[GenericStep]) -> GenericStep | None:
 		for step in steps:
 			if step.status not in (Status.Success, Status.Failure, Status.Skipped):
@@ -131,7 +126,6 @@ class StepHandler:
 		start_status: str = Status.Running,
 		success_status: str = Status.Success,
 		failure_status: str = Status.Failure,
-		method_objects: list[object] | None = None,
 	):
 		"""Run one step, then enqueue the next. Call it through `enqueue_doc`, or the first step runs
 		in the web worker."""
@@ -140,11 +134,11 @@ class StepHandler:
 
 		step = self.next_step(steps)
 		if not step:
-			self.succeed(success_status)
+			self.finish(success_status)
 			return
 
 		step = step.reload()
-		method = self._get_method(method_objects=method_objects, method_name=step.method_name)
+		method = getattr(self, step.method_name)
 
 		try:
 			method(step)
@@ -164,7 +158,6 @@ class StepHandler:
 			self.doctype,
 			self.name,
 			"_execute_steps",
-			method_objects=method_objects,
 			steps=steps,
 			commit=commit,
 			start_status=start_status,

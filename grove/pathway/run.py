@@ -17,7 +17,7 @@ ERROR_LIMIT = 2000
 NO_WRITER = "No Active Gateway Store Writer — mark one of this store's gateways, or nothing updates it."
 
 SECRET_KEYS = frozenset(
-	{"internal_key", "credentials", "key_hash", "admin_token", "data_token", "api_secret"}
+	{"internal_key", "credentials", "key_hash", "key", "admin_token", "data_token", "api_secret"}
 )
 PAYLOAD_LIMIT = 8000
 
@@ -105,6 +105,11 @@ class Unit:
 	store: str | None
 	targets: tuple
 
+	def failed_row(self, error):
+		"""A row naming the unit's first box, or its store when it has no writer."""
+		first = self.targets[0] if self.targets else Target("Gateway Store", self.store)
+		return {"server_type": first.server_type, "server": first.name, "error": error}
+
 
 def sync_targets(geography=None):
 	"""Where a run reaches each gateway Redis, as (store, gateways) groups: a gateway on its own
@@ -148,12 +153,12 @@ def gateway_units(gateways=None, geography=None):
 	]
 
 
-def in_turn(unit, work):
+def in_turn(unit: Unit, work) -> tuple[bool | None, list[dict]]:
 	"""`work(target)` on each of the unit's targets until one succeeds. → (outcome, rows): True when
 	one succeeded, None when one already held the state (it leaves no row), False when none got
 	through. Touches no doc: the caller appends the rows."""
 	if not unit.targets:
-		return False, [{"server_type": "Gateway Store", "server": unit.store, "error": NO_WRITER}]
+		return False, [unit.failed_row(NO_WRITER)]
 	rows = []
 	for target in unit.targets:
 		res = work(target)
@@ -170,15 +175,6 @@ def guarded(work, unit):
 		return work(unit)
 	except Exception as e:
 		return e
-
-
-def settled(unit, result):
-	"""A unit's (outcome, rows). Work that raised is a bug, not a box: it fails its own unit,
-	named on the first box, and the run carries on."""
-	if not isinstance(result, Exception):
-		return result
-	first = unit.targets[0] if unit.targets else Target("Gateway Store", unit.store)
-	return False, [{"server_type": first.server_type, "server": first.name, "error": error_text(result)}]
 
 
 def redact(value):
@@ -212,7 +208,12 @@ def finalize(doc, total, ok):
 	"""Both planes counted together — a run's targets are the boxes it actually pushed."""
 	doc.targets_total = total
 	doc.targets_ok = ok
-	doc.status = "Success" if ok == total else ("Failed" if ok == 0 else "Partial")
+	if ok == total:
+		doc.status = "Success"
+	elif ok == 0:
+		doc.status = "Failed"
+	else:
+		doc.status = "Partial"
 	doc.insert(ignore_permissions=True)
 
 
@@ -246,6 +247,7 @@ class SyncRun:
 			if not units:
 				self.skipped = "nothing"
 				return None
+			self.prepare(units)
 			return self.record([self.settle(unit, guarded(self.work, unit)) for unit in units])
 		finally:
 			self.doc.release_lock()
@@ -254,13 +256,19 @@ class SyncRun:
 		"""The units this run dials, each resolved before any is dialled."""
 		raise NotImplementedError
 
+	def prepare(self, units):
+		"""Read what the work needs before the first unit is dialled."""
+
 	def work(self, unit):
 		"""Dial one unit. → (outcome, rows)."""
 		raise NotImplementedError
 
 	def settle(self, unit, result):
-		"""A unit's (outcome, rows), the moment it arrives."""
-		return settled(unit, result)
+		"""A unit's (outcome, rows), the moment it arrives. Work that raised is a bug, not a box: it
+		fails its own unit, named on the first box, and the run carries on."""
+		if isinstance(result, Exception):
+			return False, [unit.failed_row(error_text(result))]
+		return result
 
 	def record(self, answers):
 		"""Rows onto the run doc in the order the units were asked. A unit that left no row already
@@ -272,7 +280,8 @@ class SyncRun:
 					row["payload"] = payload_text(row["payload"])
 				self.doc.append("results", row)
 			if rows:
-				total, ok = total + 1, ok + (outcome is not False)
+				total += 1
+				ok += outcome is not False
 		if self.doc.results:
 			finalize(self.doc, total, ok)
 		frappe.db.commit()

@@ -17,11 +17,16 @@ function render_gpu_types(frm) {
 	if (!field) return;
 	const wrap = field.$wrapper;
 
-	let rows = [];
+	let rows;
 	try {
 		rows = JSON.parse(frm.doc.gpu_types || "[]") || [];
-	} catch (e) {
-		rows = [];
+	} catch {
+		wrap.html(
+			`<p class="text-danger">${__(
+				"The cached GPU types are not valid JSON — click “Fetch GPU Types” again."
+			)}</p>`
+		);
+		return;
 	}
 
 	if (!rows.length) {

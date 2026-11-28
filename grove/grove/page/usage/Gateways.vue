@@ -18,13 +18,37 @@ watch(
 
 const COLUMNS = ["minmax(0,2fr)", "8rem", "minmax(0,1.3fr)", "minmax(0,1.3fr)", "5rem"];
 const BOX_THEME = { Active: "green", Broken: "red", Pending: "amber", Installing: "amber" };
-const rows = computed(() => (data.value?.gateways || []).map((box) => ({ ...box, id: box.name })));
+const rows = computed(() =>
+	(data.value?.gateways || []).map((box) => ({
+		...box,
+		id: box.name,
+		placement: placement(box),
+		runs: [describeRun("push", box.push), describeRun("pull", box.pull)],
+	}))
+);
 
-const outcome = (row) => {
-	if (!row) return { label: "no run", theme: "gray" };
-	if (row.success) return { label: "ok", theme: "green" };
-	return { label: row.reachable ? "failed" : "unreachable", theme: "red" };
-};
+function placement(box) {
+	if (!box.gateway_store) return box.geography;
+	const writer = box.is_store_writer ? " (writer)" : "";
+	return `${box.geography} · ${box.gateway_store}${writer}`;
+}
+
+function describeRun(kind, run) {
+	return { kind, run, badge: outcome(run), detail: run && runDetail(run) };
+}
+
+function outcome(run) {
+	if (!run) return { label: "no run", theme: "gray" };
+	if (run.success) return { label: "ok", theme: "green" };
+	return { label: run.reachable ? "failed" : "unreachable", theme: "red" };
+}
+
+function runDetail(run) {
+	const detail = run.detail || run.error?.slice(0, 80) || "";
+	if (run.duration_ms == null) return detail;
+	return `${detail} · ${run.duration_ms} ms`;
+}
+
 const open = (box) => host.navigate?.(["Form", "Gateway Server", box.name]);
 </script>
 
@@ -34,9 +58,9 @@ const open = (box) => host.navigate?.(["Form", "Gateway Server", box.name]);
 			<h2 :class="`${CARD_TITLE} mr-2`">Gateways</h2>
 			<Badge v-if="data?.paused.projection" theme="red" label="Pushes paused" />
 			<Badge v-if="data?.paused.usage_pull" theme="red" label="Usage pull paused" />
-			<span :class="`${MUTED} ml-auto`"
-				>last push (every minute, hash-gated) · last usage pull (hourly)</span
-			>
+			<p :class="`${MUTED} ml-auto`">
+				last push (every minute, hash-gated) · last usage pull (hourly)
+			</p>
 		</header>
 		<p v-if="error" class="text-sm text-ink-red-6">{{ error }}</p>
 		<p v-else-if="loading && !data" :class="MUTED">Loading…</p>
@@ -61,13 +85,9 @@ const open = (box) => host.navigate?.(["Form", "Gateway Server", box.name]);
 							>
 								{{ item.name }}
 							</button>
-							<span :class="`${MUTED} max-w-full truncate`">
-								{{ item.geography
-								}}<template v-if="item.gateway_store">
-									· {{ item.gateway_store
-									}}{{ item.is_store_writer ? " (writer)" : "" }}</template
-								>
-							</span>
+							<span :class="`${MUTED} max-w-full truncate`">{{
+								item.placement
+							}}</span>
 						</ListCell>
 						<ListCell class="flex-wrap gap-1">
 							<Badge
@@ -81,23 +101,20 @@ const open = (box) => host.navigate?.(["Form", "Gateway Server", box.name]);
 							/>
 						</ListCell>
 						<ListCell
-							v-for="run in [item.push, item.pull]"
-							:key="run === item.push ? 'push' : 'pull'"
+							v-for="{ kind, run, badge, detail } in item.runs"
+							:key="kind"
 							class="flex-col !items-start justify-center gap-0.5"
 							:title="run?.error || ''"
 						>
 							<span class="flex items-center gap-2">
-								<Badge :theme="outcome(run).theme" :label="outcome(run).label" />
+								<Badge :theme="badge.theme" :label="badge.label" />
 								<span v-if="run?.run_at" :class="CELL" :title="when(run.run_at)">{{
 									ago(run.run_at)
 								}}</span>
 							</span>
-							<span v-if="run" :class="`${MUTED} max-w-full truncate`">
-								{{ run.detail || run.error?.slice(0, 80) || ""
-								}}<template v-if="run.duration_ms != null">
-									· {{ run.duration_ms }} ms</template
-								>
-							</span>
+							<span v-if="run" :class="`${MUTED} max-w-full truncate`">{{
+								detail
+							}}</span>
 						</ListCell>
 						<ListCell class="justify-end text-xs text-ink-gray-7">{{
 							item.agent_version || "—"

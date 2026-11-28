@@ -188,7 +188,9 @@ class ServerResize(StepHandler, Document):
 			step.status = Status.Skipped
 		else:
 			gateway.db_set("is_in_maintenance", 1)
-			step.job_type, step.job = "Ansible Play", gateway.apply_config(**self.play_reference())[0]
+			play_name, _rc = gateway.apply_config(**self.play_reference())
+			step.job_type = "Ansible Play"
+			step.job = play_name
 			step.status = Status.Success
 		step.save()
 
@@ -199,11 +201,10 @@ class ServerResize(StepHandler, Document):
 		except requests.RequestException:
 			answer = {}  # a dropped connect: asked again at the next poll
 		drained = bool(answer.get("maintenance")) and answer.get("in_flight") == 0
-		state = (
-			f"maintenance {'on' if answer.get('maintenance') else 'off'}, {answer.get('in_flight')} in flight"
-			if answer
-			else "no answer"
-		)
+		state = "no answer"
+		if answer:
+			maintenance = "on" if answer.get("maintenance") else "off"
+			state = f"maintenance {maintenance}, {answer.get('in_flight')} in flight"
 		self.poll(step, drained, f"{self.gateway_name(step)} to drain ({state})", max_attempts=DRAIN_ATTEMPTS)
 
 	def stop_pathway(self, step):
@@ -238,11 +239,11 @@ class ServerResize(StepHandler, Document):
 
 	def sync_server(self, step):
 		"""Sync server"""
-		self.refresh_server()
+		self.reactivate_server()
 		step.status = Status.Success
 		step.save()
 
-	def refresh_server(self):
+	def reactivate_server(self):
 		"""The server back to Active on the Machine's addresses: the save refetches them, DNS and
 		the health check follow, and a moved public IP goes into the security groups now rather
 		than at the next tick."""
@@ -283,7 +284,9 @@ class ServerResize(StepHandler, Document):
 	def leave_maintenance(self, step):
 		"""Leave maintenance"""
 		if self.entered(step.server).status == Status.Success:
-			step.job_type, step.job = "Ansible Play", self.lift_maintenance(self.gateway_name(step))
+			play_name = self.lift_maintenance(self.gateway_name(step))
+			step.job_type = "Ansible Play"
+			step.job = play_name
 			step.status = Status.Success
 		else:
 			step.status = Status.Skipped
@@ -291,14 +294,21 @@ class ServerResize(StepHandler, Document):
 
 	def entered(self, gateway):
 		"""This resize's Enter maintenance row for `gateway` (None on a gateway's own rows)."""
-		return next(
-			row for row in self.steps if row.method_name == "enter_maintenance" and row.server == gateway
+		row = next(
+			(row for row in self.steps if row.method_name == "enter_maintenance" and row.server == gateway),
+			None,
 		)
+		if row is None:
+			frappe.throw(
+				f"Server Resize {self.name} has no Enter maintenance step for {gateway or self.server}."
+			)
+		return row
 
 	def lift_maintenance(self, gateway):
 		doc = frappe.get_doc("Gateway Server", gateway)
 		doc.db_set("is_in_maintenance", 0)
-		return doc.apply_config(**self.play_reference())[0]
+		play_name, _rc = doc.apply_config(**self.play_reference())
+		return play_name
 
 	def succeed(self, success_status=Status.Success):
 		self.ended_at = now_datetime()
@@ -319,7 +329,7 @@ class ServerResize(StepHandler, Document):
 			reference_name=self.name,
 		)
 		failed = [row for row in self.steps if row.status == Status.Failure][-1]
-		if not getattr(frappe.local, "grove_failure_reported", False):
+		if not failure.was_reported():
 			failure.report(self.doctype, self.name, f"Resize of {self.server} failed", failed.output)
 		# Committed first: recovery can raise, and the rollback must not take the failure record.
 		frappe.db.commit()
@@ -330,7 +340,7 @@ class ServerResize(StepHandler, Document):
 		its own: one that cannot be undone is written to `error`, not allowed to stop the next."""
 		self.undo("starting the machine", self.restart_machine)
 		if frappe.db.get_value("Machine", self.machine, "status") == "Active":
-			self.undo("syncing the server", self.refresh_server)
+			self.undo("syncing the server", self.reactivate_server)
 		for row in self.steps:
 			# Failure set the flag too, before the play that applies it refused.
 			if row.method_name == "enter_maintenance" and row.status in (Status.Success, Status.Failure):
@@ -367,6 +377,10 @@ class ServerResize(StepHandler, Document):
 		try:
 			machine.sync()
 		except CloudClientError:
-			pass
+			frappe.log_error(
+				title=f"Server Resize {self.name}: syncing Machine {self.machine} failed",
+				reference_doctype=self.doctype,
+				reference_name=self.name,
+			)
 		if machine.status == "Stopped":
 			machine.resume()

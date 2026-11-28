@@ -9,6 +9,7 @@ from frappe.utils import flt
 from grove.access import limits_in_force, team_limits
 from grove.api.control import for_control_clients
 from grove.api.teams import get_team
+from grove.utils import utc_timestamp
 
 KEY_FIELDS = [
 	"name",
@@ -152,7 +153,6 @@ def get_api_key(team, key, ptype="write"):
 
 def key_rows(names):
 	from grove.billing.pricing import month_spent_by
-	from grove.pathway.routes import utc_timestamp
 
 	if not names:
 		return []

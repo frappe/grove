@@ -57,7 +57,7 @@ class Model(Document):
 		self.set_model_key()
 		self.set_modalities()
 		self.provider_is_self_hosted = self.is_self_hosted
-		if self.is_self_hosted and not self.hf_repo:
+		if self.provider_is_self_hosted and not self.hf_repo:
 			frappe.throw(
 				f"{self.model_id} needs an HF Repo for weights",
 				frappe.MandatoryError,
@@ -159,7 +159,7 @@ class Model(Document):
 
 	@property
 	def provider_name(self):
-		return frappe.db.get_value("Model Provider", self.provider, "provider_name")
+		return frappe.get_cached_value("Model Provider", self.provider, "provider_name")
 
 	@property
 	def repo_id(self):
@@ -174,7 +174,9 @@ class Model(Document):
 	@property
 	def is_self_hosted(self):
 		"""Read off the provider rather than the mirror, so the two cannot disagree."""
-		return bool(self.provider and frappe.db.get_value("Model Provider", self.provider, "is_self_hosted"))
+		return bool(
+			self.provider and frappe.get_cached_value("Model Provider", self.provider, "is_self_hosted")
+		)
 
 	def reject_if_vendor_served(self, what):
 		"""The form hides these, but a whitelisted method is reachable without the button — and the
@@ -311,7 +313,10 @@ def mirror_weights_to_s3(model):
 	"""Worker: stamp weights_s3_uri on success so new deploys pick the mirror up."""
 	doc = frappe.get_doc("Model", model)
 	settings = frappe.get_single("Grove Settings")
-	inf = frappe.get_doc("Inference Server", mirror_server(model))
+	server = mirror_server(model)
+	if not server:
+		frappe.throw(f"Model {model} has no Active replica to mirror its weights from.")
+	inf = frappe.get_doc("Inference Server", server)
 	uri = f"{settings.weights_bucket}/models/{doc.repo_id.replace('/', '--')}"
 	play_name, rc = inf.run_playbook(
 		"mirror_weights.yml",

@@ -59,6 +59,13 @@ class NamedHost(Server):
 
 	dns_fields = ("public_ip",)
 
+	def set_secret(self, field):
+		"""Generate the Password `field` unless a value stands behind it. Checked through get_password:
+		a saved Password reads back as asterisks even when its __Auth row is gone. Clearing the field
+		and saving rotates it; the box holds the old value until its next deploy."""
+		if not self.get_password(field, raise_exception=False):
+			setattr(self, field, frappe.generate_hash(length=48))
+
 	@property
 	def hostname(self):
 		"""<short name>.<its geography's zone>, covered by that geography's wildcard — the doc name
@@ -117,6 +124,19 @@ class NamedHost(Server):
 			if e.code != "InvalidChangeBatch":
 				raise
 			return None
+
+	def on_update(self):
+		if self.has_value_changed("status") and self.status == "Terminated":
+			self.remove_dns_records()
+
+	def on_trash(self):
+		self.remove_dns_records()
+
+	@frappe.whitelist()
+	def setup(self):
+		"""Button: run this doctype's provision play on the box."""
+		frappe.enqueue_doc(self.doctype, self.name, "provision", queue="long", timeout=1800)
+		frappe.msgprint(f"Provisioning {self.name} — watch its Ansible Plays.", alert=True)
 
 	@frappe.whitelist()
 	def resize_options(self):
@@ -287,6 +307,15 @@ class PathwayHost(FleetHost):
 		}
 
 	@frappe.whitelist()
+	def deploy_agent(self):
+		"""Button: the pinned release and both halves of its configuration onto a set-up box."""
+		frappe.enqueue_doc(self.doctype, self.name, "_deploy_agent", queue="long", timeout=1200)
+		frappe.msgprint(
+			f"Deploying agent {gateway_agent_version()} to {self.name} — watch its Ansible Plays.",
+			alert=True,
+		)
+
+	@frappe.whitelist()
 	def migrate_to_vector(self):
 		"""Button: move a box set up before Vector onto it — vector.yml, then retire the node_exporter
 		and scrape htpasswd its old play installed. A box set up since has neither."""
@@ -318,12 +347,16 @@ class PathwayHost(FleetHost):
 		frappe.msgprint(f"{'Starting' if on else 'Ending'} maintenance on {self.name}.", alert=True)
 
 	@failure.reports_failure(mark_broken=False)
-	def apply_config(self, **play):
+	def apply_config(self, reference_doctype=None, reference_docname=None):
 		"""Write config.json and SIGUSR1, then read the box back: a rejected reload keeps the old
 		config and says so only in the journal. A read that does not connect is asked again — one
-		dropped SYN must not fail the change the play already made. `play` names the doc the play
-		is run for."""
-		play_name, rc = self.run_playbook("config.yml", extravars=self.config_variables, **play)
+		dropped SYN must not fail the change the play already made."""
+		play_name, rc = self.run_playbook(
+			"config.yml",
+			extravars=self.config_variables,
+			reference_doctype=reference_doctype,
+			reference_docname=reference_docname,
+		)
 		if rc != 0:
 			frappe.throw(f"config.yml failed on {self.name} (Ansible Play {play_name}).")
 		want, answered = bool(self.is_in_maintenance), None
@@ -369,6 +402,6 @@ class PathwayHost(FleetHost):
 		self.db_set("memory_limit_mb", limit_mb)
 		return play_name, rc
 
-	def get_in_flight(self):
+	def get_in_flight(self) -> dict:
 		"""The box's own answer: {"maintenance": bool, "in_flight": requests still running}."""
 		return Target.of(self).get("in-flight")

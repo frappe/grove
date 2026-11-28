@@ -10,21 +10,22 @@ frappe.ui.form.on("Cost Discrepancy", {
 		]);
 		frm.add_custom_button(
 			__("Grove is wrong"),
-			() => {
-				frappe.confirm(
+			() =>
+				grove.confirm_call(
+					frm,
 					`${figures} ${__(
 						"Land a correction of {1} on key {0} so Grove's spend matches the gateway's?",
 						[frm.doc.api_key, format_currency(frm.doc.delta, null, 9)]
 					)}`,
-					() => frm.call("correct_grove").then(() => frm.reload_doc())
-				);
-			},
+					"correct_grove"
+				),
 			__("Resolve")
 		);
 		frm.add_custom_button(
 			__("Gateway is wrong"),
-			() => {
-				frappe.confirm(
+			() =>
+				grove.confirm_call(
+					frm,
 					`${figures} ${__(
 						"Move the gateway's spend for key {0} on {1} by {2} so its balance matches Grove's? It goes out on the next sync, within a minute.",
 						[
@@ -33,9 +34,8 @@ frappe.ui.form.on("Cost Discrepancy", {
 							format_currency(-frm.doc.delta, null, 9),
 						]
 					)}`,
-					() => frm.call("correct_gateway").then(() => frm.reload_doc())
-				);
-			},
+					"correct_gateway"
+				),
 			__("Resolve")
 		);
 	},

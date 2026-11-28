@@ -4,11 +4,7 @@
 behind it. Capacity IS the gateway's admission cap, so it resolves through the deployment in one
 place — `active_replicas` — for both planes."""
 
-from datetime import UTC, timezone
-from zoneinfo import ZoneInfo
-
 import frappe
-from frappe.utils import get_system_timezone
 
 from grove.billing.pricing import PriceBook
 from grove.grove.doctype.model.model import get_modalities
@@ -69,22 +65,6 @@ def ingress_targets(geography):
 	return targets
 
 
-def engine_kinds():
-	"""Resolved once per snapshot, not per route row: a handful of images against every placement
-	in the fleet."""
-	return {
-		image["name"]: image["engine_kind"]
-		for image in frappe.get_all("Engine Image", fields=["name", "engine_kind"])
-	}
-
-
-def deployments():
-	return {
-		deployment["name"]: deployment
-		for deployment in frappe.get_all("Model Deployment", fields=["name", "engine_image", "max_num_seqs"])
-	}
-
-
 def resolve_deployment(replica, by_name):
 	"""The image lives on its deployment; the cap may be overridden per replica, where blank means
 	inherit. `max_num_seqs` IS the gateway's admission cap: a blank left unresolved would advertise
@@ -107,9 +87,15 @@ def capacity(row, kinds):
 def active_replicas(**filters):
 	"""→ (replicas, kinds), each cap resolved through its deployment. Both planes build from this, so
 	they can never disagree about one engine's cap: the gateway's is advisory, the ingress's is the
-	gate."""
-	kinds = engine_kinds()
-	by_name = deployments()
+	gate. Images and deployments are read once per snapshot, not per route row."""
+	kinds = {
+		image["name"]: image["engine_kind"]
+		for image in frappe.get_all("Engine Image", fields=["name", "engine_kind"])
+	}
+	by_name = {
+		deployment["name"]: deployment
+		for deployment in frappe.get_all("Model Deployment", fields=["name", "engine_image", "max_num_seqs"])
+	}
 	replicas = [
 		resolve_deployment(replica, by_name)
 		for replica in frappe.get_all(
@@ -127,75 +113,78 @@ def gateway_routes(geography):
 	out of Redis and /v1/models next tick."""
 	if not geography:
 		return {}
-	deps, kinds = active_replicas(geography=geography)
+	replicas, kinds = active_replicas(geography=geography)
 	models = models_in(geography)
 	key_of = {m.name: m.model_key for m in models}
 	vendors = vendor_endpoints(geography)
 	upstream = {m.name: upstream_model(m, m.provider_name in vendors) for m in models}
+	engine_rows = replica_rows(replicas, kinds, ingress_targets(geography)) + pod_rows(geography, kinds)
 	routes = {}
-	targets = ingress_targets(geography)
-	folded = {}
-	for d in deps:
-		cap = capacity(d, kinds)
-		if d.inference_server in targets:
-			target = targets[d.inference_server]
-			if target is None:
-				continue
-			row = folded.setdefault((d.model, target["server"]), {**target, "capacity": 0})
-			row["capacity"] += cap
-			continue
-		internal_key = frappe.get_doc("Model Replica", d.name).get_password("internal_api_key") or ""
-		routes.setdefault(key_of[d.model], []).append(
-			{
-				"engine_url": d.engine_url,
-				"internal_key": internal_key,
-				"healthy": True,
-				"capacity": cap,
-				"deployment": d.name,
-				"server": d.inference_server or d.name,
-				"kind": "direct",
-				"upstream_model": upstream.get(d.model, ""),
-			}
-		)
-	for (model, _ingress), row in folded.items():
-		routes.setdefault(key_of[model], []).append(
-			{
-				**row,
-				"upstream_model": upstream.get(model, ""),
-			}
-		)
-
-	pods = (
-		frappe.get_all(
-			"Pod",
-			filters={"status": "Running"},
-			fields=["name", "model", "engine_url", "max_num_seqs", "engine_image"],
-		)
-		if geography == frappe.db.get_single_value("Grove Settings", "pod_geography")
-		else []
-	)
-	for p in pods:
-		if not (p.model and p.engine_url):
-			continue
-		internal_key = frappe.get_doc("Pod", p.name).get_password("api_key") or ""
-		routes.setdefault(key_of[p.model], []).append(
-			{
-				"engine_url": p.engine_url,
-				"internal_key": internal_key,
-				"healthy": True,
-				"capacity": capacity(p, kinds),
-				"deployment": p.name,
-				"server": p.name,
-				"kind": "direct",
-				"upstream_model": upstream.get(p.model, ""),
-			}
-		)
+	for model, row in engine_rows:
+		routes.setdefault(key_of[model], []).append({**row, "upstream_model": upstream.get(model, "")})
 	add_vendor_routes(routes, models, vendors, upstream)
 	stamp_modalities(routes, models)
 	routes = published_routes(routes, models)
 	for rows in routes.values():
 		rows.sort(key=lambda r: r["deployment"])  # stable hash whatever the query order
 	return routes
+
+
+def replica_rows(replicas, kinds, targets):
+	"""(model, row) per replica dialled directly, then one per (model, ingress) its owned replicas
+	fold into, capacities summed. A replica behind an ingress the gateway cannot use is dropped."""
+	direct, folded = [], {}
+	for replica in replicas:
+		cap = capacity(replica, kinds)
+		if replica.inference_server not in targets:
+			direct.append((replica.model, direct_row(replica, cap)))
+			continue
+		target = targets[replica.inference_server]
+		if target is None:
+			continue
+		row = folded.setdefault((replica.model, target["server"]), {**target, "capacity": 0})
+		row["capacity"] += cap
+	return direct + [(model, row) for (model, _ingress), row in folded.items()]
+
+
+def direct_row(replica, cap):
+	internal_key = frappe.get_doc("Model Replica", replica.name).get_password("internal_api_key") or ""
+	return {
+		"engine_url": replica.engine_url,
+		"internal_key": internal_key,
+		"healthy": True,
+		"capacity": cap,
+		"deployment": replica.name,
+		"server": replica.inference_server or replica.name,
+		"kind": "direct",
+	}
+
+
+def pod_rows(geography, kinds):
+	"""(model, row) per Running Pod with a model and an engine URL; pods serve the one Pod Geography."""
+	if geography != frappe.db.get_single_value("Grove Settings", "pod_geography"):
+		return []
+	pods = frappe.get_all(
+		"Pod",
+		filters={"status": "Running"},
+		fields=["name", "model", "engine_url", "max_num_seqs", "engine_image"],
+	)
+	rows = []
+	for pod in pods:
+		if not (pod.model and pod.engine_url):
+			continue
+		internal_key = frappe.get_doc("Pod", pod.name).get_password("api_key") or ""
+		row = {
+			"engine_url": pod.engine_url,
+			"internal_key": internal_key,
+			"healthy": True,
+			"capacity": capacity(pod, kinds),
+			"deployment": pod.name,
+			"server": pod.name,
+			"kind": "direct",
+		}
+		rows.append((pod.model, row))
+	return rows
 
 
 def stamp_modalities(routes, models):
@@ -258,12 +247,6 @@ def published_routes(routes, models):
 		for key, rows in routes.items()
 		if by_key[key].published and by_key[key].name in pricing
 	}
-
-
-def utc_timestamp(value):
-	"""A site-time-zone Datetime as an RFC 3339 UTC string."""
-	local = frappe.utils.get_datetime(value).replace(tzinfo=ZoneInfo(get_system_timezone()))
-	return local.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def upstream_model(model, is_vendor):
@@ -385,18 +368,14 @@ def owned_boxes(ingress_name):
 	servers = frappe.get_all(
 		"Inference Server", filters={"ingress": ingress_name}, fields=["name", "machine"]
 	)
-	machines = (
-		{
-			machine["name"]: machine
-			for machine in frappe.get_all(
-				"Machine",
-				filters={"name": ("in", [s["machine"] for s in servers if s["machine"]])},
-				fields=["name", "private_ip"],
-			)
-		}
-		if servers
-		else {}
+	if not servers:
+		return {}
+	rows = frappe.get_all(
+		"Machine",
+		filters={"name": ("in", [s["machine"] for s in servers if s["machine"]])},
+		fields=["name", "private_ip"],
 	)
+	machines = {machine["name"]: machine for machine in rows}
 	return {
 		server["name"]: machines[server["machine"]]["private_ip"]
 		for server in servers

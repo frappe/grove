@@ -1,5 +1,5 @@
 import { dayjs, frappeRequest } from "frappe-ui";
-import { ref } from "vue";
+import { ref, watch } from "vue";
 
 const METHODS = "grove.grove.page.usage.usage.";
 
@@ -28,6 +28,17 @@ export function useCall(method) {
 	}
 
 	return { data, loading, error, load };
+}
+
+/** `useCall` re-read with the page's filters whenever they change or the page is refreshed. */
+export function useFilteredCall(method, props) {
+	const request = useCall(method);
+	watch(
+		() => [props.params, props.version],
+		() => request.load({ filters: props.params }),
+		{ immediate: true }
+	);
+	return request;
 }
 
 export const errorText = (failure) =>
@@ -65,8 +76,11 @@ export const when = (value) => (value ? dayjs(value).format("MMM D, HH:mm") : "â
 /** Percent of a cap or spend limit from which a key or team reads as near it. */
 export const NEAR_CAP = 85;
 
-export const barClass = (pct) =>
-	pct >= 100 ? "bg-surface-red-5" : pct >= NEAR_CAP ? "bg-surface-amber-3" : "bg-surface-gray-7";
+export function barClass(pct) {
+	if (pct >= 100) return "bg-surface-red-5";
+	if (pct >= NEAR_CAP) return "bg-surface-amber-3";
+	return "bg-surface-gray-7";
+}
 
 export const CARD = "rounded-lg border border-outline-gray-2 bg-surface-white p-4";
 export const CARD_TITLE = "text-base font-semibold text-ink-gray-8";

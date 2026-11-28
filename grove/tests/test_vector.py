@@ -541,13 +541,13 @@ def fake_roster_region(name="ap-south-1"):
 	return SimpleNamespace(
 		name=name,
 		metrics_url="http://datum.test/v1/ingest/remote",
-		get_datum_token=Mock(return_value="jwt-1"),
+		ensure_datum_token=Mock(return_value="jwt-1"),
 		db_set=Mock(),
 	)
 
 
 def kept_token_region(expires_at):
-	"""A Region as get_datum_token sees it, holding `kept` until `expires_at`."""
+	"""A Region as ensure_datum_token sees it, holding `kept` until `expires_at`."""
 	return SimpleNamespace(
 		name="ap-south-1",
 		central_region="blr-1",
@@ -602,7 +602,7 @@ class TestRoster(unittest.TestCase):
 			patch("grove.infrastructure.datum.requests.post") as post,
 		):
 			datum.push_roster()
-		region.get_datum_token.assert_not_called()
+		region.ensure_datum_token.assert_not_called()
 		post.assert_not_called()
 
 	def test_a_refusal_is_logged_naming_datums_answer_and_the_next_region_still_gets_its_roster(self):
@@ -630,7 +630,7 @@ class TestRoster(unittest.TestCase):
 			patch("grove.infrastructure.doctype.region.region.now_datetime", return_value=NOW),
 			patch("grove.infrastructure.datum.mint_token") as mint,
 		):
-			self.assertEqual("kept", Region.get_datum_token(region))
+			self.assertEqual("kept", Region.ensure_datum_token(region))
 		mint.assert_not_called()
 		region.save.assert_not_called()
 
@@ -645,7 +645,7 @@ class TestRoster(unittest.TestCase):
 				patch("grove.infrastructure.doctype.region.region.now_datetime", return_value=NOW),
 				patch("grove.infrastructure.datum.mint_token", return_value=("jwt-1", EXPIRY)) as mint,
 			):
-				self.assertEqual("jwt-1", Region.get_datum_token(region))
+				self.assertEqual("jwt-1", Region.ensure_datum_token(region))
 			mint.assert_called_once_with("blr-1", "grove:region-ap-south-1")
 			self.assertEqual(("jwt-1", EXPIRY), (region.saved, region.datum_token_expires_at))
 			region.save.assert_called_once_with()

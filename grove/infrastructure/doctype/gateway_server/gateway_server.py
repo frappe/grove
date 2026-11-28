@@ -6,12 +6,8 @@ from frappe.model.document import Document
 
 from grove import failure
 from grove.infrastructure.cloud_provider.dns import Route53Error
-from grove.infrastructure.doctype.gateway_store.gateway_store import store_writers, stores_in
-from grove.infrastructure.fleet import (
-	PathwayHost,
-	gateway_agent_release,
-	gateway_agent_version,
-)
+from grove.infrastructure.doctype.gateway_store.gateway_store import stores_in
+from grove.infrastructure.fleet import PathwayHost, gateway_agent_release
 from grove.pathway import projection
 
 
@@ -52,29 +48,11 @@ class GatewayServer(PathwayHost, Document):
 
 	def validate(self):
 		self.set_admin_url()
-		self.set_admin_token()
+		self.set_secret("admin_token")
 		if self.is_store_writer and not self.gateway_store:
 			frappe.throw(
 				f"{self.name} is not on a Gateway Store yet — only a gateway deployed onto one can be its writer."
 			)
-
-	def set_admin_token(self):
-		"""The credential the control plane authenticates every push with. Generated rather than
-		typed: the field is read-only. In validate rather than before_insert, so it also heals docs
-		that exist without one. Clearing the field and saving is how it is rotated, which then needs
-		a Deploy Agent — the box holds the old value until agent.env is rewritten.
-
-		Tested through get_password, NOT `if not self.admin_token`: a saved Password field reads
-		back as asterisks and stays truthy even when the __Auth row holding the real value is gone."""
-		if not self.get_password("admin_token", raise_exception=False):
-			self.admin_token = frappe.generate_hash(length=48)
-
-	def on_update(self):
-		if self.has_value_changed("status") and self.status == "Terminated":
-			self.remove_dns_records()
-
-	def on_trash(self):
-		self.remove_dns_records()
 
 	@frappe.whitelist()
 	def set_isolate_caches(self, on: int):
@@ -120,7 +98,10 @@ class GatewayServer(PathwayHost, Document):
 			self.doctype, self.name, ["gateway_store", "is_store_writer"], as_dict=True
 		)
 		stays_writer = before.gateway_store == store and before.is_store_writer
-		is_writer = bool(stays_writer or not store_writers(store))
+		has_writer = frappe.db.exists(
+			self.doctype, {"gateway_store": store, "is_store_writer": 1, "status": "Active"}
+		)
+		is_writer = bool(stays_writer or not has_writer)
 		frappe.db.set_value(
 			self.doctype, self.name, {"gateway_store": store, "is_store_writer": int(is_writer)}
 		)
@@ -186,13 +167,14 @@ class GatewayServer(PathwayHost, Document):
 		client = self.dns_client()
 		if not client:
 			return None
+		health_check_id = self.ensure_health_check(client)
 		return client.upsert_gateway_records(
 			self.fleet_zone,
 			self.hostname,
 			frappe.db.get_value("Geography", self.geography, "endpoint"),
 			self.public_ip,
 			self.name,
-			self.ensure_health_check(client),
+			health_check_id,
 		)
 
 	def delete_health_check(self, client):
@@ -225,32 +207,21 @@ class GatewayServer(PathwayHost, Document):
 		self.delete_health_check(client)
 		return change
 
-	@frappe.whitelist()
-	def deploy_agent(self):
-		frappe.enqueue_doc(
-			self.doctype,
-			self.name,
-			"_deploy_agent",
-			queue="long",
-			timeout=1200,
-		)
-		frappe.msgprint(
-			f"Deploying agent {gateway_agent_version()} to {self.name} — watch its Ansible Plays.",
-			alert=True,
-		)
-
 	@failure.reports_failure(mark_broken=False)
-	def _deploy_agent(self, agent_binary="", **play):
+	def _deploy_agent(self, agent_binary="", reference_doctype=None, reference_docname=None):
 		"""Install the pinned agent release — or, for a dev deploy, the build `agent_binary` names
-		on the control plane — and rewrite agent.env and config.json. `play` names the doc the play
-		is run for, e.g. a Pathway Update.
+		on the control plane — and rewrite agent.env and config.json. The reference names the doc
+		the play is run for, e.g. a Pathway Update.
 
 		Both are written whole from the same extra-vars provision passes, so a config-only run never
 		blanks the admin token. Stays on the Redis it is on: moving a live gateway onto a store
 		drains it first, which a deploy does not."""
 		store = self.gateway_store
 		play_name, rc = self.run_playbook(
-			"deploy_agent.yml", extravars=self.get_agent_extravars(store, agent_binary), **play
+			"deploy_agent.yml",
+			extravars=self.get_agent_extravars(store, agent_binary),
+			reference_doctype=reference_doctype,
+			reference_docname=reference_docname,
 		)
 		self.record_agent_version(rc)
 		self.record_store(rc, store)
@@ -279,17 +250,6 @@ class GatewayServer(PathwayHost, Document):
 			**tls_variables,
 			**self.config_variables,
 		}
-
-	@frappe.whitelist()
-	def setup(self):
-		frappe.enqueue_doc(
-			self.doctype,
-			self.name,
-			"provision",
-			queue="long",
-			timeout=1800,
-		)
-		frappe.msgprint(f"Provisioning {self.name} — watch its Ansible Plays.", alert=True)
 
 	@failure.reports_failure(mark_broken=True)
 	def provision(self, agent_binary=""):

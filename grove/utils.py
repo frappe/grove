@@ -4,7 +4,7 @@
 
 import os
 import re
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 import frappe
@@ -12,12 +12,9 @@ from frappe.utils import get_system_timezone
 
 MIB_PER_GB = 1024
 
-DNS_LABEL = re.compile(r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
-
 
 def vram_gb_from_mib(mib):
-	"""MiB → whole marketed GB. Rounds half up, unlike Python's banker's round(): an L4 reporting
-	exactly 23040 MiB is a 24 GB card, and round() would call it 22."""
+	"""MiB → whole GB, rounding half up: 23040 MiB (22.5) is 23, where banker's round() gives 22."""
 	return int(mib // MIB_PER_GB + (1 if mib % MIB_PER_GB * 2 >= MIB_PER_GB else 0))
 
 
@@ -76,7 +73,7 @@ def utc_today():
 
 def site_datetime(utc):
 	"""A moment in UTC — an RFC 3339 string, a datetime (naive is UTC), or a date at its midnight —
-	as the naive site-time datetime the database holds. The inverse of `routes.utc_timestamp`."""
+	as the naive site-time datetime the database holds. The inverse of `utc_timestamp`."""
 	if isinstance(utc, str):
 		utc = datetime.fromisoformat(utc)
 	elif not isinstance(utc, datetime):
@@ -84,6 +81,12 @@ def site_datetime(utc):
 	if utc.tzinfo is None:
 		utc = utc.replace(tzinfo=UTC)
 	return utc.astimezone(ZoneInfo(get_system_timezone())).replace(tzinfo=None)
+
+
+def utc_timestamp(value):
+	"""A site-time-zone Datetime as an RFC 3339 UTC string."""
+	local = frappe.utils.get_datetime(value).replace(tzinfo=ZoneInfo(get_system_timezone()))
+	return local.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def slugify(text):

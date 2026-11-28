@@ -35,10 +35,6 @@ FIELDS = (
 )
 
 
-def usd(nano_usd):
-	return Decimal(nano_usd) / NANO
-
-
 class Reconciler:
 	"""One per drain and day: the price book, the day the gateway served the buckets, which store,
 	under which drain id, and `landed`, the (drain id, key, day) triples a record already holds."""
@@ -50,14 +46,14 @@ class Reconciler:
 		self.drain_id = drain_id
 		self.landed = landed
 
-	def team(self, team, drains):
-		"""`drains`: {API key: parsed hash} for `team`'s keys in this drain on this day. A key this
+	def team(self, team, parsed_by_key):
+		"""`parsed_by_key`: {API key: parsed hash} for `team`'s keys in this drain on this day. A key this
 		drain already landed for the day is skipped, so a re-sent drain bills nothing twice. The rows
 		go in as one statement however many keys: a store's hourly drain is a lakh of them."""
 		lock_team(team)
 		rows = [
 			self.row(team, prefix, self.priced(drain.pricings) + self.unpriced(drain), drain.requests)
-			for prefix, drain in drains.items()
+			for prefix, drain in parsed_by_key.items()
 			if not self.has_landed(prefix)
 		]
 		frappe.db.bulk_insert("Usage Record", FIELDS, [[row[field] for field in FIELDS] for row in rows])
@@ -103,7 +99,7 @@ class Reconciler:
 				self.book.pricing(pricing).model_key,
 				pricing,
 				counts,
-				usd(counts.get("cost", 0)),
+				Decimal(counts.get("cost", 0)) / NANO,
 				self.book.pricing_cost(pricing, counts),
 			)
 			for pricing, counts in pricings.items()
@@ -145,14 +141,16 @@ class Reconciler:
 		counter is owed the whole price, sent by the next tick. A revoked key's counter is gone with
 		it: billed, owed nothing."""
 		priced = [entry for entry in row.entries if entry["pricing"]]
-		if not self.is_dead:
-			for entry in priced:
-				gateway, grove = entry["gateway_cost"], entry["grove_cost"]
-				if abs(gateway - grove) > self.book.counters.tolerance(entry["requests"]):
-					self.discrepancy(row, entry, gateway, grove)
-		elif frappe.db.get_value("Grove API Key", row.api_key, "status") == "active":
+		if self.is_dead:
+			if frappe.db.get_value("Grove API Key", row.api_key, "status") != "active":
+				return
 			for entry in priced:
 				self.discrepancy(row, entry, Decimal(0), entry["grove_cost"]).adjust_gateway()
+			return
+		for entry in priced:
+			gateway, grove = entry["gateway_cost"], entry["grove_cost"]
+			if abs(gateway - grove) > self.book.counters.tolerance(entry["requests"]):
+				self.discrepancy(row, entry, gateway, grove)
 
 	def discrepancy(self, row, entry, gateway, grove):
 		return record(

@@ -15,8 +15,7 @@ from grove.billing.doctype.usage_record.usage_record import money_rows
 from grove.billing.pricing import committed, month_spent_by
 from grove.grove.doctype.key_transfer.key_transfer import transfers_of
 from grove.pathway.key_stats import COUNTS, LAST
-from grove.pathway.routes import utc_timestamp
-from grove.utils import site_datetime, utc_today
+from grove.utils import site_datetime, utc_timestamp, utc_today
 
 ROLE = "System Manager"
 USAGE_FIELDS = ("requests", "tokens", "cost")
@@ -85,13 +84,12 @@ class Window:
 		if not given.provider:
 			return None
 		providers = frappe.get_list("Model Provider", filters={"provider_name": given.provider}, pluck="name")
-		return (
-			frappe.get_list(
-				"Model", filters={"provider": ("in", providers)}, pluck="model_key", distinct=True
-			)
-			if providers
-			else []
-		) or [""]
+		if not providers:
+			return [""]
+		keys = frappe.get_list(
+			"Model", filters={"provider": ("in", providers)}, pluck="model_key", distinct=True
+		)
+		return keys or [""]
 
 	@property
 	def previous(self):
