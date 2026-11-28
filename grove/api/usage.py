@@ -8,7 +8,7 @@ from grove.access import limit_scopes, limits_in_force, team_limits
 from grove.api.control import for_control_clients
 from grove.api.keys import key_rows
 from grove.api.teams import get_team
-from grove.utils import site_datetime, utc_today
+from grove.utils import site_datetime, utc_timestamp, utc_today
 
 USAGE_FIELDS = ("requests", "tokens", "cost")
 PULLS_PER_HOUR = 5
@@ -27,7 +27,6 @@ def usage(
 	pulled_until: str | None = None,
 ):
 	from grove.billing.doctype.usage_record.usage_record import money_rows
-	from grove.pathway.routes import utc_timestamp
 
 	# The records are summed in SQL, past the permission system: their read is checked here.
 	frappe.has_permission("Usage Record", "read", throw=True)

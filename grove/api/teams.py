@@ -45,7 +45,8 @@ def update_team(
 
 	# Checked at the load: an older report is answered below without a save.
 	doc = frappe.get_doc("Grove Team", get_team(team), check_permission="write")
-	if is_not_newer(observed_at, doc.last_reported_at):
+	reported = doc.last_reported_at
+	if observed_at and reported and get_datetime(observed_at) <= get_datetime(reported):
 		return {"team": doc.name, "ignored": "not newer", **team_limits(doc.name)}
 	if tier:
 		ensure(tier)
@@ -66,12 +67,6 @@ def update_team(
 @for_control_clients
 def archive_team(team: str):
 	return frappe.get_doc("Grove Team", get_team(team)).revoke_keys()
-
-
-def is_not_newer(observed_at, last_reported_at) -> bool:
-	return bool(observed_at and last_reported_at) and get_datetime(observed_at) <= get_datetime(
-		last_reported_at
-	)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

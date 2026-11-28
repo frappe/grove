@@ -20,11 +20,10 @@ import frappe
 from frappe.utils import getdate
 
 from grove.billing.doctype.stuck_usage.stuck_usage import record_stuck, resolve_stuck
-from grove.billing.pricing import PriceBook
-from grove.pathway import snapshot
+from grove.billing.pricing import NANO, PriceBook
 from grove.pathway.data_models import Drain, DrainAnswer
 from grove.pathway.reconcile import DEAD, Reconciler
-from grove.pathway.run import SyncRun, Target, error_text, gateway_units, guarded, in_turn
+from grove.pathway.run import SyncRun, Target, error_text, gateway_units, in_turn
 from grove.utils import utc_today
 
 # A store of a lakh keys answers tens of MB after as many Redis reads; the run's default is for a push.
@@ -55,46 +54,29 @@ class Usage(SyncRun):
 		return in_turn(unit, lambda target: fetch_usage(target, self.keys))
 
 	def settle(self, unit, result):
-		"""Landed the moment it arrives, then acknowledged so the box stops re-sending it."""
-		return land_and_acknowledge(*super().settle(unit, result), gateway_store=unit.store)
-
-
-class Peek(SyncRun):
-	"""What the boxes count as this month's spend of one team's keys, off each key's own counter —
-	the one its cap is gated on — for a cap check. Every store of the team's geographies is asked
-	for every key in one call; a key a store does not hold is left out of its answer. No lock and
-	no run doc: nothing moves, nothing is logged, and two checks may read beside a pull."""
-
-	def __init__(self, trigger, team):
-		super().__init__(trigger)
-		self.team = team
-		self.hashes = {}
-
-	def run(self):
-		return self.record([self.settle(unit, guarded(self.work, unit)) for unit in self.units()])
-
-	def units(self):
-		keys, units = get_team_keys_and_units(self.team)
-		self.hashes = {k.key_hash: k.name for k in keys if k.key_hash}
-		return units
-
-	def work(self, unit):
-		return in_turn(unit, lambda target: fetch_spent(target, list(self.hashes)))
-
-	def record(self, answers):
-		"""→ {"ok": every store answered through one of its writers, "spent": nano-USD by key name,
-		summed over the stores that hold it}. A writer that failed before the next one answered
-		leaves its row, which says nothing about the store."""
-		if not all(outcome is True for outcome, _rows in answers):
-			return {"ok": False, "spent": {}}
-		rows = [row for _outcome, unit_rows in answers for row in unit_rows]
-		spent = {}
+		"""Landed the moment it arrives, under the store drained, then acknowledged so the box stops
+		re-sending it. A drain that cannot be recorded at all is rolled back and acknowledges
+		nothing, so the box sends it again."""
+		outcome, rows = super().settle(unit, result)
 		for row in rows:
-			for key_hash, nano in (row.get("spent") or {}).items():
-				if key_hash in self.hashes:
-					name = self.hashes[key_hash]
-					spent[name] = spent.get(name, 0) + int(nano)
-		return {"ok": True, "spent": spent}
+			drains, dead = row.pop("drains", None) or {}, row.pop("dead", None) or []
+			spool = row.pop("spool", None) or {}
+			if not row.get("success"):
+				continue
+			start = time.monotonic()
+			try:
+				drain = land_drains(row["server"], drains, dead, gateway_store=unit.store)
+				row["had_data"] = 1 if drain.pulled else 0
+				row["detail"] = f"pulled:{drain.pulled}" + (f" stuck:{drain.stuck}" if drain.stuck else "")
+				if spool.get("depth") or spool.get("dead"):
+					row["detail"] += f" spool:{spool.get('depth', 0)} dead:{spool.get('dead', 0)}"
+				if drain.acks or drain.dead_acks:
+					row["detail"] += acknowledge(row["server"], drain.acks, drain.dead_acks)
+			except Exception as e:
+				frappe.db.rollback()
+				row["success"], row["error"], outcome = 0, error_text(e), False
+			row["duration_ms"] += int((time.monotonic() - start) * 1000)
+		return outcome, rows
 
 
 def get_team_keys_and_units(team, gateways=None):
@@ -115,20 +97,27 @@ def pull_all(gateways=None, trigger="Scheduled", wait=30, team=None):
 
 
 def peek_team(team):
-	"""This month's spend the boxes count for each of `team`'s keys, USD by key name: the figure a
-	cap check puts beside the records, the boxes' own and not up to an hour old. Refused rather
-	than stale: while pushes are paused (a lowered cap would not reach the box) and when a store
-	answered through none of its writers. A key no store holds is left out."""
-	from grove.billing.pricing import NANO
-
+	"""This month's spend the boxes count for each of `team`'s keys, USD by key name, off each key's
+	own counter, summed over the stores of its geographies; a key no store holds is left out. No
+	lock, no run doc: it reads beside a pull. Refused rather than stale: pushes paused (a lowered cap
+	would not reach the box), or a store answering through none of its writers."""
 	if frappe.db.get_single_value("Grove Settings", "pause_projection"):
 		frappe.throw(
 			"Pushes to the gateways are paused, so a cap change would not reach them. Try again once they resume."
 		)
-	answer = Peek(trigger="Manual", team=team).run()
-	if not answer["ok"]:
-		frappe.throw("A gateway store could not be reached at the moment. Please try again later.")
-	return {name: Decimal(nano) / NANO for name, nano in answer["spent"].items()}
+	keys, units = get_team_keys_and_units(team)
+	hashes = {k.key_hash: k.name for k in keys if k.key_hash}
+	spent = {}
+	for unit in units:
+		outcome, rows = in_turn(unit, lambda target: fetch_spent(target, list(hashes)))
+		if outcome is not True:
+			frappe.throw("A gateway store could not be reached at the moment. Please try again later.")
+		answered = [pair for row in rows for pair in row["spent"].items()]
+		for key_hash, nano in answered:
+			if key_hash in hashes:
+				name = hashes[key_hash]
+				spent[name] = spent.get(name, 0) + int(nano)
+	return {name: Decimal(nano) / NANO for name, nano in spent.items()}
 
 
 def fetch_usage(target, keys=None):
@@ -164,30 +153,6 @@ def landed_pairs(drain_ids):
 	return {(row.drain_id, row.api_key, str(row.day)) for row in rows}
 
 
-def land_and_acknowledge(outcome, rows, gateway_store=None):
-	"""A drain that cannot be recorded at all is rolled back and acknowledges nothing, so the box sends
-	it again. `gateway_store` is the store drained, or None for a gateway dialled by name."""
-	for row in rows:
-		drains, dead = row.pop("drains", None) or {}, row.pop("dead", None) or []
-		spool = row.pop("spool", None) or {}
-		if not row.get("success"):
-			continue
-		start = time.monotonic()
-		try:
-			drain = land_drains(row["server"], drains, dead, gateway_store=gateway_store)
-			row["had_data"] = 1 if drain.pulled else 0
-			row["detail"] = f"pulled:{drain.pulled}" + (f" stuck:{drain.stuck}" if drain.stuck else "")
-			if spool.get("depth") or spool.get("dead"):
-				row["detail"] += f" spool:{spool.get('depth', 0)} dead:{spool.get('dead', 0)}"
-			if drain.acks or drain.dead_acks:
-				row["detail"] += acknowledge(row["server"], drain.acks, drain.dead_acks)
-		except Exception as e:
-			frappe.db.rollback()
-			row["success"], row["error"], outcome = 0, error_text(e), False
-		row["duration_ms"] += int((time.monotonic() - start) * 1000)
-	return outcome, rows
-
-
 def acknowledge(gateway, acks, dead_acks):
 	"""A failed ack loses nothing: the box re-sends them and every record is already there. → a
 	note for the row."""
@@ -200,18 +165,12 @@ def acknowledge(gateway, acks, dead_acks):
 		return f" ack failed: {error_text(e)}"
 
 
-def store_of(gateway):
-	store = snapshot.gateway_store(gateway)
-	if not store:
-		frappe.throw(f"{gateway} is on no Gateway Store — set it up before pulling its usage.")
-	return store
-
-
 def land_drains(proxy_name, drains: DrainAnswer, dead=(), gateway_store=None):
 	"""Record one gateway's answer — {drain id: {key: {day: hash}}}, each hash on its day — and
-	commit. Everything lands under the store drained: the boxes on a store share one set of
-	counters; which team each hash is, `sort_drains` says."""
-	gateway_store = gateway_store or store_of(proxy_name)
+	commit. Everything lands under `gateway_store`, the store drained: the boxes on a store share one
+	set of counters; which team each hash is, `sort_drains` says."""
+	if not gateway_store:
+		frappe.throw(f"{proxy_name} is on no Gateway Store — set it up before pulling its usage.")
 	drain = sort_drains(drains)
 	for line in dead:
 		drain.pulled += 1

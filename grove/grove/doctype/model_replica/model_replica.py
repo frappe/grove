@@ -16,9 +16,9 @@ from grove.infrastructure.doctype.gpu.gpu import (
 	release_if_stale,
 )
 from grove.naming import next_replica_name
+from grove.serving.base import DEFAULT_PORT
 from grove.utils import is_env_key, is_env_value
 
-ENGINE_PORT_BASE = 8080
 _PORT_FREE_STATUSES = ("Terminated",)
 GPU_CLAIMING_STATUSES = ("Provisioning", "Active", "Broken")
 CLAIM_HOLDING_STATUSES = ("Draft", *GPU_CLAIMING_STATUSES)
@@ -250,7 +250,7 @@ class ModelReplica(Document):
 			)
 			if p
 		}
-		port = ENGINE_PORT_BASE
+		port = DEFAULT_PORT
 		while port in used:
 			port += 1
 		self.engine_port = port

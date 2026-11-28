@@ -105,6 +105,11 @@ class Unit:
 	store: str | None
 	targets: tuple
 
+	def failed_row(self, error):
+		"""A row naming the unit's first box, or its store when it has no writer."""
+		first = self.targets[0] if self.targets else Target("Gateway Store", self.store)
+		return {"server_type": first.server_type, "server": first.name, "error": error}
+
 
 def sync_targets(geography=None):
 	"""Where a run reaches each gateway Redis, as (store, gateways) groups: a gateway on its own
@@ -153,7 +158,7 @@ def in_turn(unit: Unit, work) -> tuple[bool | None, list[dict]]:
 	one succeeded, None when one already held the state (it leaves no row), False when none got
 	through. Touches no doc: the caller appends the rows."""
 	if not unit.targets:
-		return False, [{"server_type": "Gateway Store", "server": unit.store, "error": NO_WRITER}]
+		return False, [unit.failed_row(NO_WRITER)]
 	rows = []
 	for target in unit.targets:
 		res = work(target)
@@ -170,15 +175,6 @@ def guarded(work, unit):
 		return work(unit)
 	except Exception as e:
 		return e
-
-
-def settled(unit, result):
-	"""A unit's (outcome, rows). Work that raised is a bug, not a box: it fails its own unit,
-	named on the first box, and the run carries on."""
-	if not isinstance(result, Exception):
-		return result
-	first = unit.targets[0] if unit.targets else Target("Gateway Store", unit.store)
-	return False, [{"server_type": first.server_type, "server": first.name, "error": error_text(result)}]
 
 
 def redact(value):
@@ -268,8 +264,11 @@ class SyncRun:
 		raise NotImplementedError
 
 	def settle(self, unit, result):
-		"""A unit's (outcome, rows), the moment it arrives."""
-		return settled(unit, result)
+		"""A unit's (outcome, rows), the moment it arrives. Work that raised is a bug, not a box: it
+		fails its own unit, named on the first box, and the run carries on."""
+		if isinstance(result, Exception):
+			return False, [unit.failed_row(error_text(result))]
+		return result
 
 	def record(self, answers):
 		"""Rows onto the run doc in the order the units were asked. A unit that left no row already

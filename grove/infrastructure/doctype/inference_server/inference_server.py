@@ -8,7 +8,6 @@ from frappe.model.document import Document
 from grove import failure
 from grove.infrastructure.doctype.gpu.gpu import cards_on
 from grove.infrastructure.fleet import FleetHost
-from grove.monitoring import run_exporters_play
 
 
 class InferenceServer(FleetHost, Document):
@@ -208,7 +207,19 @@ class InferenceServer(FleetHost, Document):
 
 	@failure.reports_failure(mark_broken=False)
 	def provision_exporters(self):
-		return run_exporters_play(self)
+		"""Job: exporters.yml, DCGM included when the Machine has GPU rows. The exporters only LISTEN;
+		nothing installed here is told which agent scrapes them."""
+		machine = frappe.get_doc("Machine", self.machine)
+		if not machine.public_ip:
+			frappe.throw(f"Machine {machine.name} has no public IP — nothing to connect to.")
+		return self.run_playbook(
+			"exporters.yml",
+			project="Monitoring Agent",
+			extravars={
+				"monitoring_has_gpu": bool(machine.gpus),
+				**frappe.get_single("Grove Settings").scrape_auth_variables,
+			},
+		)
 
 	@frappe.whitelist()
 	def setup(self):

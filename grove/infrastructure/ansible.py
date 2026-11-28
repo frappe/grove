@@ -23,70 +23,18 @@ class AnsibleHost:
 	def run_playbook(self, playbook, project=None, extravars=None, **kwargs) -> ansible_runner.PlayResult:
 		"""`project` names another doctype's folder when the play is shared — exporters.yml belongs
 		to Monitoring Agent but runs against Inference and Gateway Server boxes."""
-		ansible = Ansible(project_root=ansible_project_dir(project or self.doctype))
-		return ansible.run_playbook(
-			playbook_name=playbook,
+		project_dir = ansible_project_dir(project or self.doctype)
+		if not os.path.isfile(os.path.join(project_dir, playbook)):
+			raise FileNotFoundError(f"{playbook} is not in {project_dir}")
+		return ansible_runner.run_play(
+			playbook=playbook,
 			server_type=self.doctype,
 			server_name=self.name,
 			machine_name=self.playbook_machine,
+			project_dir=project_dir,
 			extravars=extravars,
 			**kwargs,
 		)
-
-
-class Ansible:
-	def __init__(self, project_root):
-		self.project_root = project_root
-
-	def _resolve_playbook_path(self, playbook_name):
-		candidates = [
-			os.path.join(self.project_root, "playbooks", playbook_name),
-			os.path.join(self.project_root, playbook_name),
-			os.path.join(self.project_root, f"{playbook_name}.yml")
-			if not playbook_name.endswith(".yml")
-			else None,
-		]
-
-		for path in candidates:
-			if path and os.path.isfile(path):
-				return path
-
-		raise FileNotFoundError(
-			f"Playbook '{playbook_name}' not found in {self.project_root}. "
-			f"Searched: playbooks/{playbook_name}, {playbook_name}, {playbook_name}.yml"
-		)
-
-	def run_playbook(
-		self,
-		playbook_name,
-		server_type,
-		server_name,
-		machine_name,
-		extravars=None,
-		skip_tags=None,
-		reference_doctype=None,
-		reference_docname=None,
-	) -> ansible_runner.PlayResult:
-		"""Tracked as Ansible Play/Task docs. `machine_name` is the Machine doc: same as `server_name`
-		for Machine, different for role servers."""
-		playbook_path = self._resolve_playbook_path(playbook_name)
-
-		kwargs = {
-			"playbook": os.path.basename(playbook_path),
-			"server_type": server_type,
-			"server_name": server_name,
-			"machine_name": machine_name,
-			"project_dir": self.project_root,
-			"extravars": extravars or {},
-		}
-		if skip_tags:
-			kwargs["skip_tags"] = skip_tags
-		if reference_doctype:
-			kwargs["reference_doctype"] = reference_doctype
-		if reference_docname:
-			kwargs["reference_docname"] = reference_docname
-
-		return ansible_runner.run_play(**kwargs)
 
 
 def task_result(play_name, task_name):

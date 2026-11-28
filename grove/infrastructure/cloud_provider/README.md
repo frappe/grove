@@ -5,7 +5,7 @@ Nothing here reads or writes a doctype except `reconcile.py`.
 
 | File | What it is |
 |---|---|
-| `base.py` | `CloudClient` — the contract, and `CloudClientError`. |
+| `base.py` | `CloudClient` — the contract, and `CloudClientError`. A `Cloud Provider` doc builds its own client (`client(region)`). |
 | `aws.py` | `EC2Client`. |
 | `runpod.py` | `RunPodClient`. |
 | `dns.py` | `Route53Client`, and the two-tier record design. **Deliberately not a `CloudClient`** — see below. |

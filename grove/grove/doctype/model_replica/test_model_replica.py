@@ -14,7 +14,6 @@ import frappe
 
 from grove.grove.doctype.model_replica.model_replica import (
 	CLAIM_HOLDING_STATUSES,
-	ENGINE_PORT_BASE,
 	GPU_CLAIMING_STATUSES,
 	ModelReplica,
 	_engine_env,
@@ -26,7 +25,7 @@ from grove.grove.doctype.model_replica.model_replica import (
 	teardown_deployment,
 )
 from grove.infrastructure.doctype.gpu.gpu import GPUUnavailable
-from grove.serving.base import DEFAULT_MAX_MODEL_LEN, parse_context_length
+from grove.serving.base import DEFAULT_MAX_MODEL_LEN, DEFAULT_PORT, parse_context_length
 from grove.serving.custom import CustomEngine
 from grove.serving.vllm import VllmEngine
 
@@ -135,29 +134,29 @@ class TestEnginePortAllocation(unittest.TestCase):
 		self.assertEqual(self.locked, [("Inference Server", True), ("Model Replica", True)])
 
 	def test_the_first_deployment_on_a_box_takes_the_base_port(self):
-		self.assertEqual(self.allocate([]), ENGINE_PORT_BASE)
+		self.assertEqual(self.allocate([]), DEFAULT_PORT)
 
 	def test_a_port_a_running_engine_holds_is_skipped(self):
 		siblings = [
-			{"status": "Active", "engine_port": ENGINE_PORT_BASE},
-			{"status": "Broken", "engine_port": ENGINE_PORT_BASE + 1},
+			{"status": "Active", "engine_port": DEFAULT_PORT},
+			{"status": "Broken", "engine_port": DEFAULT_PORT + 1},
 		]
-		self.assertEqual(self.allocate(siblings), ENGINE_PORT_BASE + 2)
+		self.assertEqual(self.allocate(siblings), DEFAULT_PORT + 2)
 
 	def test_a_stopped_deployment_keeps_its_port(self):
 		siblings = [
-			{"status": "Active", "engine_port": ENGINE_PORT_BASE},
-			{"status": "Inactive", "engine_port": ENGINE_PORT_BASE + 1},
+			{"status": "Active", "engine_port": DEFAULT_PORT},
+			{"status": "Inactive", "engine_port": DEFAULT_PORT + 1},
 		]
-		self.assertEqual(self.allocate(siblings), ENGINE_PORT_BASE + 2)
+		self.assertEqual(self.allocate(siblings), DEFAULT_PORT + 2)
 
 	def test_a_torn_down_deployments_port_is_reused(self):
 		siblings = [
-			{"status": "Active", "engine_port": ENGINE_PORT_BASE},
+			{"status": "Active", "engine_port": DEFAULT_PORT},
 			{"status": "Terminated", "engine_port": 0},
-			{"status": "Active", "engine_port": ENGINE_PORT_BASE + 2},
+			{"status": "Active", "engine_port": DEFAULT_PORT + 2},
 		]
-		self.assertEqual(self.allocate(siblings), ENGINE_PORT_BASE + 1)
+		self.assertEqual(self.allocate(siblings), DEFAULT_PORT + 1)
 
 
 class TestGpuClaims(unittest.TestCase):

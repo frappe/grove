@@ -13,7 +13,7 @@ from grove.grove.doctype.model_replica.model_replica import CLAIM_HOLDING_STATUS
 from grove.infrastructure.doctype.gpu.gpu import GPUUnavailable, cards_on
 from grove.naming import next_deployment_name
 from grove.placement import lease
-from grove.placement.base import BoxClaims, Candidate, fitting_gpus, placement_policy, sort_key
+from grove.placement.base import POLICIES, BoxClaims, Candidate, fitting_gpus
 from grove.serving.base import DEFAULT_PORT, build_engine
 
 # The knobs a replica may override. Blank or 0 means inherit: none of these has 0 as a legal
@@ -182,9 +182,8 @@ class ModelDeployment(Document):
 	def ranked_placements(self):
 		"""Every box that can take a replica, best first. The whole list rather than the winner,
 		because losing a race for a card is not a failure — `add_replica` walks down."""
-		scorers = placement_policy(self.placement_policy or "balanced")
 		viable = [c for c in self._candidates() if c.is_viable]
-		return sorted(viable, key=lambda c: sort_key(c, scorers))
+		return sorted(viable, key=POLICIES[self.placement_policy or "balanced"])
 
 	def _candidates(self):
 		"""Rejected boxes are kept, carrying their reason: that is the whole error message when

@@ -80,12 +80,11 @@ def grove_rows(model_keys, from_date, to_date):
 	if not model_keys:
 		return {}
 	counters = CounterTable.load()
-	sums = ", ".join(
-		"sum("
-		+ " + ".join(f"u.{name}" for name in [root, *derived_of(counters, root)])
-		+ f") as {figure}_tokens"
-		for figure, root in TOKENS.items()
-	)
+	columns = []
+	for figure, root in TOKENS.items():
+		names = [root] + [row.name for row in counters.rows if row.base_counter == root]
+		columns.append("sum(" + " + ".join(f"u.{name}" for name in names) + f") as {figure}_tokens")
+	sums = ", ".join(columns)
 	rows = frappe.db.sql(
 		f"""select r.day, u.model, sum(u.requests) as requests, {sums},
 		sum(u.grove_cost) as charged
@@ -96,10 +95,6 @@ def grove_rows(model_keys, from_date, to_date):
 		as_dict=True,
 	)
 	return {(row.day, row.model): row for row in rows}
-
-
-def derived_of(counters, root):
-	return [row.name for row in counters.rows if row.base_counter == root]
 
 
 def joined(keys, grove, vendor, by_day):

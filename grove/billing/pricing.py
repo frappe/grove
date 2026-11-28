@@ -139,19 +139,21 @@ class PriceBook:
 	"""Every sell rate the site holds, by pricing id, read once per run. A Disabled pricing is in
 	it: a gateway charges at it until the push carrying its successor lands."""
 
-	def __init__(self):
-		self.models = set()
-		self.pricings = {}
-		self.counters = CounterTable([])
+	def __init__(self, counters, models, pricings):
+		self.counters = counters
+		self.models = models
+		self.pricings = pricings
 
 	@classmethod
 	def load(cls):
-		book = cls()
-		book.counters = CounterTable.load()
+		counters = CounterTable.load()
 		keys = dict(frappe.get_all("Model", fields=["name", "model_key"], as_list=True))
-		book.models = set(keys.values())
 		pricings = frappe.get_all("Model Pricing", fields=["name", "model"])
-		book.pricings = {p.name: frappe._dict(model_key=keys[p.model], rates={}) for p in pricings}
+		book = cls(
+			counters,
+			set(keys.values()),
+			{p.name: frappe._dict(model_key=keys[p.model], rates={}) for p in pricings},
+		)
 		if not pricings:
 			return book
 		rates = frappe.get_all(

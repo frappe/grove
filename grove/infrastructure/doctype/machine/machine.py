@@ -4,13 +4,14 @@
 import selectors
 import shlex
 import subprocess
+from functools import cached_property
 
 import frappe
 from frappe.model.document import Document
 
 from grove import failure
 from grove.infrastructure.ansible import AnsibleHost, task_result
-from grove.infrastructure.cloud_provider.base import CloudClientError, build_cloud_client
+from grove.infrastructure.cloud_provider.base import CloudClientError
 from grove.infrastructure.doctype.ssh_key.ssh_key import injected_public_keys
 from grove.naming import GeneratedName, next_machine_name
 from grove.utils import vram_gb_from_mib
@@ -138,18 +139,13 @@ class Machine(GeneratedName, AnsibleHost, Document):
 			)
 		return parse_gpu_memory(result.get("stdout"))
 
-	@property
+	@cached_property
 	def cloud_client(self):
 		if not self.cloud_provider:
 			frappe.throw(
 				f"Machine {self.name} has no Cloud Provider — set one, or leave it blank for an on-prem box."
 			)
-		provider = frappe.get_doc("Cloud Provider", self.cloud_provider)
-		secret = provider.get_password("api_key", raise_exception=False)
-		if not (provider.access_key_id and secret):
-			frappe.throw(f"Cloud Provider {provider.name} has no credentials set.")
-
-		return build_cloud_client(provider.provider_type, provider.access_key_id, secret, self.region_code)
+		return frappe.get_doc("Cloud Provider", self.cloud_provider).client(self.region_code)
 
 	@property
 	def region_code(self):

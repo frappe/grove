@@ -5,7 +5,7 @@ import frappe
 from frappe.model.document import Document
 
 from grove import failure
-from grove.infrastructure.fleet import PathwayHost, gateway_agent_release, gateway_agent_version
+from grove.infrastructure.fleet import PathwayHost, gateway_agent_release
 
 
 class IngressServer(PathwayHost, Document):
@@ -40,21 +40,10 @@ class IngressServer(PathwayHost, Document):
 		status: DF.Literal["Pending", "Installing", "Active", "Broken", "Terminated"]
 	# end: auto-generated types
 
-	def before_insert(self):
-		if not self.admin_token:
-			self.admin_token = frappe.generate_hash(length=48)
-		if not self.data_token:
-			self.data_token = frappe.generate_hash(length=48)
-
 	def validate(self):
 		self.set_admin_url()
-
-	def on_update(self):
-		if self.has_value_changed("status") and self.status == "Terminated":
-			self.remove_dns_records()
-
-	def on_trash(self):
-		self.remove_dns_records()
+		self.set_secret("admin_token")
+		self.set_secret("data_token")
 
 	@property
 	def archive_blockers(self):
@@ -83,11 +72,6 @@ class IngressServer(PathwayHost, Document):
 			trigger="Manual",
 		)
 		frappe.msgprint(f"Replica table queued for {self.name} — watch its Pathway Sync.", alert=True)
-
-	@frappe.whitelist()
-	def setup(self):
-		frappe.enqueue_doc(self.doctype, self.name, "provision", queue="long", timeout=1800)
-		frappe.msgprint(f"Provisioning {self.name} — watch its Ansible Plays.", alert=True)
 
 	@failure.reports_failure(mark_broken=True)
 	def provision(self):
@@ -126,14 +110,6 @@ class IngressServer(PathwayHost, Document):
 			**self.config_variables,
 			**self.memory_variables,
 		}
-
-	@frappe.whitelist()
-	def deploy_agent(self):
-		frappe.enqueue_doc(self.doctype, self.name, "_deploy_agent", queue="long", timeout=1200)
-		frappe.msgprint(
-			f"Deploying agent {gateway_agent_version()} to {self.name} — watch its Ansible Plays.",
-			alert=True,
-		)
 
 	@failure.reports_failure(mark_broken=False)
 	def _deploy_agent(self, reference_doctype=None, reference_docname=None):

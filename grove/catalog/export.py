@@ -10,6 +10,7 @@ from grove.access import LIMIT_TABLES, limit_entries, model_rows
 from grove.billing.pricing import CounterTable
 from grove.catalog.seed import CATALOG, get_model_key
 from grove.grove.doctype.model.model import get_modality_names
+from grove.infrastructure.doctype.geography.geography import default_geography
 
 MAIN = "Main"
 PROVIDER_FIELDS = (
@@ -140,7 +141,7 @@ def get_models():
 		],
 		order_by="model_key, geography",
 	)
-	default = frappe.db.get_value("Geography", {"is_default": 1})
+	default = default_geography()
 	modalities = get_modality_names([row.name for row in rows])
 	entries = {}
 	for row in sorted(rows, key=lambda row: (row.model_key, row.geography != default)):

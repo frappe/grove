@@ -57,20 +57,7 @@ class GatewayStore(NamedHost, Document):
 	# end: auto-generated types
 
 	def validate(self):
-		self.set_redis_password()
-
-	def on_update(self):
-		if self.has_value_changed("status") and self.status == "Terminated":
-			self.remove_dns_records()
-
-	def on_trash(self):
-		self.remove_dns_records()
-
-	def set_redis_password(self):
-		"""Tested through get_password: a saved Password field reads back as asterisks even when
-		the value behind it is gone."""
-		if not self.get_password("redis_password", raise_exception=False):
-			self.redis_password = frappe.generate_hash(length=48)
+		self.set_secret("redis_password")
 
 	@property
 	def archive_blockers(self):
@@ -111,11 +98,6 @@ class GatewayStore(NamedHost, Document):
 			"vector_unshipped_lines": [],
 			"vector_redis_password": self.get_password("redis_password"),
 		}
-
-	@frappe.whitelist()
-	def setup(self):
-		frappe.enqueue_doc(self.doctype, self.name, "provision", queue="long", timeout=1800)
-		frappe.msgprint(f"Provisioning {self.name} — watch its Ansible Plays.", alert=True)
 
 	@failure.reports_failure(mark_broken=True)
 	def provision(self):
@@ -171,16 +153,6 @@ def gateways_on(store, **filters):
 	return frappe.get_all(
 		"Gateway Server",
 		filters={"gateway_store": store, "status": "Active", **filters},
-		order_by="name asc",
-		pluck="name",
-	)
-
-
-def store_writers(store):
-	"""The store's Active writers, in the order a sync tries them."""
-	return frappe.get_all(
-		"Gateway Server",
-		filters={"gateway_store": store, "is_store_writer": 1, "status": "Active"},
 		order_by="name asc",
 		pluck="name",
 	)

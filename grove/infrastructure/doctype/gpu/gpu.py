@@ -35,10 +35,6 @@ class GPU(Document):
 		vram_gb: DF.Int
 	# end: auto-generated types
 
-	@property
-	def is_free(self):
-		return not self.held_by
-
 
 def claim(gpu, replica):
 	"""True if it was free and is now ours. One statement decides it: `UPDATE` takes a CURRENT read
