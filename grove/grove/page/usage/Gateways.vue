@@ -18,7 +18,16 @@ watch(
 
 const COLUMNS = ["minmax(0,2fr)", "8rem", "minmax(0,1.3fr)", "minmax(0,1.3fr)", "5rem"];
 const BOX_THEME = { Active: "green", Broken: "red", Pending: "amber", Installing: "amber" };
-const rows = computed(() => (data.value?.gateways || []).map((box) => ({ ...box, id: box.name })));
+const rows = computed(() =>
+	(data.value?.gateways || []).map((box) => ({
+		...box,
+		id: box.name,
+		runs: [
+			{ kind: "push", run: box.push },
+			{ kind: "pull", run: box.pull },
+		],
+	}))
+);
 
 const outcome = (row) => {
 	if (!row) return { label: "no run", theme: "gray" };
@@ -81,8 +90,8 @@ const open = (box) => host.navigate?.(["Form", "Gateway Server", box.name]);
 							/>
 						</ListCell>
 						<ListCell
-							v-for="run in [item.push, item.pull]"
-							:key="run === item.push ? 'push' : 'pull'"
+							v-for="{ kind, run } in item.runs"
+							:key="kind"
 							class="flex-col !items-start justify-center gap-0.5"
 							:title="run?.error || ''"
 						>

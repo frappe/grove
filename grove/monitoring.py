@@ -48,6 +48,8 @@ def targets(agent: str, kind: str = "engine", token: str = ""):
 	Authorization header it cannot resolve to a user before a whitelisted method ever runs, so
 	an agent carrying a bare shared secret can only reach here through the query string."""
 	authenticate(token)
+	if kind not in ("host", "engine"):
+		frappe.throw(f"Unknown target kind {kind!r}: host or engine.")
 	entries = host_targets(agent) if kind == "host" else engine_targets(agent)
 	return Response(json.dumps(entries), mimetype="application/json")
 

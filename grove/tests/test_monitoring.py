@@ -317,6 +317,15 @@ class TestServiceDiscoveryAuth(unittest.TestCase):
 		):
 			monitoring.authenticate(supplied)
 
+	def test_an_unknown_kind_is_refused_not_served_as_engine(self):
+		with (
+			unittest.mock.patch.object(monitoring, "authenticate"),
+			unittest.mock.patch.object(monitoring, "engine_targets", return_value=[]) as engine,
+			self.assertRaises(frappe.ValidationError),
+		):
+			monitoring.targets("agent", kind="hosts")
+		engine.assert_not_called()
+
 	def test_a_signed_in_reader_needs_no_token(self):
 		self.authenticate("", None, user="Administrator", may_read=True)
 

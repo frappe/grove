@@ -20,6 +20,7 @@ frappe.ui.form.on("Ansible Play", {
 				);
 			});
 		}
+		frappe.realtime.off("ansible_play_progress");
 		frappe.realtime.on("ansible_play_progress", (data) => {
 			if (data.progress && data.play === frm.doc.name) {
 				const progress_title = __("Ansible Play Progress");

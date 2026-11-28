@@ -16,8 +16,7 @@ DNS_LABEL = re.compile(r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
 
 
 def vram_gb_from_mib(mib):
-	"""MiB → whole marketed GB. Rounds half up, unlike Python's banker's round(): an L4 reporting
-	exactly 23040 MiB is a 24 GB card, and round() would call it 22."""
+	"""MiB → whole GB, rounding half up: 23040 MiB (22.5) is 23, where banker's round() gives 22."""
 	return int(mib // MIB_PER_GB + (1 if mib % MIB_PER_GB * 2 >= MIB_PER_GB else 0))
 
 
