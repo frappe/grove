@@ -102,7 +102,8 @@ class PullCase(IntegrationTestCase):
 		day = self.today if day is None else day
 		drains = {drain_id: {key: {day: h} for key, h in usages.items()}} if usages else {}
 		with unittest.mock.patch.object(frappe.db, "commit"):
-			return usage.record_drains(self.gateway, drains, dead, gateway_store=store or self.store)
+			drain = usage.record_drains(self.gateway, drains, dead, gateway_store=store or self.store)
+		return drain.pulled, drain.acks, drain.dead_acks, drain.stuck
 
 	def records(self, key):
 		return [
@@ -209,9 +210,9 @@ class TestADrainIsOneRecordPerKey(PullCase):
 		days = {yesterday: {"request_count": "2", "team": trial}, self.today: {"request_count": "1"}}
 		drains = {"d-split": {key: days}}
 		with unittest.mock.patch.object(frappe.db, "commit"):
-			pulled, acks, _dead, stuck = usage.record_drains(self.gateway, drains, gateway_store=self.store)
-		self.assertEqual((pulled, stuck), (2, 0))
-		self.assertEqual(sorted(acks["d-split"][key]), sorted([yesterday, self.today]))
+			drain = usage.record_drains(self.gateway, drains, gateway_store=self.store)
+		self.assertEqual((drain.pulled, drain.stuck), (2, 0))
+		self.assertEqual(sorted(drain.acks["d-split"][key]), sorted([yesterday, self.today]))
 		self.assertEqual(
 			sorted((r.team, r.request_count) for r in self.records(key)), sorted([(trial, 2), (self.team, 1)])
 		)
@@ -480,7 +481,8 @@ class TestTheCheckReadsTheBoxesForRealKeys(PullCase):
 class TestADrainIsAcknowledgedOnceRecorded(unittest.TestCase):
 	"""Pure: the pull and the box are fakes."""
 
-	def land(self, drains, record=(1, {"d1": ["k"]}, [], 0), ack=None):
+	def land(self, drains, record=None, ack=None):
+		record = record or usage.Drain(acks={"d1": ["k"]}, pulled=1)
 		row = {"server": "gw1", "success": 1, "duration_ms": 0, "drains": drains, "dead": []}
 		target = unittest.mock.Mock(error=None)
 		target.post.side_effect = ack
@@ -511,11 +513,11 @@ class TestADrainIsAcknowledgedOnceRecorded(unittest.TestCase):
 		self.assertIn("db gone", row["error"])
 
 	def test_nothing_landed_sends_no_ack(self):
-		_outcome, _row, post = self.land({"d1": {"k": {}}}, record=(1, {}, [], 1))
+		_outcome, _row, post = self.land({"d1": {"k": {}}}, record=usage.Drain(pulled=1, stuck=1))
 		post.assert_not_called()
 
 	def test_dead_lines_alone_are_acknowledged_too(self):
-		_outcome, _row, post = self.land({}, record=(1, {}, ["r1"], 0))
+		_outcome, _row, post = self.land({}, record=usage.Drain(dead_acks=["r1"], pulled=1))
 		post.assert_called_once_with("usage/ack", {"acks": {}, "dead": ["r1"]}, timeout=usage.DRAIN_TIMEOUT)
 
 	def test_a_failed_ack_loses_nothing_and_says_so(self):
@@ -524,7 +526,9 @@ class TestADrainIsAcknowledgedOnceRecorded(unittest.TestCase):
 		self.assertIn("ack failed", row["detail"])
 
 	def test_the_sync_row_says_how_many_teams_are_stuck(self):
-		_outcome, row, _post = self.land({"d1": {"k": {}}}, record=(3, {"d1": ["a"]}, [], 1))
+		_outcome, row, _post = self.land(
+			{"d1": {"k": {}}}, record=usage.Drain(acks={"d1": ["a"]}, pulled=3, stuck=1)
+		)
 		self.assertEqual(row["detail"], "pulled:3 stuck:1")
 
 
@@ -560,7 +564,7 @@ class TestAStoreIsPulledThroughOneWriter(unittest.TestCase):
 				usage, "fetch_usage", side_effect=lambda target, _keys: (fetch or fetch_one)(target)
 			),
 			unittest.mock.patch.object(
-				usage, "record_drains", side_effect=record or (lambda *_, **__: (1, {}, [], 0))
+				usage, "record_drains", side_effect=record or (lambda *_, **__: usage.Drain(pulled=1))
 			),
 			unittest.mock.patch.object(run, "finalize") as finalize,
 			unittest.mock.patch.object(
@@ -597,7 +601,7 @@ class TestAStoreIsPulledThroughOneWriter(unittest.TestCase):
 				"fetch_usage",
 				side_effect=lambda *_: {"success": 1, "reachable": 1, "duration_ms": 0, "drains": {}},
 			),
-			unittest.mock.patch.object(usage, "record_drains", return_value=(0, {}, [], 0)),
+			unittest.mock.patch.object(usage, "record_drains", return_value=usage.Drain()),
 			unittest.mock.patch.object(run, "finalize"),
 			unittest.mock.patch.object(run, "new_run", return_value=self.run_doc()),
 			unittest.mock.patch.object(
@@ -637,7 +641,7 @@ class TestAStoreIsPulledThroughOneWriter(unittest.TestCase):
 
 		def record(*_args, **kwargs):
 			landed.append(kwargs.get("gateway_store"))
-			return 1, {}, [], 0
+			return usage.Drain(pulled=1)
 
 		pulled, counts = self.pull([("store1", ["gw1"])], succeeds={"gw9"}, gateways=["gw9"], record=record)
 		self.assertEqual((pulled, counts, landed), (["gw9"], (1, 1), ["store9"]))
@@ -658,7 +662,7 @@ class TestAStoreIsPulledThroughOneWriter(unittest.TestCase):
 		def record(gateway, _drains, _dead, **_):
 			if gateway == "gw1":
 				raise RuntimeError("disk on fire")
-			return 4, {}, [], 0
+			return usage.Drain(pulled=4)
 
 		_pulled, counts = self.pull(
 			[(None, ["gw1"]), (None, ["gw2"])], succeeds={"gw1", "gw2"}, record=record

@@ -113,7 +113,8 @@ class CreditsCase(IntegrationTestCase):
 		drain_id = drain_id or f"drain-{CreditsCase.counter}"
 		drains = {drain_id: {key: {str(usage.utc_today()): h} for key, h in usages.items()}}
 		with unittest.mock.patch.object(frappe.db, "commit"):
-			return usage.record_drains(self.gateway, drains, gateway_store=store or self.store)
+			drain = usage.record_drains(self.gateway, drains, gateway_store=store or self.store)
+		return drain.pulled, drain.acks, drain.dead_acks, drain.stuck
 
 	def state(self, team):
 		"""What the team was charged, off the records and corrections, and whether it is suspended."""

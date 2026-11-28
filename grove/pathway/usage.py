@@ -13,6 +13,7 @@ the drain id `dead:<request id>`."""
 import hashlib
 import json
 import time
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 
@@ -160,15 +161,13 @@ def record_drain(outcome, rows, gateway_store=None):
 			continue
 		start = time.monotonic()
 		try:
-			pulled, acks, dead_acks, stuck = record_drains(
-				row["server"], drains, dead, gateway_store=gateway_store
-			)
-			row["had_data"] = 1 if pulled else 0
-			row["detail"] = f"pulled:{pulled} stuck:{stuck}" if stuck else f"pulled:{pulled}"
+			drain = record_drains(row["server"], drains, dead, gateway_store=gateway_store)
+			row["had_data"] = 1 if drain.pulled else 0
+			row["detail"] = f"pulled:{drain.pulled}" + (f" stuck:{drain.stuck}" if drain.stuck else "")
 			if spool.get("depth") or spool.get("dead"):
 				row["detail"] += f" spool:{spool.get('depth', 0)} dead:{spool.get('dead', 0)}"
-			if acks or dead_acks:
-				row["detail"] += acknowledge(row["server"], acks, dead_acks)
+			if drain.acks or drain.dead_acks:
+				row["detail"] += acknowledge(row["server"], drain.acks, drain.dead_acks)
 		except Exception as e:
 			frappe.db.rollback()
 			row["success"], row["error"], outcome = 0, error_text(e), False
@@ -195,25 +194,40 @@ def store_of(gateway):
 	return store
 
 
+@dataclass
+class Drain:
+	"""One gateway's answer, sorted for landing and for the ack back to the box."""
+
+	by_team: dict = field(default_factory=dict)  # {team: {drain id: {key: {day: hash}}}}
+	acks: dict = field(default_factory=dict)  # {drain id: {key: [days]}}
+	dead_acks: list = field(default_factory=list)
+	pulled: int = 0
+	stuck: int = 0
+
+	def hold(self, team, drain_id, prefix, day, h):
+		self.by_team.setdefault(team, {}).setdefault(drain_id, {}).setdefault(prefix, {})[day] = h
+
+	def acknowledge(self, drain_id, prefix, days):
+		self.acks.setdefault(drain_id, {}).setdefault(prefix, []).extend(days)
+
+
 def record_drains(proxy_name, drains, dead=(), gateway_store=None):
 	"""Record one gateway's answer — {drain id: {key: {day: hash}}}, each hash on its day — and
 	commit. Everything lands under the store drained: the boxes on a store share one set of
-	counters; which team each hash is, `sort_drains` says. → (hashes pulled, {drain id: {key: days}}
-	to acknowledge, dead line ids to acknowledge, teams stuck)."""
+	counters; which team each hash is, `sort_drains` says."""
 	gateway_store = gateway_store or store_of(proxy_name)
-	by_team, acks, pulled = sort_drains(drains)
-	dead_acks = []
+	drain = sort_drains(drains)
 	for line in dead:
-		pulled += 1
+		drain.pulled += 1
 		if landing := read_dead_line(line, gateway_store):
 			team, prefix, day, fields = landing
-			by_team.setdefault(team, {}).setdefault(DEAD + line["id"], {})[prefix] = {day: fields}
-		elif line["id"] not in dead_acks:
-			dead_acks.append(line["id"])
+			drain.by_team.setdefault(team, {}).setdefault(DEAD + line["id"], {})[prefix] = {day: fields}
+		elif line["id"] not in drain.dead_acks:
+			drain.dead_acks.append(line["id"])
 
-	book, stuck = PriceBook.load(), 0
-	landed = landed_pairs({drain_id for shares in by_team.values() for drain_id in shares})
-	for team, shares in by_team.items():
+	book = PriceBook.load()
+	landed = landed_pairs({drain_id for shares in drain.by_team.values() for drain_id in shares})
+	for team, shares in drain.by_team.items():
 		frappe.db.savepoint("usage_team")
 		try:
 			for drain_id, keys in shares.items():
@@ -225,17 +239,17 @@ def record_drains(proxy_name, drains, dead=(), gateway_store=None):
 		except Exception:
 			frappe.db.rollback(save_point="usage_team")
 			record_stuck(team, gateway_store, shares)
-			stuck += 1
+			drain.stuck += 1
 			continue
 		for drain_id, keys in shares.items():
 			if drain_id.startswith(DEAD):
-				dead_acks.append(drain_id.removeprefix(DEAD))
+				drain.dead_acks.append(drain_id.removeprefix(DEAD))
 			else:
 				for prefix, days in keys.items():
-					acks.setdefault(drain_id, {}).setdefault(prefix, []).extend(days)
+					drain.acknowledge(drain_id, prefix, days)
 
 	frappe.db.commit()
-	return pulled, acks, dead_acks, stuck
+	return drain
 
 
 def teams_of_keys(drains):
@@ -252,19 +266,18 @@ def teams_of_keys(drains):
 def sort_drains(drains):
 	"""Each hash to the team it lands under: the one the box stamped on it (`team`: a key that
 	changed hands has its books closed at the push, under the team charged), else the key's team
-	now; a hash of a key Grove does not hold is acknowledged unlanded. → ({team: {drain id: {key:
-	{day: hash}}}}, {drain id: {key: [days]}} to acknowledge, hashes seen)."""
+	now; a hash of a key Grove does not hold is acknowledged unlanded."""
 	team_of = teams_of_keys(drains)
-	by_team, acks, pulled = {}, {}, 0
+	drain = Drain()
 	for drain_id, keys in drains.items():
 		for prefix, days in keys.items():
-			pulled += len(days)
+			drain.pulled += len(days)
 			for day, h in days.items():
 				if team := h.get("team") or team_of.get(prefix):
-					by_team.setdefault(team, {}).setdefault(drain_id, {}).setdefault(prefix, {})[day] = h
+					drain.hold(team, drain_id, prefix, day, h)
 				else:
-					acks.setdefault(drain_id, {}).setdefault(prefix, []).append(day)
-	return by_team, acks, pulled
+					drain.acknowledge(drain_id, prefix, [day])
+	return drain
 
 
 def by_day(keys):
