@@ -43,7 +43,7 @@ class IntegrationTestGroveTeam(IntegrationTestCase):
 		doc = team("team-probe-count", spend_limit=5)
 		for _ in range(3):
 			frappe.get_doc({"doctype": "Grove API Key", "team": doc.name}).insert()
-		self.assertEqual(doc.reload().active_keys, 3)
+		self.assertEqual(frappe.db.count("Grove API Key", {"team": doc.name, "status": "active"}), 3)
 
 	def test_a_team_takes_its_tiers_spend_limit_and_blank_takes_the_default(self):
 		tier = frappe.get_doc({"doctype": "Tier", "__newname": "team-probe-tier", "spend_limit": 5}).insert()

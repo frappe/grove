@@ -186,12 +186,6 @@ class InferenceServer(FleetHost, Document):
 			gpu.status = "Allocated" if gpu.held_by else "Free"
 		return gpus
 
-	@property
-	def free_gpus(self):
-		"""A replica pinning no cards claims none, so it does NOT show here: a box running one looks
-		emptier than it is, which is why the scheduler declines such a box."""
-		return [gpu for gpu in self.get_gpu_allocation() if gpu.status == "Free"]
-
 	@frappe.whitelist()
 	def update_scrape_auth(self):
 		"""Button: rewrite this box's metrics htpasswd from the current scrape hash, re-running the

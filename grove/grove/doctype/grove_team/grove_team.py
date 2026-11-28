@@ -89,7 +89,3 @@ class GroveTeam(Document):
 		for name in names:
 			frappe.get_doc("Grove API Key", name).revoke()
 		return names
-
-	@property
-	def active_keys(self):
-		return frappe.db.count("Grove API Key", {"team": self.name, "status": "active"})

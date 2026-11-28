@@ -7,7 +7,7 @@ import os
 import frappe
 
 from grove.infrastructure import ansible_runner
-from grove.utils import ansible_project_dir, playbooks_root
+from grove.utils import ansible_project_dir
 
 
 class AnsibleHost:
@@ -35,54 +35,8 @@ class AnsibleHost:
 
 
 class Ansible:
-	"""Two usage styles:
-
-	1. Direct (ad-hoc): Ansible(playbook="site.yml", server="10.0.0.1", user="root", variables={...}).run()
-	2. Doctype-integrated: Ansible(project_root=...).run_playbook(playbook_name=..., server_type=..., ...)
-	"""
-
-	def __init__(self, playbook=None, project_root=None, server=None, user=None, port=None, variables=None):
-		self.playbook = playbook
-		self.server = server
-		self.user = user or "root"
-		self.port = port or 22
-		self.variables = variables or {}
-
-		if project_root:
-			self.project_root = project_root
-		else:
-			self.project_root = playbooks_root()
-
-	def run(self):
-		"""Ad-hoc mode: direct server connection, no Frappe tracking."""
-		if not self.playbook or not self.server:
-			raise ValueError("Ad-hoc mode requires playbook= and server= arguments")
-
-		import json
-		import subprocess
-
-		playbook_path = self._resolve_playbook_path(self.playbook)
-
-		cmd = [
-			"ansible-playbook",
-			playbook_path,
-			"-i",
-			f"{self.server},",
-			"-u",
-			self.user,
-			"-p",
-			str(self.port),
-		]
-		if self.variables:
-			cmd.extend(["-e", json.dumps(self.variables)])
-
-		env = os.environ.copy()
-		roles_path = os.path.join(self.project_root, "roles")
-		if os.path.isdir(roles_path):
-			env["ANSIBLE_ROLES_PATH"] = roles_path
-
-		rc = subprocess.call(cmd, cwd=self.project_root, env=env)
-		return rc
+	def __init__(self, project_root):
+		self.project_root = project_root
 
 	def _resolve_playbook_path(self, playbook_name):
 		candidates = [
@@ -136,9 +90,6 @@ class Ansible:
 		return ansible_runner.run_play(**kwargs)
 
 
-_ansible_instance = None
-
-
 def task_result(play_name, task_name):
 	"""One task's result off its Ansible Task doc; a role's task is recorded as `<role> : <name>`.
 	Empty when the task never ran — an unreachable host has no result to report."""
@@ -147,10 +98,3 @@ def task_result(play_name, task_name):
 		return json.loads(output) if output else {}
 	except json.JSONDecodeError:
 		return {}
-
-
-def get_ansible(project_root=None):
-	global _ansible_instance
-	if _ansible_instance is None:
-		_ansible_instance = Ansible(project_root)
-	return _ansible_instance

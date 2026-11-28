@@ -109,14 +109,6 @@ class StepHandler:
 			for method in methods
 		]
 
-	def _get_method(self, method_name: str, method_objects: list[object] | None = None):
-		"""Retrieve a method object by name."""
-		method_objects = method_objects or []
-		for method_object in method_objects:
-			if hasattr(method_object, method_name):
-				return getattr(method_object, method_name)
-		return getattr(self, method_name)
-
 	def next_step(self, steps: list[GenericStep]) -> GenericStep | None:
 		for step in steps:
 			if step.status not in (Status.Success, Status.Failure, Status.Skipped):
@@ -131,7 +123,6 @@ class StepHandler:
 		start_status: str = Status.Running,
 		success_status: str = Status.Success,
 		failure_status: str = Status.Failure,
-		method_objects: list[object] | None = None,
 	):
 		"""Run one step, then enqueue the next. Call it through `enqueue_doc`, or the first step runs
 		in the web worker."""
@@ -144,7 +135,7 @@ class StepHandler:
 			return
 
 		step = step.reload()
-		method = self._get_method(method_objects=method_objects, method_name=step.method_name)
+		method = getattr(self, step.method_name)
 
 		try:
 			method(step)
@@ -164,7 +155,6 @@ class StepHandler:
 			self.doctype,
 			self.name,
 			"_execute_steps",
-			method_objects=method_objects,
 			steps=steps,
 			commit=commit,
 			start_status=start_status,
