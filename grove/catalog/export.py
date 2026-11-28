@@ -69,9 +69,11 @@ def get_counters():
 	for row in CounterTable.load().rows:
 		entry = {"counter_name": row.name, "label": row.label}
 		if row.base_counter:
-			entry |= {"base_counter": row.base_counter, "min_prompt_tokens": row.min_prompt_tokens}
+			entry["base_counter"] = row.base_counter
+			entry["min_prompt_tokens"] = row.min_prompt_tokens
 		else:
-			entry |= {"unit": row.unit} | ({"part_of": row.part_of} if row.part_of else {})
+			entry["unit"] = row.unit
+			entry["part_of"] = row.part_of
 		rows.append({k: v for k, v in entry.items() if v})
 	return rows
 
@@ -142,12 +144,11 @@ def get_models():
 	modalities = get_modality_names([row.name for row in rows])
 	entries = {}
 	for row in sorted(rows, key=lambda row: (row.model_key, row.geography != default)):
-		entries.setdefault(
-			row.model_key,
-			{"provider": row.provider_name, "rates": get_rates(row.name)}
-			| modalities[row.name]
-			| {field: row[field] for field in (*MODEL_FIELDS, "display_name") if row[field]},
-		)
+		if row.model_key in entries:
+			continue
+		entry = {"provider": row.provider_name, "rates": get_rates(row.name), **modalities[row.name]}
+		entry.update({field: row[field] for field in (*MODEL_FIELDS, "display_name") if row[field]})
+		entries[row.model_key] = entry
 	return list(entries.values())
 
 
@@ -156,11 +157,12 @@ def get_model_groups(models):
 	`is_default`, nor its geography: a group lands where its models do."""
 	exported = {get_model_key(model) for model in models}
 	granted = model_rows("Model Group")
-	return [
-		{k: v for k, v in group.items() if v}
-		| {"models": [key for key in granted.get(group.name, {}).get("models", []) if key in exported]}
-		for group in frappe.get_all("Model Group", fields=["name", "description"], order_by="name")
-	]
+	groups = []
+	for group in frappe.get_all("Model Group", fields=["name", "description"], order_by="name"):
+		entry = {k: v for k, v in group.items() if v}
+		entry["models"] = [key for key in granted.get(group.name, {}).get("models", []) if key in exported]
+		groups.append(entry)
+	return groups
 
 
 def get_rates(model):

@@ -43,21 +43,13 @@ class Usage(SyncRun):
 		self.gateways = gateways
 		self.team = team
 		self.keys = None
-		self.hashes = {}
 
 	def units(self):
-		if self.team:
-			keys = frappe.get_all(
-				"Grove API Key", filters={"team": self.team}, fields=["name", "key_hash", "geography"]
-			)
-			self.keys = [k.name for k in keys]
-			self.hashes = {k.key_hash: k.name for k in keys if k.key_hash}
-			if not self.keys:
-				return []
-			geographies = {k.geography for k in keys}
-			if self.gateways is None and all(geographies):
-				return [unit for g in sorted(geographies) for unit in gateway_units(None, geography=g)]
-		return gateway_units(self.gateways)
+		if not self.team:
+			return gateway_units(self.gateways)
+		keys, units = get_team_keys_and_units(self.team, self.gateways)
+		self.keys = [k.name for k in keys]
+		return units
 
 	def work(self, unit):
 		return in_turn(unit, lambda target: fetch_usage(target, self.keys))
@@ -67,33 +59,54 @@ class Usage(SyncRun):
 		return land_and_acknowledge(*super().settle(unit, result), gateway_store=unit.store)
 
 
-class Peek(Usage):
+class Peek(SyncRun):
 	"""What the boxes count as this month's spend of one team's keys, off each key's own counter —
 	the one its cap is gated on — for a cap check. Every store of the team's geographies is asked
 	for every key in one call; a key a store does not hold is left out of its answer. No lock and
 	no run doc: nothing moves, nothing is logged, and two checks may read beside a pull."""
 
+	def __init__(self, trigger, team):
+		super().__init__(trigger)
+		self.team = team
+		self.hashes = {}
+
 	def run(self):
 		return self.record([self.settle(unit, guarded(self.work, unit)) for unit in self.units()])
 
+	def units(self):
+		keys, units = get_team_keys_and_units(self.team)
+		self.hashes = {k.key_hash: k.name for k in keys if k.key_hash}
+		return units
+
 	def work(self, unit):
 		return in_turn(unit, lambda target: fetch_spent(target, list(self.hashes)))
-
-	def settle(self, unit, result):
-		return super(Usage, self).settle(unit, result)
 
 	def record(self, answers):
 		"""→ {"ok": every store answered through one of its writers, "spent": nano-USD by key name,
 		summed over the stores that hold it}. A writer that failed before the next one answered
 		leaves its row, which says nothing about the store."""
-		ok = all(outcome is True for outcome, _rows in answers)
+		if not all(outcome is True for outcome, _rows in answers):
+			return {"ok": False, "spent": {}}
+		rows = [row for _outcome, unit_rows in answers for row in unit_rows]
 		spent = {}
-		for _outcome, rows in answers:
-			for row in rows:
-				for key_hash, nano in (row.get("spent") or {}).items():
-					if name := self.hashes.get(key_hash):
-						spent[name] = spent.get(name, 0) + int(nano)
-		return {"ok": ok, "spent": spent if ok else {}}
+		for row in rows:
+			for key_hash, nano in (row.get("spent") or {}).items():
+				if key_hash in self.hashes:
+					name = self.hashes[key_hash]
+					spent[name] = spent.get(name, 0) + int(nano)
+		return {"ok": True, "spent": spent}
+
+
+def get_team_keys_and_units(team, gateways=None):
+	"""(the team's keys, the units holding them): the stores of the keys' geographies, unless
+	gateways are named or a key has none. No unit for a team with no key."""
+	keys = frappe.get_all("Grove API Key", filters={"team": team}, fields=["name", "key_hash", "geography"])
+	if not keys:
+		return keys, []
+	geographies = {k.geography for k in keys}
+	if gateways is not None or not all(geographies):
+		return keys, gateway_units(gateways)
+	return keys, [unit for g in sorted(geographies) for unit in gateway_units(None, geography=g)]
 
 
 def pull_all(gateways=None, trigger="Scheduled", wait=30, team=None):
@@ -216,26 +229,34 @@ def land_drains(proxy_name, drains, dead=(), gateway_store=None):
 	for team, shares in drain.by_team.items():
 		frappe.db.savepoint("usage_team")
 		try:
-			for drain_id, keys in shares.items():
-				for day, hashes in by_day(keys).items():
-					Reconciler(book, served_on(day, drain_id), gateway_store, drain_id, landed).team(
-						team, {k: parse_drain(h, book.counters) for k, h in hashes.items()}
-					)
-			resolve_stuck(team, gateway_store, shares)
+			land_team(book, team, shares, gateway_store, landed)
 		except Exception:
 			frappe.db.rollback(save_point="usage_team")
 			record_stuck(team, gateway_store, shares)
 			drain.stuck += 1
-			continue
-		for drain_id, keys in shares.items():
-			if drain_id.startswith(DEAD):
-				drain.dead_acks.append(drain_id.removeprefix(DEAD))
-			else:
-				for prefix, days in keys.items():
-					drain.acknowledge(drain_id, prefix, days)
+		else:
+			acknowledge_shares(drain, shares)
 
 	frappe.db.commit()
 	return drain
+
+
+def land_team(book, team, shares, gateway_store, landed):
+	"""Lands one team's shares, a Reconciler per drain and day, and clears its Stuck Usage."""
+	for drain_id, keys in shares.items():
+		for day, hashes in by_day(keys).items():
+			reconciler = Reconciler(book, served_on(day, drain_id), gateway_store, drain_id, landed)
+			reconciler.team(team, {k: parse_drain(h, book.counters) for k, h in hashes.items()})
+	resolve_stuck(team, gateway_store, shares)
+
+
+def acknowledge_shares(drain, shares):
+	for drain_id, keys in shares.items():
+		if drain_id.startswith(DEAD):
+			drain.dead_acks.append(drain_id.removeprefix(DEAD))
+			continue
+		for prefix, days in keys.items():
+			drain.acknowledge(drain_id, prefix, days)
 
 
 def teams_of_keys(drains):
@@ -255,15 +276,22 @@ def sort_drains(drains):
 	now; a hash of a key Grove does not hold is acknowledged unlanded."""
 	team_of = teams_of_keys(drains)
 	drain = Drain()
+	for drain_id, prefix, day, h in walk_hashes(drains):
+		drain.pulled += 1
+		team = h.get("team") or team_of.get(prefix)
+		if not team:
+			drain.acknowledge(drain_id, prefix, [day])
+			continue
+		drain.hold(team, drain_id, prefix, day, h)
+	return drain
+
+
+def walk_hashes(drains):
+	"""(drain id, key, day, hash) for each hash of a {drain id: {key: {day: hash}}} answer."""
 	for drain_id, keys in drains.items():
 		for prefix, days in keys.items():
-			drain.pulled += len(days)
 			for day, h in days.items():
-				if team := h.get("team") or team_of.get(prefix):
-					drain.hold(team, drain_id, prefix, day, h)
-				else:
-					drain.acknowledge(drain_id, prefix, [day])
-	return drain
+				yield drain_id, prefix, day, h
 
 
 def by_day(keys):
@@ -318,6 +346,7 @@ def parse_drain(h, table):
 	for k, v in h.items():
 		if k.startswith("m:"):
 			metric, _, model = k[2:].partition(":")  # model may contain ':' — keep the rest
+			# Unbilled: only zero-cost report entries read m:, and total_tokens has no counter here.
 			if model and metric in table:
 				counters.setdefault(model, {})[metric] = int(v or 0)
 		elif k.startswith("f:"):
@@ -326,6 +355,7 @@ def parse_drain(h, table):
 			pricing, _, counter = k[2:].partition(":")
 			if counter not in table and counter != "cost":
 				raise ValueError(f"{k}: not a counter Grove prices — is Grove older than the gateway?")
+			# The gateway writes no p: without a pricing id (PricedFields), so a blank one has nothing to bill.
 			if pricing:
 				pricings.setdefault(pricing, {})[counter] = int(v or 0)
 	return frappe._dict(requests=requests, counters=counters, pricings=pricings)

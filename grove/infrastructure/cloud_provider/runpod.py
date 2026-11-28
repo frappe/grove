@@ -33,6 +33,22 @@ def pod_status(runpod_state):
 	return POD_STATUS.get(runpod_state, "Provisioning")
 
 
+def _sse_events(response):
+	"""(event_id, data) per `data:` line, (event_id, None) per anything else. A read error ends it
+	quietly: idle or dropped mid-stream, the caller resumes from the last event id."""
+	event_id = None
+	try:
+		for line in response.iter_lines(decode_unicode=True):
+			if line and line.startswith("id:"):
+				event_id = line[3:].strip()
+			elif line and line.startswith("data:"):
+				yield event_id, json.loads(line[5:].strip() or "{}")
+			else:
+				yield event_id, None
+	except requests.RequestException:
+		return
+
+
 class RunPodError(Exception):
 	pass
 
@@ -227,17 +243,7 @@ class RunPodClient:
 		with response:
 			if not response.ok:
 				raise RunPodError(f"RunPod logs {pod_id} → {response.status_code}: {response.text}")
-			event_id = None
-			try:
-				for line in response.iter_lines(decode_unicode=True):
-					if line and line.startswith("id:"):
-						event_id = line[3:].strip()
-					elif line and line.startswith("data:"):
-						yield event_id, json.loads(line[5:].strip() or "{}")
-					else:
-						yield event_id, None
-			except requests.RequestException:
-				return  # idle or dropped mid-stream — the caller resumes from the last event id
+			yield from _sse_events(response)
 
 	def terminate_pod(self, pod_id):
 		self._request("DELETE", f"/pods/{pod_id}")

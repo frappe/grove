@@ -184,8 +184,9 @@ def get_reachable_models(team, geography):
 	where = group_geographies()
 	groups = [g for g in group_rows([team]).get(team, []) if where.get(g) == geography]
 	granted = set()
-	for group in model_rows("Model Group", groups).values() if groups else ():
-		granted.update(group.get("models", []))
+	if groups:
+		for group in model_rows("Model Group", groups).values():
+			granted.update(group.get("models", []))
 	own = team_grants([team]).get(team, {})
 	granted.update(reaching(own.get("allow", []), geography))
 	return sorted(granted - set(reaching(own.get("deny", []), geography)))

@@ -311,7 +311,10 @@ def mirror_weights_to_s3(model):
 	"""Worker: stamp weights_s3_uri on success so new deploys pick the mirror up."""
 	doc = frappe.get_doc("Model", model)
 	settings = frappe.get_single("Grove Settings")
-	inf = frappe.get_doc("Inference Server", mirror_server(model))
+	server = mirror_server(model)
+	if not server:
+		frappe.throw(f"Model {model} has no Active replica to mirror its weights from.")
+	inf = frappe.get_doc("Inference Server", server)
 	uri = f"{settings.weights_bucket}/models/{doc.repo_id.replace('/', '--')}"
 	play_name, rc = inf.run_playbook(
 		"mirror_weights.yml",

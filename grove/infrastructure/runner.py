@@ -59,17 +59,16 @@ class StepHandler:
 
 	def handle_machine_status(self, step: GenericStep, machine: str, expected_status: str, **poll) -> None:
 		"""Poll step: sync the Machine off its cloud and pass once it reports `expected_status`."""
+		waiting_for = f"Machine {machine} to be {expected_status}"
 		try:
 			frappe.get_doc("Machine", machine).sync()
-		except CloudClientError:
-			pass
+		except CloudClientError as error:
+			waiting_for += f" (last sync failed: {error})"
 
 		machine_status = frappe.db.get_value("Machine", machine, "status")
 		if machine_status == "Terminated" and expected_status != "Terminated":
 			frappe.throw(f"Machine {machine} is Terminated, it will never reach {expected_status}.")
-		self.poll(
-			step, machine_status == expected_status, f"Machine {machine} to be {expected_status}", **poll
-		)
+		self.poll(step, machine_status == expected_status, waiting_for, **poll)
 
 	def handle_ansible_play(self, step: GenericStep, host: "AnsibleHost", playbook: str, **kwargs) -> None:
 		"""Run `playbook` on `host`'s box. The play references this doc, so its failure lands here."""

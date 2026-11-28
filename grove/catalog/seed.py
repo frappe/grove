@@ -39,17 +39,16 @@ def insert_missing(path=None):
 		if not frappe.db.exists("Denied Tool", denied):
 			frappe.get_doc({"doctype": "Denied Tool", **denied}).insert()
 	geographies = {p["provider_name"]: p.get("geography") for p in catalog["providers"]}
-	docs = {
-		get_model_key(model): insert_model(model, geographies.get(model["provider"]) or default_geography())
-		for model in catalog["models"]
-	}
+	docs = {}
+	for model in catalog["models"]:
+		geography = geographies.get(model["provider"]) or default_geography()
+		docs[get_model_key(model)] = insert_model(model, geography)
 	for group in catalog.get("model_groups", []):
 		insert_model_group(group, docs)
 	for tier in catalog.get("tiers", []):
 		insert_tier(tier)
-	if (default := catalog.get("default_tier")) and not frappe.db.get_single_value(
-		"Grove Settings", "default_tier"
-	):
+	default = catalog.get("default_tier")
+	if default and not frappe.db.get_single_value("Grove Settings", "default_tier"):
 		frappe.db.set_single_value("Grove Settings", "default_tier", default)
 
 

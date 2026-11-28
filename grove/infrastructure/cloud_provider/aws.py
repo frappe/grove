@@ -93,7 +93,11 @@ def parse_architecture(instance_type_info):
 		for a in (instance_type_info.get("ProcessorInfo") or {}).get("SupportedArchitectures") or []
 	]
 	runnable = [a for a in architectures if a in RUNNABLE_ARCHITECTURES]
-	return (runnable or architectures or [""])[0]
+	if runnable:
+		return runnable[0]
+	if architectures:
+		return architectures[0]
+	return ""
 
 
 def parse_instance_type(info):
@@ -218,10 +222,12 @@ class EC2Client(CloudClient):
 		reservations = (
 			self._call(self.ec2.describe_instances, InstanceIds=[instance_id]).get("Reservations") or []
 		)
+		instances = []
 		for reservation in reservations:
-			for instance in reservation.get("Instances") or []:
-				return self._parse_instance(instance)
-		raise AWSError(f"Instance {instance_id} not found")
+			instances += reservation.get("Instances") or []
+		if not instances:
+			raise AWSError(f"Instance {instance_id} not found")
+		return self._parse_instance(instances[0])
 
 	def get_instance_type_info(self, instance_type):
 		types = (
@@ -260,13 +266,13 @@ class EC2Client(CloudClient):
 
 	def _pages(self, operation, key, **kwargs):
 		"""Every `key` item of a NextToken-paged describe call."""
-		token = None
 		while True:
-			response = self._call(operation, **kwargs, **({"NextToken": token} if token else {}))
+			response = self._call(operation, **kwargs)
 			yield from response.get(key) or []
 			token = response.get("NextToken")
 			if not token:
 				return
+			kwargs["NextToken"] = token
 
 	def poll_instance_ready(self, instance_id, timeout_sec=900, poll_interval_sec=10):
 		"""Running is not reachable: a bare metal instance reports running with a public IP a minute

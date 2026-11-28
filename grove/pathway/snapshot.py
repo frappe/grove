@@ -52,21 +52,18 @@ def effective_keys(names=None):
 	keys = frappe.get_all(
 		"Grove API Key", filters=filters, fields=["name", "key_hash", "team", "status", "geography", "cap"]
 	)
-	if names is not None and not keys:
+	if not keys:
 		return []
-	team_filter = None if names is None else {"name": ("in", sorted({k.team for k in keys if k.team}))}
-	teams = {
-		t.name: t
-		for t in frappe.get_all(
-			"Grove Team",
-			filters=team_filter,
-			fields=["name", "key_cap_window"],
-		)
-	}
-	team_names = None if names is None else sorted(teams)
+	team_names = key_names = team_filter = None
+	if names is not None:
+		team_names = sorted({k.team for k in keys if k.team})
+		key_names = [k.name for k in keys]
+		team_filter = {"name": ("in", team_names)}
+	rows = frappe.get_all("Grove Team", filters=team_filter, fields=["name", "key_cap_window"])
+	teams = {t.name: t for t in rows}
 	grants = team_grants(team_names)
 	memberships = group_rows(team_names)
-	own_groups = group_rows(None if names is None else [k.name for k in keys], "Grove API Key")
+	own_groups = group_rows(key_names, "Grove API Key")
 	where = group_geographies()
 	records = []
 	for k in sorted(keys, key=lambda k: k.key_hash or ""):
@@ -80,15 +77,7 @@ def effective_keys(names=None):
 				"prefix": k.name,
 				"team": k.team,
 				"status": k.status or "active",
-				"group": ",".join(
-					sorted(
-						{
-							g
-							for g in memberships.get(k.team, []) + own_groups.get(k.name, [])
-							if where.get(g) == k.geography
-						}
-					)
-				),
+				"group": get_key_groups(k, memberships, own_groups, where),
 				"allow": ",".join(reaching(own.get("allow", []), k.geography)),
 				"deny": ",".join(reaching(own.get("deny", []), k.geography)),
 				"geography": k.geography or "",
@@ -97,6 +86,12 @@ def effective_keys(names=None):
 			}
 		)
 	return records
+
+
+def get_key_groups(key, memberships, own_groups, where):
+	"""The groups of the key's team and its own that sit in its geography, comma-joined."""
+	groups = memberships.get(key.team, []) + own_groups.get(key.name, [])
+	return ",".join(sorted({g for g in groups if where.get(g) == key.geography}))
 
 
 def effective_teams(names=None, geography=""):

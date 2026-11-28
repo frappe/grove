@@ -100,15 +100,13 @@ def engine_targets(agent):
 	"""Deployments and pods both at their engine_url — the address the gateway already routes to."""
 	network = agent_network(agent)
 	boxes = {box["name"]: box for box in inference_boxes(agent)}
-	deployments = (
-		frappe.get_all(
+	deployments = []
+	if boxes:
+		deployments = frappe.get_all(
 			"Model Replica",
 			filters={"inference_server": ("in", list(boxes)), "status": "Active"},
 			fields=["name", "model_key", "engine_url", "inference_server"],
 		)
-		if boxes
-		else []
-	)
 	entries = [
 		engine_entry(
 			deployment.engine_url,
@@ -156,18 +154,12 @@ def _with_machine_address(servers):
 	"""Read live off the Machine, not mirrored with a fetch_from: that copy is only as fresh as the
 	server's last save, and a stale scrape address is a target that can only ever be down."""
 	machines = [server["machine"] for server in servers if server.get("machine")]
-	addresses = (
-		{
-			machine["name"]: machine
-			for machine in frappe.get_all(
-				"Machine",
-				filters={"name": ("in", machines)},
-				fields=["name", "private_ip", "network"],
-			)
-		}
-		if machines
-		else {}
-	)
+	addresses = {}
+	if machines:
+		rows = frappe.get_all(
+			"Machine", filters={"name": ("in", machines)}, fields=["name", "private_ip", "network"]
+		)
+		addresses = {machine["name"]: machine for machine in rows}
 	return [
 		{
 			**server,

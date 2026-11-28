@@ -152,15 +152,13 @@ class PriceBook:
 		book.models = set(keys.values())
 		pricings = frappe.get_all("Model Pricing", fields=["name", "model"])
 		book.pricings = {p.name: frappe._dict(model_key=keys[p.model], rates={}) for p in pricings}
-		rates = (
-			frappe.get_all(
-				"Model Pricing Rate",
-				filters={"parent": ("in", list(book.pricings))},
-				fields=["parent", "counter", "rate"],
-				parent_doctype="Model Pricing",
-			)
-			if pricings
-			else []
+		if not pricings:
+			return book
+		rates = frappe.get_all(
+			"Model Pricing Rate",
+			filters={"parent": ("in", list(book.pricings))},
+			fields=["parent", "counter", "rate"],
+			parent_doctype="Model Pricing",
 		)
 		for row in rates:
 			book.pricings[row.parent].rates[row.counter] = Decimal(str(row.rate))
@@ -202,19 +200,24 @@ def committed(team, caps=None, lock=True, box_spent=None):
 	behind, and everything recorded was counted on a box first, so a sum would double. `lock` reads
 	the keys FOR UPDATE, so two raises serialized on the team row see each other's caps rather than
 	the snapshot taken before the lock."""
-	keys = frappe.db.sql(
-		"select name, cap, status from `tabGrove API Key` where team = %s" + (" for update" if lock else ""),
-		[team],
-		as_dict=True,
-	)
+	query = "select name, cap, status from `tabGrove API Key` where team = %s"
+	if lock:
+		query += " for update"
+	keys = frappe.db.sql(query, [team], as_dict=True)
 	spent = month_spent_by("api_key", [k.name for k in keys])
-	caps = dict(caps or {})
+	proposed = caps or {}
+	box_spent = box_spent or {}
 	total = Decimal(0)
 	for k in keys:
-		month = max(spent.get(k.name, Decimal(0)), Decimal(str((box_spent or {}).get(k.name, 0))))
-		cap = Decimal(str(caps.pop(k.name, k.cap) or 0)) if k.status == "active" else Decimal(0)
-		total += max(cap, month)
-	total += sum((Decimal(str(cap or 0)) for cap in caps.values()), Decimal(0))
+		recorded = spent.get(k.name, Decimal(0))
+		counted = Decimal(str(box_spent.get(k.name, 0)))
+		cap = Decimal(0)
+		if k.status == "active":
+			cap = Decimal(str(proposed.get(k.name, k.cap) or 0))
+		total += max(cap, recorded, counted)
+	live = {k.name for k in keys if k.status == "active"}
+	unclaimed = [cap for name, cap in proposed.items() if name not in live]
+	total += sum((Decimal(str(cap or 0)) for cap in unclaimed), Decimal(0))
 	return float(round(total, 9))
 
 

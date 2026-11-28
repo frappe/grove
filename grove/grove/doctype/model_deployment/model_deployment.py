@@ -112,11 +112,14 @@ class ModelDeployment(Document):
 		here, so the two cannot be computed differently."""
 		config = {key: self.get(key) for key in DEPLOYMENT_ONLY}
 		for key in OVERRIDABLE:
-			config[key] = (replica.get(key) if replica else None) or self.get(key)
+			config[key] = self.get(key)
+			if replica and replica.get(key):
+				config[key] = replica.get(key)
 		for key in ADDITIVE:
-			config[key] = " ".join(
-				part for part in (self.get(key), replica.get(key) if replica else None) if part
-			)
+			parts = [self.get(key)]
+			if replica:
+				parts.append(replica.get(key))
+			config[key] = " ".join(part for part in parts if part)
 		return config
 
 	def engine_for(self, replica=None, gpu_vram_gb=None, compute_capability=None):
@@ -125,16 +128,24 @@ class ModelDeployment(Document):
 		`compute_capability` are what the scheduler hands in: the cards a candidate box would really
 		give it, which is stricter than the declared minimums."""
 		kind, image_tuning = engine_tuning(self.engine_image)
+		if replica:
+			port = replica.engine_port or DEFAULT_PORT
+			gpu_count = len(replica.gpus or [])
+			gpu_vram_gb = gpu_vram_gb or replica.gpu_vram_gb or self.min_vram_gb
+			compute_capability = compute_capability or replica.gpu_compute_capability or 0
+		else:
+			port = DEFAULT_PORT
+			gpu_count = self.gpus_per_replica
+			gpu_vram_gb = gpu_vram_gb or self.min_vram_gb
+			compute_capability = compute_capability or 0
 		return build_engine(
 			kind,
 			self.model_key,
 			launch_config(self.model),
-			port=(replica.engine_port if replica else 0) or DEFAULT_PORT,
-			gpu_count=len(replica.gpus or []) if replica else self.gpus_per_replica,
-			gpu_vram_gb=gpu_vram_gb or (replica.gpu_vram_gb if replica else None) or self.min_vram_gb,
-			compute_capability=(
-				compute_capability or (replica.gpu_compute_capability if replica else None) or 0
-			),
+			port=port,
+			gpu_count=gpu_count,
+			gpu_vram_gb=gpu_vram_gb,
+			compute_capability=compute_capability,
 			**self.resolved_config(replica),
 			**image_tuning,
 		)

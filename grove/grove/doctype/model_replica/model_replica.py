@@ -78,9 +78,10 @@ class ModelReplica(Document):
 		"""`<model id>-<region>-<server>-<n>`, e.g. `qwen3-8b-ap-south-1-inf3-00007`. Model and region are
 		read directly because NEITHER field's `fetch_from` has run this early — a replica created from a
 		deployment would otherwise name itself with a blank model and fail its own mandatory check."""
-		self.model, self.model_key = frappe.db.get_value(
-			"Model Deployment", self.model_deployment, ["model", "model_key"]
-		)
+		deployment = frappe.db.get_value("Model Deployment", self.model_deployment, ["model", "model_key"])
+		if not deployment:
+			frappe.throw(f"Model Deployment {self.model_deployment} not found.")
+		self.model, self.model_key = deployment
 		region = frappe.db.get_value("Inference Server", self.inference_server, "region")
 		self.name = next_replica_name(self.model_key, self.inference_server, region)
 
@@ -462,9 +463,12 @@ def _vllm_extravars(md, m, inf, key):
 	extravars["vllm_image"] = image.full_image
 	extravars["vllm_image_gb"] = image.size_gb or 0
 	extravars["vllm_engine_kind"] = image.engine_kind
-	if credentials := image.registry_credentials:
+	credentials = image.registry_credentials
+	if credentials:
+		username, token = credentials
 		extravars["vllm_registry_host"] = image.registry_host
-		extravars["vllm_registry_username"], extravars["vllm_registry_token"] = credentials
+		extravars["vllm_registry_username"] = username
+		extravars["vllm_registry_token"] = token
 	return extravars
 
 

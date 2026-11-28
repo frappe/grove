@@ -188,7 +188,9 @@ class ServerResize(StepHandler, Document):
 			step.status = Status.Skipped
 		else:
 			gateway.db_set("is_in_maintenance", 1)
-			step.job_type, step.job = "Ansible Play", gateway.apply_config(**self.play_reference())[0]
+			play_name = gateway.apply_config(**self.play_reference())[0]
+			step.job_type = "Ansible Play"
+			step.job = play_name
 			step.status = Status.Success
 		step.save()
 
@@ -199,11 +201,10 @@ class ServerResize(StepHandler, Document):
 		except requests.RequestException:
 			answer = {}  # a dropped connect: asked again at the next poll
 		drained = bool(answer.get("maintenance")) and answer.get("in_flight") == 0
-		state = (
-			f"maintenance {'on' if answer.get('maintenance') else 'off'}, {answer.get('in_flight')} in flight"
-			if answer
-			else "no answer"
-		)
+		state = "no answer"
+		if answer:
+			maintenance = "on" if answer.get("maintenance") else "off"
+			state = f"maintenance {maintenance}, {answer.get('in_flight')} in flight"
 		self.poll(step, drained, f"{self.gateway_name(step)} to drain ({state})", max_attempts=DRAIN_ATTEMPTS)
 
 	def stop_pathway(self, step):
@@ -283,7 +284,9 @@ class ServerResize(StepHandler, Document):
 	def leave_maintenance(self, step):
 		"""Leave maintenance"""
 		if self.entered(step.server).status == Status.Success:
-			step.job_type, step.job = "Ansible Play", self.lift_maintenance(self.gateway_name(step))
+			play_name = self.lift_maintenance(self.gateway_name(step))
+			step.job_type = "Ansible Play"
+			step.job = play_name
 			step.status = Status.Success
 		else:
 			step.status = Status.Skipped
@@ -291,9 +294,15 @@ class ServerResize(StepHandler, Document):
 
 	def entered(self, gateway):
 		"""This resize's Enter maintenance row for `gateway` (None on a gateway's own rows)."""
-		return next(
-			row for row in self.steps if row.method_name == "enter_maintenance" and row.server == gateway
+		row = next(
+			(row for row in self.steps if row.method_name == "enter_maintenance" and row.server == gateway),
+			None,
 		)
+		if row is None:
+			frappe.throw(
+				f"Server Resize {self.name} has no Enter maintenance step for {gateway or self.server}."
+			)
+		return row
 
 	def lift_maintenance(self, gateway):
 		doc = frappe.get_doc("Gateway Server", gateway)
@@ -367,6 +376,10 @@ class ServerResize(StepHandler, Document):
 		try:
 			machine.sync()
 		except CloudClientError:
-			pass
+			frappe.log_error(
+				title=f"Server Resize {self.name}: syncing Machine {self.machine} failed",
+				reference_doctype=self.doctype,
+				reference_name=self.name,
+			)
 		if machine.status == "Stopped":
 			machine.resume()

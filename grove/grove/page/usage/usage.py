@@ -85,13 +85,12 @@ class Window:
 		if not given.provider:
 			return None
 		providers = frappe.get_list("Model Provider", filters={"provider_name": given.provider}, pluck="name")
-		return (
-			frappe.get_list(
-				"Model", filters={"provider": ("in", providers)}, pluck="model_key", distinct=True
-			)
-			if providers
-			else []
-		) or [""]
+		if not providers:
+			return [""]
+		keys = frappe.get_list(
+			"Model", filters={"provider": ("in", providers)}, pluck="model_key", distinct=True
+		)
+		return keys or [""]
 
 	@property
 	def previous(self):

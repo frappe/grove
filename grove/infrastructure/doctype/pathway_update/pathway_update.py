@@ -50,11 +50,11 @@ class PathwayUpdate(StepHandler, Document):
 		self.release, self.repo = gateway_agent_version(), pathway_repo()
 		self.set("servers", [])
 		for checkbox, doctype in SERVER_TYPES:
-			if self.get(checkbox):
-				for server in frappe.get_all(
-					doctype, filters={"status": "Active"}, order_by="name asc", pluck="name"
-				):
-					self.append("servers", {"server_type": doctype, "server": server})
+			if not self.get(checkbox):
+				continue
+			servers = frappe.get_all(doctype, filters={"status": "Active"}, order_by="name asc", pluck="name")
+			for server in servers:
+				self.append("servers", {"server_type": doctype, "server": server})
 
 	def validate(self):
 		"""Rows added by hand: only a ticked type, each server Pending at most once. Skipped while

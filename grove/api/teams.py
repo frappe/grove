@@ -95,13 +95,25 @@ def _webhook_user() -> str:
 	attempts = LoginAttemptTracker(f"webhook:{frappe.local.request_ip}", max_consecutive_login_attempts=2)
 	if not attempts.is_user_allowed():
 		frappe.throw("Too many bad webhook signatures from this address.", frappe.TooManyRequestsError)
-	key = frappe.get_request_header(CONTROL_KEY_HEADER)
-	user = key and frappe.db.get_value("User", {"api_key": key, "enabled": 1}, "name")
-	secret = user and get_decrypted_password("User", user, "api_secret", raise_exception=False)
-	if not secret or CONTROL_ROLE not in frappe.get_roles(user) or not is_signed_with(secret):
+	user = _get_signing_user()
+	if not user:
 		attempts.add_failure_attempt()
 		frappe.throw("Invalid webhook signature.", frappe.AuthenticationError)
 	attempts.add_success_attempt()
+	return user
+
+
+def _get_signing_user() -> str | None:
+	"""The enabled control user named by `X-Grove-Control-Key` whose secret signed the body, else None."""
+	key = frappe.get_request_header(CONTROL_KEY_HEADER)
+	if not key:
+		return None
+	user = frappe.db.get_value("User", {"api_key": key, "enabled": 1}, "name")
+	if not user:
+		return None
+	secret = get_decrypted_password("User", user, "api_secret", raise_exception=False)
+	if not secret or CONTROL_ROLE not in frappe.get_roles(user) or not is_signed_with(secret):
+		return None
 	return user
 
 

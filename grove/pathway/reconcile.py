@@ -145,14 +145,16 @@ class Reconciler:
 		counter is owed the whole price, sent by the next tick. A revoked key's counter is gone with
 		it: billed, owed nothing."""
 		priced = [entry for entry in row.entries if entry["pricing"]]
-		if not self.is_dead:
-			for entry in priced:
-				gateway, grove = entry["gateway_cost"], entry["grove_cost"]
-				if abs(gateway - grove) > self.book.counters.tolerance(entry["requests"]):
-					self.discrepancy(row, entry, gateway, grove)
-		elif frappe.db.get_value("Grove API Key", row.api_key, "status") == "active":
+		if self.is_dead:
+			if frappe.db.get_value("Grove API Key", row.api_key, "status") != "active":
+				return
 			for entry in priced:
 				self.discrepancy(row, entry, Decimal(0), entry["grove_cost"]).adjust_gateway()
+			return
+		for entry in priced:
+			gateway, grove = entry["gateway_cost"], entry["grove_cost"]
+			if abs(gateway - grove) > self.book.counters.tolerance(entry["requests"]):
+				self.discrepancy(row, entry, gateway, grove)
 
 	def discrepancy(self, row, entry, gateway, grove):
 		return record(

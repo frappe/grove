@@ -177,12 +177,16 @@ class InferenceServer(FleetHost, Document):
 		card read the same row. A blank `held_by` is genuinely free — a stopped replica released its
 		cards on purpose."""
 		gpus = self.gpus
-		for gpu in gpus:
-			gpu.deployments = (
-				[frappe.db.get_value("Model Replica", gpu.held_by, ["name", "model"], as_dict=True)]
-				if gpu.held_by
-				else []
+		holders = [gpu.held_by for gpu in gpus if gpu.held_by]
+		replicas = {}
+		if holders:
+			rows = frappe.get_list(
+				"Model Replica", filters={"name": ("in", holders)}, fields=["name", "model"]
 			)
+			replicas = {row.name: row for row in rows}
+		for gpu in gpus:
+			replica = replicas.get(gpu.held_by)
+			gpu.deployments = [replica] if replica else []
 			gpu.status = "Allocated" if gpu.held_by else "Free"
 		return gpus
 

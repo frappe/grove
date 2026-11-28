@@ -128,13 +128,11 @@ class AnsibleCallback(CallbackBase):
 		"""Ansible hands retry callbacks to its results thread, and frappe.local is a contextvar —
 		a new thread starts with none of it, so frappe.db raises "object is not bound". That thread
 		gets a connection of its own; the runner closes it when the play ends."""
-		try:
-			frappe.db.get_value
+		if frappe.db:
 			return
-		except RuntimeError:
-			frappe.init(site=self.site)
-			frappe.connect()
-			self.thread_db = frappe.db
+		frappe.init(site=self.site)
+		frappe.connect()
+		self.thread_db = frappe.db
 
 	def v2_playbook_on_stats(self, stats):
 		self._close_orphan("skipped" if self.stopped else "ok")
@@ -142,9 +140,15 @@ class AnsibleCallback(CallbackBase):
 		failed = any(
 			stats.summarize(h).get("failures", 0) or stats.summarize(h).get("unreachable", 0) for h in hosts
 		)
+		if self.stopped:
+			status = "Stopped"
+		elif failed:
+			status = "Failure"
+		else:
+			status = "Success"
 		self.runner.update_play(
 			{
-				"status": "Stopped" if self.stopped else ("Failure" if failed else "Success"),
+				"status": status,
 				"ended": frappe.utils.now(),
 				"output": "\n".join(self.log)[:1000000],
 			}

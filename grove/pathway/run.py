@@ -212,7 +212,12 @@ def finalize(doc, total, ok):
 	"""Both planes counted together — a run's targets are the boxes it actually pushed."""
 	doc.targets_total = total
 	doc.targets_ok = ok
-	doc.status = "Success" if ok == total else ("Failed" if ok == 0 else "Partial")
+	if ok == total:
+		doc.status = "Success"
+	elif ok == 0:
+		doc.status = "Failed"
+	else:
+		doc.status = "Partial"
 	doc.insert(ignore_permissions=True)
 
 
@@ -276,7 +281,8 @@ class SyncRun:
 					row["payload"] = payload_text(row["payload"])
 				self.doc.append("results", row)
 			if rows:
-				total, ok = total + 1, ok + (outcome is not False)
+				total += 1
+				ok += outcome is not False
 		if self.doc.results:
 			finalize(self.doc, total, ok)
 		frappe.db.commit()

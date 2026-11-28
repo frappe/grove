@@ -245,18 +245,14 @@ def reconcile_ingress(client, group_ids, ports, cidrs):
 def _with_machine(rows):
 	"""Each row's Machine joined on, read live rather than mirrored onto the server doc, where the
 	copy is only as fresh as that doc's last save."""
-	machines = (
-		{
-			machine["name"]: machine
-			for machine in frappe.get_all(
-				"Machine",
-				filters={"name": ("in", [row["machine"] for row in rows if row.get("machine")])},
-				fields=["name", "network", "public_ip", "private_ip"],
-			)
-		}
-		if rows
-		else {}
+	if not rows:
+		return []
+	found = frappe.get_all(
+		"Machine",
+		filters={"name": ("in", [row["machine"] for row in rows if row.get("machine")])},
+		fields=["name", "network", "public_ip", "private_ip"],
 	)
+	machines = {machine["name"]: machine for machine in found}
 	return [{**row, **machines.get(row.get("machine"), {})} for row in rows]
 
 
@@ -268,10 +264,15 @@ def inference_ingress_cidrs(gateways, agents, network):
 	public IP, so even same-VPC traffic arrives from the public side: every gateway is listed, by its
 	public address. An agent in this Network dials privately and the VPC range already covers it. A
 	Terminated box is gone, and its address belongs to whoever AWS hands it to next."""
-	live = lambda rows: [row for row in rows if row.get("status") != GONE_STATUS]  # noqa: E731
-	addresses = [gateway.get("public_ip") for gateway in live(gateways)]
-	addresses += [agent.get("public_ip") for agent in live(agents) if agent.get("network") != network]
+	addresses = [gateway.get("public_ip") for gateway in get_live_rows(gateways)]
+	addresses += [
+		agent.get("public_ip") for agent in get_live_rows(agents) if agent.get("network") != network
+	]
 	return sorted({f"{address}/32" for address in addresses if address})
+
+
+def get_live_rows(rows):
+	return [row for row in rows if row.get("status") != GONE_STATUS]
 
 
 def parse_security_group_ids(raw):

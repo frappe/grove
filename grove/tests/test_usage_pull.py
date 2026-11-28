@@ -436,7 +436,6 @@ class TestAPullForOneTeam(PullCase):
 			None, geography=frappe.db.get_value("Grove API Key", keys[0], "geography")
 		)
 		self.assertEqual(sorted(pull.keys), keys)
-		self.assertEqual(sorted(pull.hashes.values()), keys)
 
 	def test_a_team_with_no_keys_pulls_nothing(self):
 		self.assertEqual(usage.Usage(team=self.grove_team("usage-one-nokeys@grove.test")).units(), [])

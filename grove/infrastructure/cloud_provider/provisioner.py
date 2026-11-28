@@ -487,23 +487,26 @@ def pod_log_events(client, pod_id, tail=100):
 	stream drops — it ends on its own whenever the pod goes quiet. Yields None on a keep-alive
 	so the relay still ticks on a silent pod, and gives up after three instant empty
 	reconnects: that means the pod has stopped producing logs (terminated) entirely."""
-	last_id, dead_rounds = None, 0
-	while dead_rounds < 3:
-		opened_at, received = time.monotonic(), 0
-		try:
+	last_id = None
+	dead_rounds = 0
+	try:
+		while dead_rounds < 3:
+			opened_at = time.monotonic()
+			received = 0
 			for event_id, event in client.stream_logs(pod_id, tail=tail, last_event_id=last_id):
 				if not event:
 					yield None
 					continue
-				last_id, received = event_id or last_id, received + 1
+				last_id = event_id or last_id
+				received += 1
 				yield event.get("line", "")
-		except RunPodError as error:
-			yield f"— {error} —"
-			return
-		dead_rounds = dead_rounds + 1 if not received and time.monotonic() - opened_at < 5 else 0
-		tail = 0
-		time.sleep(LOG_RECONNECT_DELAY)
-		yield None  # tick, so a Stop pressed during a reconnect lands right away
+			closed_empty_at_once = not received and time.monotonic() - opened_at < 5
+			dead_rounds = dead_rounds + 1 if closed_empty_at_once else 0
+			tail = 0
+			time.sleep(LOG_RECONNECT_DELAY)
+			yield None  # tick, so a Stop pressed during a reconnect lands right away
+	except RunPodError as error:
+		yield f"— {error} —"
 
 
 def stream_pod_logs(pod_name, tail=100):
