@@ -9,6 +9,7 @@ from frappe.utils import flt
 from grove.access import limits_in_force, team_limits
 from grove.api.control import for_control_clients
 from grove.api.teams import get_team
+from grove.billing.pricing import lock_team
 
 KEY_FIELDS = [
 	"name",
@@ -28,6 +29,8 @@ KEY_FIELDS = [
 def changes_keys(endpoint):
 	@functools.wraps(endpoint)
 	def wrapper(team: str, *args, **kwargs):
+		# Lock first, so a change waiting on another reads what that one committed.
+		lock_team(team)
 		if frappe.get_list("Grove Team", filters={"name": team, "suspended": 1}, limit=1):
 			frappe.throw("This team is suspended: this operation cannot be performed until that is lifted.")
 		return endpoint(team, *args, **kwargs)

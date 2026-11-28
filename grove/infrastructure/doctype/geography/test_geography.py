@@ -29,8 +29,12 @@ def make_test_geography(name="test"):
 		}
 		frappe.get_doc(geography).insert(ignore_permissions=True)
 	# A Grove API Key needs a geography; on a site with no default, the test one is it.
-	if not frappe.db.exists("Geography", {"is_default": 1}):
+	default = frappe.db.get_value("Geography", {"is_default": 1})
+	if not default:
 		frappe.db.set_value("Geography", name, "is_default", 1)
+	# The catalog seeds the default blank, and a key is minted only where it has an endpoint.
+	elif not frappe.db.get_value("Geography", default, "endpoint"):
+		frappe.db.set_value("Geography", default, "endpoint", f"api.{default.lower()}.grove.localhost")
 	return name
 
 

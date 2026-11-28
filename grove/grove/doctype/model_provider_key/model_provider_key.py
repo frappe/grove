@@ -1,3 +1,4 @@
+import frappe
 from frappe.model.document import Document
 
 
@@ -23,3 +24,11 @@ class ModelProviderKey(Document):
 	# end: auto-generated types
 
 	pass
+
+
+def on_doctype_update():
+	"""A key's title is what the usage page and every link to it show, so one per provider.
+	Title leads: Frappe names a twin by the index's first column ("Title must be unique")."""
+	frappe.db.add_unique(
+		"Model Provider Key", ["title", "model_provider"], constraint_name="unique_title_model_provider"
+	)

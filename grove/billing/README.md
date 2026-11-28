@@ -12,6 +12,7 @@ and the drain are in [`../README.md`](../README.md).
 | `pricing.py` | The counter table (`CounterTable`: the Usage Counter rows, their units, parts and bases, validated before a push), prices per counter (`PriceBook`: by the pricing id the gateway charged), `month_spent_by` (this month's spend of a team or a key, off the records and the corrections; never stored). |
 | `report/revenue/` | Revenue report: what each drain was billed, cut by model, API key, team or day. |
 | `report/vendor_reconciliation/` | Vendor Reconciliation report: per UTC day and model, what Grove charged users beside what the vendor billed Grove. |
+| `usage_report.py` | The hourly push of AI cost to Central (`UsageReport`): one line per team, model and UTC landing day, signed, confirmed into `Usage Report Day`. |
 | `vendor.py` | What a vendor billed Grove, read live off its billing API (`vendor_figures`): Baseten's usage and cost APIs, paged, at most 90 days. |
 
 ## Doctypes
@@ -26,6 +27,7 @@ and the drain are in [`../README.md`](../README.md).
 | `Stuck Usage Record` | One Usage Record the pull that resolved a Stuck Usage row wrote (child): the record, its key and its day. The row owns the list, so a purged row takes it along and a record never points at a row that is gone. |
 | `Cost Discrepancy` | One Usage Record and pricing where the gateway's cost differs from Grove's price of the same counters. Logged by the pull, which decides only a dead line's (the box charged none of it: gateway corrected, its whole price owed, `Reconciler.audit`); a person decides the rest: **Grove is wrong** lands a `Usage Record` of the delta that names the row; **Gateway is wrong** writes a Pending `Gateway Spend Adjustment`, and the projection tick moves the gateway's `spent` for that key on that store by minus the delta (`/spend-adjust` through the store's writers, once per discrepancy). Either way the row keeps the decision alone: `resolution` and `resolved_on` (site time); blank is open. The money is a record of its own, a `Usage Record` naming the row for Grove's side and a `Gateway Spend Adjustment` for the gateway's, and the Usage Record it audited is never changed. System Manager only. |
 | `Gateway Spend Adjustment` | The gateway side of a Cost Discrepancy resolved as the gateway's error: the store, the key, and the USD its spend counter for the key is owed (minus the delta). Pending until a box answers the projection tick's `/spend-adjust`, then Applied with the counter the box reported and when (with none when the store answers that it no longer holds the key: revoked since the pull, nothing left to lift). One per decision (unique on the Cost Discrepancy), written by **Gateway is wrong** or by the pull for a dead line, moved to Applied by the tick, never edited by hand. System Manager reads; nobody edits or deletes. |
+| `Usage Report Day` | The usage report's outbox: one row per team, model and UTC landing day (unique), with the value last sent (nano-USD), its `as_of`, when it was sent and confirmed, and its `status`: Pending (sent again next run), Confirmed (Central took this value) or Refused (Central rejected it with `retry` false; sent again only when the value changes), with Central's last `reason`. The value is always recomputed from the Usage Records; the row only says whether the day still has to go. Written by the report alone, past the ORM, through `UsageReportDays`; rows of days older than the report window are deleted by the next run. System Manager reads. |
 
 ## Prices and caps
 
@@ -169,6 +171,46 @@ those minutes out.
 then 429). `api.usage.usage(...)` reads any other window.
 Credit, invoices and payment are Central's: it bills what landed since its last invoice from
 `api.usage.usage(pulled_after=, pulled_until=)`, its Credit Wallet used first. Grove holds no money.
+
+**What Grove pushes to Central.** Every hour (`usage_report.report_usage`, `hourly_long`) Grove
+POSTs `central.billing.api.metering.report` at Grove Settings' **Central URL**: per team (the
+`subject`, Central's team name), model (`dimension`; `""` for a correction that names none) and
+UTC **landing day** (the UTC date a record was created in Grove, not the day it was served), the
+day's cost so far: meter `cost`, `value` in nano-USD (may be negative after a correction),
+`amount` in USD, currency `USD`. The value is summed in SQL as a decimal off `money_rows` over the
+day's UTC bounds turned to site time (never `date(creation)`), never through the float `usage()`
+API. `as_of` is taken before the records are read. A run goes day by day, oldest first, holding
+one landing day's lines at a time and committing the outbox after each batch, so a run killed part
+way (the first one reads the whole window) keeps the days it sent and the next run goes on from
+the newest day in the outbox. Batches hold at most 1,000 lines, signed as
+base64 HMAC-SHA256 of the raw body with **Central Report Secret** (`X-Central-Service: ai`,
+`X-Central-Signature`). Central sets the secret with `api.control.set_report_secret(secret)`
+(control clients only, POST). A run reads only the landing days whose value can still change: the
+last **Resend Days** (default 3, at least 1; a site with none stored uses the default), the days still Pending, and every day since the newest
+day in the outbox (a pause or a failed run left those unsent); with an empty outbox it reads the
+whole window. Every writer stamps a Usage Record as it is written, so an older landing day cannot
+change; a Confirmed or Refused day past the resend days is never read again. Of what it reads, a run
+sends a line when its day has no outbox row, is Pending, has a value other than the one last sent,
+or is one of the resend days:
+Grove commits a whole gateway answer at once, so a record stamped 23:59:50 UTC can appear after
+midnight, and Central keeps the line with the newer `as_of`. A line is Confirmed only when no
+rejection in Central's reply could name it (`CentralReply`): a rejection names a line by `subject`,
+`day` and `dimension` (a null `dimension` names the blank model), and a field it leaves out (an
+older Central sends only `subject` and `reason`) or a blank `subject` or `day` matches every line,
+so all of them stay Pending. A rejection that is not an object, or whose `subject` is not a string,
+holds the whole batch Pending. One whose `day` is not a string holds its subject's model on every
+day, and one whose `dimension` is not a string holds every model of its subject's day. None of
+these names a line exactly, so none refuses one. A line rejected with `retry` true, or without
+`retry`, or by a rejection that does not name it exactly is sent again next run; one that every
+matching rejection names exactly with `retry` false is Refused and sent again only when its value
+changes. A refused call (bad signature, bad `as_of`), a 5xx, no answer, or a reply with no
+`message.rejected` list fails the run and leaves the batch unconfirmed for the next hour. **Pause
+Usage Report** stops it; with no Central URL or secret it sends nothing.
+
+**The 30-day window.** A landing day older than 30 days (`usage_report.WINDOW_DAYS`) is never sent,
+and its outbox row is deleted. The Usage Record purge does not ask the outbox, so a day the purge
+has partly taken must never be sent again: a newer `as_of` would replace Central's correct value
+with a smaller one. The window must stay well inside the purge horizon (`RETENTION_DAYS`, 90).
 
 **Two spends, one input.** The gateway's `spent:<month>` per key and store, and Grove's records
 per key, are each priced at the same pricing id; neither side writes the other's. A key on

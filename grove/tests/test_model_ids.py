@@ -12,7 +12,7 @@ from frappe.tests import IntegrationTestCase
 
 from grove.grove.doctype.model_id.model_id import ensure_model_id
 from grove.grove.doctype.model_provider.model_provider import self_hosted_provider
-from grove.grove.doctype.model_provider.test_model_provider import provider
+from grove.grove.doctype.model_provider.test_model_provider import provider, self_hosted_provider_name
 from grove.infrastructure.doctype.geography.test_geography import make_test_geography
 
 
@@ -35,7 +35,7 @@ class TestTheIdIsAlwaysPrefixed(IntegrationTestCase):
 
 	def test_our_own_models_are_keyed_under_the_self_hosted_provider(self):
 		doc = self.model("Ponytail Probe 7B")
-		self.assertEqual(f"{self_hosted_provider()}/ponytail-probe-7b", doc.model_key)
+		self.assertEqual(f"{self_hosted_provider_name()}/ponytail-probe-7b", doc.model_key)
 		self.assertNotIn("/", doc.name)
 		self.assertEqual("ponytail-probe-7b", doc.model_id)
 		self.assertEqual(self_hosted_provider(), doc.provider)
@@ -55,7 +55,7 @@ class TestTheIdIsAlwaysPrefixed(IntegrationTestCase):
 
 	def test_a_blank_provider_still_gets_a_prefix(self):
 		doc = self.model("No Provider Named", provider="")
-		self.assertTrue(doc.model_key.startswith(f"{self_hosted_provider()}/"))
+		self.assertTrue(doc.model_key.startswith(f"{self_hosted_provider_name()}/"))
 
 	def test_the_id_cannot_be_edited_afterwards(self):
 		doc = self.model("Before Rename 7B")
