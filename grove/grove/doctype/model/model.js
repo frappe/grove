@@ -4,11 +4,14 @@ frappe.ui.form.on("Model", {
 		frm.set_query("output_modalities", () => ({ filters: { is_output: 1 } }));
 	},
 
-	onload(frm) {
+	async onload(frm) {
 		if (!frm.is_new() || frm.doc.provider) return;
-		frappe.db.get_value("Model Provider", { is_self_hosted: 1 }, "name").then((r) => {
-			if (r.message && r.message.name) frm.set_value("provider", r.message.name);
-		});
+		const { message } = await frappe.db.get_value(
+			"Model Provider",
+			{ is_self_hosted: 1 },
+			"name"
+		);
+		if (message && message.name) frm.set_value("provider", message.name);
 	},
 
 	refresh(frm) {
@@ -40,19 +43,20 @@ frappe.ui.form.on("Model", {
 		});
 	},
 
-	pricing_headline(frm) {
-		frappe.db
-			.get_value("Model Pricing", { model: frm.doc.name, status: "Enabled" }, "name")
-			.then((r) => {
-				if (r.message && r.message.name) return;
-				const href = `/app/model-pricing/new?model=${encodeURIComponent(frm.doc.name)}`;
-				frm.dashboard.set_headline(
-					__(
-						"No Model Pricing enabled — this model cannot be published. Zero rates serve it free. {0}",
-						[`<a href="${href}">${__("Add one")}</a>`]
-					),
-					"orange"
-				);
-			});
+	async pricing_headline(frm) {
+		const { message } = await frappe.db.get_value(
+			"Model Pricing",
+			{ model: frm.doc.name, status: "Enabled" },
+			"name"
+		);
+		if (message && message.name) return;
+		const href = `/app/model-pricing/new?model=${encodeURIComponent(frm.doc.name)}`;
+		frm.dashboard.set_headline(
+			__(
+				"No Model Pricing enabled — this model cannot be published. Zero rates serve it free. {0}",
+				[`<a href="${href}">${__("Add one")}</a>`]
+			),
+			"orange"
+		);
 	},
 });

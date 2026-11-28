@@ -2,21 +2,7 @@ frappe.ui.form.on("Monitoring Agent", {
 	refresh(frm) {
 		if (frm.is_new()) return;
 
-		if (frm.doc.status !== "Terminated") {
-			frm.add_custom_button(
-				__("Archive"),
-				() => {
-					frappe.confirm(
-						__(
-							"Archive {0}? Its Machine is terminated — the box and everything on its disk are gone — and this server leaves the fleet. Refused while anything still depends on it.",
-							[frm.doc.name]
-						),
-						() => frm.call("archive").then(() => frm.reload_doc())
-					);
-				},
-				__("Danger")
-			);
-		}
+		if (frm.doc.status !== "Terminated") grove.add_archive_button(frm);
 		if (!frm.doc.machine) return;
 
 		if (frm.doc.status === "Active") {

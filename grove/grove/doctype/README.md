@@ -73,5 +73,8 @@ Append-only. Never read to decide anything; read to find out why.
 - **A button that changes a box or a record confirms first.** `grove.confirm_call(frm, message,
   method)` (`public/js/confirm_call.js`); the message says what happens. Reads (Ping, Check State,
   GPU Memory, AWS Sync) stay one click.
+- **Form code two doctypes share lives in `public/js/`**, listed in `app_include_js` (hooks.py) so
+  every Desk page loads it: Archive (`confirm_call.js`), the pathway and TLS buttons
+  (`server_buttons.js`), the log pane (`log_stream.js`), the GPU table, the resize prompt.
 - **A child table row names the thing it is about.** Frappe silently drops an `append()` key that is
   not a field, which is how a row full of numbers with no server on it got shipped once.

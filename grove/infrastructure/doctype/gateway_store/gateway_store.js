@@ -41,18 +41,12 @@ frappe.ui.form.on("Gateway Store", {
 				() => grove.prompt_resize(frm),
 				__("Danger")
 			);
-			frm.add_custom_button(
-				__("Archive"),
-				() => {
-					frappe.confirm(
-						__(
-							"Archive {0}? Its Machine is terminated — the box and everything on its disk are gone. Refused while any gateway still runs on it.",
-							[frm.doc.name]
-						),
-						() => frm.call("archive").then(() => frm.reload_doc())
-					);
-				},
-				__("Danger")
+			grove.add_archive_button(
+				frm,
+				__(
+					"Archive {0}? Its Machine is terminated — the box and everything on its disk are gone. Refused while any gateway still runs on it.",
+					[frm.doc.name]
+				)
 			);
 		}
 	},

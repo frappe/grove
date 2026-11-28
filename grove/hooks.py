@@ -9,6 +9,8 @@ app_include_js = [
 	"/assets/grove/js/gpu_table.js",
 	"/assets/grove/js/confirm_call.js",
 	"/assets/grove/js/resize_server.js",
+	"/assets/grove/js/log_stream.js",
+	"/assets/grove/js/server_buttons.js",
 ]
 
 notification_config = "grove.notifications.get_notification_config"

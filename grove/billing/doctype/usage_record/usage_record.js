@@ -40,20 +40,23 @@ function usage_value(key, value) {
 		: text;
 }
 
+function usage_cell(tag, html, index) {
+	return `<${tag} style="${index === 0 ? PINNED : CELL}">${html}</${tag}>`;
+}
+
+function usage_row(row, columns) {
+	const cells = columns.map(([key], index) =>
+		usage_cell("td", usage_value(key, row[key]), index)
+	);
+	return `<tr>${cells.join("")}</tr>`;
+}
+
 function usage_table(rows, counters) {
 	const columns = usage_columns(rows, counters);
-	const cell = (tag, html, index) => `<${tag} style="${index ? CELL : PINNED}">${html}</${tag}>`;
 	const head = columns
-		.map(([, label], index) => cell("th", frappe.utils.escape_html(label), index))
+		.map(([, label], index) => usage_cell("th", frappe.utils.escape_html(label), index))
 		.join("");
-	const body = rows
-		.map(
-			(row) =>
-				`<tr>${columns
-					.map(([key], index) => cell("td", usage_value(key, row[key]), index))
-					.join("")}</tr>`
-		)
-		.join("");
+	const body = rows.map((row) => usage_row(row, columns)).join("");
 	return `<div style="overflow-x: auto;"><table class="table table-bordered table-sm">
 		<thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }

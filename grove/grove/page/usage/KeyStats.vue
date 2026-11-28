@@ -5,32 +5,44 @@ import { BarChart } from "frappe-ui/charts";
 import { List, ListCell, ListHeader, ListHeaderCell, ListRow, ListRows } from "frappe-ui/list";
 import { computed, ref, watch } from "vue";
 
-import { CARD, CARD_TITLE, CELL, MUTED, NUM, ago, compact, count, useCall, when } from "./lib.js";
+import {
+	CARD,
+	CARD_TITLE,
+	CELL,
+	MUTED,
+	NUM,
+	ago,
+	compact,
+	count,
+	useCall,
+	useFilteredCall,
+	when,
+} from "./lib.js";
 
 const props = defineProps({ params: Object, version: Number });
 const host = useHost();
-const { data, loading, error, load } = useCall("key_stats");
+const { data, loading, error } = useFilteredCall("key_stats", props);
 const SPLITS = [
 	{ label: "by outcome", value: "outcome" },
 	{ label: "by key", value: "key" },
 	{ label: "by provider", value: "provider" },
 ];
 const split = ref("outcome");
-const trend = useCall("key_stats_trend");
+const {
+	data: trendData,
+	loading: trendLoading,
+	error: trendError,
+	load: loadTrend,
+} = useCall("key_stats_trend");
 
 watch(
-	() => [props.params, props.version],
-	() => load({ filters: props.params }),
-	{ immediate: true }
-);
-watch(
 	() => [props.params, props.version, split.value],
-	() => trend.load({ filters: props.params, split: split.value }),
+	() => loadTrend({ filters: props.params, split: split.value }),
 	{ immediate: true }
 );
 
 const days = computed(() =>
-	(trend.data.value || []).map((row) => ({
+	(trendData.value || []).map((row) => ({
 		...row,
 		label: row.label.replace("_", " ") || "(none)",
 	}))
@@ -61,8 +73,14 @@ const rows = computed(() =>
 		...row,
 		id: `${row.model_provider}:${row.key_id}`,
 		held: row.disabled !== null,
+		throttled: row.last_rate_limited ? `Last throttled ${when(row.last_rate_limited)}` : "",
 	}))
 );
+
+const lastPull = computed(() => {
+	const at = data.value?.last_pull;
+	return at ? `${ago(at)} (${when(at)})` : ago(at);
+});
 
 const open = (row) => host.navigate?.(["Form", "Model Provider Key", row.key_id]);
 
@@ -79,9 +97,9 @@ const tone = (field, value) => {
 		<header class="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
 			<h2 :class="CARD_TITLE">Key stats</h2>
 			<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-				<span :class="MUTED"
-					>vendor keys · counters pulled every 6 h, summed over the window</span
-				>
+				<p :class="MUTED">
+					vendor keys · counters pulled every 6 h, summed over the window
+				</p>
 				<Select
 					v-if="rows.length"
 					v-model="split"
@@ -95,11 +113,10 @@ const tone = (field, value) => {
 		<p v-if="error" class="text-sm text-ink-red-6">{{ error }}</p>
 		<p v-else-if="loading && !data" :class="MUTED">Loading…</p>
 		<p v-else-if="!rows.length" :class="MUTED">
-			No pull landed in this window. Last pull {{ ago(data?.last_pull)
-			}}<template v-if="data?.last_pull"> ({{ when(data.last_pull) }})</template>.
+			No pull landed in this window. Last pull {{ lastPull }}.
 		</p>
 		<template v-else>
-			<p v-if="trend.error.value" class="text-sm text-ink-red-6">{{ trend.error.value }}</p>
+			<p v-if="trendError" class="text-sm text-ink-red-6">{{ trendError }}</p>
 			<div class="mb-3 h-64">
 				<BarChart
 					title="Requests per day"
@@ -111,7 +128,7 @@ const tone = (field, value) => {
 					stacked
 					palette="categorical"
 					:y-axis="{ min: 0, format: compact }"
-					:loading="trend.loading.value && !trend.data.value"
+					:loading="trendLoading && !trendData"
 				/>
 			</div>
 			<div class="overflow-x-auto">
@@ -151,14 +168,7 @@ const tone = (field, value) => {
 							>
 								{{ count(item[field]) }}
 							</ListCell>
-							<ListCell
-								:class="CELL"
-								:title="
-									item.last_rate_limited
-										? `Last throttled ${when(item.last_rate_limited)}`
-										: ''
-								"
-							>
+							<ListCell :class="CELL" :title="item.throttled">
 								{{ when(item.last_used) }}
 							</ListCell>
 							<ListCell class="justify-end">

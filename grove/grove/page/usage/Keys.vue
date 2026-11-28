@@ -5,6 +5,7 @@ import { Badge, Button, dayjs } from "frappe-ui";
 import { List, ListCell, ListHeader, ListHeaderCell, ListRow, ListRows } from "frappe-ui/list";
 import { computed, ref, watch } from "vue";
 
+import CapBar from "./CapBar.vue";
 import {
 	CARD,
 	CARD_TITLE,
@@ -13,24 +14,17 @@ import {
 	MUTED,
 	NEAR_CAP,
 	NUM,
-	barClass,
 	count,
 	day,
 	percent,
 	usd,
-	useCall,
+	useFilteredCall,
 } from "./lib.js";
 
 const props = defineProps({ params: Object, version: Number });
 const emit = defineEmits(["filter"]);
 const host = useHost();
-const { data, loading, error, load } = useCall("keys");
-
-watch(
-	() => [props.params, props.version],
-	() => load({ filters: props.params }),
-	{ immediate: true }
-);
+const { data, loading, error } = useFilteredCall("keys", props);
 
 const CHIPS = [
 	{
@@ -53,28 +47,22 @@ const chip = ref("");
 const search = ref("");
 const page = ref(1);
 
+const SEARCHED = ["title", "masked", "team", "name"];
+const matches = (row, needle) =>
+	SEARCHED.some((field) =>
+		String(row[field] || "")
+			.toLowerCase()
+			.includes(needle)
+	);
+
 const title = computed(() => (props.params?.team ? `Keys of ${props.params.team}` : "Keys"));
 const rows = computed(() => {
 	const cut = CHIPS.find((candidate) => candidate.key === chip.value);
 	const needle = search.value.trim().toLowerCase();
 	return (data.value || [])
 		.filter((row) => !cut || cut.test(row))
-		.filter(
-			(row) =>
-				!needle ||
-				[row.title, row.masked, row.team, row.name].some((text) =>
-					String(text || "")
-						.toLowerCase()
-						.includes(needle)
-				)
-		)
-		.map((row) => ({
-			...row,
-			id: row.name,
-			moved: row.transfers.at(-1),
-			// Listed under a team that handed it over: the usage is that team's, the cap is not.
-			away: Boolean(props.params?.team) && row.team !== props.params.team,
-		}));
+		.filter((row) => !needle || matches(row, needle))
+		.map(describe);
 });
 const pageCount = computed(() => Math.max(1, Math.ceil(rows.value.length / PAGE_SIZE)));
 const paged = computed(() =>
@@ -82,13 +70,16 @@ const paged = computed(() =>
 );
 const range = computed(() => {
 	const first = (page.value - 1) * PAGE_SIZE + 1;
-	return `${first}–${Math.min(page.value * PAGE_SIZE, rows.value.length)} of ${
-		rows.value.length
-	}`;
+	const last = Math.min(page.value * PAGE_SIZE, rows.value.length);
+	return `${first}–${last} of ${rows.value.length}`;
 });
 
-watch([search, chip, data], () => (page.value = 1));
-watch(pageCount, (total) => (page.value = Math.min(page.value, total)));
+watch([search, chip, data], () => {
+	page.value = 1;
+});
+watch(pageCount, (total) => {
+	page.value = Math.min(page.value, total);
+});
 
 const COLUMNS = [
 	"minmax(0,1.4fr)",
@@ -104,6 +95,28 @@ const hops = (transfers) =>
 		.map((move) => `${move.from_team} → ${move.to_team}, ${day(move.creation)}`)
 		.join("\n");
 
+function describe(row) {
+	const moved = row.transfers.at(-1);
+	// Listed under a team that handed it over: the usage is that team's, the cap is not.
+	const away = Boolean(props.params?.team) && row.team !== props.params.team;
+	return {
+		...row,
+		id: row.name,
+		moved,
+		movedTitle: moved && `Show this key under ${moved.from_team}\n${hops(row.transfers)}`,
+		away,
+		showBar: !away && Boolean(row.cap) && row.status === "active",
+	};
+}
+
+function toggleChip(key) {
+	chip.value = chip.value === key ? "" : key;
+}
+
+function filterToKey(team, key) {
+	emit("filter", { team, api_key: key });
+}
+
 const open = (row) => host.navigate?.(["Form", "Grove API Key", row.name]);
 </script>
 
@@ -117,7 +130,7 @@ const open = (row) => host.navigate?.(["Form", "Grove API Key", row.name]);
 				size="sm"
 				:variant="chip === candidate.key ? 'solid' : 'subtle'"
 				:label="candidate.label"
-				@click="chip = chip === candidate.key ? '' : candidate.key"
+				@click="toggleChip(candidate.key)"
 			/>
 			<input
 				v-model="search"
@@ -149,7 +162,7 @@ const open = (row) => host.navigate?.(["Form", "Grove API Key", row.name]);
 					<ListRows :items="paged" v-slot="{ item, value }">
 						<ListRow
 							:value="value"
-							:class="item.status === 'revoked' && 'text-ink-gray-5'"
+							:class="{ 'text-ink-gray-5': item.status === 'revoked' }"
 						>
 							<ListCell class="flex-col !items-start justify-center">
 								<span class="flex max-w-full items-center gap-2">
@@ -157,12 +170,7 @@ const open = (row) => host.navigate?.(["Form", "Grove API Key", row.name]);
 										type="button"
 										:class="`${LINK} font-medium`"
 										title="Filter the page to this key"
-										@click="
-											emit('filter', {
-												team: item.team || '',
-												api_key: item.name,
-											})
-										"
+										@click="filterToKey(item.team || '', item.name)"
 									>
 										{{ item.title || item.masked }}
 									</button>
@@ -192,15 +200,8 @@ const open = (row) => host.navigate?.(["Form", "Grove API Key", row.name]);
 									v-if="item.moved"
 									type="button"
 									:class="`${MUTED} max-w-full truncate text-left underline-offset-2 hover:underline`"
-									:title="`Show this key under ${item.moved.from_team}\n${hops(
-										item.transfers
-									)}`"
-									@click="
-										emit('filter', {
-											team: item.moved.from_team,
-											api_key: item.name,
-										})
-									"
+									:title="item.movedTitle"
+									@click="filterToKey(item.moved.from_team, item.name)"
 								>
 									from {{ item.moved.from_team }} ·
 									{{ day(item.moved.creation) }}
@@ -221,16 +222,7 @@ const open = (row) => host.navigate?.(["Form", "Grove API Key", row.name]);
 										percent(item.cap_pct)
 									}}</span>
 								</span>
-								<span
-									v-if="!item.away && item.cap && item.status === 'active'"
-									class="block h-1 w-full overflow-hidden rounded-full bg-surface-gray-3"
-								>
-									<span
-										class="block h-full rounded-full"
-										:class="barClass(item.cap_pct)"
-										:style="{ width: `${Math.min(100, item.cap_pct)}%` }"
-									/>
-								</span>
+								<CapBar v-if="item.showBar" :pct="item.cap_pct" />
 							</ListCell>
 							<ListCell :class="CELL">{{ day(item.last_used) }}</ListCell>
 							<ListCell :class="NUM">{{ count(item.requests) }}</ListCell>

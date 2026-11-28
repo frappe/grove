@@ -7,32 +7,13 @@ grove.render_gpu_table = function (wrapper, gpus, opts = {}) {
 		return;
 	}
 
-	const esc = frappe.utils.escape_html;
 	const free = gpus.filter((g) => !g.held_by).length;
-
-	const rows = gpus
-		.map((g) => {
-			const holder = g.held_by
-				? `<a href="/app/model-replica/${encodeURIComponent(g.held_by)}">${esc(
-						(g.deployments || [])[0]?.model || g.held_by
-				  )}</a>`
-				: `<span class="text-muted">—</span>`;
-			return `<tr>
-				<td style="text-align:right">${g.gpu_index}</td>
-				<td>${esc(g.gpu_type || "")}</td>
-				<td style="text-align:right">${g.vram_gb || ""}</td>
-				<td><code>${esc(g.device_id || "")}</code></td>
-				<td><span class="indicator-pill ${g.held_by ? "blue" : "green"}">${
-				g.held_by ? __("Held") : __("Free")
-			}</span></td>
-				<td>${holder}</td>
-			</tr>`;
-		})
-		.join("");
+	const rows = gpus.map(grove.gpu_table_row).join("");
+	const note = opts.note ? ` · ${opts.note}` : "";
 
 	wrapper.html(`
 		<div class="text-muted" style="margin-bottom:6px">
-			${__("{0} of {1} free", [free, gpus.length])}${opts.note ? ` · ${opts.note}` : ""}
+			${__("{0} of {1} free", [free, gpus.length])}${note}
 		</div>
 		<table class="table table-bordered" style="margin:0">
 			<thead><tr>
@@ -46,4 +27,24 @@ grove.render_gpu_table = function (wrapper, gpus, opts = {}) {
 			<tbody>${rows}</tbody>
 		</table>
 	`);
+};
+
+grove.gpu_table_row = function (gpu) {
+	const esc = frappe.utils.escape_html;
+	let status = `<span class="indicator-pill green">${__("Free")}</span>`;
+	let holder = `<span class="text-muted">—</span>`;
+	if (gpu.held_by) {
+		const model = (gpu.deployments || [])[0]?.model || gpu.held_by;
+		const href = `/app/model-replica/${encodeURIComponent(gpu.held_by)}`;
+		status = `<span class="indicator-pill blue">${__("Held")}</span>`;
+		holder = `<a href="${href}">${esc(model)}</a>`;
+	}
+	return `<tr>
+		<td style="text-align:right">${gpu.gpu_index}</td>
+		<td>${esc(gpu.gpu_type || "")}</td>
+		<td style="text-align:right">${gpu.vram_gb || ""}</td>
+		<td><code>${esc(gpu.device_id || "")}</code></td>
+		<td>${status}</td>
+		<td>${holder}</td>
+	</tr>`;
 };

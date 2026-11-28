@@ -1,29 +1,21 @@
 frappe.ui.form.on("Pathway Update", {
 	setup(frm) {
-		frm.set_query("server_type", "servers", () => ({
-			filters: {
-				name: [
-					"in",
-					[
-						frm.doc.ingresses && "Ingress Server",
-						frm.doc.gateways && "Gateway Server",
-					].filter(Boolean),
-				],
-			},
-		}));
+		frm.set_query("server_type", "servers", () => {
+			const server_types = [];
+			if (frm.doc.ingresses) server_types.push("Ingress Server");
+			if (frm.doc.gateways) server_types.push("Gateway Server");
+			return { filters: { name: ["in", server_types] } };
+		});
 		frm.set_query("server", "servers", () => ({ filters: { status: "Active" } }));
 	},
 
-	onload(frm) {
+	async onload(frm) {
 		if (!frm.is_new()) return;
-		for (const [field, setting] of [
-			["release", "pathway_release"],
-			["repo", "pathway_repo"],
-		]) {
-			frappe.db
-				.get_single_value("Grove Settings", setting)
-				.then((value) => frm.set_value(field, value));
-		}
+		const [release, repo] = await Promise.all([
+			frappe.db.get_single_value("Grove Settings", "pathway_release"),
+			frappe.db.get_single_value("Grove Settings", "pathway_repo"),
+		]);
+		frm.set_value({ release, repo });
 	},
 
 	refresh(frm) {
@@ -38,48 +30,46 @@ frappe.ui.form.on("Pathway Update", {
 		}
 		if (frm.is_dirty()) return;
 
-		const pending = frm.doc.servers.filter((row) => row.status === "Pending").length;
-		const act = (label, method, message) =>
-			frm.add_custom_button(__(label), () => {
-				frappe.confirm(message, () => frm.call(method).then(() => frm.reload_doc()));
-			});
-
-		if (status === "Pending" && !stopping) {
-			act(
-				"Start",
-				"start",
-				__("Deploy pathway {0} to {1} servers, one at a time?", [frm.doc.release, pending])
-			);
-		}
-		if (["Stopped", "Failure", "Success"].includes(status) && pending) {
-			act(
-				"Continue",
-				"resume",
-				__("Deploy pathway {0} to the {1} Pending servers? Failed rows are passed over.", [
-					frm.doc.release,
-					pending,
-				])
-			);
-		}
-		if (status === "Running") {
-			act(
-				"Stop",
-				"stop",
-				__("Stop once the server being deployed is done? Nothing is stopped mid-deploy.")
-			);
-		}
-
-		if (stopping) {
-			frm.set_intro(__("Stopping — the server being deployed finishes first."), "blue");
-		} else if (status === "Stopped") {
-			frm.set_intro(__("Stopped. Continue carries on with the Pending rows."), "orange");
-		} else if (status === "Failure") {
-			frm.set_intro(
-				__(
-					"A deploy failed. The failed server was put in maintenance to debug: End Maintenance on it when done. Continue carries on past it; add its server again as a new row to retry."
-				),
-				"red"
-			);
-		}
+		add_run_buttons(frm, status, stopping);
+		show_status_intro(frm, status, stopping);
 	},
 });
+
+function add_run_buttons(frm, status, stopping) {
+	const pending = frm.doc.servers.filter((row) => row.status === "Pending").length;
+	if (status === "Pending" && !stopping) {
+		const message = __("Deploy pathway {0} to {1} servers, one at a time?", [
+			frm.doc.release,
+			pending,
+		]);
+		frm.add_custom_button(__("Start"), () => grove.confirm_call(frm, message, "start"));
+	}
+	if (["Stopped", "Failure", "Success"].includes(status) && pending) {
+		const message = __(
+			"Deploy pathway {0} to the {1} Pending servers? Failed rows are passed over.",
+			[frm.doc.release, pending]
+		);
+		frm.add_custom_button(__("Continue"), () => grove.confirm_call(frm, message, "resume"));
+	}
+	if (status === "Running") {
+		const message = __(
+			"Stop once the server being deployed is done? Nothing is stopped mid-deploy."
+		);
+		frm.add_custom_button(__("Stop"), () => grove.confirm_call(frm, message, "stop"));
+	}
+}
+
+function show_status_intro(frm, status, stopping) {
+	if (stopping) {
+		frm.set_intro(__("Stopping — the server being deployed finishes first."), "blue");
+	} else if (status === "Stopped") {
+		frm.set_intro(__("Stopped. Continue carries on with the Pending rows."), "orange");
+	} else if (status === "Failure") {
+		frm.set_intro(
+			__(
+				"A deploy failed. The failed server was put in maintenance to debug: End Maintenance on it when done. Continue carries on past it; add its server again as a new row to retry."
+			),
+			"red"
+		);
+	}
+}

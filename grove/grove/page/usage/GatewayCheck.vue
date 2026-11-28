@@ -14,20 +14,33 @@ const open = (row) => host.navigate?.(["Form", "Grove API Key", row.key]);
 
 watch(
 	() => props.team,
-	() => (data.value = null)
+	() => {
+		data.value = null;
+	}
 );
 
 const COLUMNS = ["minmax(0,1fr)", "6rem", "6rem", "6rem", "minmax(0,1.6fr)", "2.5rem"];
-const rows = computed(() => (data.value?.rows || []).map((row) => ({ ...row, id: row.key })));
+const rows = computed(() =>
+	(data.value?.rows || []).map((row) => ({
+		...row,
+		id: row.key,
+		reading: reading(row),
+		gatewayText: row.gateway == null ? "—" : usd(row.gateway),
+		deltaText: row.delta == null ? "—" : signedUsd(row.delta),
+	}))
+);
+const tooltip = computed(() =>
+	props.team ? `Dial the stores for ${props.team}` : "Pick a team in the filters first"
+);
+const buttonLabel = computed(() => (props.team ? `Check ${props.team}` : "Check gateway"));
 
-const reading = (row) => {
+function reading(row) {
 	if (row.gateway == null) return { label: "not on a store", theme: "gray" };
 	if (row.delta == null) return { label: "lifetime counter", theme: "gray" };
 	if (Math.abs(row.delta) < 1e-9) return { label: "in step", theme: "green" };
-	return row.delta < 0
-		? { label: "box behind", theme: "amber" }
-		: { label: "box ahead", theme: "blue" };
-};
+	if (row.delta < 0) return { label: "box behind", theme: "amber" };
+	return { label: "box ahead", theme: "blue" };
+}
 </script>
 
 <template>
@@ -37,13 +50,11 @@ const reading = (row) => {
 				<h2 :class="CARD_TITLE">Gateway check</h2>
 				<p :class="MUTED">Grove's month per key beside the counter the boxes gate on.</p>
 			</div>
-			<Tooltip
-				:text="team ? `Dial the stores for ${team}` : 'Pick a team in the filters first'"
-			>
+			<Tooltip :text="tooltip">
 				<Button
 					variant="subtle"
 					icon-left="lucide-radar"
-					:label="team ? `Check ${team}` : 'Check gateway'"
+					:label="buttonLabel"
 					:disabled="!team"
 					:loading="loading"
 					@click="load({ team })"
@@ -64,21 +75,17 @@ const reading = (row) => {
 				<ListRows :items="rows" v-slot="{ item, value }">
 					<ListRow
 						:value="value"
-						:class="item.status === 'revoked' && 'text-ink-gray-5'"
+						:class="{ 'text-ink-gray-5': item.status === 'revoked' }"
 					>
 						<ListCell class="gap-2">
 							<span :class="`${CELL} truncate`">{{ item.title || item.key }}</span>
 							<Badge v-if="item.status === 'revoked'" label="Revoked" />
 						</ListCell>
 						<ListCell :class="NUM">{{ usd(item.grove) }}</ListCell>
-						<ListCell :class="NUM">{{
-							item.gateway == null ? "—" : usd(item.gateway)
-						}}</ListCell>
-						<ListCell :class="NUM">{{
-							item.delta == null ? "—" : signedUsd(item.delta)
-						}}</ListCell>
+						<ListCell :class="NUM">{{ item.gatewayText }}</ListCell>
+						<ListCell :class="NUM">{{ item.deltaText }}</ListCell>
 						<ListCell class="gap-2">
-							<Badge :theme="reading(item).theme" :label="reading(item).label" />
+							<Badge :theme="item.reading.theme" :label="item.reading.label" />
 							<span :class="`${MUTED} truncate`" :title="item.verdict">{{
 								item.verdict
 							}}</span>

@@ -81,12 +81,7 @@ const geographyOptions = computed(() => [
 ]);
 const keyOptions = computed(() => [
 	{ label: "All keys", value: "" },
-	...(choices.value.keys || []).map((key) => ({
-		label: `${key.title || key.masked}${key.status === "revoked" ? " (revoked)" : ""}${
-			key.moved_to ? ` (transferred to ${key.moved_to})` : ""
-		}`,
-		value: key.name,
-	})),
+	...(choices.value.keys || []).map((key) => ({ label: keyLabel(key), value: key.name })),
 ]);
 const modelOptions = computed(() => {
 	const first = new Map();
@@ -114,7 +109,16 @@ watch(
 	{ flush: "sync" }
 );
 
-const refresh = () => version.value++;
+function keyLabel(key) {
+	let label = key.title || key.masked;
+	if (key.status === "revoked") label += " (revoked)";
+	if (key.moved_to) label += ` (transferred to ${key.moved_to})`;
+	return label;
+}
+
+function refresh() {
+	version.value++;
+}
 const reset = () => Object.assign(filters, DEFAULTS);
 const apply = (change) => Object.assign(filters, change);
 
@@ -134,7 +138,7 @@ onMounted(() => {
 </script>
 
 <template>
-	<div class="h-full overflow-y-auto bg-surface-gray-1 p-4 md:p-5">
+	<main class="h-full overflow-y-auto bg-surface-gray-1 p-4 md:p-5">
 		<div class="mx-auto flex max-w-screen-2xl flex-col gap-4">
 			<div class="flex flex-wrap items-center gap-2">
 				<Select
@@ -213,11 +217,16 @@ onMounted(() => {
 			</div>
 
 			<template v-if="ready">
+				<!-- Spend over the window -->
 				<Overview :params="params" :version="version" />
 				<Trend :params="params" :version="version" />
+
+				<!-- Who spent it; a click narrows the filters -->
 				<Leaders :params="params" :version="version" @filter="apply" />
 				<Teams :params="params" :version="version" @filter="apply" />
 				<Keys :params="params" :version="version" @filter="apply" />
+
+				<!-- The boxes and the vendor keys behind them -->
 				<GatewayCheck :team="filters.team || ''" />
 				<Gateways :version="version" />
 				<KeyStats :params="params" :version="version" />
@@ -225,5 +234,5 @@ onMounted(() => {
 			<p v-else class="text-sm text-ink-gray-5">Pick both dates of the custom window.</p>
 			<p v-if="host.user" class="sr-only">Signed in as {{ host.user }}</p>
 		</div>
-	</div>
+	</main>
 </template>
