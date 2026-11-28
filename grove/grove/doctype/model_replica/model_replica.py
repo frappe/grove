@@ -88,6 +88,8 @@ class ModelReplica(Document):
 		self._assign_engine_port()
 		self._derive_engine_url()
 		self._validate_gpus()
+		self._validate_shape()
+		self.set_serve_command()
 		self._validate_engine()
 
 	def _validate_engine(self):
@@ -148,8 +150,8 @@ class ModelReplica(Document):
 						f"GPU {r.gpu} is not on {self.inference_server}'s machine. Pick a card from this box."
 					)
 
-		self._validate_shape()
-
+	def set_serve_command(self):
+		"""Refused first when the engine cannot serve this placement."""
 		engine = self.engine
 		if errors := engine.placement_errors:
 			frappe.throw("<br>".join(errors))

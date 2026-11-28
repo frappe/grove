@@ -142,7 +142,7 @@ class RunPodClient:
 			raise RunPodError(f"update_pod {pod_id} called with nothing to change")
 		return self._parse_pod(self._request("PATCH", f"/pods/{pod_id}", body))
 
-	def get_registry_auth_id(self, name, username, password):
+	def register_registry_auth(self, name, username, password):
 		"""Register pull credentials with RunPod → the id passed as the pod's `registry` (RunPod
 		takes no inline credentials). Names are unique per account, so an existing entry under
 		`name` is dropped and rewritten — re-registering keeps it from drifting off the

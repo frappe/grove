@@ -186,13 +186,14 @@ class GatewayServer(PathwayHost, Document):
 		client = self.dns_client()
 		if not client:
 			return None
+		health_check_id = self.ensure_health_check(client)
 		return client.upsert_gateway_records(
 			self.fleet_zone,
 			self.hostname,
 			frappe.db.get_value("Geography", self.geography, "endpoint"),
 			self.public_ip,
 			self.name,
-			self.ensure_health_check(client),
+			health_check_id,
 		)
 
 	def delete_health_check(self, client):

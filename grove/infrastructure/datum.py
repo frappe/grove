@@ -115,7 +115,7 @@ def post_roster(region):
 		}
 		for m in machines
 	]
-	token = region.get_datum_token()
+	token = region.ensure_datum_token()
 	response = requests.post(
 		ingest_url(region.metrics_url),
 		json={"samples": samples},

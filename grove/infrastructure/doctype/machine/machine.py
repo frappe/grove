@@ -198,21 +198,21 @@ class Machine(GeneratedName, AnsibleHost, Document):
 
 	@frappe.whitelist()
 	def provision(self):
+		"""Everything checkable without a running instance runs here, so a typo fails before AWS
+		starts billing. The image check needs the architecture sync_instance_type records."""
 		self.validate_launchable()
+		client = self.cloud_client
+		self.sync_instance_type(client)
+		self.validate_image_architecture(client)
 		frappe.enqueue_doc(self.doctype, self.name, "launch", queue="long", timeout=3000)
 		frappe.msgprint(f"Provisioning {self.name} — reload when it reports Active.", alert=True)
 
 	def validate_launchable(self):
-		"""Everything checkable without a running instance, so a typo fails before AWS starts
-		billing."""
 		if self.instance_id:
 			frappe.throw(f"Machine {self.name} already has instance {self.instance_id}.")
 		if not (self.instance_type and self.root_volume_gb):
 			frappe.throw("Set an Instance Type and a Root Volume (GB) before provisioning.")
-		client = self.cloud_client
 		self.get_security_group_ids(self.network_doc)
-		self.sync_instance_type(client)
-		self.validate_image_architecture(client)
 
 	def validate_image_architecture(self, client):
 		"""AWS accepts a mismatched AMI and the box then never boots — no console to read, no
@@ -319,7 +319,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 				"private_ip": instance["private_ip"] or "",
 				"instance_type": instance["instance_type"] or "",
 				"machine_image": instance["image_id"] or "",
-				"root_volume_gb": instance["root_volume_gb"] or 0,
+				"root_volume_gb": client.get_volume_gb(instance["root_volume_id"]),
 				"termination_protection": int(client.is_termination_protected(self.instance_id)),
 			}
 		)
@@ -399,7 +399,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 		"""AWS re-issues the public IP, so this polls for the new one rather than leaving a
 		now-wrong address on the doc."""
 		self.require_instance()
-		self.cloud_client
+		self.cloud_client  # built here so missing credentials fail on the button, not in a worker
 		frappe.enqueue_doc(self.doctype, self.name, "resume", queue="long", timeout=3000)
 		frappe.msgprint(f"Starting {self.name} — reload when it reports Active.", alert=True)
 
@@ -438,7 +438,7 @@ class Machine(GeneratedName, AnsibleHost, Document):
 				f"{self.name}'s root volume is already {self.root_volume_gb} GB. "
 				"A volume can only be grown, never shrunk."
 			)
-		self.cloud_client
+		self.cloud_client  # built here so missing credentials fail on the button, not in a worker
 		frappe.enqueue_doc(self.doctype, self.name, "grow_root", queue="long", timeout=1800, size_gb=size_gb)
 		frappe.msgprint(
 			f"Growing {self.name}'s root volume to {size_gb} GB — watch its Ansible Plays.", alert=True
@@ -644,11 +644,11 @@ def reconcile_gpus(machine, scanned):
 
 
 def _scanned_values(row):
-	"""The columns a scan owns on a card. Its type is resolved, not stored as the reported string."""
-	from grove.infrastructure.doctype.gpu_type.gpu_type import resolve
+	"""The columns a scan owns on a card. Its GPU Type is looked up, and created on first sight."""
+	from grove.infrastructure.doctype.gpu_type.gpu_type import ensure_gpu_type
 
 	return {
-		"gpu_type": resolve(row.get("gpu_model"), row.get("vram_gb"), row.get("compute_capability")),
+		"gpu_type": ensure_gpu_type(row.get("gpu_model"), row.get("vram_gb"), row.get("compute_capability")),
 		"gpu_index": row.get("gpu_index") or 0,
 	}
 

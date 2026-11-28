@@ -36,6 +36,7 @@ class FakeEC2:
 		self.type_pages = list(type_pages or [])
 		self.offerings = list(offerings or [])
 		self.status_calls = 0
+		self.volume_calls = 0
 		self.type_calls = []
 
 	def _next(self, queue):
@@ -63,6 +64,7 @@ class FakeEC2:
 		return {"Images": [self.images]} if self.images else {"Images": []}
 
 	def describe_volumes(self, **kwargs):
+		self.volume_calls += 1
 		return {"Volumes": [{"Size": 100}]}
 
 
@@ -238,6 +240,14 @@ class TestPollInstanceReady(unittest.TestCase):
 		ec2 = client(instances=[instance()], statuses=[status()])
 		ec2.poll_instance_ready("i-1", timeout_sec=60, poll_interval_sec=0)
 		self.assertTrue(ec2.ec2.last_status_kwargs["IncludeAllInstances"])
+
+	def test_polling_never_asks_for_the_volume_size(self, _sleep):
+		root = {"DeviceName": "/dev/sda1", "Ebs": {"VolumeId": "vol-1"}}
+		ec2 = client(instances=[{**instance(), "BlockDeviceMappings": [root]}], statuses=[status()])
+		ready = ec2.poll_instance_ready("i-1", timeout_sec=60, poll_interval_sec=0)
+		self.assertEqual(ready["root_volume_id"], "vol-1")
+		self.assertEqual(ec2.ec2.volume_calls, 0)
+		self.assertEqual(ec2.get_volume_gb("vol-1"), 100)
 
 	def test_an_empty_status_response_is_not_ready(self, _sleep):
 		self.assertFalse(client(statuses=[[]]).is_instance_reachable("i-1"))

@@ -64,7 +64,7 @@ class Usage(SyncRun):
 
 	def settle(self, unit, result):
 		"""Landed the moment it arrives, then acknowledged so the box stops re-sending it."""
-		return record_drain(*super().settle(unit, result), gateway_store=unit.store)
+		return land_and_acknowledge(*super().settle(unit, result), gateway_store=unit.store)
 
 
 class Peek(Usage):
@@ -151,7 +151,7 @@ def landed_pairs(drain_ids):
 	return {(row.drain_id, row.api_key, str(row.day)) for row in rows}
 
 
-def record_drain(outcome, rows, gateway_store=None):
+def land_and_acknowledge(outcome, rows, gateway_store=None):
 	"""A drain that cannot be recorded at all is rolled back and acknowledges nothing, so the box sends
 	it again. `gateway_store` is the store drained, or None for a gateway dialled by name."""
 	for row in rows:
@@ -161,7 +161,7 @@ def record_drain(outcome, rows, gateway_store=None):
 			continue
 		start = time.monotonic()
 		try:
-			drain = record_drains(row["server"], drains, dead, gateway_store=gateway_store)
+			drain = land_drains(row["server"], drains, dead, gateway_store=gateway_store)
 			row["had_data"] = 1 if drain.pulled else 0
 			row["detail"] = f"pulled:{drain.pulled}" + (f" stuck:{drain.stuck}" if drain.stuck else "")
 			if spool.get("depth") or spool.get("dead"):
@@ -194,7 +194,7 @@ def store_of(gateway):
 	return store
 
 
-def record_drains(proxy_name, drains, dead=(), gateway_store=None):
+def land_drains(proxy_name, drains, dead=(), gateway_store=None):
 	"""Record one gateway's answer — {drain id: {key: {day: hash}}}, each hash on its day — and
 	commit. Everything lands under the store drained: the boxes on a store share one set of
 	counters; which team each hash is, `sort_drains` says."""
@@ -202,10 +202,13 @@ def record_drains(proxy_name, drains, dead=(), gateway_store=None):
 	drain = sort_drains(drains)
 	for line in dead:
 		drain.pulled += 1
-		if landing := read_dead_line(line, gateway_store):
+		landing = parse_dead_line(line)
+		if landing:
 			team, prefix, day, fields = landing
-			drain.by_team.setdefault(team, {}).setdefault(DEAD + line["id"], {})[prefix] = {day: fields}
-		elif line["id"] not in drain.dead_acks:
+			drain.hold(team, DEAD + line["id"], prefix, day, fields)
+			continue
+		keep_dead_line(line, gateway_store)
+		if line["id"] not in drain.dead_acks:
 			drain.dead_acks.append(line["id"])
 
 	book = PriceBook.load()
@@ -284,21 +287,24 @@ def served_on(day, drain_id=""):
 	return datetime.strptime(stamp, "%Y%m%d").date() if stamp.isdigit() else utc_today()
 
 
-def read_dead_line(line, gateway_store):
+def parse_dead_line(line):
 	"""(team, key, day, fields) for a dead line Grove can land — the UTC day it was spooled, blank
-	(today) when it carries none — else None after keeping it as Stuck Usage: the box drops it once
-	acknowledged, so this row is the only copy left."""
+	(today) when it carries none — else None."""
 	try:
 		accrual = json.loads(line["line"])
 		prefix, fields = accrual["prefix"], accrual["fields"]
 		team = frappe.db.get_value("Grove API Key", prefix, "team")
 		if not team:
-			raise ValueError(f"No Grove API Key {prefix!r}")
+			return None
 		return team, prefix, (accrual.get("at") or "")[:10], fields
 	except Exception:
-		name = line["id"] or "sha1:" + hashlib.sha1(line["line"].encode()).hexdigest()
-		record_stuck(None, gateway_store, line, dead_line=name)
 		return None
+
+
+def keep_dead_line(line, gateway_store):
+	"""The box drops a dead line once acknowledged, so this Stuck Usage row is the only copy left."""
+	name = line["id"] or "sha1:" + hashlib.sha1(line["line"].encode()).hexdigest()
+	record_stuck(None, gateway_store, line, dead_line=name)
 
 
 def parse_drain(h, table):

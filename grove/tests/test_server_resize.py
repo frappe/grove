@@ -340,7 +340,7 @@ class TestSyncServer(unittest.TestCase):
 			patch.object(frappe, "get_doc", return_value=gw),
 			patch.object(module.reconcile, "sync_networks") as networks,
 		):
-			ServerResize.refresh_server(resize())
+			ServerResize.reactivate_server(resize())
 		return networks
 
 	def test_the_server_is_active_again_on_its_addresses_in_dns(self):
@@ -364,7 +364,7 @@ class TestSyncServer(unittest.TestCase):
 class TestRecover(unittest.TestCase):
 	def recover(self, box, steps, machine_status="Active", lift=None, gw=None):
 		doc = resize(steps=steps, error="Traceback")
-		doc.refresh_server = Mock()
+		doc.reactivate_server = Mock()
 		doc.lift_maintenance = lift or Mock(return_value="PLAY-2")
 		gw = gw or gateway()
 		with (
@@ -395,13 +395,13 @@ class TestRecover(unittest.TestCase):
 		box = machine(status="Stopped")
 		doc = self.recover(box, [row("set_instance_type", status=Status.Failure)])
 		box.resume.assert_called_once()
-		doc.refresh_server.assert_called_once()
+		doc.reactivate_server.assert_called_once()
 
 	def test_a_box_not_back_up_leaves_the_server_doc_alone(self):
 		box = machine(status="Pending")
 		doc = self.recover(box, [], machine_status="Pending")
 		box.resume.assert_not_called()
-		doc.refresh_server.assert_not_called()
+		doc.reactivate_server.assert_not_called()
 
 	def test_only_the_maintenance_this_resize_set_is_lifted_and_the_rest_marked_skipped(self):
 		steps = [

@@ -199,7 +199,7 @@ instead until `is_vector_setup`: vector.yml, then `gateway_server/retire_exporte
 node_exporter and scrape htpasswd its old play installed — Vector first, so the box is never unwatched. `ship_host_metrics` off drops the `host_metrics` source and nothing else:
 an Atlas machine's Pilot already ships those, and nobody else ships the logs.
 
-The roster's token is the one Grove keeps: `Region.get_datum_token` holds it on the Region (`datum_token`,
+The roster's token is the one Grove keeps: `Region.ensure_datum_token` holds it on the Region (`datum_token`,
 encrypted, with `datum_token_expires_at`) and asks Central again only with five minutes left, or after datum
 answers 401 — not once a minute.
 

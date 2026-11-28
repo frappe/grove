@@ -481,7 +481,7 @@ class TestPodWarmup(unittest.TestCase):
 		with patch("grove.infrastructure.cloud_provider.provisioner.requests.post") as posted:
 			posted.side_effect = error
 			posted.return_value = response
-			return self.provisioner(**kwargs).get_warmup_error(), posted
+			return self.provisioner(**kwargs).run_warmup_request(), posted
 
 	def test_it_posts_the_payload_at_the_endpoint_the_gateway_gets(self):
 		_, posted = self.post(SimpleNamespace(status_code=200, text="{}"))
@@ -537,7 +537,7 @@ class TestWarmupWithholdsTheRoute(unittest.TestCase):
 			apply_provider_state=lambda self, ready, running: None,
 			await_engine=lambda self, ready: None,
 			is_warmup_due=True,
-			get_warmup_error=lambda self: reason,
+			run_warmup_request=lambda self: reason,
 			set_state=lambda self, values: calls.setdefault("state", values),
 			sync_model_published=lambda self: calls.setdefault("synced", True),
 		):

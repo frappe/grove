@@ -76,7 +76,7 @@ class PodProvisioner:
 	@property
 	def env(self):
 		"""Whatever the engine needs, on the volume's paths so caches survive a restart, then the
-		Pod's own Env rows on top. PUBLIC_KEY is added by config_kwargs. The attention backend is NOT
+		Pod's own Env rows on top. PUBLIC_KEY is added by get_config_kwargs. The attention backend is NOT
 		here — it rides the serve command, because vLLM 0.24 dropped VLLM_ATTENTION_BACKEND."""
 		pod = self.pod
 		mount = pod.volume_mount_path or VOLUME_MOUNT
@@ -92,20 +92,18 @@ class PodProvisioner:
 				env[row.key] = row.value or ""
 		return env
 
-	@property
-	def registry_auth_id(self):
-		"""RunPod won't take inline pull credentials — they are registered under a name and
-		referenced by id. Re-registered per call so rotated credentials always apply."""
+	def register_registry_auth(self):
+		"""RunPod takes no inline pull credentials: they are registered under a name and referenced
+		by id. Re-registered on every spawn and restart so rotated credentials apply."""
 		if not self.pod.engine_image:
 			return None
 		image = frappe.get_cached_doc("Engine Image", self.pod.engine_image)
 		credentials = image.registry_credentials
 		if not credentials:
 			return None
-		return self.client.get_registry_auth_id(f"grove-{frappe.scrub(image.image_provider)}", *credentials)
+		return self.client.register_registry_auth(f"grove-{frappe.scrub(image.image_provider)}", *credentials)
 
-	@property
-	def config_kwargs(self):
+	def get_config_kwargs(self):
 		"""What RunPod accepts on BOTH create and update, so a restart applies exactly what a spawn
 		would. RunPod appends args to the image's entrypoint, so a custom image with neither runs
 		as built."""
@@ -118,20 +116,19 @@ class PodProvisioner:
 			env={"PUBLIC_KEY": self.public_keys, **self.env},
 			image_name=pod.resolved_image,
 			args=command or None,
-			container_registry_auth_id=self.registry_auth_id,
+			container_registry_auth_id=self.register_registry_auth(),
 			volume_mount_path=pod.volume_mount_path or VOLUME_MOUNT,
 			name=pod.name,
 		)
 
-	@property
-	def spawn_kwargs(self):
-		"""config_kwargs plus the create-only field update does not accept: the GPU shape."""
+	def get_spawn_kwargs(self):
+		"""get_config_kwargs plus the create-only field update does not accept: the GPU shape."""
 		if not self.pod.gpu_type_id:
 			frappe.throw(
 				f"Pod {self.pod.name} has no GPU Type ID — set it (provider GPU id, e.g. 'NVIDIA L40S')."
 			)
 		return dict(
-			self.config_kwargs,
+			self.get_config_kwargs(),
 			gpu_type_id=self.pod.gpu_type_id,
 			gpu_count=self.pod.gpu_count or 1,
 		)
@@ -167,8 +164,8 @@ class PodProvisioner:
 		yet."""
 		return bool(self.engine.warmup_request) and self.current_status == "Running"
 
-	def get_warmup_error(self):
-		"""Why this engine could not serve one real request, "" when it did. Carries the bearer
+	def run_warmup_request(self):
+		"""Send the engine one real request: why it failed, "" when it served. Carries the bearer
 		/health never needed: an unauthenticated POST is a 401 on a perfectly good engine running
 		with VLLM_API_KEY."""
 		request = self.engine.warmup_request
@@ -242,7 +239,7 @@ class PodProvisioner:
 		self.apply_provider_state(ready, running=True)
 		if self.health_path:
 			self.await_engine(ready)
-		if self.is_warmup_due and (error := self.get_warmup_error()):
+		if self.is_warmup_due and (error := self.run_warmup_request()):
 			self.set_state({"status": "Loading", "engine_url": ""})
 			failure.report("Pod", self.pod.name, "Pod engine failed warmup", error)
 		self.sync_model_published()
@@ -265,7 +262,7 @@ class PodProvisioner:
 		frappe.db.commit()
 
 	def spawn(self):
-		spawn_kwargs = self.spawn_kwargs
+		spawn_kwargs = self.get_spawn_kwargs()
 		started = frappe.utils.now_datetime()
 		self.set_state({"status": "Provisioning", "provision_attempts": 0})
 		try:
@@ -328,7 +325,7 @@ class PodProvisioner:
 		if reason := self.restart_blocker(self.client.get_pod(self.pod.pod_id)):
 			frappe.throw(reason)
 
-		config_kwargs = self.config_kwargs
+		config_kwargs = self.get_config_kwargs()
 		started = frappe.utils.now_datetime()
 		try:
 			self.set_state({"status": "Provisioning", "engine_url": ""})

@@ -246,6 +246,7 @@ class SyncRun:
 			if not units:
 				self.skipped = "nothing"
 				return None
+			self.prepare(units)
 			return self.record([self.settle(unit, guarded(self.work, unit)) for unit in units])
 		finally:
 			self.doc.release_lock()
@@ -253,6 +254,9 @@ class SyncRun:
 	def units(self):
 		"""The units this run dials, each resolved before any is dialled."""
 		raise NotImplementedError
+
+	def prepare(self, units):
+		"""Read what the work needs before the first unit is dialled."""
 
 	def work(self, unit):
 		"""Dial one unit. → (outcome, rows)."""

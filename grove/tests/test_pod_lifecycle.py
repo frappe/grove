@@ -48,7 +48,7 @@ class Harness:
 		db = frappe._dict(get_value=lambda *args, **kwargs: self.stored_pod_id)
 		stubs = dict(
 			set_state=lambda p, values: self.writes.append(values),
-			spawn_kwargs={},
+			get_spawn_kwargs=lambda p: {},
 			await_ready=lambda p: {"public_ip": "1.2.3.4"},
 			current_status="Running",
 			sync_model_published=lambda p: None,

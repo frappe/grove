@@ -63,9 +63,9 @@ class MonitoringAgent(Server, Document):
 		frappe.msgprint(f"Installing vmagent on {self.name} — watch its Ansible Plays.", alert=True)
 
 	@property
-	def remote_write_url(self):
+	def region_metrics_url(self):
 		"""Where this agent pushes: its Region's Metrics Endpoint, the one owner of that address.
-		Resolved on every read; the column of the same name is what the last install wrote, for
+		Resolved on every read; the `remote_write_url` column is what the last install wrote, for
 		the form."""
 		return (frappe.db.get_value("Region", self.region, "metrics_url") if self.region else "") or ""
 
@@ -82,7 +82,7 @@ class MonitoringAgent(Server, Document):
 		return {
 			**frappe.get_single("Grove Settings").monitoring_variables,
 			**self.target_variables,
-			"monitoring_remote_write_url": self.remote_write_url,
+			"monitoring_remote_write_url": self.region_metrics_url,
 			"monitoring_remote_write_token": self.get_password("metrics_token", raise_exception=False) or "",
 			"monitoring_agent": self.name,
 			# Omitted when blank, so the role's defaults/main.yml is the one place each default
@@ -101,7 +101,7 @@ class MonitoringAgent(Server, Document):
 		elif not frappe.db.get_value("Machine", self.machine, "public_ip"):
 			problems.append(f"Machine {self.machine} has no public IP — nothing to SSH to.")
 
-		if not self.remote_write_url:
+		if not self.region_metrics_url:
 			problems.append(
 				f"Nowhere to push — set the Metrics Endpoint on Region {self.region or '(unset)'}'s Monitoring tab."
 			)
@@ -172,7 +172,7 @@ class MonitoringAgent(Server, Document):
 			self.name,
 			{
 				"status": "Active" if rc == 0 else "Broken",
-				"remote_write_url": self.remote_write_url,
+				"remote_write_url": self.region_metrics_url,
 			},
 		)
 		return play_name, rc
@@ -243,7 +243,7 @@ class MonitoringAgent(Server, Document):
 			self.name,
 			{
 				"status": "Active" if rc == 0 else "Broken",
-				"remote_write_url": self.remote_write_url,
+				"remote_write_url": self.region_metrics_url,
 			},
 		)
 		return play_name, rc

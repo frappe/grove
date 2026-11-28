@@ -238,11 +238,11 @@ class ServerResize(StepHandler, Document):
 
 	def sync_server(self, step):
 		"""Sync server"""
-		self.refresh_server()
+		self.reactivate_server()
 		step.status = Status.Success
 		step.save()
 
-	def refresh_server(self):
+	def reactivate_server(self):
 		"""The server back to Active on the Machine's addresses: the save refetches them, DNS and
 		the health check follow, and a moved public IP goes into the security groups now rather
 		than at the next tick."""
@@ -319,7 +319,7 @@ class ServerResize(StepHandler, Document):
 			reference_name=self.name,
 		)
 		failed = [row for row in self.steps if row.status == Status.Failure][-1]
-		if not getattr(frappe.local, "grove_failure_reported", False):
+		if not failure.was_reported():
 			failure.report(self.doctype, self.name, f"Resize of {self.server} failed", failed.output)
 		# Committed first: recovery can raise, and the rollback must not take the failure record.
 		frappe.db.commit()
@@ -330,7 +330,7 @@ class ServerResize(StepHandler, Document):
 		its own: one that cannot be undone is written to `error`, not allowed to stop the next."""
 		self.undo("starting the machine", self.restart_machine)
 		if frappe.db.get_value("Machine", self.machine, "status") == "Active":
-			self.undo("syncing the server", self.refresh_server)
+			self.undo("syncing the server", self.reactivate_server)
 		for row in self.steps:
 			# Failure set the flag too, before the play that applies it refused.
 			if row.method_name == "enter_maintenance" and row.status in (Status.Success, Status.Failure):

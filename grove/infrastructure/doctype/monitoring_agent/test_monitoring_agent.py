@@ -48,11 +48,11 @@ class TestRemoteWriteUrl(IntegrationTestCase):
 		return agent
 
 	def test_a_regions_own_endpoint_wins(self):
-		self.assertEqual(self.agent("regional", REGIONAL_URL).remote_write_url, REGIONAL_URL)
+		self.assertEqual(self.agent("regional", REGIONAL_URL).region_metrics_url, REGIONAL_URL)
 
 	def test_a_region_without_one_leaves_the_agent_nowhere_to_push(self):
 		agent = self.agent("blank", "")
-		self.assertEqual(agent.remote_write_url, "")
+		self.assertEqual(agent.region_metrics_url, "")
 		with self.assertRaises(frappe.ValidationError) as caught:
 			agent.preflight()
 		self.assertIn("Metrics Endpoint on Region test-agent-region-blank", str(caught.exception))

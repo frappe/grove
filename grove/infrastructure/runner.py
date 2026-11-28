@@ -94,6 +94,10 @@ class StepHandler:
 		self.save()
 		frappe.db.commit()
 
+	def finish(self, success_status: str = Status.Success):
+		"""Once no step is left to run."""
+		self.succeed(success_status)
+
 	def handle_step_failure(self):
 		self.error = frappe.get_traceback(with_context=True)
 		self.save()
@@ -131,7 +135,7 @@ class StepHandler:
 
 		step = self.next_step(steps)
 		if not step:
-			self.succeed(success_status)
+			self.finish(success_status)
 			return
 
 		step = step.reload()

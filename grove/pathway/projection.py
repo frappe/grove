@@ -45,13 +45,16 @@ class Projection(SyncRun):
 	def units(self):
 		"""Both kinds default to every Active box. `is None` and not truthiness: an empty list is a
 		caller saying "no boxes of this kind", which is how an ingress-only run asks for no gateway
-		work. What each box is sent is decided here, before any is dialled."""
+		work."""
 		ingresses = self.ingresses
 		if ingresses is None:
 			ingresses = [] if self.proxies else active_ingresses()
-		units = gateway_units(self.proxies) + [
+		return gateway_units(self.proxies) + [
 			Unit(None, (Target.resolve("Ingress Server", ingress),)) for ingress in ingresses
 		]
+
+	def prepare(self, units):
+		"""What each box is sent is decided here, before any is dialled."""
 		targets = [target for unit in units for target in unit.targets]
 		self.read_at = frappe.utils.now_datetime()
 		self.remote = read_hashes(targets)
@@ -59,7 +62,6 @@ class Projection(SyncRun):
 		snapshots = snapshots_for(targets, self.labels)
 		self.deltas = {target: self.delta_for(target, snapshots[target]) for target in targets}
 		self.adjustments = pending_adjustments()
-		return units
 
 	def answered_units(self, units):
 		"""(unit, its hashes) for each gateway unit some writer answered: a store's writers share

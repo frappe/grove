@@ -60,7 +60,7 @@ def type_name_from(reported):
 	return " ".join(words)
 
 
-def resolve(reported, vram_gb=None, compute_capability=None):
+def ensure_gpu_type(reported, vram_gb=None, compute_capability=None):
 	"""The `GPU Type` a source's model string means, creating it the first time the fleet meets a
 	card. Every spelling it resolves is recorded as an alias, so the table learns as it goes.
 	Never raises on an unknown card: a scan meeting new silicon has to record it and carry on, or

@@ -103,7 +103,7 @@ class PullCase(IntegrationTestCase):
 		day = self.today if day is None else day
 		drains = {drain_id: {key: {day: h} for key, h in usages.items()}} if usages else {}
 		with unittest.mock.patch.object(frappe.db, "commit"):
-			drain = usage.record_drains(self.gateway, drains, dead, gateway_store=store or self.store)
+			drain = usage.land_drains(self.gateway, drains, dead, gateway_store=store or self.store)
 		return drain.pulled, drain.acks, drain.dead_acks, drain.stuck
 
 	def records(self, key):
@@ -211,7 +211,7 @@ class TestADrainIsOneRecordPerKey(PullCase):
 		days = {yesterday: {"request_count": "2", "team": trial}, self.today: {"request_count": "1"}}
 		drains = {"d-split": {key: days}}
 		with unittest.mock.patch.object(frappe.db, "commit"):
-			drain = usage.record_drains(self.gateway, drains, gateway_store=self.store)
+			drain = usage.land_drains(self.gateway, drains, gateway_store=self.store)
 		self.assertEqual((drain.pulled, drain.stuck), (2, 0))
 		self.assertEqual(sorted(drain.acks["d-split"][key]), sorted([yesterday, self.today]))
 		self.assertEqual(
@@ -229,13 +229,13 @@ class TestADrainIsOneRecordPerKey(PullCase):
 	def test_a_named_gateways_drain_lands_under_its_store_and_one_without_fails(self):
 		key = self.key()
 		with unittest.mock.patch.object(frappe.db, "commit"):
-			usage.record_drains(self.gateway, {"d-named": {key: {self.today: {"request_count": "1"}}}})
+			usage.land_drains(self.gateway, {"d-named": {key: {self.today: {"request_count": "1"}}}})
 		self.assertEqual(self.records(key)[0].gateway_store, self.store)
 		with (
 			unittest.mock.patch.object(usage.snapshot, "gateway_store", return_value=None),
 			self.assertRaises(frappe.ValidationError),
 		):
-			usage.record_drains(self.gateway, {"d-none": {key: {self.today: {"request_count": "1"}}}})
+			usage.land_drains(self.gateway, {"d-none": {key: {self.today: {"request_count": "1"}}}})
 
 	def test_each_touched_team_is_landed_once_per_drain_not_per_key(self):
 		keys = [self.key() for _ in range(3)]
@@ -273,8 +273,8 @@ class TestADrainIsOneRecordPerKey(PullCase):
 		key = self.key()
 		drains = {"d1": {key: {"2026-10-31": {"request_count": "1"}, "2026-11-01": {"request_count": "2"}}}}
 		with unittest.mock.patch.object(frappe.db, "commit"):
-			usage.record_drains(self.gateway, drains, gateway_store=self.store)
-			usage.record_drains(self.gateway, drains, gateway_store=self.store)
+			usage.land_drains(self.gateway, drains, gateway_store=self.store)
+			usage.land_drains(self.gateway, drains, gateway_store=self.store)
 		self.assertEqual(
 			sorted((str(r.day), r.request_count) for r in self.records(key)),
 			[("2026-10-31", 1), ("2026-11-01", 2)],
@@ -489,14 +489,14 @@ class TestADrainIsAcknowledgedOnceRecorded(unittest.TestCase):
 		target.post.side_effect = ack
 		with (
 			unittest.mock.patch.object(
-				usage, "record_drains", side_effect=record if isinstance(record, Exception) else [record]
+				usage, "land_drains", side_effect=record if isinstance(record, Exception) else [record]
 			) as recorded,
 			unittest.mock.patch.object(Target, "resolve", return_value=target),
 			unittest.mock.patch.object(
 				frappe, "db", frappe._dict(commit=lambda: None, rollback=lambda: None)
 			),
 		):
-			outcome, [row] = usage.record_drain(True, [row])
+			outcome, [row] = usage.land_and_acknowledge(True, [row])
 		self.recorded = recorded
 		return outcome, row, target.post
 
@@ -565,7 +565,7 @@ class TestAStoreIsPulledThroughOneWriter(unittest.TestCase):
 				usage, "fetch_usage", side_effect=lambda target, _keys: (fetch or fetch_one)(target)
 			),
 			unittest.mock.patch.object(
-				usage, "record_drains", side_effect=record or (lambda *_, **__: Drain(pulled=1))
+				usage, "land_drains", side_effect=record or (lambda *_, **__: Drain(pulled=1))
 			),
 			unittest.mock.patch.object(run, "finalize") as finalize,
 			unittest.mock.patch.object(
@@ -602,7 +602,7 @@ class TestAStoreIsPulledThroughOneWriter(unittest.TestCase):
 				"fetch_usage",
 				side_effect=lambda *_: {"success": 1, "reachable": 1, "duration_ms": 0, "drains": {}},
 			),
-			unittest.mock.patch.object(usage, "record_drains", return_value=Drain()),
+			unittest.mock.patch.object(usage, "land_drains", return_value=Drain()),
 			unittest.mock.patch.object(run, "finalize"),
 			unittest.mock.patch.object(run, "new_run", return_value=self.run_doc()),
 			unittest.mock.patch.object(

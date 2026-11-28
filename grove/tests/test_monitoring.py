@@ -648,7 +648,7 @@ class TestTheAgentsOwnTuningReachesItsBox(unittest.TestCase):
 		return SimpleNamespace(
 			**{
 				"name": "MA-1",
-				"remote_write_url": "https://ingest.example/api/v1/write",
+				"region_metrics_url": "https://ingest.example/api/v1/write",
 				"get_password": lambda *args, **kwargs: "push-token",
 				"target_variables": {
 					"monitoring_static_targets": True,

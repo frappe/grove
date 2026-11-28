@@ -221,13 +221,14 @@ class TestGpuInventory(unittest.TestCase):
 				max_model_len=parse_context_length(max_model_len) or DEFAULT_MAX_MODEL_LEN,
 			),
 		)
-		doc._validate_shape = lambda: ModelReplica._validate_shape(doc)
 		cards = [SimpleNamespace(name=n) for n in on_machine]
 		with (
 			patch.object(frappe, "throw", side_effect=frappe.ValidationError),
 			patch(f"{MODULE}.cards_on", lambda machines: cards),
 		):
 			ModelReplica._validate_gpus(doc)
+			ModelReplica._validate_shape(doc)
+			ModelReplica.set_serve_command(doc)
 		return doc
 
 	def test_a_context_length_suffix_is_stored_as_tokens(self):

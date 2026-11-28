@@ -58,7 +58,7 @@ class Region(Document):
 			if not self.get(field)
 		]
 
-	def get_datum_token(self):
+	def ensure_datum_token(self):
 		"""The roster's token for this region's datum: the kept one, or a new one from Central once
 		it has five minutes or less left."""
 		expires_at = self.datum_token_expires_at

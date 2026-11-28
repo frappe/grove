@@ -113,7 +113,7 @@ class CreditsCase(IntegrationTestCase):
 		drain_id = drain_id or f"drain-{CreditsCase.counter}"
 		drains = {drain_id: {key: {str(usage.utc_today()): h} for key, h in usages.items()}}
 		with unittest.mock.patch.object(frappe.db, "commit"):
-			drain = usage.record_drains(self.gateway, drains, gateway_store=store or self.store)
+			drain = usage.land_drains(self.gateway, drains, gateway_store=store or self.store)
 		return drain.pulled, drain.acks, drain.dead_acks, drain.stuck
 
 	def state(self, team):
@@ -514,7 +514,7 @@ class TestADeadLineIsOwedToTheBox(CreditsCase):
 		accrual = {"prefix": key, "fields": self.hash(tokens), "at": at or f"{usage.utc_today()}T10:00:00Z"}
 		line = {"id": f"rid-{CreditsCase.counter}", "line": json.dumps(accrual), "error": "script failed"}
 		with unittest.mock.patch.object(frappe.db, "commit"):
-			return usage.record_drains(self.gateway, {}, [line], gateway_store=self.store)
+			return usage.land_drains(self.gateway, {}, [line], gateway_store=self.store)
 
 	def test_a_dead_line_is_the_gateways_error_and_its_price_is_owed_to_the_counter(self):
 		team, key = self.team(cap=5)

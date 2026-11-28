@@ -101,7 +101,7 @@ still pruned, or an instance resized to fewer GPUs would offer cards it does not
 ## `GPU Type` — the catalogue
 
 Three sources name one card three ways (`Tesla T4`, `T4`, `NVIDIA T4`) and each writes its own VRAM,
-so one T4 read 15 GB and another 16. `resolve()` collapses them: strip the vendor word, collapse
+so one T4 read 15 GB and another 16. `ensure_gpu_type()` collapses them: strip the vendor word, collapse
 whitespace, keep the rest as written.
 
 - **The name IS the display.** Nothing is slugified — a slug would put
@@ -113,7 +113,7 @@ whitespace, keep the rest as written.
   follows.
 - **A MIG slice resolves to its own type**, not its parent's. Calling it an A100 would offer a
   replica 80 GB that does not exist.
-- `resolve()` **creates on a miss** rather than raising: a scan meeting new silicon has to record it
+- `ensure_gpu_type()` **creates on a miss** rather than raising: a scan meeting new silicon has to record it
   and carry on, because failing leaves the box with no inventory at all.
 
 ## Ordering
